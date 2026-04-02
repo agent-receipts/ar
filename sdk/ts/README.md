@@ -35,7 +35,7 @@ AI agents that read files, run commands, and browse the web are powerful — but
 
 ### Beyond local storage
 
-Today, this SDK stores receipts locally in SQLite — fully under your control. The [Attest Protocol](https://github.com/agent-receipts/spec) is designed for receipts to travel further when you choose: publishing to a shared ledger, forwarding to a compliance system, or exchanging between agents as proof of prior actions. The receipts are portable W3C Verifiable Credentials, but where they go is always your decision.
+Today, this SDK stores receipts locally in SQLite — fully under your control. The [Agent Receipts protocol](https://github.com/agent-receipts/ar/tree/main/spec) is designed for receipts to travel further when you choose: publishing to a shared ledger, forwarding to a compliance system, or exchanging between agents as proof of prior actions. The receipts are portable W3C Verifiable Credentials, but where they go is always your decision.
 
 ## Install
 
