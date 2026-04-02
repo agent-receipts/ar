@@ -1,0 +1,56 @@
+<svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="flow-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#5b6abf" />
+    </marker>
+    <marker id="chain-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#2e7d46" />
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="720" height="190" rx="6" fill="#f5f6fa"/>
+  <rect x="10" y="30" width="120" height="100" rx="6" fill="#ffffff" stroke="#5b6abf" stroke-width="1.5"/>
+  <circle cx="70" cy="60" r="12" fill="none" stroke="#5b6abf" stroke-width="1.5"/>
+  <path d="M 48 95 Q 48 78 70 78 Q 92 78 92 95" fill="none" stroke="#5b6abf" stroke-width="1.5"/>
+  <text x="70" y="120" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="10">Principal</text>
+  <text x="70" y="20" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="8">1. AUTHORIZE</text>
+  <line x1="130" y1="80" x2="155" y2="80" stroke="#5b6abf" stroke-width="1.5" marker-end="url(#flow-arrow)"/>
+  <rect x="163" y="30" width="120" height="100" rx="6" fill="#ffffff" stroke="#5b6abf" stroke-width="1.5"/>
+  <rect x="200" y="50" width="26" height="20" rx="4" fill="none" stroke="#b8860b" stroke-width="1.5"/>
+  <circle cx="209" cy="59" r="3" fill="#b8860b"/>
+  <circle cx="219" cy="59" r="3" fill="#b8860b"/>
+  <line x1="213" y1="70" x2="213" y2="78" stroke="#b8860b" stroke-width="1.5"/>
+  <line x1="203" y1="78" x2="223" y2="78" stroke="#b8860b" stroke-width="1.5"/>
+  <text x="223" y="98" text-anchor="middle" fill="#b8860b" font-family="monospace" font-size="9">file.delete</text>
+  <text x="223" y="120" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="10">Agent</text>
+  <text x="223" y="20" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="8">2. ACT</text>
+  <line x1="283" y1="80" x2="308" y2="80" stroke="#5b6abf" stroke-width="1.5" marker-end="url(#flow-arrow)"/>
+  <rect x="316" y="30" width="120" height="100" rx="6" fill="#ffffff" stroke="#2e7d46" stroke-width="1.5"/>
+  <text x="376" y="52" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="8">action: file.delete</text>
+  <text x="376" y="66" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="8">outcome: success</text>
+  <text x="376" y="80" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="8">risk: high</text>
+  <text x="376" y="94" text-anchor="middle" fill="#2e7d46" font-family="monospace" font-size="8">proof: Ed25519 ✓</text>
+  <text x="376" y="120" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="10">Receipt</text>
+  <text x="376" y="20" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="8">3. SIGN</text>
+  <line x1="436" y1="80" x2="461" y2="80" stroke="#2e7d46" stroke-width="1.5" marker-end="url(#chain-arrow)"/>
+  <rect x="469" y="30" width="120" height="100" rx="6" fill="#ffffff" stroke="#2e7d46" stroke-width="1.5"/>
+  <rect x="484" y="52" width="28" height="20" rx="3" fill="#f5f6fa" stroke="#5b6abf" stroke-width="1"/>
+  <text x="498" y="65" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="7">#1</text>
+  <line x1="512" y1="62" x2="521" y2="62" stroke="#2e7d46" stroke-width="1" marker-end="url(#chain-arrow)"/>
+  <rect x="523" y="52" width="28" height="20" rx="3" fill="#f5f6fa" stroke="#5b6abf" stroke-width="1"/>
+  <text x="537" y="65" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="7">#2</text>
+  <line x1="551" y1="62" x2="560" y2="62" stroke="#2e7d46" stroke-width="1" marker-end="url(#chain-arrow)"/>
+  <rect x="562" y="52" width="22" height="20" rx="3" fill="#f5f6fa" stroke="#b8860b" stroke-width="1.5"/>
+  <text x="573" y="65" text-anchor="middle" fill="#b8860b" font-family="monospace" font-size="7">#3</text>
+  <text x="529" y="92" text-anchor="middle" fill="#2e7d46" font-family="monospace" font-size="8">sha256 linked</text>
+  <text x="529" y="120" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="10">Chain</text>
+  <text x="529" y="20" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="8">4. LINK</text>
+  <line x1="589" y1="80" x2="614" y2="80" stroke="#2e7d46" stroke-width="1.5" marker-end="url(#chain-arrow)"/>
+  <rect x="622" y="30" width="88" height="100" rx="6" fill="#ffffff" stroke="#2e7d46" stroke-width="1.5"/>
+  <circle cx="666" cy="62" r="14" fill="none" stroke="#2e7d46" stroke-width="1.5"/>
+  <path d="M 656 62 L 663 69 L 677 55" fill="none" stroke="#2e7d46" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="666" y="92" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="7">tamper-evident</text>
+  <text x="666" y="120" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="10">Verify</text>
+  <text x="666" y="20" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="8">5. AUDIT</text>
+  <text x="360" y="158" text-anchor="middle" fill="#6b7280" font-family="monospace" font-size="9">Human authorizes → Agent acts → Receipt signed → Chain linked → Independently verifiable</text>
+  <text x="360" y="175" text-anchor="middle" fill="#5b6abf" font-family="monospace" font-size="8">Every step is cryptographically bound. Breaking any link is detectable.</text>
+</svg>

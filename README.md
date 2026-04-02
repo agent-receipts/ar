@@ -17,21 +17,9 @@
 
 Agent Receipts is an open protocol and set of SDKs for producing cryptographically signed, tamper-evident records of AI agent actions. Every action an agent takes -- API calls, tool use, data access -- gets a verifiable receipt that can be audited later.
 
-## Architecture
-
-```mermaid
-graph TD
-    spec["spec/<br/>Protocol & Schema"]
-    go["sdk/go/<br/>Go SDK"]
-    ts["sdk/ts/<br/>TypeScript SDK"]
-    py["sdk/py/<br/>Python SDK"]
-    proxy["mcp-proxy/<br/>MCP Proxy with<br/>receipt signing"]
-
-    spec --> go
-    spec --> ts
-    spec --> py
-    go --> proxy
-```
+<picture>
+  <img alt="How it works: Authorize → Act → Sign → Link → Audit" src=".github/how-it-works.svg">
+</picture>
 
 ## Quick start
 
