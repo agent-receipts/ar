@@ -1,0 +1,27 @@
+# AGENTS.md
+
+Go SDK for the Action Receipts protocol. Provides packages for creating, signing, and verifying cryptographic receipts (Ed25519, W3C Verifiable Credentials), classifying tool calls via a taxonomy registry, and persisting receipts in SQLite.
+
+## Getting started
+
+```sh
+go build ./...   # build all packages
+go test ./...    # run all tests
+go vet ./...     # static analysis
+```
+
+## Project structure
+
+```
+receipt/    # Core types, create, sign, verify, hash-chain verification
+taxonomy/   # Action type registry (15 built-in types), tool call classification, config loading
+store/      # SQLite receipt persistence, query, stats, chain verification
+```
+
+## Conventions
+
+- All changes go through pull requests — never push directly to main
+- Run `go vet ./...` before committing
+- Keep types and logic separate where practical
+- Tests sit alongside source files as `*_test.go`
+- Pure Go SQLite via modernc.org/sqlite — no CGO
