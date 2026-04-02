@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// The Attest Protocol spec uses base64url (u) rather than the W3C Data
+// The Agent Receipts spec uses base64url (u) rather than the W3C Data
 // Integrity default base58btc (z).
 const multibaseBase64URL = "u"
 

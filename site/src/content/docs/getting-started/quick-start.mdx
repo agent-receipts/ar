@@ -83,7 +83,7 @@ pip install agent-receipts
 ### 2. Create and sign a receipt
 
 ```python
-from attest_protocol import (
+from agent_receipts import (
     create_receipt,
     generate_key_pair,
     sign_receipt,
@@ -115,7 +115,7 @@ receipt_hash = hash_receipt(receipt)
 ### 3. Verify a chain
 
 ```python
-from attest_protocol import verify_chain
+from agent_receipts import verify_chain
 
 receipts = [receipt]  # or load from storage
 result = verify_chain(receipts, keys.public_key)

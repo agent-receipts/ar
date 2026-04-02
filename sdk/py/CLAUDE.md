@@ -2,7 +2,7 @@
 
 ## Project
 
-Python SDK for the [Attest Protocol](https://github.com/agent-receipts/spec) — cryptographically signed, hash-chained Agent Receipts for AI agent audit trails.
+Python SDK for [Agent Receipts](https://github.com/agent-receipts/ar) — cryptographically signed, hash-chained audit trails for AI agents.
 
 ## Commands
 
