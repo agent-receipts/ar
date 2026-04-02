@@ -1,0 +1,122 @@
+import { describe, expect, it } from "vitest";
+import { generateKeyPair, signReceipt, verifyReceipt } from "./signing.js";
+import type { UnsignedAgentReceipt } from "./types.js";
+import { CONTEXT, CREDENTIAL_TYPE, VERSION } from "./types.js";
+
+function makeUnsignedReceipt(): UnsignedAgentReceipt {
+	return {
+		"@context": CONTEXT,
+		id: "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+		type: CREDENTIAL_TYPE,
+		version: VERSION,
+		issuer: { id: "did:agent:test-agent" },
+		issuanceDate: "2026-03-29T14:31:00Z",
+		credentialSubject: {
+			principal: { id: "did:user:test-user" },
+			action: {
+				id: "act_001",
+				type: "filesystem.file.read",
+				risk_level: "low",
+				timestamp: "2026-03-29T14:31:00Z",
+			},
+			outcome: { status: "success" },
+			chain: {
+				sequence: 1,
+				previous_receipt_hash: null,
+				chain_id: "chain_test",
+			},
+		},
+	};
+}
+
+describe("generateKeyPair", () => {
+	it("returns PEM-encoded Ed25519 keys", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+
+		expect(publicKey).toContain("BEGIN PUBLIC KEY");
+		expect(publicKey).toContain("END PUBLIC KEY");
+		expect(privateKey).toContain("BEGIN PRIVATE KEY");
+		expect(privateKey).toContain("END PRIVATE KEY");
+	});
+
+	it("generates unique key pairs on each call", () => {
+		const a = generateKeyPair();
+		const b = generateKeyPair();
+
+		expect(a.publicKey).not.toBe(b.publicKey);
+		expect(a.privateKey).not.toBe(b.privateKey);
+	});
+});
+
+describe("signReceipt", () => {
+	it("returns a receipt with a valid proof", () => {
+		const { privateKey } = generateKeyPair();
+		const unsigned = makeUnsignedReceipt();
+		const verificationMethod = "did:agent:test-agent#key-1";
+
+		const signed = signReceipt(unsigned, privateKey, verificationMethod);
+
+		expect(signed.proof.type).toBe("Ed25519Signature2020");
+		expect(signed.proof.proofPurpose).toBe("assertionMethod");
+		expect(signed.proof.verificationMethod).toBe(verificationMethod);
+		expect(signed.proof.proofValue).toMatch(/^u[A-Za-z0-9_-]+$/);
+		expect(signed.proof.created).toBeDefined();
+	});
+
+	it("preserves all unsigned fields", () => {
+		const { privateKey } = generateKeyPair();
+		const unsigned = makeUnsignedReceipt();
+
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+
+		expect(signed.id).toBe(unsigned.id);
+		expect(signed.issuer).toEqual(unsigned.issuer);
+		expect(signed.credentialSubject).toEqual(unsigned.credentialSubject);
+	});
+});
+
+describe("verifyReceipt", () => {
+	it("returns true for a validly signed receipt", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const unsigned = makeUnsignedReceipt();
+
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+		const valid = verifyReceipt(signed, publicKey);
+
+		expect(valid).toBe(true);
+	});
+
+	it("returns false when the receipt has been tampered with", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const unsigned = makeUnsignedReceipt();
+
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+		signed.credentialSubject.action.risk_level = "critical";
+
+		expect(verifyReceipt(signed, publicKey)).toBe(false);
+	});
+
+	it("returns false for malformed proofValue", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const unsigned = makeUnsignedReceipt();
+
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+		signed.proof.proofValue = "invalid";
+
+		expect(verifyReceipt(signed, publicKey)).toBe(false);
+	});
+
+	it("returns false when verified with a different key", () => {
+		const signer = generateKeyPair();
+		const other = generateKeyPair();
+		const unsigned = makeUnsignedReceipt();
+
+		const signed = signReceipt(
+			unsigned,
+			signer.privateKey,
+			"did:agent:test#key-1",
+		);
+
+		expect(verifyReceipt(signed, other.publicKey)).toBe(false);
+	});
+});

@@ -1,0 +1,55 @@
+{
+	"name": "@agent-receipts/sdk-ts",
+	"version": "0.2.0",
+	"description": "TypeScript SDK for the Agent Receipts protocol",
+	"license": "Apache-2.0",
+	"author": "Otto Jongerius",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/agent-receipts/sdk-ts.git"
+	},
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./receipt": {
+			"types": "./dist/receipt/index.d.ts",
+			"default": "./dist/receipt/index.js"
+		},
+		"./store": {
+			"types": "./dist/store/index.d.ts",
+			"default": "./dist/store/index.js"
+		},
+		"./taxonomy": {
+			"types": "./dist/taxonomy/index.d.ts",
+			"default": "./dist/taxonomy/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"check": "pnpm run typecheck && pnpm run lint",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": [
+			"lefthook"
+		]
+	},
+	"packageManager": "pnpm@10.33.0",
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.9",
+		"@types/node": "^25.5.0",
+		"lefthook": "^2.1.4",
+		"typescript": "^6.0.2",
+		"vitest": "^4.1.2"
+	}
+}
