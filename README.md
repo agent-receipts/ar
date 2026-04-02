@@ -19,26 +19,18 @@ Agent Receipts is an open protocol and set of SDKs for producing cryptographical
 
 ## Architecture
 
-```
-                    +-------------------+
-                    |       spec/       |
-                    | Protocol & Schema |
-                    +---------+---------+
-                              |
-            +-----------------+-----------------+
-            |                 |                 |
-    +-------v-------+ +------v------+ +--------v--------+
-    |    sdk/go/    | |   sdk/ts/   | |     sdk/py/     |
-    |    Go SDK     | |   TS SDK    | |   Python SDK    |
-    +-------+-------+ +------+------+ +--------+--------+
-            |                 |                 |
-            +-----------------+-----------------+
-                              |
-                    +---------v---------+
-                    |    mcp-proxy/     |
-                    |  MCP Proxy with   |
-                    |  receipt signing  |
-                    +-------------------+
+```mermaid
+graph TD
+    spec["spec/<br/>Protocol & Schema"]
+    go["sdk/go/<br/>Go SDK"]
+    ts["sdk/ts/<br/>TypeScript SDK"]
+    py["sdk/py/<br/>Python SDK"]
+    proxy["mcp-proxy/<br/>MCP Proxy with<br/>receipt signing"]
+
+    spec --> go
+    spec --> ts
+    spec --> py
+    go --> proxy
 ```
 
 ## Quick start
