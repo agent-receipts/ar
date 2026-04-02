@@ -4,9 +4,9 @@
 
 **Cryptographically signed audit trails for AI agent actions**
 
-[![Go Tests](https://github.com/agent-receipts/agent-receipts/actions/workflows/go.yml/badge.svg)](https://github.com/agent-receipts/agent-receipts/actions/workflows/go.yml)
-[![TS Tests](https://github.com/agent-receipts/agent-receipts/actions/workflows/ts.yml/badge.svg)](https://github.com/agent-receipts/agent-receipts/actions/workflows/ts.yml)
-[![Python Tests](https://github.com/agent-receipts/agent-receipts/actions/workflows/py.yml/badge.svg)](https://github.com/agent-receipts/agent-receipts/actions/workflows/py.yml)
+[![Go Tests](https://github.com/agent-receipts/ar/actions/workflows/go.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/go.yml)
+[![TS Tests](https://github.com/agent-receipts/ar/actions/workflows/ts.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/ts.yml)
+[![Python Tests](https://github.com/agent-receipts/ar/actions/workflows/py.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/py.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
@@ -46,11 +46,11 @@ Agent Receipts is an open protocol and set of SDKs for producing cryptographical
 ### Go
 
 ```bash
-go get github.com/agent-receipts/agent-receipts/sdk/go
+go get github.com/agent-receipts/ar/sdk/go
 ```
 
 ```go
-import receipt "github.com/agent-receipts/agent-receipts/sdk/go/receipt"
+import receipt "github.com/agent-receipts/ar/sdk/go/receipt"
 
 r, _ := receipt.New(receipt.WithAction("tool_call", payload))
 signed, _ := r.Sign(privateKey)

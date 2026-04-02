@@ -1,4 +1,4 @@
-module github.com/agent-receipts/agent-receipts/sdk/go
+module github.com/agent-receipts/ar/sdk/go
 
 go 1.26.1
 

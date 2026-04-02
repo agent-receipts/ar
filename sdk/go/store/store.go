@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agent-receipts/agent-receipts/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 
 	_ "modernc.org/sqlite"
 )

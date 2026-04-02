@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 If you discover a security vulnerability in Agent Receipts, please report it through
-[GitHub Security Advisories](https://github.com/agent-receipts/agent-receipts/security/advisories/new).
+[GitHub Security Advisories](https://github.com/agent-receipts/ar/security/advisories/new).
 
 Do **not** open a public issue for security vulnerabilities.
 

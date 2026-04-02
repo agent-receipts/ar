@@ -1,9 +1,9 @@
-module github.com/agent-receipts/agent-receipts/mcp-proxy
+module github.com/agent-receipts/ar/mcp-proxy
 
 go 1.26.1
 
 require (
-	github.com/agent-receipts/agent-receipts/sdk/go v0.1.0
+	github.com/agent-receipts/ar/sdk/go v0.1.0
 	github.com/google/uuid v1.6.0
 	golang.org/x/crypto v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -21,4 +21,4 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
-replace github.com/agent-receipts/agent-receipts/sdk/go => ../sdk/go
+replace github.com/agent-receipts/ar/sdk/go => ../sdk/go

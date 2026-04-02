@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/agent-receipts/agent-receipts/sdk/go/receipt"
-	"github.com/agent-receipts/agent-receipts/sdk/go/store"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
 func openReceiptStore(path string) *store.Store {

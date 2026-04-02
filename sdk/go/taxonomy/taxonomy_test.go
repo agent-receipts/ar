@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/agent-receipts/agent-receipts/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 )
 
 func TestClassifyToolCallWithMapping(t *testing.T) {

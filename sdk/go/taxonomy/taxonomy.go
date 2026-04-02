@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agent-receipts/agent-receipts/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 )
 
 // ActionTypeEntry describes a known action type.
