@@ -1,0 +1,60 @@
+name: Publish SDK (TypeScript) to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    working-directory: sdk/ts
+
+jobs:
+  publish:
+    if: startsWith(github.ref_name, 'sdk-ts-v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: npm install -g npm@latest
+
+      - run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: sdk/ts/pnpm-lock.yaml
+          registry-url: "https://registry.npmjs.org"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify release tag matches package.json version
+        if: github.event_name == 'release'
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#sdk-ts-v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Release tag sdk-ts-v${TAG_VERSION} does not match package.json version ${PKG_VERSION}"
+            exit 1
+          fi
+
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run build
+
+      - name: Publish to npm
+        run: |
+          npm config delete //registry.npmjs.org/:_authToken
+          npm publish --access public --provenance

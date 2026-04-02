@@ -1,0 +1,31 @@
+name: Publish SDK (Python) to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    working-directory: sdk/py
+
+jobs:
+  publish:
+    if: startsWith(github.ref_name, 'sdk-py-v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - run: uv build
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/py/dist/
