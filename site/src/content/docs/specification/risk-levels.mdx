@@ -1,0 +1,34 @@
+---
+title: Risk Levels
+description: The four risk levels used for filtering, alerting, and authorization policy.
+---
+
+Agent Receipts classify every action into one of four risk levels. Risk levels are used for filtering, alerting, and authorization policy.
+
+## The four levels
+
+| Level | Description | Examples |
+|---|---|---|
+| **low** | Read-only or easily reversible | Read a file, navigate to a URL, create a draft |
+| **medium** | Modifies state but reversible or low-impact | Edit a document, move a file, modify settings |
+| **high** | Significant state change, may be hard to reverse | Send an email, delete a file, share a document |
+| **critical** | Financial commitment or irreversible action | Make a purchase, authorize a payment, delete an account |
+
+## Default assignment
+
+Risk levels are assigned by action type as defaults in the [Action Taxonomy](/specification/action-taxonomy/). Each action type has a default risk level that reflects the typical severity of that action.
+
+## Escalation rules
+
+Implementations **may escalate** but **must not downgrade** risk levels based on runtime context.
+
+For example, a `filesystem.file.delete` action has a default risk of `high`. If the file being deleted is a system backup, the implementation should escalate the risk to `critical`. But an implementation must never downgrade a `high`-risk action to `medium`, regardless of context.
+
+The no-downgrade rule ensures that risk levels serve as a reliable floor for compliance and audit tooling. A consumer of receipts can trust that any receipt marked `high` represents at least a `high`-risk action by the taxonomy's definition.
+
+## Use cases
+
+- **Filtering**: Show only `high` and `critical` actions in an audit dashboard
+- **Alerting**: Trigger real-time notifications for `critical` actions
+- **Authorization gates**: Require explicit user confirmation before executing `high` or `critical` actions
+- **Compliance reporting**: Generate reports filtered by risk level for regulatory requirements

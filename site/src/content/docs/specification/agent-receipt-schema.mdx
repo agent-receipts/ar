@@ -1,0 +1,239 @@
+---
+title: Agent Receipt Schema
+description: Full schema definition for Agent Receipts with field descriptions.
+---
+
+An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This page documents the full schema with all required and optional fields.
+
+<div style="background: #181a24; border: 1px solid #2a2d3a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<svg viewBox="0 0 600 140" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+  <text x="10" y="16" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="9">FIELD MAP — jump to section</text>
+  {/* Row 1: top-level + issuer */}
+  <rect x="10" y="24" width="90" height="30" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="55" y="43" text-anchor="middle" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">top-level</text>
+  <rect x="108" y="24" width="80" height="30" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="148" y="43" text-anchor="middle" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">issuer</text>
+  <rect x="196" y="24" width="80" height="30" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="236" y="43" text-anchor="middle" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">principal</text>
+  <rect x="284" y="24" width="80" height="30" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="324" y="43" text-anchor="middle" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">action</text>
+  <rect x="372" y="24" width="70" height="30" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="407" y="43" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">intent</text>
+  {/* Row 2 */}
+  <rect x="10" y="62" width="90" height="30" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="55" y="81" text-anchor="middle" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">outcome</text>
+  <rect x="108" y="62" width="100" height="30" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="158" y="81" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">authorization</text>
+  <rect x="216" y="62" width="90" height="30" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="261" y="81" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">delegation</text>
+  <rect x="314" y="62" width="70" height="30" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="349" y="81" text-anchor="middle" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">chain</text>
+  <rect x="392" y="62" width="70" height="30" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
+  <text x="427" y="81" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="10">proof</text>
+  {/* Legend */}
+  <rect x="10" y="106" width="10" height="10" rx="2" fill="none" stroke="#7c93f5" stroke-width="1"/>
+  <text x="26" y="115" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">required</text>
+  <rect x="80" y="106" width="10" height="10" rx="2" fill="none" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="96" y="115" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">optional</text>
+  <rect x="150" y="106" width="10" height="10" rx="2" fill="none" stroke="#a5d6a7" stroke-width="1"/>
+  <text x="166" y="115" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">cryptographic</text>
+</svg>
+</div>
+
+## Full receipt example
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://agentreceipts.ai/context/v1"
+  ],
+  "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+  "type": ["VerifiableCredential", "AgentReceipt"],
+  "version": "0.1.0",
+
+  "issuer": {
+    "id": "did:agent:claude-cowork-instance-abc123",
+    "type": "AIAgent",
+    "name": "Claude Cowork",
+    "operator": {
+      "id": "did:org:anthropic",
+      "name": "Anthropic"
+    },
+    "model": "claude-sonnet-4-6",
+    "session_id": "session_xyz789"
+  },
+
+  "validFrom": "2026-03-31T14:30:00Z",
+
+  "credentialSubject": {
+    "principal": {
+      "id": "did:user:otto-abc",
+      "type": "HumanPrincipal"
+    },
+
+    "action": {
+      "id": "act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5",
+      "type": "filesystem.file.delete",
+      "risk_level": "high",
+      "target": {
+        "system": "local",
+        "resource": "/tmp/old-report.pdf"
+      },
+      "parameters_hash": "sha256:a3f1c2d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1d6",
+      "timestamp": "2026-03-31T14:30:00Z",
+      "trusted_timestamp": null
+    },
+
+    "intent": {
+      "conversation_hash": "sha256:b4e2d1f3a5c6b7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1e7",
+      "prompt_preview": "Clean up old reports in /tmp",
+      "prompt_preview_truncated": true,
+      "reasoning_hash": "sha256:c5f3e2d4a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2f8"
+    },
+
+    "outcome": {
+      "status": "success",
+      "error": null,
+      "reversible": false,
+      "reversal_method": null,
+      "reversal_window_seconds": null,
+      "state_change": {
+        "before_hash": "sha256:d604f3e5a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3a9",
+        "after_hash": "sha256:e7a504f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4ba"
+      }
+    },
+
+    "authorization": {
+      "scopes": ["filesystem:write"],
+      "granted_at": "2026-03-31T14:00:00Z",
+      "expires_at": "2026-03-31T15:00:00Z",
+      "grant_ref": null
+    },
+
+    "chain": {
+      "sequence": 1,
+      "previous_receipt_hash": null,
+      "chain_id": "chain_session_xyz789"
+    }
+  },
+
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-03-31T14:30:01Z",
+    "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z..."
+  }
+}
+```
+
+## Top-level fields
+
+| Field | Required | Description |
+|---|---|---|
+| `@context` | Yes | JSON-LD context. Must include the W3C VC v2 and Agent Receipt context URIs in order. |
+| `id` | Yes | Globally unique identifier. Must be `urn:receipt:<uuid>`. |
+| `type` | Yes | Must be `["VerifiableCredential", "AgentReceipt"]`. |
+| `version` | Yes | Spec version. Must be `"0.1.0"` for this version. |
+| `issuer` | Yes | The agent or platform that issued the receipt. |
+| `validFrom` | Yes | ISO 8601 datetime when the receipt was issued. May differ from `action.timestamp`. |
+| `credentialSubject` | Yes | The receipt payload. |
+| `proof` | Yes | Cryptographic proof. |
+
+## Issuer
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | Yes | DID or URI identifying the agent instance. |
+| `type` | No | Should be `"AIAgent"`. |
+| `name` | No | Human-readable agent name. |
+| `operator.id` | Conditional | DID or URI of the operating entity. Required when `operator` is present. |
+| `operator.name` | Conditional | Human-readable operator name. Required when `operator` is present. |
+| `model` | No | Model identifier (e.g. `claude-sonnet-4-6`). |
+| `session_id` | No | Opaque session identifier. |
+
+## Credential subject
+
+### `principal`
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | Yes | DID or URI identifying the human or org. |
+| `type` | No | `"HumanPrincipal"` or `"OrganizationPrincipal"`. |
+
+### `action`
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | Yes | Unique action ID. Format: `act_<uuid>`. |
+| `type` | Yes | Action type from the [taxonomy](/specification/action-taxonomy/). |
+| `risk_level` | Yes | `low`, `medium`, `high`, or `critical`. |
+| `target.system` | No | The system or service acted upon. |
+| `target.resource` | No | The specific resource within the system. |
+| `parameters_hash` | No | `sha256:` prefixed hash of action parameters (RFC 8785 canonical JSON). |
+| `timestamp` | Yes | ISO 8601 datetime when the action was executed. |
+| `trusted_timestamp` | No | Base64-encoded RFC 3161 TimeStampToken, or `null`. |
+
+### `intent`
+
+| Field | Required | Description |
+|---|---|---|
+| `conversation_hash` | No | `sha256:` hash of the conversation context. |
+| `prompt_preview` | No | Plain-text preview of the triggering prompt (may be truncated). |
+| `prompt_preview_truncated` | No | `true` if preview was truncated. |
+| `reasoning_hash` | No | `sha256:` hash of the agent's reasoning trace. |
+
+### `outcome`
+
+| Field | Required | Description |
+|---|---|---|
+| `status` | Yes | `success`, `failure`, or `pending`. |
+| `error` | No | Error message if `status` is `failure`. |
+| `reversible` | No | `true` if the action can be undone. |
+| `reversal_method` | No | Machine-readable reversal method (e.g. `gmail:undo_send`). |
+| `reversal_window_seconds` | No | Seconds within which reversal is possible. |
+| `reversal_of` | No | `urn:receipt:<uuid>` of the original receipt this receipt reverses. Present only on reversal receipts. |
+| `state_change.before_hash` | Conditional | `sha256:` hash of state before. Required when `state_change` is present. |
+| `state_change.after_hash` | Conditional | `sha256:` hash of state after. Required when `state_change` is present. |
+
+### `authorization`
+
+| Field | Required | Description |
+|---|---|---|
+| `scopes` | Conditional | Authorization scopes. Required when `authorization` is present. |
+| `granted_at` | Conditional | When authorization was granted. Required when `authorization` is present. |
+| `expires_at` | No | When authorization expires. |
+| `grant_ref` | No | Reference to authorization grant (e.g. Grantex token). |
+
+### `delegation`
+
+Present when this chain was spawned by delegation from another agent. All fields are required when `delegation` is present.
+
+| Field | Required | Description |
+|---|---|---|
+| `parent_chain_id` | Conditional | `chain_id` of the delegating agent's chain. Required when `delegation` is present. |
+| `parent_receipt_id` | Conditional | `id` of the receipt in the parent chain where delegation occurred. Required when `delegation` is present. |
+| `delegator.id` | Conditional | DID or URI of the delegating agent (the parent chain's issuer). Required when `delegation` is present. |
+
+### `chain`
+
+| Field | Required | Description |
+|---|---|---|
+| `chain_id` | Yes | Opaque identifier grouping receipts into a chain. |
+| `sequence` | Yes | Monotonically increasing integer, starting at `1`. |
+| `previous_receipt_hash` | Yes | `sha256:` hash of previous receipt, or `null` for first in chain. |
+
+## Proof
+
+| Field | Required | Description |
+|---|---|---|
+| `type` | Yes | Must be `"Ed25519Signature2020"`. |
+| `created` | Yes | ISO 8601 datetime when the proof was created. |
+| `verificationMethod` | Yes | DID URL of the signing key. |
+| `proofPurpose` | Yes | Must be `"assertionMethod"`. |
+| `proofValue` | Yes | Multibase-encoded (`z`-prefixed base58btc) Ed25519 signature. |
+
+## JSON Schema
+
+A machine-readable JSON Schema (draft 2020-12) is available at [`schema/action-receipt.schema.json`](https://github.com/agent-receipts/spec/blob/main/schema/action-receipt.schema.json).

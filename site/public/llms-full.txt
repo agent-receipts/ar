@@ -1,0 +1,138 @@
+# Agent Receipts — Full Context for LLMs
+
+> Cryptographically signed audit trails for AI agent actions
+
+The Agent Receipts protocol is an open standard for creating tamper-evident records of AI agent actions. It defines a standard format based on W3C Verifiable Credentials, signed with Ed25519, and hash-chained for integrity.
+
+## Problem
+
+AI agents act on behalf of humans — sending emails, modifying documents, making purchases — but no open standard exists for recording what an agent did, why it did it, whether it succeeded, and whether it can be undone. Existing vendor-specific logging (LangSmith, Arize) is proprietary, opt-in, and not tied to authorization or identity.
+
+## Design Principles
+
+1. Privacy-preserving by default — parameters are hashed, not stored in plaintext
+2. Built on existing standards — W3C VCs, Ed25519, SHA-256, RFC 3161
+3. Hash-chained for integrity — each receipt includes hash of previous receipt
+4. Agent-agnostic — works with any agent framework
+5. Human-readable and machine-verifiable
+6. Reversibility-aware — each receipt declares if the action can be undone
+7. Minimal by default, extensible by design
+
+## Schema Overview
+
+An Agent Receipt is a JSON object conforming to W3C VC Data Model 2.0:
+
+### Top-level fields (all required)
+- `@context`: ["https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"]
+- `id`: urn:receipt:<uuid>
+- `type`: ["VerifiableCredential", "AgentReceipt"]
+- `version`: "0.1.0"
+- `issuer`: { id, type?, name?, operator?, model?, session_id? }
+- `validFrom`: ISO 8601 datetime
+- `credentialSubject`: { principal, action, intent?, outcome, authorization?, delegation?, chain }
+- `proof`: { type: "Ed25519Signature2020", created, verificationMethod, proofPurpose: "assertionMethod", proofValue }
+
+### Action fields
+- `action.id`: act_<uuid>
+- `action.type`: Dot-separated type from taxonomy (e.g. "filesystem.file.read")
+- `action.risk_level`: low | medium | high | critical
+- `action.timestamp`: ISO 8601
+- `action.target`: { system?, resource? }
+- `action.parameters_hash`: sha256:<hex> hash of parameters
+
+### Outcome fields
+- `outcome.status`: success | failure | pending
+- `outcome.reversible`: boolean
+- `outcome.reversal_method`: machine-readable method ID
+- `outcome.reversal_window_seconds`: integer
+
+### Chain fields
+- `chain.chain_id`: groups receipts into a logical chain
+- `chain.sequence`: monotonically increasing integer starting at 1
+- `chain.previous_receipt_hash`: sha256:<hex> or null for first receipt
+
+## Minimal Receipt Example
+
+```json
+{
+  "@context": ["https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"],
+  "id": "urn:receipt:660e8400-e29b-41d4-a716-446655440001",
+  "type": ["VerifiableCredential", "AgentReceipt"],
+  "version": "0.1.0",
+  "issuer": { "id": "did:agent:my-agent" },
+  "validFrom": "2026-03-31T14:31:00Z",
+  "credentialSubject": {
+    "principal": { "id": "did:user:alice" },
+    "action": {
+      "id": "act_8a4b2c3d-e5f6-47a8-b9c0-d1e2f3a4b5c6",
+      "type": "filesystem.file.read",
+      "risk_level": "low",
+      "timestamp": "2026-03-31T14:31:00Z"
+    },
+    "outcome": { "status": "success" },
+    "chain": {
+      "sequence": 1,
+      "previous_receipt_hash": null,
+      "chain_id": "chain_session_xyz789"
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-03-31T14:31:01Z",
+    "verificationMethod": "did:agent:my-agent#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z..."
+  }
+}
+```
+
+## Action Taxonomy
+
+Hierarchical action types organized by domain:
+
+### Filesystem
+- filesystem.file.create (low), filesystem.file.read (low), filesystem.file.modify (medium), filesystem.file.delete (high), filesystem.file.move (medium), filesystem.directory.create (low), filesystem.directory.delete (high)
+
+### System
+- system.application.launch (low), system.application.control (medium), system.settings.modify (high), system.command.execute (high), system.browser.navigate (low), system.browser.form_submit (medium), system.browser.authenticate (high)
+
+### Planned domains (not yet in spec)
+- Communication (email, messaging, calendar)
+- Documents (document and spreadsheet operations)
+- Financial (payments, subscriptions, bookings)
+- Data (API calls, database operations)
+
+The `unknown` action type (default risk: medium) serves as a fallback for unclassified actions.
+
+Custom types use reverse-domain prefix: com.acme.crm.lead.create
+
+## Risk Levels
+
+- **low**: Read-only or easily reversible (read file, navigate URL, create draft)
+- **medium**: Modifies state but reversible or low-impact (edit document, move file)
+- **high**: Significant state change, hard to reverse (send email, delete file, share document)
+- **critical**: Financial commitment or irreversible (purchase, authorize payment)
+
+Implementations may escalate but must not downgrade risk levels.
+
+## Chain Verification
+
+1. Serialize receipt as RFC 8785 canonical JSON with proof field removed
+2. Issuer signs with Ed25519 private key
+3. Signature encoded as z-prefixed base58btc in proof.proofValue
+4. Each receipt's previous_receipt_hash links to SHA-256 of previous receipt's canonical form
+5. Chain verified by checking signatures and hash links in sequence order
+
+## Repositories
+
+- **spec** (https://github.com/agent-receipts/spec): Protocol specification, JSON Schema, action taxonomy
+- **sdk-ts** (https://github.com/agent-receipts/sdk-ts): TypeScript SDK — create, sign, verify receipts
+- **sdk-py** (https://github.com/agent-receipts/sdk-py): Python SDK — create, sign, verify receipts
+- **openclaw** (https://github.com/agent-receipts/openclaw): OpenClaw plugin for automatic receipt generation
+
+## Links
+
+- Documentation: https://agentreceipts.ai
+- Specification: https://agentreceipts.ai/specification/overview/
+- JSON Schema: https://github.com/agent-receipts/spec/blob/main/schema/agent-receipt.schema.json
+- GitHub org: https://github.com/agent-receipts

@@ -1,0 +1,6 @@
+/* Minimal custom styles — Starlight defaults are good */
+
+:root {
+  --sl-font-system: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}

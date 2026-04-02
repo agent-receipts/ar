@@ -1,0 +1,36 @@
+---
+title: Python SDK
+description: Python SDK for creating, signing, and verifying Agent Receipts.
+---
+
+The Python SDK (`agent-receipts`) provides tools for creating, signing, and verifying Agent Receipts in Python applications.
+
+**Repository:** [agent-receipts/sdk-py](https://github.com/agent-receipts/sdk-py)
+
+## Features
+
+- Create and sign Agent Receipts with Ed25519
+- Build and verify receipt chains
+- Validate receipts against the JSON Schema
+- Action taxonomy helpers and risk level utilities
+- Full type annotations (PEP 484)
+
+## Quick example
+
+```python
+from agent_receipts import create_receipt, sign_receipt
+
+receipt = create_receipt(
+    issuer={"id": "did:agent:my-agent"},
+    action={
+        "type": "filesystem.file.read",
+        "risk_level": "low",
+    },
+    principal={"id": "did:user:alice"},
+    outcome={"status": "success"},
+)
+
+signed = sign_receipt(receipt, private_key)
+```
+
+See [Installation](/sdk-py/installation/) to get started.

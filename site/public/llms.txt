@@ -1,0 +1,26 @@
+# Agent Receipts
+
+> Cryptographically signed audit trails for AI agent actions
+
+The Agent Receipts protocol is an open standard for creating tamper-evident records of AI agent actions. Each receipt is a W3C Verifiable Credential, signed with Ed25519, and hash-chained into a verifiable sequence.
+
+## Key links
+
+- Specification: https://agentreceipts.ai/specification/overview/
+- Getting Started: https://agentreceipts.ai/
+- GitHub: https://github.com/agent-receipts
+- Full context for LLMs: https://agentreceipts.ai/llms-full.txt
+
+## Repositories
+
+- spec: Protocol specification and JSON Schema
+- sdk-ts: TypeScript SDK for creating and verifying receipts
+- sdk-py: Python SDK for creating and verifying receipts
+- openclaw: OpenClaw plugin for automatic receipt generation
+
+## Core concepts
+
+- Agent Receipt: A signed record of a single agent action (W3C VC with type AgentReceipt)
+- Receipt Chain: Hash-linked sequence of receipts forming a tamper-evident log
+- Action Taxonomy: Hierarchical action types (filesystem, system — with more domains planned) with risk levels
+- Risk Levels: low, medium, high, critical — implementations may escalate but not downgrade

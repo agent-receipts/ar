@@ -1,0 +1,130 @@
+---
+title: Quick Start
+description: Create, sign, and verify your first Agent Receipt.
+---
+
+This guide walks you through creating, signing, and verifying an Agent Receipt using either the TypeScript or Python SDK.
+
+## TypeScript
+
+### 1. Install
+
+```bash
+npm install @agent-receipts/sdk-ts
+```
+
+### 2. Create and sign a receipt
+
+```typescript
+import {
+  createReceipt,
+  generateKeyPair,
+  signReceipt,
+  hashReceipt,
+} from "@agent-receipts/sdk-ts";
+
+const keys = generateKeyPair();
+
+const unsigned = createReceipt({
+  issuer: { id: "did:agent:my-agent" },
+  principal: { id: "did:user:alice" },
+  action: {
+    type: "filesystem.file.read",
+    risk_level: "low",
+    target: { system: "local", resource: "/docs/report.md" },
+  },
+  outcome: { status: "success" },
+  chain: {
+    sequence: 1,
+    previous_receipt_hash: null,
+    chain_id: "chain_session-1",
+  },
+});
+
+const receipt = signReceipt(unsigned, keys.privateKey, "did:agent:my-agent#key-1");
+const hash = hashReceipt(receipt);
+
+console.log(receipt.id);  // urn:receipt:<uuid>
+console.log(hash);        // sha256:<hex>
+```
+
+### 3. Store and query
+
+```typescript
+import { openStore } from "@agent-receipts/sdk-ts";
+
+const store = openStore("receipts.db");
+store.insert(receipt, hash);
+
+const chain = store.getChain("chain_session-1");
+console.log(`Chain has ${chain.length} receipt(s)`);
+
+store.close();
+```
+
+### 4. Verify a chain
+
+```typescript
+import { verifyChain } from "@agent-receipts/sdk-ts";
+
+const result = verifyChain(chain, keys.publicKey);
+console.log(result.valid);   // true
+console.log(result.length);  // number of receipts verified
+```
+
+## Python
+
+### 1. Install
+
+```bash
+pip install agent-receipts
+```
+
+### 2. Create and sign a receipt
+
+```python
+from attest_protocol import (
+    create_receipt,
+    generate_key_pair,
+    sign_receipt,
+    hash_receipt,
+)
+
+keys = generate_key_pair()
+
+unsigned = create_receipt(
+    issuer={"id": "did:agent:my-agent"},
+    principal={"id": "did:user:alice"},
+    action={
+        "type": "filesystem.file.read",
+        "risk_level": "low",
+        "target": {"system": "local", "resource": "/docs/report.md"},
+    },
+    outcome={"status": "success"},
+    chain={
+        "sequence": 1,
+        "previous_receipt_hash": None,
+        "chain_id": "chain_session-1",
+    },
+)
+
+receipt = sign_receipt(unsigned, keys.private_key)
+receipt_hash = hash_receipt(receipt)
+```
+
+### 3. Verify a chain
+
+```python
+from attest_protocol import verify_chain
+
+receipts = [receipt]  # or load from storage
+result = verify_chain(receipts, keys.public_key)
+print(result.valid)   # True
+print(result.length)  # number of receipts verified
+```
+
+## Next steps
+
+- Read the [Introduction](/) for background on the protocol
+- See the [Agent Receipt Schema](/specification/agent-receipt-schema/) for the full receipt structure
+- Explore the [Action Taxonomy](/specification/action-taxonomy/) to understand action types and risk levels

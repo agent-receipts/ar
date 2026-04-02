@@ -1,0 +1,94 @@
+---
+title: Action Taxonomy
+description: Standardized action types organized by domain with default risk levels.
+---
+
+The Action Taxonomy is a hierarchical vocabulary of action types, organized by domain. Each action type has a default risk level. Implementations may escalate risk levels based on context but must not downgrade them.
+
+The canonical machine-readable taxonomy is defined in [`spec/taxonomy/action-types.json`](https://github.com/agent-receipts/spec/blob/main/spec/taxonomy/action-types.json).
+
+## Filesystem
+
+| Action type | Description | Default risk |
+|---|---|---|
+| `filesystem.file.create` | Create a file | low |
+| `filesystem.file.read` | Read a file | low |
+| `filesystem.file.modify` | Modify a file | medium |
+| `filesystem.file.delete` | Delete a file | high |
+| `filesystem.file.move` | Move or rename a file | medium |
+| `filesystem.directory.create` | Create a directory | low |
+| `filesystem.directory.delete` | Delete a directory | high |
+
+## System
+
+| Action type | Description | Default risk |
+|---|---|---|
+| `system.application.launch` | Launch an application | low |
+| `system.application.control` | Control an application via UI automation | medium |
+| `system.settings.modify` | Modify system or app settings | high |
+| `system.command.execute` | Execute a shell command | high |
+| `system.browser.navigate` | Navigate to a URL | low |
+| `system.browser.form_submit` | Submit a web form | medium |
+| `system.browser.authenticate` | Log into a service | high |
+
+## Communication
+
+| Action type | Description | Default risk |
+|---|---|---|
+| `communication.email.send` | Send an email | high |
+| `communication.email.draft` | Create a draft email | medium |
+| `communication.email.read` | Read email content | low |
+| `communication.email.delete` | Delete an email | high |
+| `communication.message.send` | Send a chat message (Slack, Teams, etc.) | high |
+| `communication.calendar.create` | Create a calendar event | medium |
+| `communication.calendar.modify` | Modify a calendar event | medium |
+| `communication.calendar.delete` | Delete a calendar event | high |
+
+## Documents
+
+| Action type | Description | Default risk |
+|---|---|---|
+| `document.file.create` | Create a new document | low |
+| `document.file.modify` | Modify document content | medium |
+| `document.file.delete` | Delete a document | high |
+| `document.file.share` | Share a document with others | high |
+| `document.spreadsheet.modify_cell` | Modify spreadsheet cell values | medium |
+| `document.spreadsheet.modify_formula` | Modify spreadsheet formulas | high |
+| `document.spreadsheet.modify_structure` | Add/remove sheets, rows, columns | medium |
+| `document.presentation.modify_slide` | Modify presentation slide content | medium |
+
+## Financial
+
+| Action type | Description | Default risk |
+|---|---|---|
+| `financial.payment.initiate` | Initiate a payment or purchase | critical |
+| `financial.payment.authorize` | Authorize a pending payment | critical |
+| `financial.subscription.create` | Create a subscription | critical |
+| `financial.subscription.cancel` | Cancel a subscription | high |
+| `financial.booking.create` | Book travel, accommodation, etc. | high |
+| `financial.booking.cancel` | Cancel a booking | high |
+
+## Data
+
+| Action type | Description | Default risk |
+|---|---|---|
+| `data.api.read` | Read data from an external API | low |
+| `data.api.write` | Write data to an external API | medium |
+| `data.api.delete` | Delete data via an external API | high |
+| `data.database.query` | Query a database | low |
+| `data.database.modify` | Modify database records | high |
+
+## Unknown
+
+The `unknown` action type (default risk: medium) serves as a fallback for any action that cannot be classified. The original tool name or method identifier should be preserved in `action.target` for later classification.
+
+## Custom action types
+
+Implementations may define action types beyond those listed above. Custom action types must use a reverse-domain prefix to avoid collisions with the standard taxonomy:
+
+```
+com.acme.crm.lead.create
+io.example.ml.model.deploy
+```
+
+Custom types must declare a default risk level. The `unknown` fallback still applies for any action that cannot be classified.

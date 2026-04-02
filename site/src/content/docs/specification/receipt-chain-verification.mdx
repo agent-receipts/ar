@@ -1,0 +1,106 @@
+---
+title: Receipt Chain Verification
+description: How to verify receipt chains, signatures, and delegation.
+---
+
+Agent Receipts are hash-chained into tamper-evident sequences. This page describes the canonical form, signing process, and verification algorithms.
+
+<div style="background: #181a24; border: 1px solid #2a2d3a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<svg viewBox="0 0 600 170" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+  <defs>
+    <marker id="hash-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#a5d6a7" />
+    </marker>
+    <marker id="sign-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7c93f5" />
+    </marker>
+  </defs>
+  <text x="10" y="14" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="9">SIGNING & CHAIN LINKING</text>
+  {/* Signing flow (top) */}
+  <rect x="10" y="24" width="100" height="34" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="60" y="38" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Receipt</text>
+  <text x="60" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">(no proof yet)</text>
+  <line x1="110" y1="41" x2="140" y2="41" stroke="#7c93f5" stroke-width="1" marker-end="url(#sign-arrow)"/>
+  <rect x="148" y="24" width="100" height="34" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="198" y="38" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">RFC 8785</text>
+  <text x="198" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">canonicalize</text>
+  <line x1="248" y1="41" x2="278" y2="41" stroke="#7c93f5" stroke-width="1" marker-end="url(#sign-arrow)"/>
+  <rect x="286" y="24" width="100" height="34" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="336" y="38" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Ed25519 sign</text>
+  <text x="336" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">z-base58btc</text>
+  <line x1="386" y1="41" x2="416" y2="41" stroke="#7c93f5" stroke-width="1" marker-end="url(#sign-arrow)"/>
+  <rect x="424" y="24" width="166" height="34" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
+  <text x="507" y="45" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="10">Signed Receipt</text>
+  {/* Chain linking (bottom) */}
+  <rect x="10" y="85" width="170" height="70" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="95" y="103" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">Receipt 1</text>
+  <text x="95" y="118" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="9">prev_hash: null</text>
+  <text x="95" y="145" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="8">SHA-256 of canonical form ──▶</text>
+  <rect x="215" y="85" width="170" height="70" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="300" y="103" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">Receipt 2</text>
+  <text x="300" y="118" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="9">prev_hash: sha256:a3f1...</text>
+  <text x="300" y="145" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="8">SHA-256 of canonical form ──▶</text>
+  <rect x="420" y="85" width="170" height="70" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="505" y="103" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">Receipt 3</text>
+  <text x="505" y="118" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="9">prev_hash: sha256:b4e2...</text>
+</svg>
+</div>
+
+## Canonical form
+
+For hashing and signing, receipts must be serialized using the **JSON Canonicalization Scheme (RFC 8785)** with the `proof` field removed before hashing. This approach aligns with the W3C Verifiable Credentials Data Integrity specification, though the signing procedure defined here is intentionally simplified.
+
+## Signing
+
+The issuer signs the canonical receipt (proof field excluded) with its Ed25519 private key. The signature is encoded as a multibase string (`z`-prefixed base58btc) and placed in `proof.proofValue`.
+
+## Chain integrity verification
+
+To verify a receipt chain:
+
+1. Retrieve all receipts for the chain, ordered by `chain.sequence`. Let *n* be the number of receipts.
+2. For each receipt *R(i)* (0-based index):
+   - **a.** Verify the `proof` signature against the issuer's public key at `proof.verificationMethod`.
+   - **b.** Compute the hex-encoded SHA-256 digest of the RFC 8785 canonical form of *R(i)* with the `proof` field removed.
+   - **c.** If *i < n - 1*, confirm *R(i+1)*'s `chain.previous_receipt_hash` equals `sha256:` concatenated with that hex digest.
+3. For each receipt *R(i)* where *i > 0*, confirm `chain.sequence` equals *R(i-1)*'s `chain.sequence` + 1.
+4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null`.
+
+If any step fails, the chain is broken at that point. Receipts before the break may still be individually valid; receipts after are suspect.
+
+## Reversal receipts
+
+Receipts are **immutable** once issued. To record that an action was reversed, issue a new receipt appended to the same chain with:
+
+- The same `action.type` as the original receipt
+- `outcome.status`: `"success"` if the reversal succeeded, `"failure"` if it did not
+- A `reversal_of` field referencing the `id` of the original receipt
+
+The chain is always append-only; the original receipt is never mutated or removed.
+
+## Chain issuer model
+
+A chain MUST have a single issuer. All receipts within a chain MUST have the same `issuer.id`. Delegated agents MUST create a new chain and link it to the parent chain via the `delegation` field.
+
+## Delegation verification
+
+When a receipt chain includes a `delegation` field:
+
+1. Resolve `delegation.parent_chain_id` and retrieve the parent chain.
+2. Locate the receipt with `id` matching `delegation.parent_receipt_id` in the parent chain.
+3. Confirm `delegation.delegator.id` matches the `issuer.id` of the parent chain's receipts.
+4. Confirm the `principal` in the delegated chain matches the `principal` in the parent chain — the human on whose behalf actions are taken does not change across delegation.
+
+If any step fails, the delegation link is unverifiable. The delegated chain's receipts are still individually valid but cannot be traced back to the parent chain.
+
+## Trusted timestamp verification
+
+When `action.trusted_timestamp` is present and non-null:
+
+1. Base64-decode the value to obtain the DER-encoded RFC 3161 `TimeStampToken`.
+2. Verify the TSA's signature on the `TimeStampToken` against the TSA's certificate.
+3. Extract the `MessageImprint` hash from the `TimeStampToken`.
+4. Confirm the `MessageImprint` hash matches the SHA-256 digest of the receipt's canonical form (proof field removed).
+5. Confirm the TSA timestamp falls within a reasonable window of `action.timestamp` (implementation-defined tolerance).
+
+Trusted timestamps are optional. When present, they provide independent evidence of when the receipt was created, which cannot be backdated by the issuer.

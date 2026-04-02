@@ -1,0 +1,176 @@
+---
+title: How It Works
+description: A visual walkthrough of Agent Receipts — structure, signing, chaining, and delegation.
+---
+
+A visual guide to the core mechanics of the Agent Receipt Protocol.
+
+## What's in a receipt
+
+Every Agent Receipt is a [W3C Verifiable Credential](https://www.w3.org/TR/vc-data-model-2.0/) recording a single agent action. It captures *what* happened, *who* authorized it, *whether* it succeeded, and *where* it sits in a tamper-evident chain.
+
+<div style="background: #181a24; border: 1px solid #2a2d3a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<svg viewBox="0 0 600 260" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+  <rect x="10" y="10" width="580" height="240" rx="6" fill="none" stroke="#7c93f5" stroke-width="1.5" stroke-dasharray="4"/>
+  <text x="20" y="28" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="11" font-weight="600">Agent Receipt (W3C Verifiable Credential)</text>
+  <rect x="20" y="38" width="80" height="22" rx="3" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="60" y="53" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">id</text>
+  <rect x="108" y="38" width="80" height="22" rx="3" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="148" y="53" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">issuer</text>
+  <rect x="196" y="38" width="80" height="22" rx="3" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="236" y="53" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">validFrom</text>
+  <rect x="284" y="38" width="80" height="22" rx="3" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="324" y="53" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">version</text>
+  <rect x="20" y="72" width="560" height="130" rx="6" fill="none" stroke="#7c93f5" stroke-width="1"/>
+  <text x="30" y="88" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">credentialSubject</text>
+  <rect x="30" y="96" width="120" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="90" y="113" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">principal</text>
+  <text x="90" y="126" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">who authorized it</text>
+  <rect x="160" y="96" width="120" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="220" y="113" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">action</text>
+  <text x="220" y="126" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">what happened</text>
+  <rect x="290" y="96" width="120" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="350" y="113" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">outcome</text>
+  <text x="350" y="126" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">did it succeed?</text>
+  <rect x="420" y="96" width="150" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="495" y="113" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">chain</text>
+  <text x="495" y="126" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">position in sequence</text>
+  <rect x="30" y="146" width="120" height="40" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="90" y="163" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">intent</text>
+  <text x="90" y="176" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">why the agent acted</text>
+  <rect x="160" y="146" width="120" height="40" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="220" y="163" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">authorization</text>
+  <text x="220" y="176" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">scopes and grants</text>
+  <rect x="290" y="146" width="120" height="40" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="350" y="163" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">delegation</text>
+  <text x="350" y="176" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">parent chain link</text>
+  <rect x="20" y="212" width="560" height="28" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
+  <text x="300" y="230" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="10">proof — Ed25519Signature2020 (signs the canonical receipt)</text>
+  <rect x="380" y="38" width="10" height="10" rx="2" fill="none" stroke="#7c93f5" stroke-width="1"/>
+  <text x="396" y="47" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">required</text>
+  <rect x="450" y="38" width="10" height="10" rx="2" fill="none" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="466" y="47" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">optional</text>
+</svg>
+</div>
+
+The four required sections — **principal**, **action**, **outcome**, and **chain** — are always present. Optional sections like **intent** (why the agent acted) and **delegation** (who delegated the task) add context when available.
+
+## How receipts are signed
+
+Before a receipt can be trusted, it needs a cryptographic signature proving the issuer created it and the contents haven't been altered.
+
+<div style="background: #181a24; border: 1px solid #2a2d3a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<svg viewBox="0 0 600 60" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+  <defs>
+    <marker id="s-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7c93f5" />
+    </marker>
+  </defs>
+  <rect x="10" y="10" width="100" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="60" y="27" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Receipt fields</text>
+  <text x="60" y="40" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">(no proof yet)</text>
+  <line x1="110" y1="30" x2="138" y2="30" stroke="#7c93f5" stroke-width="1" marker-end="url(#s-arrow)"/>
+  <rect x="146" y="10" width="100" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="196" y="27" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">RFC 8785</text>
+  <text x="196" y="40" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">canonicalize</text>
+  <line x1="246" y1="30" x2="274" y2="30" stroke="#7c93f5" stroke-width="1" marker-end="url(#s-arrow)"/>
+  <rect x="282" y="10" width="100" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="332" y="27" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Ed25519 sign</text>
+  <text x="332" y="40" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">z-base58btc</text>
+  <line x1="382" y1="30" x2="410" y2="30" stroke="#7c93f5" stroke-width="1" marker-end="url(#s-arrow)"/>
+  <rect x="418" y="10" width="172" height="40" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
+  <text x="504" y="34" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="10">Signed Receipt</text>
+</svg>
+</div>
+
+1. Start with the receipt fields (everything except `proof`)
+2. Serialize to **RFC 8785** canonical JSON — deterministic byte ordering
+3. Sign the canonical bytes with the issuer's **Ed25519** private key
+4. Encode the signature as **z-prefixed base58btc** and attach as `proof.proofValue`
+
+The same canonical bytes are also SHA-256 hashed to produce the link for the *next* receipt in the chain.
+
+## How receipts chain
+
+Each receipt includes the SHA-256 hash of the previous receipt's canonical form. This creates a tamper-evident sequence — modifying any receipt breaks the chain from that point forward.
+
+<div style="background: #181a24; border: 1px solid #2a2d3a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<svg viewBox="0 0 640 100" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+  <defs>
+    <marker id="c-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#a5d6a7" />
+    </marker>
+  </defs>
+  <rect x="10" y="15" width="170" height="70" rx="6" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="95" y="38" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">Receipt 1</text>
+  <text x="95" y="53" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="9">filesystem.file.read</text>
+  <text x="95" y="72" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">prev_hash: null</text>
+  <line x1="180" y1="50" x2="225" y2="50" stroke="#a5d6a7" stroke-width="1.5" marker-end="url(#c-arrow)"/>
+  <text x="203" y="42" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="7">SHA-256</text>
+  <rect x="235" y="15" width="170" height="70" rx="6" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="320" y="38" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">Receipt 2</text>
+  <text x="320" y="53" text-anchor="middle" fill="#f5c77c" font-family="'SF Mono', monospace" font-size="9">filesystem.file.delete</text>
+  <text x="320" y="72" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="8">prev_hash: sha256:a3f1...</text>
+  <line x1="405" y1="50" x2="450" y2="50" stroke="#a5d6a7" stroke-width="1.5" marker-end="url(#c-arrow)"/>
+  <text x="428" y="42" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="7">SHA-256</text>
+  <rect x="460" y="15" width="170" height="70" rx="6" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="545" y="38" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">Receipt 3</text>
+  <text x="545" y="53" text-anchor="middle" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="9">email.send</text>
+  <text x="545" y="72" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="8">prev_hash: sha256:b4e2...</text>
+</svg>
+</div>
+
+All receipts in a chain share the same `chain_id` and `issuer.id`. A chain must have exactly one issuer — when an agent delegates work, the delegated agent starts a new chain.
+
+## How delegation works
+
+When Agent A delegates a task to Agent B, Agent B creates its own receipt chain and links back to Agent A's chain using the `delegation` field.
+
+<div style="background: #181a24; border: 1px solid #2a2d3a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<svg viewBox="0 0 600 180" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+  <defs>
+    <marker id="d-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7c93f5" />
+    </marker>
+    <marker id="d-chain" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#a5d6a7" />
+    </marker>
+    <marker id="d-deleg" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#f5c77c" />
+    </marker>
+  </defs>
+  {/* Agent A's chain */}
+  <text x="10" y="16" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">Agent A's chain</text>
+  <rect x="10" y="24" width="140" height="50" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="80" y="46" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Receipt 1</text>
+  <text x="80" y="60" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">file.read</text>
+  <line x1="150" y1="49" x2="178" y2="49" stroke="#a5d6a7" stroke-width="1" marker-end="url(#d-chain)"/>
+  <rect x="186" y="24" width="140" height="50" rx="4" fill="#181a24" stroke="#f5c77c" stroke-width="1.5"/>
+  <text x="256" y="46" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Receipt 2</text>
+  <text x="256" y="60" text-anchor="middle" fill="#f5c77c" font-family="'SF Mono', monospace" font-size="8">delegates to B</text>
+  <line x1="326" y1="49" x2="354" y2="49" stroke="#a5d6a7" stroke-width="1" marker-end="url(#d-chain)"/>
+  <rect x="362" y="24" width="140" height="50" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="432" y="46" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Receipt 3</text>
+  <text x="432" y="60" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">email.send</text>
+  {/* Delegation arrow */}
+  <line x1="256" y1="74" x2="256" y2="100" stroke="#f5c77c" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#d-deleg)"/>
+  <text x="268" y="92" fill="#f5c77c" font-family="'SF Mono', monospace" font-size="8">delegation</text>
+  {/* Agent B's chain */}
+  <text x="10" y="118" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">Agent B's chain (delegated)</text>
+  <rect x="186" y="108" width="160" height="56" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="266" y="130" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Receipt 1</text>
+  <text x="266" y="143" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">api.read</text>
+  <text x="266" y="156" text-anchor="middle" fill="#f5c77c" font-family="'SF Mono', monospace" font-size="7">delegation.parent_chain_id</text>
+  <line x1="346" y1="136" x2="374" y2="136" stroke="#a5d6a7" stroke-width="1" marker-end="url(#d-chain)"/>
+  <rect x="382" y="108" width="140" height="56" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="452" y="130" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Receipt 2</text>
+  <text x="452" y="143" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">api.write</text>
+</svg>
+</div>
+
+Key rules:
+- A chain **must** have a single issuer — Agent B cannot add receipts to Agent A's chain
+- The delegated chain's first receipt carries a `delegation` field with `parent_chain_id`, `parent_receipt_id`, and `delegator.id`
+- Both chains share the same **principal** — the human who authorized the work doesn't change across delegation
+
+For the full field reference, see the [Agent Receipt Schema](/specification/agent-receipt-schema/). For verification algorithms, see [Receipt Chain Verification](/specification/receipt-chain-verification/).

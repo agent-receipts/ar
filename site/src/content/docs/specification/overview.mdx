@@ -1,0 +1,109 @@
+---
+title: Specification Overview
+description: Design principles and core concepts of the Agent Receipt Protocol.
+---
+
+import { Badge } from "@astrojs/starlight/components";
+
+<Badge text="v0.1.0" variant="note" /> <Badge text="Draft" variant="caution" />
+
+The Agent Receipt Protocol defines a standard format for cryptographically signed records of AI agent actions. This page covers the design principles and core concepts. For the full specification, see the [spec source on GitHub](https://github.com/agent-receipts/spec).
+
+## Design principles
+
+1. **Privacy-preserving by default.** Parameters are hashed, not stored in plaintext. The human principal controls what is disclosed. Sensitive data never appears in receipts — only hashes and user-controlled previews.
+
+2. **Built on existing standards.** W3C Verifiable Credentials Data Model 2.0 for structure. Ed25519 for signing. SHA-256 for hashing. RFC 3161 for trusted timestamps. No novel cryptographic primitives.
+
+3. **Hash-chained for integrity.** Each receipt includes the hash of the previous receipt, forming a tamper-evident chain. Breaking the chain is detectable.
+
+4. **Agent-agnostic.** The spec does not assume MCP, OpenAI function calling, or any specific agent framework. Any agent that can produce JSON and sign it can emit receipts.
+
+5. **Human-readable and machine-verifiable.** Receipts can be displayed as a timeline to end users and cryptographically verified by auditors and compliance tools.
+
+6. **Reversibility-aware.** Every receipt declares whether the action can be undone, and if so, how. This enables downstream tooling to offer "undo" capabilities.
+
+7. **Minimal by default, extensible by design.** The core schema is small. Domain-specific extensions (financial actions, healthcare, etc.) can be layered on via additional `@context` URIs.
+
+## Core concepts
+
+<div style="background: #181a24; border: 1px solid #2a2d3a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<svg viewBox="0 0 600 260" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+  {/* Top-level fields */}
+  <rect x="10" y="10" width="580" height="240" rx="6" fill="none" stroke="#7c93f5" stroke-width="1.5" stroke-dasharray="4"/>
+  <text x="20" y="28" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="11" font-weight="600">Agent Receipt (W3C Verifiable Credential)</text>
+  <rect x="20" y="38" width="80" height="22" rx="3" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="60" y="53" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">id</text>
+  <rect x="108" y="38" width="80" height="22" rx="3" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="148" y="53" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">issuer</text>
+  <rect x="196" y="38" width="80" height="22" rx="3" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="236" y="53" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">validFrom</text>
+  <rect x="284" y="38" width="80" height="22" rx="3" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="324" y="53" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">version</text>
+  {/* credentialSubject */}
+  <rect x="20" y="72" width="560" height="130" rx="6" fill="none" stroke="#7c93f5" stroke-width="1"/>
+  <text x="30" y="88" fill="#7c93f5" font-family="'SF Mono', monospace" font-size="10">credentialSubject</text>
+  {/* Required sections */}
+  <rect x="30" y="96" width="120" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="90" y="113" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">principal</text>
+  <text x="90" y="126" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">id, type</text>
+  <rect x="160" y="96" width="120" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="220" y="113" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">action</text>
+  <text x="220" y="126" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">type, risk, timestamp</text>
+  <rect x="290" y="96" width="120" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="350" y="113" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">outcome</text>
+  <text x="350" y="126" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">status, reversible</text>
+  <rect x="420" y="96" width="150" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="495" y="113" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="10">chain</text>
+  <text x="495" y="126" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">sequence, prev_hash</text>
+  {/* Optional sections */}
+  <rect x="30" y="146" width="120" height="40" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="90" y="163" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">intent</text>
+  <text x="90" y="176" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">prompt, reasoning</text>
+  <rect x="160" y="146" width="120" height="40" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="220" y="163" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">authorization</text>
+  <text x="220" y="176" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">scopes, grant</text>
+  <rect x="290" y="146" width="120" height="40" rx="4" fill="#181a24" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="350" y="163" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="10">delegation</text>
+  <text x="350" y="176" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">parent chain ref</text>
+  {/* proof */}
+  <rect x="20" y="212" width="560" height="28" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
+  <text x="300" y="230" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="10">proof — Ed25519Signature2020 (signs canonical receipt)</text>
+  {/* Legend */}
+  <rect x="380" y="38" width="10" height="10" rx="2" fill="none" stroke="#7c93f5" stroke-width="1"/>
+  <text x="396" y="47" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">required</text>
+  <rect x="450" y="38" width="10" height="10" rx="2" fill="none" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3"/>
+  <text x="466" y="47" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">optional</text>
+</svg>
+</div>
+
+### Agent Receipt
+
+A cryptographically signed record of a single action taken by an AI agent on behalf of a human principal. Modeled as a W3C Verifiable Credential with type `AgentReceipt`.
+
+### Receipt Chain
+
+An ordered sequence of Agent Receipts linked by hash references. Each receipt contains the hash of the previous receipt in the chain, creating a tamper-evident log. The first receipt in a chain has a `null` previous hash.
+
+### Action Taxonomy
+
+A standardized vocabulary of action types, organized by domain and risk level. The taxonomy enables cross-agent comparison and risk classification. See [Action Taxonomy](/specification/action-taxonomy/).
+
+### Principal
+
+The human (or organization) on whose behalf the agent acted. Identified by a DID or URI. The principal is the entity who authorized the action, not the entity that built or operates the agent.
+
+### Issuer
+
+The agent (or agent platform) that performed the action and produced the receipt. The issuer signs the receipt with its private key.
+
+## Relationship to existing work
+
+| Project | Relationship |
+|---|---|
+| **C2PA / Content Credentials** | Inspiration. Extends signed provenance from media assets to agent actions. |
+| **W3C Verifiable Credentials** | Agent Receipts are W3C VCs using Data Model 2.0 as the envelope. |
+| **W3C DIDs** | Agent and principal identities are expressed as DIDs. |
+| **Grantex** | Complementary. Grantex handles authorization; Agent Receipts handle audit. (Early-stage IETF draft — not yet widely adopted.) |
+| **AgentStamp** | Overlapping in audit trail. AgentStamp is narrower (trust verification only). (Research proposal — no public implementation.) |
+| **MolTrust** | Complementary. Could serve as the identity layer for agent DIDs. (Research proposal — no public implementation.) |
