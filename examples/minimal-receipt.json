@@ -1,0 +1,39 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://agentreceipts.ai/context/v1"
+  ],
+  "id": "urn:receipt:660e8400-e29b-41d4-a716-446655440001",
+  "type": ["VerifiableCredential", "AgentReceipt"],
+  "version": "0.1.0",
+  "issuer": {
+    "id": "did:agent:example-agent-instance-001"
+  },
+  "validFrom": "2026-03-31T14:31:00Z",
+  "credentialSubject": {
+    "principal": {
+      "id": "did:user:alice"
+    },
+    "action": {
+      "id": "act_8a4b2c3d-e5f6-47a8-b9c0-d1e2f3a4b5c6",
+      "type": "filesystem.file.read",
+      "risk_level": "low",
+      "timestamp": "2026-03-31T14:31:00Z"
+    },
+    "outcome": {
+      "status": "success"
+    },
+    "chain": {
+      "sequence": 1,
+      "previous_receipt_hash": null,
+      "chain_id": "chain_session_abc123"
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-03-31T14:31:01Z",
+    "verificationMethod": "did:agent:example-agent-instance-001#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z3MvGcVxzRYMCEBHsRuzVoweEL1GEjVnmRpkuFxPDXBigSxABTEwVLmJyAAitRviAoJK7eDsq3sLjg6KYRbXcUZ1v"
+  }
+}

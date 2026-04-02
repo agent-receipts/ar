@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON syntax
+        run: |
+          echo "Checking JSON files..."
+          failed=0
+          for f in $(find schema spec examples -name '*.json'); do
+            if python3 -m json.tool "$f" > /dev/null 2>&1; then
+              echo "  ✓ $f"
+            else
+              echo "  ✗ $f"
+              failed=1
+            fi
+          done
+          exit $failed
+
+      - name: Install ajv-cli
+        run: npm install -g ajv-cli ajv-formats
+
+      - name: Validate taxonomy against schema
+        run: |
+          ajv validate \
+            -s schema/taxonomy.schema.json \
+            -d spec/taxonomy/action-types.json \
+            --spec=draft2020 \
+            -c ajv-formats
+
+      - name: Validate receipt schema is valid JSON Schema
+        run: |
+          ajv compile \
+            -s schema/agent-receipt.schema.json \
+            --spec=draft2020 \
+            -c ajv-formats
+
+      - name: Validate example receipts against schema
+        run: |
+          shopt -s nullglob
+          files=(examples/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No example files found in examples/"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "Validating $f..."
+            ajv validate \
+              -s schema/agent-receipt.schema.json \
+              -d "$f" \
+              --spec=draft2020 \
+              -c ajv-formats
+          done

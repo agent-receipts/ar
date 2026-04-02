@@ -1,0 +1,74 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://agentreceipts.ai/context/v1"
+  ],
+  "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+  "type": ["VerifiableCredential", "AgentReceipt"],
+  "version": "0.1.0",
+  "issuer": {
+    "id": "did:agent:claude-cowork-instance-abc123",
+    "type": "AIAgent",
+    "name": "Claude Cowork",
+    "operator": {
+      "id": "did:org:anthropic",
+      "name": "Anthropic"
+    },
+    "model": "claude-sonnet-4-6",
+    "session_id": "session_xyz789"
+  },
+  "validFrom": "2026-03-31T14:30:00Z",
+  "credentialSubject": {
+    "principal": {
+      "id": "did:user:otto-abc",
+      "type": "HumanPrincipal"
+    },
+    "action": {
+      "id": "act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5",
+      "type": "communication.email.send",
+      "risk_level": "high",
+      "target": {
+        "system": "mail.google.com",
+        "resource": "email:compose"
+      },
+      "parameters_hash": "sha256:a3f1c2d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1d6",
+      "timestamp": "2026-03-31T14:30:00Z",
+      "trusted_timestamp": null
+    },
+    "intent": {
+      "conversation_hash": "sha256:b4e2d1f3a5c6b7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1e7",
+      "prompt_preview": "Send the Q3 report to the team",
+      "prompt_preview_truncated": true,
+      "reasoning_hash": "sha256:c5f3e2d4a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2f8"
+    },
+    "outcome": {
+      "status": "success",
+      "error": null,
+      "reversible": true,
+      "reversal_method": "gmail:undo_send",
+      "reversal_window_seconds": 30,
+      "state_change": {
+        "before_hash": "sha256:d604f3e5a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3a9",
+        "after_hash": "sha256:e7a504f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4ba"
+      }
+    },
+    "authorization": {
+      "scopes": ["email:send", "drive:read"],
+      "granted_at": "2026-03-31T14:00:00Z",
+      "expires_at": "2026-03-31T15:00:00Z",
+      "grant_ref": null
+    },
+    "chain": {
+      "sequence": 1,
+      "previous_receipt_hash": null,
+      "chain_id": "chain_session_xyz789"
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-03-31T14:30:01Z",
+    "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z4hDJKeC2x8yQBKg7TFvGr9NQRHyJSRcxp1BHoANGvSapfEw2KYRbXcUZ1vABTEwVLmJyAAitRviAoJK7eDsq3sLj"
+  }
+}

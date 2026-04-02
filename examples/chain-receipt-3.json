@@ -1,0 +1,46 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://agentreceipts.ai/context/v1"
+  ],
+  "id": "urn:receipt:a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b503",
+  "type": ["VerifiableCredential", "AgentReceipt"],
+  "version": "0.1.0",
+  "issuer": {
+    "id": "did:agent:file-manager-agent-001",
+    "type": "AIAgent",
+    "name": "File Manager"
+  },
+  "validFrom": "2026-03-31T10:02:00Z",
+  "credentialSubject": {
+    "principal": {
+      "id": "did:user:bob"
+    },
+    "action": {
+      "id": "act_b94378cf-ba6f-4dd3-81f6-f01396ecb857",
+      "type": "filesystem.file.delete",
+      "risk_level": "high",
+      "target": {
+        "system": "local",
+        "resource": "/home/bob/reports/q3-old.csv"
+      },
+      "timestamp": "2026-03-31T10:02:00Z"
+    },
+    "outcome": {
+      "status": "success",
+      "reversible": false
+    },
+    "chain": {
+      "sequence": 3,
+      "previous_receipt_hash": "sha256:d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5",
+      "chain_id": "chain_file_cleanup_001"
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-03-31T10:02:01Z",
+    "verificationMethod": "did:agent:file-manager-agent-001#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z4YmZmAnBaCpDqErFsGtHuJvJwKxMyMzNaAbPcQdResfTgUhVWjXkYmZmAnBaCpDqErFsGtHuJvJwKxMyMzNaAb"
+  }
+}

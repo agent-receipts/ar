@@ -1,0 +1,52 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://agentreceipts.ai/context/v1"
+  ],
+  "id": "urn:receipt:f897b83b-a36b-472e-a5e9-8a064bf57cf9",
+  "type": ["VerifiableCredential", "AgentReceipt"],
+  "version": "0.1.0",
+  "issuer": {
+    "id": "did:agent:sub-agent-research-002",
+    "type": "AIAgent",
+    "name": "Research Sub-Agent"
+  },
+  "validFrom": "2026-03-31T15:00:00Z",
+  "credentialSubject": {
+    "principal": {
+      "id": "did:user:alice"
+    },
+    "action": {
+      "id": "act_a6981255-2749-49e1-9a1f-d8de5f419ac4",
+      "type": "data.api.read",
+      "risk_level": "low",
+      "target": {
+        "system": "api.example.com",
+        "resource": "/v1/reports/q3"
+      },
+      "timestamp": "2026-03-31T15:00:00Z"
+    },
+    "outcome": {
+      "status": "success"
+    },
+    "delegation": {
+      "parent_chain_id": "chain_session_xyz789",
+      "parent_receipt_id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+      "delegator": {
+        "id": "did:agent:claude-cowork-instance-abc123"
+      }
+    },
+    "chain": {
+      "sequence": 1,
+      "previous_receipt_hash": null,
+      "chain_id": "chain_delegated_research_001"
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-03-31T15:00:01Z",
+    "verificationMethod": "did:agent:sub-agent-research-002#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z5ZnAaBpCqDrEsFtGuHvJwJxKyNzMaNbAcPdQeRfSgThUVjWkXmYmZnAaBpCqDrEsFtGuHvJwJxKyNzMaNbAcPd"
+  }
+}
