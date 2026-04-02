@@ -9,7 +9,7 @@ describe("loadTaxonomyConfig", () => {
 	let tempDir: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), "attest-config-"));
+		tempDir = mkdtempSync(join(tmpdir(), "ar-config-"));
 	});
 
 	afterEach(() => {
