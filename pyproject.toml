@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-receipts"
+version = "0.2.2"
+description = "Python SDK for the Agent Receipts protocol"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "Otto Jongerius" }]
+keywords = ["ai", "agent", "audit", "receipts", "verifiable-credentials"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "cryptography>=41.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/agent-receipts/sdk-py"
+Repository = "https://github.com/agent-receipts/sdk-py"
+Issues = "https://github.com/agent-receipts/sdk-py/issues"
+Spec = "https://github.com/agent-receipts/spec"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.9",
+    "pyright>=1.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_receipts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "TCH", # type-checking imports
+]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+include = ["src"]

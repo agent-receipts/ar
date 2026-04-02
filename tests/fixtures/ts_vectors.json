@@ -1,0 +1,139 @@
+{
+  "keys": {
+    "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZMzh2Qtdx/p40WlXhD+gKmaTDv3rLGm6TeY7TsJUKSQ=\n-----END PUBLIC KEY-----\n",
+    "privateKey": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIJqomA2cjqhLUYPhkMJyg4+A7hU8GiZtVzkN0Yz6jJPF\n-----END PRIVATE KEY-----\n"
+  },
+  "canonicalization": {
+    "simpleInput": {
+      "b": 2,
+      "a": 1,
+      "c": [
+        3,
+        1,
+        2
+      ]
+    },
+    "simpleExpected": "{\"a\":1,\"b\":2,\"c\":[3,1,2]}",
+    "receiptInput": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://attest.sh/v1"
+      ],
+      "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.1.0",
+      "issuer": {
+        "id": "did:agent:test-agent"
+      },
+      "issuanceDate": "2026-03-29T14:00:00.000Z",
+      "credentialSubject": {
+        "principal": {
+          "id": "did:user:alice"
+        },
+        "action": {
+          "id": "act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5",
+          "type": "filesystem.file.read",
+          "risk_level": "low",
+          "timestamp": "2026-03-29T14:00:00.000Z"
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "chain": {
+          "sequence": 1,
+          "previous_receipt_hash": null,
+          "chain_id": "chain_test_vectors"
+        }
+      }
+    },
+    "receiptExpected": "{\"@context\":[\"https://www.w3.org/ns/credentials/v2\",\"https://attest.sh/v1\"],\"credentialSubject\":{\"action\":{\"id\":\"act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5\",\"risk_level\":\"low\",\"timestamp\":\"2026-03-29T14:00:00.000Z\",\"type\":\"filesystem.file.read\"},\"chain\":{\"chain_id\":\"chain_test_vectors\",\"previous_receipt_hash\":null,\"sequence\":1},\"outcome\":{\"status\":\"success\"},\"principal\":{\"id\":\"did:user:alice\"}},\"id\":\"urn:receipt:550e8400-e29b-41d4-a716-446655440000\",\"issuanceDate\":\"2026-03-29T14:00:00.000Z\",\"issuer\":{\"id\":\"did:agent:test-agent\"},\"type\":[\"VerifiableCredential\",\"AgentReceipt\"],\"version\":\"0.1.0\"}"
+  },
+  "hashing": {
+    "simpleInput": "hello world",
+    "simpleExpected": "sha256:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+    "receiptExpected": "sha256:e4cca0edfa894ffc8c8e9c92a3d08b50b9287d323d39170da333783f24d2b32f"
+  },
+  "signing": {
+    "unsigned": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://attest.sh/v1"
+      ],
+      "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.1.0",
+      "issuer": {
+        "id": "did:agent:test-agent"
+      },
+      "issuanceDate": "2026-03-29T14:00:00.000Z",
+      "credentialSubject": {
+        "principal": {
+          "id": "did:user:alice"
+        },
+        "action": {
+          "id": "act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5",
+          "type": "filesystem.file.read",
+          "risk_level": "low",
+          "timestamp": "2026-03-29T14:00:00.000Z"
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "chain": {
+          "sequence": 1,
+          "previous_receipt_hash": null,
+          "chain_id": "chain_test_vectors"
+        }
+      }
+    },
+    "signed": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://attest.sh/v1"
+      ],
+      "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.1.0",
+      "issuer": {
+        "id": "did:agent:test-agent"
+      },
+      "issuanceDate": "2026-03-29T14:00:00.000Z",
+      "credentialSubject": {
+        "principal": {
+          "id": "did:user:alice"
+        },
+        "action": {
+          "id": "act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5",
+          "type": "filesystem.file.read",
+          "risk_level": "low",
+          "timestamp": "2026-03-29T14:00:00.000Z"
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "chain": {
+          "sequence": 1,
+          "previous_receipt_hash": null,
+          "chain_id": "chain_test_vectors"
+        }
+      },
+      "proof": {
+        "type": "Ed25519Signature2020",
+        "created": "2026-04-02T02:18:11.045Z",
+        "verificationMethod": "did:agent:test-agent#key-1",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "uWWYFAfalmRTV46HzSO5KDtsvu2iGZe8vqmP8fs9zsP-BsNYzBWE25ResTeIHszXIKZCQP0W6zg6071l2gyScAQ"
+      }
+    },
+    "verificationMethod": "did:agent:test-agent#key-1"
+  }
+}
