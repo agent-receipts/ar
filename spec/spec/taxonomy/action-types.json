@@ -1,0 +1,241 @@
+{
+	"$schema": "../../schema/taxonomy.schema.json",
+	"version": "0.1.0",
+	"domains": {
+		"filesystem": {
+			"description": "File and directory operations",
+			"actions": [
+				{
+					"type": "filesystem.file.create",
+					"description": "Create a file",
+					"risk_level": "low"
+				},
+				{
+					"type": "filesystem.file.read",
+					"description": "Read a file",
+					"risk_level": "low"
+				},
+				{
+					"type": "filesystem.file.modify",
+					"description": "Modify a file",
+					"risk_level": "medium"
+				},
+				{
+					"type": "filesystem.file.delete",
+					"description": "Delete a file",
+					"risk_level": "high"
+				},
+				{
+					"type": "filesystem.file.move",
+					"description": "Move or rename a file",
+					"risk_level": "medium"
+				},
+				{
+					"type": "filesystem.directory.create",
+					"description": "Create a directory",
+					"risk_level": "low"
+				},
+				{
+					"type": "filesystem.directory.delete",
+					"description": "Delete a directory",
+					"risk_level": "high"
+				}
+			]
+		},
+		"system": {
+			"description": "System and application operations",
+			"actions": [
+				{
+					"type": "system.application.launch",
+					"description": "Launch an application",
+					"risk_level": "low"
+				},
+				{
+					"type": "system.application.control",
+					"description": "Control an application via UI automation",
+					"risk_level": "medium"
+				},
+				{
+					"type": "system.settings.modify",
+					"description": "Modify system or app settings",
+					"risk_level": "high"
+				},
+				{
+					"type": "system.command.execute",
+					"description": "Execute a shell command",
+					"risk_level": "high"
+				},
+				{
+					"type": "system.browser.navigate",
+					"description": "Navigate to a URL",
+					"risk_level": "low"
+				},
+				{
+					"type": "system.browser.form_submit",
+					"description": "Submit a web form",
+					"risk_level": "medium"
+				},
+				{
+					"type": "system.browser.authenticate",
+					"description": "Log into a service",
+					"risk_level": "high"
+				}
+			]
+		},
+		"communication": {
+			"description": "Email, messaging, and calendar operations",
+			"actions": [
+				{
+					"type": "communication.email.send",
+					"description": "Send an email",
+					"risk_level": "high"
+				},
+				{
+					"type": "communication.email.draft",
+					"description": "Create a draft email",
+					"risk_level": "medium"
+				},
+				{
+					"type": "communication.email.read",
+					"description": "Read email content",
+					"risk_level": "low"
+				},
+				{
+					"type": "communication.email.delete",
+					"description": "Delete an email",
+					"risk_level": "high"
+				},
+				{
+					"type": "communication.message.send",
+					"description": "Send a chat message (Slack, Teams, etc.)",
+					"risk_level": "high"
+				},
+				{
+					"type": "communication.calendar.create",
+					"description": "Create a calendar event",
+					"risk_level": "medium"
+				},
+				{
+					"type": "communication.calendar.modify",
+					"description": "Modify a calendar event",
+					"risk_level": "medium"
+				},
+				{
+					"type": "communication.calendar.delete",
+					"description": "Delete a calendar event",
+					"risk_level": "high"
+				}
+			]
+		},
+		"document": {
+			"description": "Document and spreadsheet operations",
+			"actions": [
+				{
+					"type": "document.file.create",
+					"description": "Create a new document",
+					"risk_level": "low"
+				},
+				{
+					"type": "document.file.modify",
+					"description": "Modify document content",
+					"risk_level": "medium"
+				},
+				{
+					"type": "document.file.delete",
+					"description": "Delete a document",
+					"risk_level": "high"
+				},
+				{
+					"type": "document.file.share",
+					"description": "Share a document with others",
+					"risk_level": "high"
+				},
+				{
+					"type": "document.spreadsheet.modify_cell",
+					"description": "Modify spreadsheet cell values",
+					"risk_level": "medium"
+				},
+				{
+					"type": "document.spreadsheet.modify_formula",
+					"description": "Modify spreadsheet formulas",
+					"risk_level": "high"
+				},
+				{
+					"type": "document.spreadsheet.modify_structure",
+					"description": "Add/remove sheets, rows, columns",
+					"risk_level": "medium"
+				},
+				{
+					"type": "document.presentation.modify_slide",
+					"description": "Modify presentation slide content",
+					"risk_level": "medium"
+				}
+			]
+		},
+		"financial": {
+			"description": "Payments, subscriptions, and bookings",
+			"actions": [
+				{
+					"type": "financial.payment.initiate",
+					"description": "Initiate a payment or purchase",
+					"risk_level": "critical"
+				},
+				{
+					"type": "financial.payment.authorize",
+					"description": "Authorize a pending payment",
+					"risk_level": "critical"
+				},
+				{
+					"type": "financial.subscription.create",
+					"description": "Create a subscription",
+					"risk_level": "critical"
+				},
+				{
+					"type": "financial.subscription.cancel",
+					"description": "Cancel a subscription",
+					"risk_level": "high"
+				},
+				{
+					"type": "financial.booking.create",
+					"description": "Book travel, accommodation, etc.",
+					"risk_level": "high"
+				},
+				{
+					"type": "financial.booking.cancel",
+					"description": "Cancel a booking",
+					"risk_level": "high"
+				}
+			]
+		},
+		"data": {
+			"description": "API and database operations",
+			"actions": [
+				{
+					"type": "data.api.read",
+					"description": "Read data from an external API",
+					"risk_level": "low"
+				},
+				{
+					"type": "data.api.write",
+					"description": "Write data to an external API",
+					"risk_level": "medium"
+				},
+				{
+					"type": "data.api.delete",
+					"description": "Delete data via an external API",
+					"risk_level": "high"
+				},
+				{
+					"type": "data.database.query",
+					"description": "Query a database",
+					"risk_level": "low"
+				},
+				{
+					"type": "data.database.modify",
+					"description": "Modify database records",
+					"risk_level": "high"
+				}
+			]
+		}
+	}
+}

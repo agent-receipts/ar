@@ -1,0 +1,61 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://agentreceipts.ai/schema/v0.1/taxonomy.schema.json",
+	"title": "Agent Receipt Taxonomy",
+	"description": "Canonical action type definitions for the Agent Receipt Protocol",
+	"type": "object",
+	"required": ["version", "domains"],
+	"properties": {
+		"$schema": {
+			"type": "string"
+		},
+		"version": {
+			"type": "string",
+			"description": "Taxonomy version"
+		},
+		"domains": {
+			"type": "object",
+			"description": "Action domains (e.g. filesystem, system)",
+			"additionalProperties": {
+				"$ref": "#/$defs/Domain"
+			}
+		}
+	},
+	"$defs": {
+		"Domain": {
+			"type": "object",
+			"required": ["description", "actions"],
+			"properties": {
+				"description": {
+					"type": "string"
+				},
+				"actions": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/ActionTypeEntry"
+					}
+				}
+			}
+		},
+		"ActionTypeEntry": {
+			"type": "object",
+			"required": ["type", "description", "risk_level"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"pattern": "^[a-z]+\\.[a-z_]+\\.[a-z_]+$",
+					"description": "Dotted action type identifier (e.g. filesystem.file.create)"
+				},
+				"description": {
+					"type": "string",
+					"description": "Human-readable description of the action"
+				},
+				"risk_level": {
+					"type": "string",
+					"enum": ["low", "medium", "high", "critical"],
+					"description": "Default risk level for this action type"
+				}
+			}
+		}
+	}
+}

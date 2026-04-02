@@ -1,0 +1,403 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentreceipts.ai/schema/v0.1/agent-receipt.schema.json",
+  "title": "Agent Receipt",
+  "description": "A cryptographically signed record of a single action taken by an AI agent on behalf of a human principal. Conforms to the Agent Receipt Protocol v0.1.",
+  "type": "object",
+  "required": [
+    "@context",
+    "id",
+    "type",
+    "version",
+    "issuer",
+    "validFrom",
+    "credentialSubject",
+    "proof"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "@context": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "https://www.w3.org/ns/credentials/v2" },
+        { "const": "https://agentreceipts.ai/context/v1" }
+      ],
+      "minItems": 2,
+      "items": { "type": "string" },
+      "description": "JSON-LD context. First two entries MUST be the W3C VC v2 and Attest context URIs in order. Additional context URIs MAY follow."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^urn:receipt:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "Globally unique receipt identifier. MUST be a urn:receipt:<uuid>."
+    },
+    "type": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "VerifiableCredential" },
+        { "const": "AgentReceipt" }
+      ],
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "MUST be [\"VerifiableCredential\", \"AgentReceipt\"]."
+    },
+    "version": {
+      "const": "0.1.0",
+      "description": "Protocol version. MUST be \"0.1.0\" for this version of the spec."
+    },
+    "issuer": { "$ref": "#/$defs/issuer" },
+    "validFrom": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 datetime when the receipt was issued. MAY differ from action.timestamp in batched scenarios."
+    },
+    "credentialSubject": { "$ref": "#/$defs/credentialSubject" },
+    "proof": { "$ref": "#/$defs/proof" }
+  },
+
+  "$defs": {
+    "sha256Hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 digest in the format sha256:<64 hex chars>."
+    },
+
+    "issuer": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "DID or URI identifying the agent instance."
+        },
+        "type": {
+          "type": "string",
+          "description": "SHOULD be \"AIAgent\"."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable agent name."
+        },
+        "operator": {
+          "type": "object",
+          "required": ["id", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "DID or URI of the entity operating the agent."
+            },
+            "name": {
+              "type": "string",
+              "description": "Human-readable operator name."
+            }
+          }
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier (e.g. \"claude-sonnet-4-6\")."
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Opaque session identifier."
+        }
+      }
+    },
+
+    "principal": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "DID or URI identifying the principal."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["HumanPrincipal", "OrganizationPrincipal"],
+          "description": "SHOULD be \"HumanPrincipal\" or \"OrganizationPrincipal\"."
+        }
+      }
+    },
+
+    "action": {
+      "type": "object",
+      "required": ["id", "type", "risk_level", "timestamp"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^act_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "Unique action identifier. MUST be act_<uuid>."
+        },
+        "type": {
+          "type": "string",
+          "description": "Action type from the taxonomy (§5). Dot-separated hierarchical identifier."
+        },
+        "risk_level": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "description": "Risk classification. Implementations MAY escalate but MUST NOT downgrade from taxonomy defaults."
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "system": {
+              "type": "string",
+              "description": "The system or service acted upon."
+            },
+            "resource": {
+              "type": "string",
+              "description": "The specific resource within the system."
+            }
+          }
+        },
+        "parameters_hash": {
+          "$ref": "#/$defs/sha256Hash",
+          "description": "SHA-256 hash of the action parameters (RFC 8785 canonical JSON)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 datetime when the action was executed."
+        },
+        "trusted_timestamp": {
+          "type": ["string", "null"],
+          "contentEncoding": "base64",
+          "description": "Base64-encoded RFC 3161 TimeStampToken (DER encoding), or null if not present."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "unknown" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["id", "type", "risk_level", "timestamp", "target"],
+            "properties": {
+              "target": {
+                "required": ["system"]
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "conversation_hash": {
+          "$ref": "#/$defs/sha256Hash",
+          "description": "SHA-256 hash of the conversation context."
+        },
+        "prompt_preview": {
+          "type": "string",
+          "description": "Plain-text preview of the prompt that triggered the action (may be truncated)."
+        },
+        "prompt_preview_truncated": {
+          "type": "boolean",
+          "description": "true if prompt_preview was truncated."
+        },
+        "reasoning_hash": {
+          "$ref": "#/$defs/sha256Hash",
+          "description": "SHA-256 hash of the agent's reasoning trace."
+        }
+      }
+    },
+
+    "outcome": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["success", "failure", "pending"],
+          "description": "The result of the action."
+        },
+        "error": {
+          "type": ["string", "null"],
+          "description": "Error message if status is \"failure\"."
+        },
+        "reversible": {
+          "type": "boolean",
+          "description": "true if the action can be undone."
+        },
+        "reversal_method": {
+          "type": "string",
+          "description": "Machine-readable reversal method identifier (e.g. \"gmail:undo_send\")."
+        },
+        "reversal_window_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Seconds within which reversal is possible."
+        },
+        "reversal_of": {
+          "type": "string",
+          "pattern": "^urn:receipt:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "id of the original receipt that this receipt reverses. Present only on reversal receipts."
+        },
+        "state_change": {
+          "type": "object",
+          "required": ["before_hash", "after_hash"],
+          "additionalProperties": false,
+          "properties": {
+            "before_hash": {
+              "$ref": "#/$defs/sha256Hash",
+              "description": "SHA-256 hash of relevant state before the action."
+            },
+            "after_hash": {
+              "$ref": "#/$defs/sha256Hash",
+              "description": "SHA-256 hash of relevant state after the action."
+            }
+          }
+        }
+      }
+    },
+
+    "authorization": {
+      "type": "object",
+      "required": ["scopes", "granted_at"],
+      "additionalProperties": false,
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Authorization scopes active at time of action."
+        },
+        "granted_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 datetime when authorization was granted."
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 datetime when authorization expires."
+        },
+        "grant_ref": {
+          "type": ["string", "null"],
+          "description": "Reference to the authorization grant (e.g. a Grantex grant token)."
+        }
+      }
+    },
+
+    "delegation": {
+      "type": "object",
+      "required": ["parent_chain_id", "parent_receipt_id", "delegator"],
+      "additionalProperties": false,
+      "description": "Present when this chain was spawned by delegation from another agent.",
+      "properties": {
+        "parent_chain_id": {
+          "type": "string",
+          "description": "chain_id of the delegating agent's chain."
+        },
+        "parent_receipt_id": {
+          "type": "string",
+          "pattern": "^urn:receipt:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "id of the receipt in the parent chain where delegation occurred."
+        },
+        "delegator": {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "DID or URI of the delegating agent (the parent chain's issuer)."
+            }
+          }
+        }
+      }
+    },
+
+    "chain": {
+      "type": "object",
+      "required": ["sequence", "previous_receipt_hash", "chain_id"],
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monotonically increasing position within the chain. Starts at 1."
+        },
+        "previous_receipt_hash": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256Hash" },
+            { "type": "null" }
+          ],
+          "description": "SHA-256 hash of the previous receipt's canonical form. MUST be null for the first receipt (sequence: 1)."
+        },
+        "chain_id": {
+          "type": "string",
+          "description": "Opaque identifier grouping receipts into a logical chain."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "sequence": { "const": 1 } },
+            "required": ["sequence"]
+          },
+          "then": {
+            "properties": { "previous_receipt_hash": { "type": "null" } }
+          },
+          "else": {
+            "properties": { "previous_receipt_hash": { "$ref": "#/$defs/sha256Hash" } }
+          }
+        }
+      ]
+    },
+
+    "credentialSubject": {
+      "type": "object",
+      "required": ["principal", "action", "outcome", "chain"],
+      "properties": {
+        "principal": { "$ref": "#/$defs/principal" },
+        "action": { "$ref": "#/$defs/action" },
+        "intent": { "$ref": "#/$defs/intent" },
+        "outcome": { "$ref": "#/$defs/outcome" },
+        "authorization": { "$ref": "#/$defs/authorization" },
+        "delegation": { "$ref": "#/$defs/delegation" },
+        "chain": { "$ref": "#/$defs/chain" }
+      }
+    },
+
+    "proof": {
+      "type": "object",
+      "required": ["type", "created", "verificationMethod", "proofPurpose", "proofValue"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "Ed25519Signature2020",
+          "description": "MUST be \"Ed25519Signature2020\"."
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 datetime when the proof was created."
+        },
+        "verificationMethod": {
+          "type": "string",
+          "description": "DID URL of the signing key (e.g. \"did:agent:...#key-1\")."
+        },
+        "proofPurpose": {
+          "const": "assertionMethod",
+          "description": "MUST be \"assertionMethod\"."
+        },
+        "proofValue": {
+          "type": "string",
+          "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$",
+          "description": "Multibase-encoded (z-prefixed base58btc) Ed25519 signature over the canonical receipt (proof field excluded)."
+        }
+      }
+    }
+  }
+}
