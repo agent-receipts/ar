@@ -1,0 +1,136 @@
+---
+title: Configuration
+description: CLI flags, policy rules, redaction, and encryption options for the MCP Proxy.
+---
+
+## CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db` | `audit.db` | SQLite audit database path |
+| `--receipt-db` | `receipts.db` | SQLite receipt store path |
+| `--key` | (ephemeral) | Ed25519 private key PEM file for signing receipts |
+| `--taxonomy` | (none) | Taxonomy mappings JSON file for action classification |
+| `--rules` | (built-in defaults) | Policy rules YAML file |
+| `--name` | (inferred from command) | Server name for the audit trail |
+| `--issuer` | `did:agent:mcp-proxy` | Issuer DID for receipts |
+| `--principal` | `did:user:unknown` | Principal DID for receipts |
+| `--chain` | (auto UUID) | Chain ID for receipt chaining |
+| `--http` | `127.0.0.1:8080` | HTTP address for the approval endpoint |
+
+## Policy rules
+
+Rules are defined in YAML and control what happens when a tool call matches:
+
+```yaml
+rules:
+  - name: block_destructive_ops
+    description: Block delete operations on sensitive tools
+    enabled: true
+    tool_pattern: "delete_*"
+    server_pattern: "*postgres*"
+    operation_types: [delete]
+    min_risk_score: 70
+    action: block
+
+  - name: pause_high_risk
+    description: Require approval for high-risk operations
+    enabled: true
+    min_risk_score: 50
+    action: pause
+```
+
+### Rule fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | yes | Unique rule identifier |
+| `description` | no | Human-readable description |
+| `enabled` | yes | Whether the rule is active |
+| `tool_pattern` | no | Glob pattern matching tool name (case-insensitive) |
+| `server_pattern` | no | Glob pattern matching server name |
+| `operation_types` | no | Filter by operation type: `read`, `write`, `delete`, `execute` |
+| `min_risk_score` | no | Minimum risk score (0-100) to match |
+| `action` | yes | One of `pass`, `flag`, `pause`, `block` |
+
+### Actions
+
+| Action | Behavior |
+|--------|----------|
+| `pass` | Log only, forward normally |
+| `flag` | Log with highlight, forward normally |
+| `pause` | Hold for HTTP approval (60-second timeout, auto-denied on timeout) |
+| `block` | Reject immediately with error |
+
+When multiple rules match, the most restrictive action wins (block > pause > flag > pass).
+
+## Risk scoring
+
+Risk scores range from 0 to 100, computed from:
+
+| Factor | Score | Condition |
+|--------|-------|-----------|
+| Operation type | 0--40 | read=0, write=20, execute=30, delete=40 |
+| Sensitive keywords | +30 | Tool name contains: auth, credential, password, token, secret, key |
+| SQL without WHERE | +30 | Arguments contain UPDATE/DELETE/TRUNCATE without WHERE |
+| Config modification | +20 | Tool name contains: config, setting |
+| External messaging | +15 | Tool name starts with: send\_, post\_ |
+| Unknown operation | +10 | Fallback if classification fails |
+
+## Operation classification
+
+Tool names are classified by prefix (case-insensitive):
+
+| Type | Prefixes |
+|------|----------|
+| delete | delete\_, remove\_, drop\_, destroy\_, purge\_ |
+| execute | run\_, exec\_, invoke\_, call\_, trigger\_ |
+| write | create\_, update\_, set\_, add\_, put\_, edit\_, modify\_, write\_ |
+| read | get\_, read\_, list\_, search\_, describe\_, show\_ |
+| unknown | (fallback) |
+
+For more precise classification, provide a `--taxonomy` JSON file mapping tool names to action types from the Agent Receipts taxonomy.
+
+## Approval workflow
+
+When a tool call is paused by a policy rule:
+
+1. The proxy logs an approval ID and waits up to 60 seconds
+2. An approval token is printed to stderr on startup
+3. Approve or deny via HTTP:
+
+```bash
+# Approve
+curl -X POST http://localhost:8080/api/tool-calls/{id}/approve \
+  -H "Authorization: Bearer $APPROVAL_TOKEN"
+
+# Deny
+curl -X POST http://localhost:8080/api/tool-calls/{id}/deny \
+  -H "Authorization: Bearer $APPROVAL_TOKEN"
+```
+
+If no response within 60 seconds, the call is automatically denied.
+
+## Data redaction
+
+The proxy redacts sensitive data before storage using two passes:
+
+**JSON-aware redaction** replaces values of sensitive keys including: `password`, `token`, `api_key`, `secret`, `authorization`, `private_key`, `access_token`, `jwt`, `database_url`, `ssh_key`, `connection_string`, and others (42 keys total).
+
+**Pattern-based redaction** matches known secret formats:
+- GitHub PATs and OAuth tokens (`ghp_*`, `gho_*`)
+- OpenAI/Anthropic API keys (`sk-*`)
+- AWS access keys (`AKIA*`)
+- Bearer tokens
+- Slack tokens (`xox*`)
+- PEM private key blocks
+
+## Encryption at rest
+
+Set the `BEACON_ENCRYPTION_KEY` environment variable to enable AES-256-GCM encryption of all stored audit data:
+
+```bash
+BEACON_ENCRYPTION_KEY="my-passphrase" mcp-proxy node server.js
+```
+
+Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored with an `enc:` prefix and transparently decrypted on retrieval.

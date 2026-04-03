@@ -1,0 +1,44 @@
+---
+title: Installation
+description: Install and run the MCP Proxy.
+---
+
+## Install
+
+```bash
+go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
+```
+
+## Requirements
+
+- Go 1.22+
+
+No CGO or external C libraries required -- the proxy uses pure Go SQLite.
+
+## Basic usage
+
+Wrap any MCP server by passing its command as arguments:
+
+```bash
+mcp-proxy node /path/to/mcp-server.js
+```
+
+The proxy intercepts stdin/stdout, logs every tool call, and forwards messages transparently. By default it generates an ephemeral Ed25519 key pair for signing receipts.
+
+## Persistent signing key
+
+Generate a key pair and use it across sessions:
+
+```bash
+# Generate a key pair (any Ed25519 PEM tool works)
+openssl genpkey -algorithm Ed25519 -out private.pem
+openssl pkey -in private.pem -pubout -out public.pem
+
+# Run with persistent key
+mcp-proxy --key private.pem node /path/to/mcp-server.js
+```
+
+## Next steps
+
+- [Configuration](/mcp-proxy/configuration/) for CLI flags, policy rules, redaction, and encryption
+- [CLI Commands](/reference/cli-commands/) for querying and verifying the audit trail

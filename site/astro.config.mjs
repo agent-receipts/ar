@@ -71,6 +71,14 @@ export default defineConfig({
           ],
         },
         {
+          label: "MCP Proxy",
+          items: [
+            { label: "Overview", slug: "mcp-proxy/overview" },
+            { label: "Installation", slug: "mcp-proxy/installation" },
+            { label: "Configuration", slug: "mcp-proxy/configuration" },
+          ],
+        },
+        {
           label: "OpenClaw",
           items: [
             { label: "Overview", slug: "openclaw/overview" },

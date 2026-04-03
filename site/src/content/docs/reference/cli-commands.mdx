@@ -1,13 +1,82 @@
 ---
 title: CLI Commands
-description: Command reference for the Agent Receipts ecosystem.
+description: Command reference for the MCP Proxy audit CLI.
 ---
 
-:::note
-Coming soon. CLI reference documentation will be added as tooling matures.
-:::
+The MCP Proxy includes subcommands for querying and verifying the audit trail.
 
-In the meantime, see the individual SDK repositories for usage examples:
+## `mcp-proxy list`
 
-- [TypeScript SDK](https://github.com/agent-receipts/sdk-ts)
-- [Python SDK](https://github.com/agent-receipts/sdk-py)
+List receipts from the audit store.
+
+```bash
+mcp-proxy list                            # all receipts
+mcp-proxy list --risk high                # filter by risk level
+mcp-proxy list --action read_file         # filter by action type
+mcp-proxy list --chain <chain-id>         # filter by chain
+mcp-proxy list --limit 100               # limit results
+mcp-proxy list --json                     # JSON output
+```
+
+| Flag | Description |
+|------|-------------|
+| `--risk` | Filter by risk level: `low`, `medium`, `high`, `critical` |
+| `--action` | Filter by action type |
+| `--chain` | Filter by chain ID |
+| `--limit` | Maximum number of receipts to return |
+| `--json` | Output as JSON |
+| `--db` | Receipt store path (default: `receipts.db`) |
+
+## `mcp-proxy inspect`
+
+Show details for a single receipt.
+
+```bash
+mcp-proxy inspect <receipt-id>
+mcp-proxy inspect --key public.pem <receipt-id>   # verify signature
+```
+
+| Flag | Description |
+|------|-------------|
+| `--key` | Public key PEM file to verify the receipt signature |
+| `--db` | Receipt store path (default: `receipts.db`) |
+
+## `mcp-proxy verify`
+
+Verify the integrity of a receipt chain -- checks signatures, hash linkage, and sequence numbers.
+
+```bash
+mcp-proxy verify --key public.pem <chain-id>
+```
+
+| Flag | Description |
+|------|-------------|
+| `--key` | Public key PEM file (required) |
+| `--db` | Receipt store path (default: `receipts.db`) |
+
+## `mcp-proxy export`
+
+Export a receipt chain as JSON.
+
+```bash
+mcp-proxy export <chain-id>
+mcp-proxy export <chain-id> > chain.json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--db` | Receipt store path (default: `receipts.db`) |
+
+## `mcp-proxy stats`
+
+Show aggregate statistics about the audit store.
+
+```bash
+mcp-proxy stats
+mcp-proxy stats --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output as JSON |
+| `--db` | Receipt store path (default: `receipts.db`) |

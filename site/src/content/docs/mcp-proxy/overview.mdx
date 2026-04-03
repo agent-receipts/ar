@@ -1,0 +1,77 @@
+---
+title: MCP Proxy
+description: Transparent audit proxy for MCP servers with receipt signing, policy enforcement, and risk scoring.
+---
+
+The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, etc.) and any MCP server. It intercepts every tool call and provides cryptographic audit trails, risk scoring, and policy enforcement -- without modifying the server or client.
+
+**Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy)
+
+## Features
+
+- **Risk scoring** -- scores every tool call 0-100 based on operation type, sensitive keywords, and patterns
+- **Operation classification** -- classifies calls as read, write, delete, or execute by tool name
+- **Policy enforcement** -- YAML rules engine with four actions: pass, flag, pause (approval required), and block
+- **Approval workflows** -- HTTP endpoints for async approval of paused operations
+- **Cryptographic receipts** -- Ed25519-signed W3C Verifiable Credentials, hash-chained per session
+- **Intent tracking** -- groups related tool calls by temporal proximity
+- **Data redaction** -- JSON-aware and pattern-based redaction of secrets before storage
+- **Encryption at rest** -- optional AES-256-GCM encryption of audit data
+- **Audit CLI** -- list, inspect, verify, export, and query receipts from the command line
+
+## How it works
+
+```
+MCP Client (Claude)
+    |
+    v
+ mcp-proxy (stdin/stdout)
+    |  - classify operation
+    |  - score risk
+    |  - evaluate policy rules
+    |  - redact sensitive data
+    |  - sign receipt
+    |  - log to SQLite
+    v
+ MCP Server (any)
+```
+
+The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, forwards them to the wrapped server, and returns the response. Each tool call generates a signed Agent Receipt that is hash-chained into a tamper-evident audit log.
+
+## Quick start
+
+```bash
+# Install
+go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
+
+# Wrap any MCP server
+mcp-proxy node /path/to/mcp-server.js
+
+# With configuration
+mcp-proxy \
+  --name github \
+  --key private.pem \
+  --rules rules.yaml \
+  --taxonomy taxonomy.json \
+  node /path/to/github-mcp-server.js
+```
+
+## Claude Desktop integration
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "github-audited": {
+      "command": "mcp-proxy",
+      "args": [
+        "--name", "github",
+        "node", "/path/to/github-mcp-server.js"
+      ]
+    }
+  }
+}
+```
+
+See [Installation](/mcp-proxy/installation/) to get started, or [Configuration](/mcp-proxy/configuration/) for the full set of options.
