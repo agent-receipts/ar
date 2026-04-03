@@ -66,3 +66,6 @@ When working in this repo as an AI coding agent, these rules apply in addition t
 - **Never modify the protocol spec** (`spec/`) without explicit human approval
 - **Always run the full test suite** for any SDK you change before proposing a PR
 - **Cross-SDK changes require cross-language test verification** — if you change receipt format in one SDK, verify the cross-language tests still pass
+- **Use git worktrees** for new work — do not edit directly on main or shared branches, to avoid conflicts with other agents or in-progress work
+- **Self-review before committing** — read back your full diff before committing or opening a PR. Check for mistakes, consistency, and completeness
+- **Optimise for sustainable quality** — take the time to do things properly. We are not looking for quick fixes
