@@ -25,3 +25,9 @@ store/      # SQLite receipt persistence, query, stats, chain verification
 - Keep types and logic separate where practical
 - Tests sit alongside source files as `*_test.go`
 - Pure Go SQLite via modernc.org/sqlite — no CGO
+
+## Testing
+
+- Run `go test ./...` to execute all tests
+- Run `go test -v ./receipt/` (or any subpackage) to test a single package
+- Receipt output must be byte-identical across SDKs — cross-language tests in `../../cross-sdk-tests/` verify this

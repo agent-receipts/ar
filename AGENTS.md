@@ -47,3 +47,25 @@ sdk/py
 ```
 
 SDKs are independent implementations of the same spec. They do not depend on each other but must produce compatible receipts (same canonical JSON, same signature encoding, same hash format).
+
+## Security
+
+- Never commit real private keys. Test fixtures use well-known test keys only (see each SDK's test helpers).
+- Never store plaintext secrets in receipts — parameters must be hashed before inclusion.
+- Ed25519 is the only supported signing algorithm. Do not introduce alternative or weaker schemes.
+- Report vulnerabilities via [GitHub Security Advisories](https://github.com/agent-receipts/ar/security/advisories/new), not public issues. See [SECURITY.md](SECURITY.md).
+
+## Agent safety rules
+
+When working in this repo as an AI coding agent, these rules apply in addition to the conventions above:
+
+- **Never modify CI/CD workflows** (`.github/workflows/`) without explicit human review
+- **Never weaken cryptographic parameters** — do not change key sizes, hash algorithms, or signature schemes
+- **Never skip or delete existing tests** — add tests, don't remove them
+- **Never generate real cryptographic keys** — always use test fixtures from each SDK's test helpers
+- **Never modify the protocol spec** (`spec/`) without explicit human approval
+- **Always run the full test suite** for any SDK you change before proposing a PR
+- **Cross-SDK changes require cross-language test verification** — if you change receipt format in one SDK, verify the cross-language tests still pass
+- **Use git worktrees** for new work — do not edit directly on main or shared branches, to avoid conflicts with other agents or in-progress work
+- **Self-review before committing** — read back your full diff before committing or opening a PR. Check for mistakes, consistency, and completeness
+- **Optimise for sustainable quality** — take the time to do things properly. We are not looking for quick fixes

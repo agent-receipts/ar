@@ -40,6 +40,23 @@ cd mcp-proxy && go test ./...
 - Keep commits atomic: separate spec changes from SDK implementation where practical.
 - All PRs require passing CI before merge.
 
+## Good first contributions
+
+- **Add action types** to the taxonomy (`spec/taxonomy/action-types.json`) — follow the `domain.resource.verb` pattern
+- **Improve documentation** on the [site](site/) — fix typos, add examples, clarify explanations
+- **Add test cases** — especially cross-language test vectors in `cross-sdk-tests/`
+- **Improve error messages** in any SDK — clearer messages help everyone debug faster
+
+## Pre-submit checklist
+
+Before opening a PR, verify:
+
+- [ ] Tests pass for every component you changed (see [Running tests](#running-tests))
+- [ ] Linter passes (`go vet`, `ruff check`, `biome` as applicable)
+- [ ] No real keys or secrets in the diff — use test fixtures only
+- [ ] Cross-language tests pass if you changed receipt creation, signing, or hashing
+- [ ] AGENTS.md updated if you changed project structure
+
 ## Protocol questions
 
 See the [spec](spec/) directory for the protocol specification, schema definitions, and governance docs.

@@ -46,3 +46,10 @@ MCP Client → stdin/stdout → mcp-proxy → stdin/stdout → MCP Server
 - Flush stdout after every proxied message
 - Pure Go SQLite via modernc.org/sqlite — no CGO
 - Tests sit alongside source files as `*_test.go`
+
+## Testing
+
+- Run `go test ./...` to execute all tests
+- Run `go test -v ./internal/audit/` (or any subpackage) to test a single area
+- Tests cover: JSON-RPC parsing, classification, risk scoring, policy evaluation, redaction, encryption, receipt signing, and intent tracking
+- The proxy depends on `sdk/go` via a `replace` directive — if you change `sdk/go`, re-run proxy tests too
