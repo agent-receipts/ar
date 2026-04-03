@@ -3,8 +3,411 @@ title: API Reference
 description: Python SDK API reference.
 ---
 
-:::note
-Coming soon. The API reference will be generated from the SDK source once the package reaches a stable release.
-:::
+## Receipts
 
-In the meantime, see the [SDK repository](https://github.com/agent-receipts/sdk-py) for inline documentation and examples.
+```python
+from agent_receipts import (
+    create_receipt,
+    sign_receipt,
+    verify_receipt,
+    generate_key_pair,
+    hash_receipt,
+    verify_chain,
+)
+```
+
+### Functions
+
+#### `create_receipt`
+
+```python
+def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt
+```
+
+Build an unsigned receipt. Auto-generates an ID (`urn:uuid:...`), action ID, issuance date, and action timestamp.
+
+#### `sign_receipt`
+
+```python
+def sign_receipt(
+    unsigned: UnsignedAgentReceipt,
+    private_key: str,
+    verification_method: str,
+) -> AgentReceipt
+```
+
+Sign an unsigned receipt with an Ed25519 private key (PEM-encoded). Returns a signed `AgentReceipt` with an `Ed25519Signature2020` proof.
+
+#### `verify_receipt`
+
+```python
+def verify_receipt(receipt: AgentReceipt, public_key: str) -> bool
+```
+
+Verify the Ed25519 signature on a signed receipt.
+
+#### `generate_key_pair`
+
+```python
+def generate_key_pair() -> KeyPair
+```
+
+Generate an Ed25519 key pair in PEM format (SPKI public, PKCS8 private).
+
+#### `hash_receipt`
+
+```python
+def hash_receipt(receipt: AgentReceipt | dict) -> str
+```
+
+Compute the SHA-256 hash of a receipt (excluding proof) using canonical JSON. Accepts a Pydantic model or plain dict. Returns `sha256:<hex>`.
+
+#### `verify_chain`
+
+```python
+def verify_chain(
+    receipts: list[AgentReceipt],
+    public_key: str,
+) -> ChainVerification
+```
+
+Verify an entire receipt chain: signatures, hash linkage, and sequence numbers. Receipts must be provided in chain order.
+
+#### `canonicalize`
+
+```python
+def canonicalize(value: Any) -> str
+```
+
+RFC 8785 canonical JSON serialization.
+
+#### `sha256`
+
+```python
+def sha256(data: str) -> str
+```
+
+Compute a SHA-256 hash. Returns `sha256:<hex>`.
+
+### Types
+
+All receipt types are Pydantic `BaseModel` subclasses.
+
+#### `CreateReceiptInput`
+
+```python
+class CreateReceiptInput(BaseModel):
+    issuer: Issuer
+    principal: Principal
+    action: ActionInput
+    outcome: Outcome
+    chain: Chain
+    intent: Intent | None = None
+    authorization: Authorization | None = None
+    action_timestamp: str | None = None
+
+class ActionInput(BaseModel):
+    type: str
+    risk_level: str
+    target: Any = None
+    parameters_hash: str | None = None
+    trusted_timestamp: str | None = None
+```
+
+#### `AgentReceipt`
+
+```python
+class UnsignedAgentReceipt(BaseModel):
+    context: list[str]       # serialized as @context
+    id: str
+    type: list[str]
+    version: str
+    issuer: Issuer
+    issuanceDate: str
+    credentialSubject: CredentialSubject
+
+class AgentReceipt(UnsignedAgentReceipt):
+    proof: Proof
+```
+
+#### `KeyPair`
+
+```python
+@dataclass
+class KeyPair:
+    public_key: str
+    private_key: str
+```
+
+#### `Issuer`
+
+```python
+class Issuer(BaseModel):
+    id: str
+    type: str | None = None
+    name: str | None = None
+    operator: Operator | None = None
+    model: str | None = None
+    session_id: str | None = None
+
+class Operator(BaseModel):
+    id: str
+    name: str
+```
+
+#### `Principal`
+
+```python
+class Principal(BaseModel):
+    id: str
+    type: str | None = None
+```
+
+#### `Action`
+
+```python
+class Action(BaseModel):
+    id: str
+    type: str
+    risk_level: RiskLevel
+    target: ActionTarget | None = None
+    parameters_hash: str | None = None
+    timestamp: str
+    trusted_timestamp: str | None = None
+
+class ActionTarget(BaseModel):
+    system: str
+    resource: str | None = None
+```
+
+#### `Outcome`
+
+```python
+class Outcome(BaseModel):
+    status: OutcomeStatus
+    error: str | None = None
+    reversible: bool | None = None
+    reversal_method: str | None = None
+    reversal_window_seconds: int | None = None
+    state_change: StateChange | None = None
+
+class StateChange(BaseModel):
+    before_hash: str
+    after_hash: str
+```
+
+#### `Chain`
+
+```python
+class Chain(BaseModel):
+    sequence: int
+    previous_receipt_hash: str | None
+    chain_id: str
+```
+
+#### `ChainVerification`
+
+```python
+@dataclass
+class ChainVerification:
+    valid: bool
+    length: int
+    receipts: list[ReceiptVerification] = field(default_factory=list)
+    broken_at: int = -1
+
+@dataclass
+class ReceiptVerification:
+    index: int
+    receipt_id: str
+    signature_valid: bool
+    hash_link_valid: bool
+    sequence_valid: bool
+```
+
+#### `Intent` / `Authorization` / `Proof`
+
+```python
+class Intent(BaseModel):
+    conversation_hash: str | None = None
+    prompt_preview: str | None = None
+    prompt_preview_truncated: bool | None = None
+    reasoning_hash: str | None = None
+
+class Authorization(BaseModel):
+    scopes: list[str]
+    granted_at: str
+    expires_at: str | None = None
+    grant_ref: str | None = None
+
+class Proof(BaseModel):
+    type: str
+    created: str | None = None
+    verificationMethod: str | None = None
+    proofPurpose: str | None = None
+    proofValue: str
+```
+
+### Constants
+
+```python
+RiskLevel = Literal["low", "medium", "high", "critical"]
+OutcomeStatus = Literal["success", "failure", "pending"]
+
+CONTEXT: list[str]          # ["https://www.w3.org/ns/credentials/v2", "https://attest.sh/v1"]
+CREDENTIAL_TYPE: list[str]  # ["VerifiableCredential", "AgentReceipt"]
+RECEIPT_VERSION: str        # "0.1.0"
+VERSION: str                # "0.2.2"
+```
+
+---
+
+## Store
+
+```python
+from agent_receipts import ReceiptStore, open_store, verify_stored_chain
+```
+
+SQLite-backed receipt persistence and querying.
+
+#### `open_store`
+
+```python
+def open_store(db_path: str) -> ReceiptStore
+```
+
+Open or create a SQLite receipt store. Pass `":memory:"` for an in-memory store.
+
+#### `verify_stored_chain`
+
+```python
+def verify_stored_chain(
+    store: ReceiptStore,
+    chain_id: str,
+    public_key: str,
+) -> ChainVerification
+```
+
+Load a chain from the store and verify its integrity.
+
+### `ReceiptStore`
+
+```python
+class ReceiptStore:
+    def __init__(self, db_path: str) -> None: ...
+    def insert(self, receipt: AgentReceipt, receipt_hash: str) -> None: ...
+    def get_by_id(self, receipt_id: str) -> AgentReceipt | None: ...
+    def get_chain(self, chain_id: str) -> list[AgentReceipt]: ...
+    def query(self, filters: ReceiptQuery) -> list[AgentReceipt]: ...
+    def stats(self) -> StoreStats: ...
+    def close(self) -> None: ...
+```
+
+#### `ReceiptQuery`
+
+```python
+@dataclass
+class ReceiptQuery:
+    chain_id: str | None = None
+    action_type: str | None = None
+    risk_level: str | None = None
+    status: str | None = None
+    after: str | None = None
+    before: str | None = None
+    limit: int | None = None
+```
+
+#### `StoreStats`
+
+```python
+@dataclass
+class StoreStats:
+    total: int
+    chains: int
+    by_risk: list[dict[str, str | int]]
+    by_status: list[dict[str, str | int]]
+    by_action: list[dict[str, str | int]]
+```
+
+---
+
+## Taxonomy
+
+```python
+from agent_receipts import (
+    classify_tool_call,
+    get_action_type,
+    resolve_action_type,
+    load_taxonomy_config,
+    ALL_ACTIONS,
+)
+```
+
+Action type registry and tool call classification.
+
+#### `classify_tool_call`
+
+```python
+def classify_tool_call(
+    tool_name: str,
+    mappings: list[TaxonomyMapping] | None = None,
+) -> ClassificationResult
+```
+
+Classify a tool call to an action type and risk level using the provided mappings.
+
+#### `get_action_type`
+
+```python
+def get_action_type(action_type: str) -> ActionTypeEntry | None
+```
+
+Look up an action type by name. Returns `None` if not found.
+
+#### `resolve_action_type`
+
+```python
+def resolve_action_type(action_type: str) -> ActionTypeEntry
+```
+
+Like `get_action_type` but returns an "unknown" fallback instead of `None`.
+
+#### `load_taxonomy_config`
+
+```python
+def load_taxonomy_config(file_path: str) -> list[TaxonomyMapping]
+```
+
+Load taxonomy mappings from a JSON file.
+
+### Types
+
+```python
+@dataclass(frozen=True)
+class ActionTypeEntry:
+    type: str
+    description: str
+    risk_level: RiskLevel
+
+@dataclass(frozen=True)
+class TaxonomyMapping:
+    tool_name: str
+    action_type: str
+
+@dataclass(frozen=True)
+class ClassificationResult:
+    action_type: str
+    risk_level: RiskLevel
+```
+
+### Built-in action registries
+
+```python
+FILESYSTEM_ACTIONS: list[ActionTypeEntry]  # 7 types
+SYSTEM_ACTIONS: list[ActionTypeEntry]      # 8 types
+ALL_ACTIONS: list[ActionTypeEntry]         # all + unknown
+UNKNOWN_ACTION: ActionTypeEntry
+```
+
+### Backwards compatibility aliases
+
+The SDK also exports camelCase aliases for all public functions (e.g. `createReceipt`, `signReceipt`, `verifyChain`) for consistency with the TypeScript SDK.

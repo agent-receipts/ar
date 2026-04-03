@@ -3,8 +3,409 @@ title: API Reference
 description: TypeScript SDK API reference.
 ---
 
-:::note
-Coming soon. The API reference will be generated from the SDK source once the package reaches a stable release.
-:::
+## Receipts
 
-In the meantime, see the [SDK repository](https://github.com/agent-receipts/sdk-ts) for inline documentation and examples.
+```typescript
+import {
+  createReceipt,
+  signReceipt,
+  verifyReceipt,
+  generateKeyPair,
+  hashReceipt,
+  verifyChain,
+} from "@agent-receipts/sdk-ts";
+```
+
+### Functions
+
+#### `createReceipt`
+
+```typescript
+function createReceipt(input: CreateReceiptInput): UnsignedAgentReceipt
+```
+
+Build an unsigned receipt. Auto-generates an ID (`urn:uuid:...`), action ID, issuance date, and action timestamp.
+
+#### `signReceipt`
+
+```typescript
+function signReceipt(
+  unsigned: UnsignedAgentReceipt,
+  privateKey: string,
+  verificationMethod: string,
+): AgentReceipt
+```
+
+Sign an unsigned receipt with an Ed25519 private key (PEM-encoded). Returns a signed `AgentReceipt` with an `Ed25519Signature2020` proof.
+
+#### `verifyReceipt`
+
+```typescript
+function verifyReceipt(receipt: AgentReceipt, publicKey: string): boolean
+```
+
+Verify the Ed25519 signature on a signed receipt.
+
+#### `generateKeyPair`
+
+```typescript
+function generateKeyPair(): KeyPair
+```
+
+Generate an Ed25519 key pair in PEM format.
+
+#### `hashReceipt`
+
+```typescript
+function hashReceipt(receipt: AgentReceipt): string
+```
+
+Compute the SHA-256 hash of a receipt (excluding proof) using canonical JSON. Returns `sha256:<hex>`.
+
+#### `verifyChain`
+
+```typescript
+function verifyChain(receipts: AgentReceipt[], publicKey: string): ChainVerification
+```
+
+Verify an entire receipt chain: signatures, hash linkage, and sequence numbers.
+
+#### `canonicalize`
+
+```typescript
+function canonicalize(value: unknown): string
+```
+
+RFC 8785 canonical JSON serialization.
+
+#### `sha256`
+
+```typescript
+function sha256(data: string): string
+```
+
+Compute a SHA-256 hash, returned as hex.
+
+### Types
+
+#### `CreateReceiptInput`
+
+```typescript
+interface CreateReceiptInput {
+  issuer: Issuer;
+  principal: Principal;
+  action: Omit<Action, "id" | "timestamp">;
+  outcome: Outcome;
+  chain: Chain;
+  intent?: Intent;
+  authorization?: Authorization;
+  actionTimestamp?: string;
+}
+```
+
+#### `AgentReceipt`
+
+```typescript
+interface AgentReceipt {
+  "@context": readonly string[];
+  id: string;
+  type: readonly string[];
+  version: string;
+  issuer: Issuer;
+  issuanceDate: string;
+  credentialSubject: CredentialSubject;
+  proof: Proof;
+}
+
+type UnsignedAgentReceipt = Omit<AgentReceipt, "proof">
+```
+
+#### `KeyPair`
+
+```typescript
+interface KeyPair {
+  publicKey: string;
+  privateKey: string;
+}
+```
+
+#### `Issuer`
+
+```typescript
+interface Issuer {
+  id: string;
+  type?: string;
+  name?: string;
+  operator?: Operator;
+  model?: string;
+  session_id?: string;
+}
+
+interface Operator {
+  id: string;
+  name: string;
+}
+```
+
+#### `Principal`
+
+```typescript
+interface Principal {
+  id: string;
+  type?: string;
+}
+```
+
+#### `Action`
+
+```typescript
+interface Action {
+  id: string;
+  type: string;
+  risk_level: RiskLevel;
+  target?: ActionTarget;
+  parameters_hash?: string;
+  timestamp: string;
+  trusted_timestamp?: string | null;
+}
+
+interface ActionTarget {
+  system: string;
+  resource?: string;
+}
+```
+
+#### `Outcome`
+
+```typescript
+interface Outcome {
+  status: OutcomeStatus;
+  error?: string | null;
+  reversible?: boolean;
+  reversal_method?: string;
+  reversal_window_seconds?: number;
+  state_change?: StateChange;
+}
+
+interface StateChange {
+  before_hash: string;
+  after_hash: string;
+}
+```
+
+#### `Chain`
+
+```typescript
+interface Chain {
+  sequence: number;
+  previous_receipt_hash: string | null;
+  chain_id: string;
+}
+```
+
+#### `ChainVerification`
+
+```typescript
+type ChainVerification = {
+  valid: boolean;
+  length: number;
+  receipts: ReceiptVerification[];
+  brokenAt: number;
+}
+
+type ReceiptVerification = {
+  index: number;
+  receiptId: string;
+  signatureValid: boolean;
+  hashLinkValid: boolean;
+  sequenceValid: boolean;
+}
+```
+
+#### `Intent` / `Authorization` / `Proof`
+
+```typescript
+interface Intent {
+  conversation_hash?: string;
+  prompt_preview?: string;
+  prompt_preview_truncated?: boolean;
+  reasoning_hash?: string;
+}
+
+interface Authorization {
+  scopes: string[];
+  granted_at: string;
+  expires_at?: string;
+  grant_ref?: string | null;
+}
+
+interface Proof {
+  type: string;
+  created?: string;
+  verificationMethod?: string;
+  proofPurpose?: string;
+  proofValue: string;
+}
+```
+
+### Constants
+
+```typescript
+type RiskLevel = "low" | "medium" | "high" | "critical"
+type OutcomeStatus = "success" | "failure" | "pending"
+
+const CONTEXT: readonly ["https://www.w3.org/ns/credentials/v2", "https://attest.sh/v1"]
+const CREDENTIAL_TYPE: readonly ["VerifiableCredential", "AgentReceipt"]
+const RECEIPT_VERSION: "0.1.0"
+const VERSION: "0.1.0"
+```
+
+---
+
+## Store
+
+```typescript
+import { ReceiptStore, openStore, verifyStoredChain } from "@agent-receipts/sdk-ts";
+```
+
+SQLite-backed receipt persistence and querying.
+
+#### `openStore`
+
+```typescript
+function openStore(dbPath: string): ReceiptStore
+```
+
+Open or create a SQLite receipt store. Pass `":memory:"` for an in-memory store.
+
+#### `verifyStoredChain`
+
+```typescript
+function verifyStoredChain(
+  store: ReceiptStore,
+  chainId: string,
+  publicKey: string,
+): ChainVerification
+```
+
+Load a chain from the store and verify its integrity.
+
+### `ReceiptStore`
+
+```typescript
+class ReceiptStore {
+  constructor(dbPath: string);
+  insert(receipt: AgentReceipt, receiptHash: string): void;
+  getById(id: string): AgentReceipt | undefined;
+  getChain(chainId: string): AgentReceipt[];
+  query(filters: ReceiptQuery): AgentReceipt[];
+  stats(): StoreStats;
+  close(): void;
+}
+```
+
+#### `ReceiptQuery`
+
+```typescript
+interface ReceiptQuery {
+  chainId?: string;
+  actionType?: string;
+  riskLevel?: RiskLevel;
+  status?: OutcomeStatus;
+  after?: string;
+  before?: string;
+  limit?: number;
+}
+```
+
+#### `StoreStats`
+
+```typescript
+interface StoreStats {
+  total: number;
+  chains: number;
+  byRisk: { risk_level: string; count: number }[];
+  byStatus: { status: string; count: number }[];
+  byAction: { action_type: string; count: number }[];
+}
+```
+
+---
+
+## Taxonomy
+
+```typescript
+import {
+  classifyToolCall,
+  getActionType,
+  resolveActionType,
+  loadTaxonomyConfig,
+  ALL_ACTIONS,
+} from "@agent-receipts/sdk-ts";
+```
+
+Action type registry and tool call classification.
+
+#### `classifyToolCall`
+
+```typescript
+function classifyToolCall(
+  toolName: string,
+  mappings?: TaxonomyMapping[],
+): ClassificationResult
+```
+
+Classify a tool call to an action type and risk level using the provided mappings.
+
+#### `getActionType`
+
+```typescript
+function getActionType(type: string): ActionTypeEntry | undefined
+```
+
+Look up an action type by name. Returns `undefined` if not found.
+
+#### `resolveActionType`
+
+```typescript
+function resolveActionType(type: string): ActionTypeEntry
+```
+
+Like `getActionType` but returns an "unknown" fallback instead of `undefined`.
+
+#### `loadTaxonomyConfig`
+
+```typescript
+function loadTaxonomyConfig(filePath: string): TaxonomyMapping[]
+```
+
+Load taxonomy mappings from a JSON file.
+
+### Types
+
+```typescript
+interface ActionTypeEntry {
+  type: string;
+  description: string;
+  risk_level: RiskLevel;
+}
+
+interface TaxonomyMapping {
+  tool_name: string;
+  action_type: string;
+}
+
+interface ClassificationResult {
+  action_type: string;
+  risk_level: RiskLevel;
+}
+```
+
+### Built-in action registries
+
+```typescript
+const FILESYSTEM_ACTIONS: readonly ActionTypeEntry[]  // 7 types
+const SYSTEM_ACTIONS: readonly ActionTypeEntry[]       // 8 types
+const ALL_ACTIONS: readonly ActionTypeEntry[]           // all + unknown
+const UNKNOWN_ACTION: ActionTypeEntry
+```
