@@ -47,6 +47,14 @@ export default defineConfig({
           ],
         },
         {
+          label: "Go SDK",
+          items: [
+            { label: "Overview", slug: "sdk-go/overview" },
+            { label: "Installation", slug: "sdk-go/installation" },
+            { label: "API Reference", slug: "sdk-go/api-reference" },
+          ],
+        },
+        {
           label: "TypeScript SDK",
           items: [
             { label: "Overview", slug: "sdk-ts/overview" },

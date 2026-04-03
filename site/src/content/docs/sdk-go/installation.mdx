@@ -1,0 +1,32 @@
+---
+title: Installation
+description: Install and configure the Go SDK.
+---
+
+## Install
+
+```bash
+go get github.com/agent-receipts/ar/sdk/go
+```
+
+Import the packages you need:
+
+```go
+import (
+	receipt "github.com/agent-receipts/ar/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/taxonomy"
+	"github.com/agent-receipts/ar/sdk/go/store"
+)
+```
+
+## Requirements
+
+- Go 1.26+
+
+## Dependencies
+
+The SDK uses [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) for the store package -- a pure Go SQLite implementation that requires no CGO or external C libraries.
+
+## Next steps
+
+- [API Reference](/sdk-go/api-reference/) for the full API surface

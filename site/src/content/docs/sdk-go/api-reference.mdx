@@ -1,0 +1,410 @@
+---
+title: API Reference
+description: Go SDK API reference.
+---
+
+## Package `receipt`
+
+```go
+import receipt "github.com/agent-receipts/ar/sdk/go/receipt"
+```
+
+Core package for creating, signing, verifying, and chaining Agent Receipts.
+
+### Functions
+
+#### `Create`
+
+```go
+func Create(input CreateInput) UnsignedAgentReceipt
+```
+
+Build an unsigned receipt. Auto-generates an ID (`urn:uuid:...`) and sets the issuance timestamp.
+
+#### `Sign`
+
+```go
+func Sign(unsigned UnsignedAgentReceipt, privateKeyPEM string, verificationMethod string) (AgentReceipt, error)
+```
+
+Sign an unsigned receipt with an Ed25519 private key (PEM-encoded). Returns a signed `AgentReceipt` with an `Ed25519Signature2020` proof.
+
+#### `Verify`
+
+```go
+func Verify(r AgentReceipt, publicKeyPEM string) (bool, error)
+```
+
+Verify the Ed25519 signature on a signed receipt.
+
+#### `GenerateKeyPair`
+
+```go
+func GenerateKeyPair() (KeyPair, error)
+```
+
+Generate an Ed25519 key pair in PEM format.
+
+#### `HashReceipt`
+
+```go
+func HashReceipt(r AgentReceipt) (string, error)
+```
+
+Compute the SHA-256 hash of a receipt using canonical JSON serialization. Returns a string in `sha256:<hex>` format.
+
+#### `VerifyChain`
+
+```go
+func VerifyChain(receipts []AgentReceipt, publicKeyPEM string) ChainVerification
+```
+
+Verify an entire receipt chain: signatures, hash linkage between consecutive receipts, and sequence numbers.
+
+#### `Canonicalize`
+
+```go
+func Canonicalize(v any) (string, error)
+```
+
+RFC 8785 canonical JSON serialization.
+
+#### `SHA256Hash`
+
+```go
+func SHA256Hash(data string) string
+```
+
+Compute a SHA-256 hash, returned as hex.
+
+#### `TruncatePromptPreview`
+
+```go
+func TruncatePromptPreview(s string, maxLen int) (preview string, truncated bool)
+```
+
+Truncate a prompt preview string to `maxLen`, returning whether it was truncated.
+
+#### `Context` / `CredentialType`
+
+```go
+func Context() []string
+func CredentialType() []string
+```
+
+Return the W3C VC `@context` and `type` arrays used in receipts.
+
+### Types
+
+#### `AgentReceipt`
+
+A signed W3C Verifiable Credential with proof.
+
+```go
+type AgentReceipt struct {
+    Context           []string          `json:"@context"`
+    ID                string            `json:"id"`
+    Type              []string          `json:"type"`
+    Version           string            `json:"version"`
+    Issuer            Issuer            `json:"issuer"`
+    IssuanceDate      string            `json:"issuanceDate"`
+    CredentialSubject CredentialSubject `json:"credentialSubject"`
+    Proof             Proof             `json:"proof"`
+}
+```
+
+#### `UnsignedAgentReceipt`
+
+Same as `AgentReceipt` but without the `Proof` field.
+
+#### `CreateInput`
+
+```go
+type CreateInput struct {
+    Issuer        Issuer
+    Principal     Principal
+    Action        Action
+    Outcome       Outcome
+    Chain         Chain
+    Intent        *Intent
+    Authorization *Authorization
+}
+```
+
+#### `KeyPair`
+
+```go
+type KeyPair struct {
+    PublicKey  string
+    PrivateKey string
+}
+```
+
+PEM-encoded Ed25519 key pair.
+
+#### `Issuer`
+
+```go
+type Issuer struct {
+    ID        string    `json:"id"`
+    Type      string    `json:"type,omitempty"`
+    Name      string    `json:"name,omitempty"`
+    Operator  *Operator `json:"operator,omitempty"`
+    Model     string    `json:"model,omitempty"`
+    SessionID string    `json:"session_id,omitempty"`
+}
+```
+
+#### `Principal`
+
+```go
+type Principal struct {
+    ID   string `json:"id"`
+    Type string `json:"type,omitempty"`
+}
+```
+
+#### `Action`
+
+```go
+type Action struct {
+    ID               string        `json:"id"`
+    Type             string        `json:"type"`
+    RiskLevel        RiskLevel     `json:"risk_level"`
+    Target           *ActionTarget `json:"target,omitempty"`
+    ParametersHash   string        `json:"parameters_hash,omitempty"`
+    Timestamp        string        `json:"timestamp"`
+    TrustedTimestamp string        `json:"trusted_timestamp,omitempty"`
+}
+```
+
+#### `Outcome`
+
+```go
+type Outcome struct {
+    Status                OutcomeStatus `json:"status"`
+    Error                 string        `json:"error,omitempty"`
+    Reversible            *bool         `json:"reversible,omitempty"`
+    ReversalMethod        string        `json:"reversal_method,omitempty"`
+    ReversalWindowSeconds *int          `json:"reversal_window_seconds,omitempty"`
+    StateChange           *StateChange  `json:"state_change,omitempty"`
+}
+```
+
+#### `Chain`
+
+```go
+type Chain struct {
+    Sequence            int     `json:"sequence"`
+    PreviousReceiptHash *string `json:"previous_receipt_hash"`
+    ChainID             string  `json:"chain_id"`
+}
+```
+
+#### `ChainVerification`
+
+```go
+type ChainVerification struct {
+    Valid    bool                  `json:"valid"`
+    Length   int                   `json:"length"`
+    Receipts []ReceiptVerification `json:"receipts"`
+    BrokenAt int                   `json:"broken_at"`
+    Error    string                `json:"error,omitempty"`
+}
+```
+
+### Constants
+
+```go
+const Version = "0.1.0"
+
+type RiskLevel string
+const (
+    RiskLow      RiskLevel = "low"
+    RiskMedium   RiskLevel = "medium"
+    RiskHigh     RiskLevel = "high"
+    RiskCritical RiskLevel = "critical"
+)
+
+type OutcomeStatus string
+const (
+    StatusSuccess OutcomeStatus = "success"
+    StatusFailure OutcomeStatus = "failure"
+    StatusPending OutcomeStatus = "pending"
+)
+```
+
+---
+
+## Package `taxonomy`
+
+```go
+import "github.com/agent-receipts/ar/sdk/go/taxonomy"
+```
+
+Action type registry and tool call classification.
+
+### Functions
+
+#### `ClassifyToolCall`
+
+```go
+func ClassifyToolCall(toolName string, mappings []TaxonomyMapping) ClassificationResult
+```
+
+Classify a tool call to an action type and risk level using the provided mappings.
+
+#### `AllActions`
+
+```go
+func AllActions() []ActionTypeEntry
+```
+
+Return all 15 built-in action types (filesystem and system categories).
+
+#### `GetActionType`
+
+```go
+func GetActionType(actionType string) *ActionTypeEntry
+```
+
+Look up an action type by name. Returns `nil` if not found.
+
+#### `ResolveActionType`
+
+```go
+func ResolveActionType(actionType string) ActionTypeEntry
+```
+
+Like `GetActionType` but returns an "unknown" fallback instead of `nil`.
+
+#### `LoadTaxonomyConfig`
+
+```go
+func LoadTaxonomyConfig(path string) ([]TaxonomyMapping, error)
+```
+
+Load taxonomy mappings from a JSON file. Validates that no duplicate tool names exist.
+
+### Types
+
+```go
+type ActionTypeEntry struct {
+    Type        string           `json:"type"`
+    Description string           `json:"description"`
+    RiskLevel   receipt.RiskLevel `json:"risk_level"`
+}
+
+type TaxonomyMapping struct {
+    ToolName   string `json:"tool_name"`
+    ActionType string `json:"action_type"`
+}
+
+type ClassificationResult struct {
+    ActionType string           `json:"action_type"`
+    RiskLevel  receipt.RiskLevel `json:"risk_level"`
+}
+```
+
+---
+
+## Package `store`
+
+```go
+import "github.com/agent-receipts/ar/sdk/go/store"
+```
+
+SQLite-backed receipt persistence, querying, and chain verification. Uses pure Go SQLite (no CGO) with WAL mode.
+
+### Functions
+
+#### `Open`
+
+```go
+func Open(dbPath string) (*Store, error)
+```
+
+Open or create a SQLite receipt store. Pass `":memory:"` for an in-memory store.
+
+### Methods on `*Store`
+
+#### `Insert`
+
+```go
+func (s *Store) Insert(r receipt.AgentReceipt, receiptHash string) error
+```
+
+#### `GetByID`
+
+```go
+func (s *Store) GetByID(id string) (*receipt.AgentReceipt, error)
+```
+
+#### `GetChain`
+
+```go
+func (s *Store) GetChain(chainID string) ([]receipt.AgentReceipt, error)
+```
+
+#### `QueryReceipts`
+
+```go
+func (s *Store) QueryReceipts(q Query) ([]receipt.AgentReceipt, error)
+```
+
+#### `Stats`
+
+```go
+func (s *Store) Stats() (Stats, error)
+```
+
+Returns aggregate statistics: total receipts, chain count, and breakdowns by risk level, status, and action type.
+
+#### `VerifyStoredChain`
+
+```go
+func (s *Store) VerifyStoredChain(chainID string, publicKeyPEM string) (receipt.ChainVerification, error)
+```
+
+#### `Close`
+
+```go
+func (s *Store) Close() error
+```
+
+### Types
+
+```go
+type ReceiptStore interface {
+    Insert(r receipt.AgentReceipt, receiptHash string) error
+    GetByID(id string) (*receipt.AgentReceipt, error)
+    GetChain(chainID string) ([]receipt.AgentReceipt, error)
+    QueryReceipts(q Query) ([]receipt.AgentReceipt, error)
+    Stats() (Stats, error)
+    VerifyStoredChain(chainID string, publicKeyPEM string) (receipt.ChainVerification, error)
+    Close() error
+}
+
+type Query struct {
+    ChainID    *string
+    ActionType *string
+    RiskLevel  *receipt.RiskLevel
+    Status     *receipt.OutcomeStatus
+    After      *string
+    Before     *string
+    Limit      *int
+}
+
+type Stats struct {
+    Total    int          `json:"total"`
+    Chains   int          `json:"chains"`
+    ByRisk   []GroupCount `json:"by_risk"`
+    ByStatus []GroupCount `json:"by_status"`
+    ByAction []GroupCount `json:"by_action"`
+}
+
+type GroupCount struct {
+    Label string `json:"label"`
+    Count int    `json:"count"`
+}
+```
