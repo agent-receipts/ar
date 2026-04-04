@@ -198,7 +198,7 @@ from agent_receipts import (
 
 ## Cross-language compatibility
 
-This SDK produces **byte-identical** output to [`@agent-receipts/sdk-ts`](https://github.com/agent-receipts/sdk-ts):
+This SDK produces **byte-identical** output to [`@agnt-rcpt/sdk-ts`](https://github.com/agent-receipts/sdk-ts):
 
 - RFC 8785 canonical JSON matches exactly
 - SHA-256 hashes are identical
@@ -241,7 +241,7 @@ uv run pyright             # type check
 | Repository | Description |
 |:---|:---|
 | [agent-receipts/spec](https://github.com/agent-receipts/spec) | Protocol specification, JSON Schemas, canonical taxonomy |
-| [agent-receipts/sdk-ts](https://github.com/agent-receipts/sdk-ts) | TypeScript SDK ([npm](https://www.npmjs.com/package/@agent-receipts/sdk-ts)) |
+| [agent-receipts/sdk-ts](https://github.com/agent-receipts/sdk-ts) | TypeScript SDK ([npm](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts)) |
 | **agent-receipts/sdk-py** (this package) | Python SDK |
 | [ojongerius/attest](https://github.com/ojongerius/attest) | MCP proxy + CLI (reference implementation) |
 

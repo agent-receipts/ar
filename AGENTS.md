@@ -7,7 +7,7 @@ Monorepo for the Agent Receipts protocol — cryptographically signed audit trai
 ```
 spec/          # Protocol specification and JSON schemas
 sdk/go/        # Go SDK (receipt, store, taxonomy)
-sdk/ts/        # TypeScript SDK (@agent-receipts/sdk-ts)
+sdk/ts/        # TypeScript SDK (@agnt-rcpt/sdk-ts)
 sdk/py/        # Python SDK (agent-receipts)
 mcp-proxy/     # MCP STDIO proxy with audit, policy, and receipts (Go)
 site/          # Documentation site (Astro)

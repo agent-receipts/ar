@@ -47,11 +47,11 @@ signed, _ := r.Sign(privateKey)
 ### TypeScript
 
 ```bash
-npm install @agent-receipts/sdk-ts
+npm install @agnt-rcpt/sdk-ts
 ```
 
 ```typescript
-import { Receipt } from "@agent-receipts/sdk-ts";
+import { Receipt } from "@agnt-rcpt/sdk-ts";
 
 const receipt = await Receipt.create({ action: "tool_call", payload });
 const signed = await receipt.sign(privateKey);

@@ -10,7 +10,7 @@ This guide walks you through creating, signing, and verifying an Agent Receipt u
 ### 1. Install
 
 ```bash
-npm install @agent-receipts/sdk-ts
+npm install @agnt-rcpt/sdk-ts
 ```
 
 ### 2. Create and sign a receipt
@@ -21,7 +21,7 @@ import {
   generateKeyPair,
   signReceipt,
   hashReceipt,
-} from "@agent-receipts/sdk-ts";
+} from "@agnt-rcpt/sdk-ts";
 
 const keys = generateKeyPair();
 
@@ -51,7 +51,7 @@ console.log(hash);        // sha256:<hex>
 ### 3. Store and query
 
 ```typescript
-import { openStore } from "@agent-receipts/sdk-ts";
+import { openStore } from "@agnt-rcpt/sdk-ts";
 
 const store = openStore("receipts.db");
 store.insert(receipt, hash);
@@ -65,7 +65,7 @@ store.close();
 ### 4. Verify a chain
 
 ```typescript
-import { verifyChain } from "@agent-receipts/sdk-ts";
+import { verifyChain } from "@agnt-rcpt/sdk-ts";
 
 const result = verifyChain(chain, keys.publicKey);
 console.log(result.valid);   // true
