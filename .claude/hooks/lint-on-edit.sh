@@ -45,6 +45,13 @@ case "$FILE_PATH" in
       uv run ruff check "$FILE_PATH" >&2 || { echo "ruff: $FILE_PATH has issues" >&2; exit 2; }
     fi
     ;;
+  *.sh)
+    if command -v shellcheck >/dev/null 2>&1; then
+      shellcheck "$FILE_PATH" >&2 || { echo "shellcheck: $FILE_PATH has issues" >&2; exit 2; }
+    else
+      echo "lint-on-edit: shellcheck not installed; skipping lint for $FILE_PATH" >&2
+    fi
+    ;;
 esac
 
 exit 0

@@ -40,6 +40,10 @@ pre-commit:
       glob: "*.{py,toml}"
       run: uv run ruff format --check .
 
+    - name: shellcheck
+      glob: "*.sh"
+      run: command -v shellcheck >/dev/null 2>&1 && shellcheck {staged_files} || echo "shellcheck not installed — skipping"
+
 pre-push:
   parallel: true
   jobs:
