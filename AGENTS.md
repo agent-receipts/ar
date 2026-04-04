@@ -74,6 +74,28 @@ SDKs are independent implementations of the same spec. They do not depend on eac
 - If a command runs longer than 35 minutes, stop it, capture logs/context, and check with the user.
 - Do not wait indefinitely for hung processes.
 
+## Adding dependencies
+
+- Research before adding — prefer well-maintained, widely-used packages with good APIs.
+- Avoid unmaintained dependencies (check last commit date, open issues, bus factor).
+- Prefer the standard library when it covers the use case adequately.
+- New dependencies require justification in the PR description.
+- For Go: check pkg.go.dev for import counts and maintenance signals.
+- For Python: check PyPI download stats and last release date.
+- For TypeScript: check npm weekly downloads and maintenance status.
+- Supply chain security matters for a cryptographic protocol project — evaluate carefully.
+
+## Completing work
+
+Before marking work as complete:
+
+1. Confirm all touched tests and linters pass.
+2. Re-read your full diff — check for mistakes, consistency, and completeness.
+3. Summarise changes with file and line references.
+4. Mention any opportunistic papercut fixes made along the way.
+5. Call out TODOs, follow-up work, or uncertainties.
+6. If opening a PR, verify the description accurately reflects the changes.
+
 ## Agent safety rules
 
 When working in this repo as an AI coding agent, these rules apply in addition to the conventions above:
@@ -86,4 +108,4 @@ When working in this repo as an AI coding agent, these rules apply in addition t
 - **Always run the full test suite** for any SDK you change before proposing a PR
 - **Cross-SDK changes require cross-language test verification** — if you change receipt format in one SDK, verify the cross-language tests still pass
 - **Use git worktrees** for new work — do not edit directly on main or shared branches, to avoid conflicts with other agents or in-progress work
-- **Self-review before committing** — read back your full diff before committing or opening a PR. Check for mistakes, consistency, and completeness
+- **Self-review before committing** — follow the Completing work checklist above
