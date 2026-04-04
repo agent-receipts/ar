@@ -55,6 +55,25 @@ SDKs are independent implementations of the same spec. They do not depend on eac
 - Ed25519 is the only supported signing algorithm. Do not introduce alternative or weaker schemes.
 - Report vulnerabilities via [GitHub Security Advisories](https://github.com/agent-receipts/ar/security/advisories/new), not public issues. See [SECURITY.md](SECURITY.md).
 
+## Mindset
+
+- Think before acting. Understand the problem before writing code.
+- Work like a craftsman — do the better fix, not the quickest fix.
+- Fix from first principles, not bandaids.
+- Write idiomatic, simple, maintainable code.
+- Delete unused code ruthlessly. No breadcrumb comments ("moved to X", "removed").
+- Leave the repo better than you found it.
+
+## Papercut rule
+
+- Fix small issues you notice while working (typos, dead imports, minor inconsistencies).
+- Raise larger cleanups with the user before expanding scope.
+
+## Timeout handling
+
+- If a command runs longer than 35 minutes, stop it, capture logs/context, and check with the user.
+- Do not wait indefinitely for hung processes.
+
 ## Agent safety rules
 
 When working in this repo as an AI coding agent, these rules apply in addition to the conventions above:
@@ -68,4 +87,3 @@ When working in this repo as an AI coding agent, these rules apply in addition t
 - **Cross-SDK changes require cross-language test verification** — if you change receipt format in one SDK, verify the cross-language tests still pass
 - **Use git worktrees** for new work — do not edit directly on main or shared branches, to avoid conflicts with other agents or in-progress work
 - **Self-review before committing** — read back your full diff before committing or opening a PR. Check for mistakes, consistency, and completeness
-- **Optimise for sustainable quality** — take the time to do things properly. We are not looking for quick fixes
