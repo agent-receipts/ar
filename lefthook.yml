@@ -1,0 +1,66 @@
+# Lefthook — polyglot pre-commit and pre-push hooks
+# Install: brew install lefthook && lefthook install
+# Docs: https://lefthook.dev/configuration/
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: go-vet
+      root: "sdk/go/"
+      glob: "*.{go,mod,sum}"
+      run: go vet ./...
+
+    - name: go-fmt
+      root: "sdk/go/"
+      glob: "*.{go,mod,sum}"
+      run: test -z "$(gofmt -l .)" || (gofmt -d . && exit 1)
+
+    - name: mcp-proxy-vet
+      root: "mcp-proxy/"
+      glob: "*.{go,mod,sum}"
+      run: go vet ./...
+
+    - name: mcp-proxy-fmt
+      root: "mcp-proxy/"
+      glob: "*.{go,mod,sum}"
+      run: test -z "$(gofmt -l .)" || (gofmt -d . && exit 1)
+
+    - name: ts-biome
+      root: "sdk/ts/"
+      glob: "*.{ts,js,json}"
+      run: pnpm exec biome check .
+
+    - name: py-ruff-check
+      root: "sdk/py/"
+      glob: "*.{py,toml}"
+      run: uv run ruff check .
+
+    - name: py-ruff-format
+      root: "sdk/py/"
+      glob: "*.{py,toml}"
+      run: uv run ruff format --check .
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: go-test
+      root: "sdk/go/"
+      glob: "*.{go,mod,sum}"
+      run: go test ./...
+
+    - name: mcp-proxy-test
+      root: "mcp-proxy/"
+      glob: "*.{go,mod,sum}"
+      run: go test ./...
+
+    - name: ts-typecheck
+      root: "sdk/ts/"
+      run: pnpm typecheck
+
+    - name: ts-test
+      root: "sdk/ts/"
+      run: pnpm test
+
+    - name: py-test
+      root: "sdk/py/"
+      run: uv run pytest

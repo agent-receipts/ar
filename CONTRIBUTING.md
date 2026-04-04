@@ -33,6 +33,39 @@ cd sdk/py && uv sync && uv run pytest
 cd mcp-proxy && go test ./...
 ```
 
+## Pre-commit hooks
+
+This repo uses [Lefthook](https://github.com/evilmartians/lefthook) for pre-commit and pre-push hooks across all languages.
+
+```bash
+brew install lefthook   # or: go install github.com/evilmartians/lefthook@latest
+lefthook install        # set up git hooks
+```
+
+**Pre-commit** (fast, triggered by staged changes): `go vet`, `gofmt`, `biome check`, `ruff check`, `ruff format --check`
+
+**Pre-push** (heavier): `go test`, `tsc --noEmit`, `vitest run`, `pytest`
+
+Hooks run in parallel and are scoped per subdirectory — staged changes determine which subdirectories run, and only the languages you changed get checked.
+
+## Working with AI agents
+
+AI agents (Claude Code, Copilot, etc.) are first-class contributors to this project. See [AGENTS.md](AGENTS.md) for the full agent safety rules and conventions.
+
+**Test-driven workflow** — the highest-leverage pattern for agent-assisted development:
+
+1. Write a failing test that describes the expected behavior.
+2. Let the agent implement the fix or feature to make the test pass.
+3. The test output gives the agent a tight feedback loop — it can iterate without guessing.
+
+**Cross-language verification** — when changing receipt format, signing, or hashing:
+
+1. Run `cross-sdk-tests/` before starting to establish a baseline.
+2. Make changes in one SDK.
+3. Run cross-language tests again to catch compatibility issues before they spread.
+
+**Agent boundaries** — agents must follow the [Agent safety rules](AGENTS.md#agent-safety-rules). Key constraints: no spec changes without human approval, no CI workflow changes, no real cryptographic keys.
+
 ## Pull request guidelines
 
 - CI is path-filtered: only the workflows relevant to the directories you changed will run.
