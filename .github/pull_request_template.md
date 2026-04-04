@@ -14,3 +14,6 @@ Motivation — what problem does this solve?
 - [ ] Cross-language tests pass (if receipt format, signing, or hashing changed)
 - [ ] AGENTS.md updated (if project structure changed)
 - [ ] Spec changes have been reviewed by a maintainer (if applicable)
+
+> [!TIP]
+> Request a Copilot review for automated checks against project conventions.
