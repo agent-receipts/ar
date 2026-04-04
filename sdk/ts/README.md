@@ -1,10 +1,10 @@
 <div align="center">
 
-# @agent-receipts/sdk-ts
+# @agnt-rcpt/sdk-ts
 
 ### TypeScript SDK for the Agent Receipts protocol
 
-[![npm](https://img.shields.io/npm/v/@agent-receipts/sdk-ts)](https://www.npmjs.com/package/@agent-receipts/sdk-ts)
+[![npm](https://img.shields.io/npm/v/@agnt-rcpt/sdk-ts)](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -15,7 +15,7 @@ Create, sign, hash-chain, store, and verify cryptographically signed audit trail
 
 Zero runtime dependencies — uses only `node:crypto` and `node:sqlite`.
 
-[Spec](https://github.com/agent-receipts/spec) &bull; [Reference Implementation](https://github.com/ojongerius/attest) &bull; [npm](https://www.npmjs.com/package/@agent-receipts/sdk-ts)
+[Spec](https://github.com/agent-receipts/spec) &bull; [Reference Implementation](https://github.com/ojongerius/attest) &bull; [npm](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts)
 
 </div>
 
@@ -40,7 +40,7 @@ Today, this SDK stores receipts locally in SQLite — fully under your control. 
 ## Install
 
 ```sh
-npm install @agent-receipts/sdk-ts
+npm install @agnt-rcpt/sdk-ts
 ```
 
 ## Quick start
@@ -53,7 +53,7 @@ import {
   generateKeyPair,
   hashReceipt,
   signReceipt,
-} from "@agent-receipts/sdk-ts";
+} from "@agnt-rcpt/sdk-ts";
 
 // Generate an Ed25519 key pair
 const keys = generateKeyPair();
@@ -83,7 +83,7 @@ const hash = hashReceipt(receipt);
 ### Store and query
 
 ```typescript
-import { openStore } from "@agent-receipts/sdk-ts";
+import { openStore } from "@agnt-rcpt/sdk-ts";
 
 const store = openStore("receipts.db");
 store.insert(receipt, hash);
@@ -103,7 +103,7 @@ store.close();
 ### Verify a chain
 
 ```typescript
-import { verifyChain, verifyStoredChain } from "@agent-receipts/sdk-ts";
+import { verifyChain, verifyStoredChain } from "@agnt-rcpt/sdk-ts";
 
 // Verify an array of receipts
 const result = verifyChain(receipts, publicKey);
@@ -117,7 +117,7 @@ const storeResult = verifyStoredChain(store, "chain_session-1", publicKey);
 ### Classify tool calls
 
 ```typescript
-import { classifyToolCall, loadTaxonomyConfig } from "@agent-receipts/sdk-ts";
+import { classifyToolCall, loadTaxonomyConfig } from "@agnt-rcpt/sdk-ts";
 
 // Built-in classification
 const result = classifyToolCall("read_file");
@@ -152,7 +152,7 @@ import {
   generateKeyPair,     // Ed25519 key pair (PEM-encoded)
   signReceipt,         // Sign with Ed25519Signature2020 proof
   verifyReceipt,       // Verify a single receipt's signature
-} from "@agent-receipts/sdk-ts";
+} from "@agnt-rcpt/sdk-ts";
 ```
 
 ### Hashing and canonicalization
@@ -162,7 +162,7 @@ import {
   canonicalize,        // RFC 8785 JSON canonicalization
   hashReceipt,         // Hash receipt (excluding proof) → "sha256:<hex>"
   sha256,              // Hash arbitrary data → "sha256:<hex>"
-} from "@agent-receipts/sdk-ts";
+} from "@agnt-rcpt/sdk-ts";
 ```
 
 ### Chain verification
@@ -170,7 +170,7 @@ import {
 ```typescript
 import {
   verifyChain,         // Verify signatures, hash links, and sequence numbering
-} from "@agent-receipts/sdk-ts";
+} from "@agnt-rcpt/sdk-ts";
 ```
 
 ### Storage (SQLite)
@@ -180,7 +180,7 @@ import {
   openStore,           // Open or create a receipt store
   ReceiptStore,        // Insert, query, get by ID, get chain, stats
   verifyStoredChain,   // Load a chain from store and verify integrity
-} from "@agent-receipts/sdk-ts";
+} from "@agnt-rcpt/sdk-ts";
 ```
 
 ### Taxonomy
@@ -191,7 +191,7 @@ import {
   loadTaxonomyConfig,  // Load tool→action mappings from a JSON config file
   ALL_ACTIONS,         // All 15 built-in action types
   resolveActionType,   // Look up action type with fallback to "unknown"
-} from "@agent-receipts/sdk-ts";
+} from "@agnt-rcpt/sdk-ts";
 ```
 
 ### Subpath imports
@@ -199,9 +199,9 @@ import {
 For more targeted imports:
 
 ```typescript
-import { createReceipt, signReceipt } from "@agent-receipts/sdk-ts/receipt";
-import { openStore } from "@agent-receipts/sdk-ts/store";
-import { classifyToolCall } from "@agent-receipts/sdk-ts/taxonomy";
+import { createReceipt, signReceipt } from "@agnt-rcpt/sdk-ts/receipt";
+import { openStore } from "@agnt-rcpt/sdk-ts/store";
+import { classifyToolCall } from "@agnt-rcpt/sdk-ts/taxonomy";
 ```
 
 ## Project structure
@@ -234,7 +234,7 @@ pnpm run build         # compile to dist/
 | Repository | Description |
 |:---|:---|
 | [agent-receipts/spec](https://github.com/agent-receipts/spec) | Protocol specification, JSON Schemas, canonical taxonomy |
-| **@agent-receipts/sdk-ts** (this package) | TypeScript SDK |
+| **@agnt-rcpt/sdk-ts** (this package) | TypeScript SDK |
 | [ojongerius/attest](https://github.com/ojongerius/attest) | MCP proxy + CLI (reference implementation, consumes this SDK) |
 | [agent-receipts/sdk-py](https://github.com/agent-receipts/sdk-py) | Python SDK ([PyPI](https://pypi.org/project/agent-receipts/)) |
 
