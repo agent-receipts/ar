@@ -26,6 +26,11 @@ store/      # SQLite receipt persistence, query, stats, chain verification
 - Tests sit alongside source files as `*_test.go`
 - Pure Go SQLite via modernc.org/sqlite — no CGO
 
+## Reference files
+
+- `receipt/create.go` — pattern for receipt creation: clean input struct, single-purpose function
+- `receipt/signing.go` — Ed25519 signing and verification with proper error wrapping and spec-compliant encoding
+
 ## Testing
 
 - Run `go test ./...` to execute all tests

@@ -47,6 +47,12 @@ MCP Client → stdin/stdout → mcp-proxy → stdin/stdout → MCP Server
 - Pure Go SQLite via modernc.org/sqlite — no CGO
 - Tests sit alongside source files as `*_test.go`
 
+## Reference files
+
+- `internal/policy/engine.go` — policy evaluation: structured input/output, validation on init, composable matching logic
+- `internal/audit/classifier.go` — operation classification and risk scoring with priority ordering
+- `internal/audit/redact.go` — two-pass redaction pattern: JSON-aware key matching + regex-based secret detection
+
 ## Testing
 
 - Run `go test ./...` to execute all tests

@@ -43,6 +43,12 @@ tests/                 # Mirrors src structure, uses conftest.py fixtures
 - camelCase aliases exported at package level for TypeScript SDK users
 - Output must be byte-identical to the TypeScript SDK (`tests/test_cross_language.py` verifies this)
 
+## Reference files
+
+- `src/agent_receipts/receipt/signing.py` — Ed25519 signing with proper type guards, RFC 8785 canonicalization, and cross-SDK compatibility
+- `src/agent_receipts/receipt/hash.py` — RFC 8785 canonical JSON + SHA-256 hashing with detailed spec-compliance comments
+- `tests/test_cross_language.py` — cross-language test vectors: how to verify byte-identical output across SDKs
+
 ## Testing
 
 - Tests mirror `src/` structure under `tests/`
