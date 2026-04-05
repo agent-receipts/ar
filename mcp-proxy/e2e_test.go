@@ -56,6 +56,17 @@ func readResponse(t *testing.T, scanner *bufio.Scanner) map[string]any {
 	return resp
 }
 
+// waitForExit closes stdin to signal EOF and waits for the proxy process to
+// exit. This ensures the proxy has released all database locks before the test
+// opens the database.
+func waitForExit(t *testing.T, stdin io.WriteCloser, cmd *exec.Cmd) {
+	t.Helper()
+	stdin.Close()
+	if err := cmd.Wait(); err != nil {
+		t.Logf("proxy exited with: %v (may be expected)", err)
+	}
+}
+
 // startProxy builds and starts the proxy with a mock MCP server, returning
 // the stdin writer, stdout scanner, command, and keypair.
 func startProxy(t *testing.T, chainID string) (io.WriteCloser, *bufio.Scanner, *exec.Cmd, receipt.KeyPair, string) {
@@ -115,7 +126,7 @@ func startProxy(t *testing.T, chainID string) (io.WriteCloser, *bufio.Scanner, *
 
 func TestE2EProxyToolCallFlow(t *testing.T) {
 	chainID := "e2e-test-chain"
-	stdin, scanner, _, kp, receiptDBPath := startProxy(t, chainID)
+	stdin, scanner, cmd, kp, receiptDBPath := startProxy(t, chainID)
 
 	// Send tools/call for read_file.
 	sendJSON(t, stdin, map[string]any{
@@ -143,8 +154,9 @@ func TestE2EProxyToolCallFlow(t *testing.T) {
 		t.Fatalf("expected success for write_file, got error: %v", resp2["error"])
 	}
 
-	// Close stdin to signal EOF; proxy should exit.
-	stdin.Close()
+	// Close stdin to signal EOF and wait for the proxy to exit so it
+	// releases all database locks before we open the receipt store.
+	waitForExit(t, stdin, cmd)
 
 	// Open the receipt store and verify the chain.
 	rStore, err := receiptStore.Open(receiptDBPath)
@@ -187,7 +199,7 @@ func TestE2EProxyToolCallFlow(t *testing.T) {
 
 func TestE2EProxyBlockedCall(t *testing.T) {
 	chainID := "e2e-test-blocked"
-	stdin, scanner, _, _, receiptDBPath := startProxy(t, chainID)
+	stdin, scanner, cmd, _, receiptDBPath := startProxy(t, chainID)
 
 	// Send a tool call that should be blocked: delete_secrets has risk >= 70.
 	sendJSON(t, stdin, map[string]any{
@@ -213,8 +225,9 @@ func TestE2EProxyBlockedCall(t *testing.T) {
 		t.Errorf("expected error code -32001, got %v", errMap["code"])
 	}
 
-	// Close stdin and wait.
-	stdin.Close()
+	// Close stdin and wait for the proxy to exit so it releases all
+	// database locks before we open the receipt store.
+	waitForExit(t, stdin, cmd)
 
 	// Verify no receipts were created for the blocked call.
 	rStore, err := receiptStore.Open(receiptDBPath)
