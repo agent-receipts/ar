@@ -98,16 +98,16 @@ case "$MODULE" in
     ;;
   sdk-py)
     echo "--- Checking pyproject.toml version matches"
-    PY_VERSION=$(python3 -c "
+    PY_VERSION=$(cd "$DIR" && uv run python -c "
 import tomllib, pathlib
-p = pathlib.Path('$DIR/pyproject.toml')
+p = pathlib.Path('pyproject.toml')
 print(tomllib.loads(p.read_text())['project']['version'])
 ")
     if [[ "$PY_VERSION" != "$VERSION" ]]; then
       fail "$DIR/pyproject.toml version is $PY_VERSION but releasing $VERSION — update pyproject.toml first"
     fi
     echo "--- Running Python checks in $DIR"
-    (cd "$DIR" && uv run pytest)
+    (cd "$DIR" && uv sync --frozen --all-extras && uv run pytest)
     ;;
 esac
 
