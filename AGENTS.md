@@ -53,6 +53,7 @@ SDKs are independent implementations of the same spec. They do not depend on eac
 - Never commit real private keys. Test fixtures use well-known test keys only (see each SDK's test helpers).
 - Never store plaintext secrets in receipts — parameters must be hashed before inclusion.
 - Ed25519 is the only supported signing algorithm. Do not introduce alternative or weaker schemes.
+- Validate all inputs at trust boundaries (function parameters, environment variables, stored data). Crypto code must reject invalid inputs explicitly, not silently degrade.
 - Report vulnerabilities via [GitHub Security Advisories](https://github.com/agent-receipts/ar/security/advisories/new), not public issues. See [SECURITY.md](SECURITY.md).
 
 ## Mindset
@@ -107,5 +108,6 @@ When working in this repo as an AI coding agent, these rules apply in addition t
 - **Never modify the protocol spec** (`spec/`) without explicit human approval
 - **Always run the full test suite** for any SDK you change before proposing a PR
 - **Cross-SDK changes require cross-language test verification** — if you change receipt format in one SDK, verify the cross-language tests still pass
+- **Write tests first** — new functions must have test coverage before pushing; writing tests first forces you to think about edge cases (nil inputs, corruption, concurrency)
 - **Use git worktrees** for new work — do not edit directly on main or shared branches, to avoid conflicts with other agents or in-progress work
 - **Self-review before committing** — follow the Completing work checklist above
