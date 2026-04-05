@@ -14,7 +14,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 
 | ADR | Title | Status |
 |-----|-------|--------|
-| — | — | — |
+| [ADR-0001](0001-ed25519-for-receipt-signing.md) | Ed25519 for Receipt Signing | Accepted |
 
 ## References
 
