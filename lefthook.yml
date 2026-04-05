@@ -68,3 +68,8 @@ pre-push:
     - name: py-test
       root: "sdk/py/"
       run: uv run pytest
+
+commit-msg:
+  commands:
+    conventional-commit:
+      run: convco check --from-stdin < {1}

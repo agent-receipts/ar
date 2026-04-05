@@ -48,6 +48,26 @@ lefthook install        # set up git hooks
 
 Hooks run in parallel and are scoped per subdirectory — staged changes determine which subdirectories run, and only the languages you changed get checked.
 
+## Commit messages
+
+This project follows [Conventional Commits](https://www.conventionalcommits.org/). Every commit message must start with a type:
+
+```
+feat: add new feature
+fix: correct a bug
+docs: update documentation
+chore: maintenance task
+refactor: restructure without behavior change
+test: add or update tests
+ci: change CI/CD configuration
+```
+
+The `commit-msg` hook enforces this via [convco](https://convco.github.io/). Install it with:
+
+```bash
+brew install convco
+```
+
 ## Working with AI agents
 
 AI agents (Claude Code, Copilot, etc.) are first-class contributors to this project. See [AGENTS.md](AGENTS.md) for the full agent safety rules and conventions.
