@@ -19,7 +19,7 @@
 | **Go** | [sdk/go](https://pkg.go.dev/github.com/agent-receipts/ar/sdk/go) · [mcp-proxy](https://pkg.go.dev/github.com/agent-receipts/ar/mcp-proxy) |
 | **npm** | [@agnt-rcpt/sdk-ts](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts) |
 | **PyPI** | [agent-receipts](https://pypi.org/project/agent-receipts/) |
-| **Dashboard** | [agent-receipts/dashboard](https://github.com/agent-receipts/dashboard) |
+| **Dashboard** | [agent-receipts/dashboard](https://pkg.go.dev/github.com/agent-receipts/dashboard) |
 
 ---
 
