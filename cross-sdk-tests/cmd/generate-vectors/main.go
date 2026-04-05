@@ -45,7 +45,9 @@ type signingSection struct {
 
 func main() {
 	// Read the TS vectors to get the shared keypair and unsigned receipt.
-	tsData, err := os.ReadFile("../../../sdk/py/tests/fixtures/ts_vectors.json")
+	// Resolve paths relative to the module root (cross-sdk-tests/) so this
+	// works when invoked as `go run ./cmd/generate-vectors` from there.
+	tsData, err := os.ReadFile("../sdk/py/tests/fixtures/ts_vectors.json")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "read ts_vectors.json: %v\n", err)
 		os.Exit(1)
@@ -127,7 +129,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := os.WriteFile("../../go_vectors.json", append(out, '\n'), 0644); err != nil {
+	if err := os.WriteFile("go_vectors.json", append(out, '\n'), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "write go_vectors.json: %v\n", err)
 		os.Exit(1)
 	}

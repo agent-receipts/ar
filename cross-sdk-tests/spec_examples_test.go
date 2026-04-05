@@ -12,14 +12,14 @@ import (
 // specReceipt is a loose representation of a spec example receipt.
 // Uses validFrom (spec convention) rather than issuanceDate (SDK convention).
 type specReceipt struct {
-	Context           []string               `json:"@context"`
-	ID                string                 `json:"id"`
-	Type              []string               `json:"type"`
-	Version           string                 `json:"version"`
-	Issuer            map[string]any         `json:"issuer"`
-	ValidFrom         string                 `json:"validFrom"`
-	CredentialSubject specCredentialSubject   `json:"credentialSubject"`
-	Proof             map[string]any         `json:"proof"`
+	Context           []string              `json:"@context"`
+	ID                string                `json:"id"`
+	Type              []string              `json:"type"`
+	Version           string                `json:"version"`
+	Issuer            map[string]any        `json:"issuer"`
+	ValidFrom         string                `json:"validFrom"`
+	CredentialSubject specCredentialSubject `json:"credentialSubject"`
+	Proof             map[string]any        `json:"proof"`
 }
 
 type specCredentialSubject struct {
