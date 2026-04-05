@@ -40,6 +40,20 @@ jobs:
         with:
           go-version-file: ${{ matrix.module }}/go.mod
 
+      - name: Reject local replace directives
+        if: steps.guard.outputs.match == 'true'
+        working-directory: ${{ matrix.module }}
+        run: |
+          if grep -qE '^\s*replace\s.*=>\s*\.\./' go.mod; then
+            echo "::error::go.mod contains a local replace directive — remove it before releasing"
+            exit 1
+          fi
+
+      - name: Vet
+        if: steps.guard.outputs.match == 'true'
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
       - name: Build
         if: steps.guard.outputs.match == 'true'
         working-directory: ${{ matrix.module }}
@@ -54,4 +68,17 @@ jobs:
         if: steps.guard.outputs.match == 'true'
         run: |
           VERSION="${GITHUB_REF_NAME#${{ matrix.tag_prefix }}}"
-          curl -fsS "https://proxy.golang.org/${{ matrix.proxy_path }}/@v/v${VERSION}.info" || true
+          URL="https://proxy.golang.org/${{ matrix.proxy_path }}/@v/v${VERSION}.info"
+          succeeded=false
+          for attempt in 1 2 3; do
+            if curl -fsS "$URL"; then
+              succeeded=true
+              break
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep 2
+            fi
+          done
+          if [[ "$succeeded" != "true" ]]; then
+            echo "::warning::Failed to request pkg.go.dev indexing for ${{ matrix.proxy_path }}@v${VERSION} after 3 attempts"
+          fi
