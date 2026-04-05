@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { canonicalize, hashReceipt, sha256 } from "./hash.js";
 import { generateKeyPair, verifyReceipt } from "./signing.js";
@@ -25,9 +26,11 @@ interface TestVectors {
 	};
 }
 
+const currentDir = dirname(fileURLToPath(import.meta.url));
+
 function loadGoVectors(): TestVectors {
 	const path = resolve(
-		__dirname,
+		currentDir,
 		"../../../../cross-sdk-tests/go_vectors.json",
 	);
 	return JSON.parse(readFileSync(path, "utf-8"));
@@ -84,7 +87,7 @@ describe("cross-language: Go SDK", () => {
 
 		it("fails when tampered", () => {
 			const vectors = loadGoVectors();
-			const tampered = {
+			const tampered: AgentReceipt = {
 				...vectors.signing.signed,
 				credentialSubject: {
 					...vectors.signing.signed.credentialSubject,
@@ -94,9 +97,7 @@ describe("cross-language: Go SDK", () => {
 					},
 				},
 			};
-			expect(
-				verifyReceipt(tampered as AgentReceipt, vectors.keys.publicKey),
-			).toBe(false);
+			expect(verifyReceipt(tampered, vectors.keys.publicKey)).toBe(false);
 		});
 	});
 });

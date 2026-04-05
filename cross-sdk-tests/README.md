@@ -17,7 +17,7 @@ Both vector files use the same Ed25519 keypair so any SDK can verify receipts si
 
 ```sh
 # Generate Go vectors (only needed after changing the unsigned receipt or keys)
-go run generate_go_vectors.go
+go run ./cmd/generate-vectors
 
 # Run spec example validation
 go test -tags=integration -v

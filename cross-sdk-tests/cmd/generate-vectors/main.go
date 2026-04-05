@@ -1,7 +1,7 @@
 // generate_go_vectors reads ts_vectors.json, signs the same unsigned receipt
 // with the Go SDK using the shared keypair, and writes go_vectors.json.
 //
-// Usage: go run generate_go_vectors.go
+// Usage: go run ./cmd/generate-vectors
 package main
 
 import (
