@@ -9,7 +9,7 @@
 
 **Audit, govern, and sign every AI agent action.**
 
-[SDK](https://github.com/agent-receipts/sdk-go) &bull; [Spec](https://github.com/agent-receipts/spec) &bull; [agentreceipts.ai](https://agentreceipts.ai)
+[SDK](https://github.com/agent-receipts/ar/tree/main/sdk/go) &bull; [Spec](https://github.com/agent-receipts/spec) &bull; [agentreceipts.ai](https://agentreceipts.ai)
 
 </div>
 

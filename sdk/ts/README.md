@@ -236,7 +236,7 @@ pnpm run build         # compile to dist/
 | [agent-receipts/spec](https://github.com/agent-receipts/spec) | Protocol specification, JSON Schemas, canonical taxonomy |
 | **@agnt-rcpt/sdk-ts** (this package) | TypeScript SDK |
 | [ojongerius/attest](https://github.com/ojongerius/attest) | MCP proxy + CLI (reference implementation, consumes this SDK) |
-| [agent-receipts/sdk-py](https://github.com/agent-receipts/sdk-py) | Python SDK ([PyPI](https://pypi.org/project/agent-receipts/)) |
+| [agent-receipts/sdk-py](https://github.com/agent-receipts/ar/tree/main/sdk/py) | Python SDK ([PyPI](https://pypi.org/project/agent-receipts/)) |
 
 ## License
 

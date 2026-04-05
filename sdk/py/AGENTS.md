@@ -59,5 +59,5 @@ tests/                 # Mirrors src structure, uses conftest.py fixtures
 ## Related repos
 
 - [agent-receipts/spec](https://github.com/agent-receipts/spec) — protocol specification, JSON Schemas, canonical taxonomy
-- [agent-receipts/sdk-ts](https://github.com/agent-receipts/sdk-ts) — TypeScript SDK
+- [agent-receipts/sdk-ts](https://github.com/agent-receipts/ar/tree/main/sdk/ts) — TypeScript SDK
 - [agent-receipts/site](https://github.com/agent-receipts/site) — documentation site

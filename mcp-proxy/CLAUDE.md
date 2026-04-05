@@ -1,6 +1,6 @@
 # mcp-proxy
 
-MCP proxy with action receipts, policy engine, risk scoring, and intent tracking. Built on [agent-receipts/sdk-go](https://github.com/agent-receipts/sdk-go).
+MCP proxy with action receipts, policy engine, risk scoring, and intent tracking. Built on [github.com/agent-receipts/ar/sdk/go](https://github.com/agent-receipts/ar/tree/main/sdk/go).
 
 ## Toolchain
 

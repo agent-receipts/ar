@@ -9,7 +9,7 @@
 
 **Cryptographically signed audit trails for AI agent actions.**
 
-[Spec](https://github.com/agent-receipts/spec) &bull; [TypeScript SDK](https://github.com/agent-receipts/sdk-ts) &bull; [Python SDK](https://github.com/agent-receipts/sdk-py)
+[Spec](https://github.com/agent-receipts/spec) &bull; [TypeScript SDK](https://github.com/agent-receipts/ar/tree/main/sdk/ts) &bull; [Python SDK](https://github.com/agent-receipts/ar/tree/main/sdk/py)
 
 </div>
 
