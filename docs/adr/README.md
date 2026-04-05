@@ -15,6 +15,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | ADR | Title | Status |
 |-----|-------|--------|
 | [ADR-0001](0001-ed25519-for-receipt-signing.md) | Ed25519 for Receipt Signing | Accepted |
+| [ADR-0002](0002-rfc8785-json-canonicalization.md) | RFC 8785 for JSON Canonicalization | Accepted |
 
 ## References
 
