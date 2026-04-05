@@ -34,6 +34,7 @@ Agent Receipts is an open protocol and set of SDKs for producing cryptographical
 
 | Project | Description |
 |---------|-------------|
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records |
 | [`spec/`](spec/) | Protocol specification, JSON schemas, governance |
 | [`sdk/go/`](sdk/go/) | Go SDK |
 | [`sdk/ts/`](sdk/ts/) | TypeScript SDK |
