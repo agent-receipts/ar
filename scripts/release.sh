@@ -29,8 +29,8 @@ MODULE="$1"
 VERSION="$2"
 
 # Validate version format
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]] || \
-  fail "invalid version '$VERSION' — expected semver (e.g. 0.2.0)"
+[[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]] || \
+  fail "invalid version '$VERSION' — expected semver (e.g. 0.2.0, 1.0.0-beta.1)"
 
 # Ensure we're on main and up to date
 BRANCH=$(git branch --show-current)
@@ -65,8 +65,10 @@ case "$MODULE" in
     ;;
 esac
 
-# Check tag doesn't already exist
+# Check tag doesn't already exist (locally or on remote)
+git fetch origin --tags --quiet
 git tag -l "$TAG" | grep -q . && fail "tag $TAG already exists"
+git ls-remote --tags origin "refs/tags/$TAG" | grep -q . && fail "tag $TAG already exists on origin"
 
 echo "==> Releasing $MODULE v$VERSION (tag: $TAG)"
 echo ""
@@ -79,7 +81,7 @@ case "$MODULE" in
     ;;
   mcp-proxy)
     echo "--- Checking for replace directive in $DIR/go.mod"
-    if grep -q '^\s*replace\s' "$DIR/go.mod"; then
+    if grep -Eq '^[[:space:]]*replace[[:space:]]' "$DIR/go.mod"; then
       fail "$DIR/go.mod contains a replace directive — remove it and point to a published sdk/go version before releasing"
     fi
     echo "--- Running Go checks in $DIR"
@@ -119,7 +121,8 @@ echo ""
 read -rp "Proceed? [y/N] " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
 
+REPO_URL=$(gh repo view --json url -q '.url')
 gh release create "$TAG" --title "$MODULE v$VERSION" --generate-notes
 echo ""
 echo "==> Released $MODULE v$VERSION"
-echo "    https://github.com/agent-receipts/ar/releases/tag/$TAG"
+echo "    ${REPO_URL}/releases/tag/$TAG"
