@@ -30,6 +30,19 @@ Agent Receipts is an open protocol and set of SDKs for producing cryptographical
   <img alt="How it works: Authorize → Act → Sign → Link → Audit" src=".github/how-it-works.svg">
 </picture>
 
+## Project layout
+
+| Project | Description |
+|---------|-------------|
+| [`spec/`](spec/) | Protocol specification, JSON schemas, governance |
+| [`sdk/go/`](sdk/go/) | Go SDK |
+| [`sdk/ts/`](sdk/ts/) | TypeScript SDK |
+| [`sdk/py/`](sdk/py/) | Python SDK |
+| [`mcp-proxy/`](mcp-proxy/) | MCP proxy with receipt signing, policy engine, intent tracking |
+| [`cross-sdk-tests/`](cross-sdk-tests/) | Cross-language verification tests |
+| [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
+| [openclaw](https://github.com/agent-receipts/openclaw) | Agent Receipts plugin for OpenClaw |
+
 ## Quick start
 
 ### Go
@@ -70,24 +83,6 @@ from agent_receipts import Receipt
 receipt = Receipt.create(action="tool_call", payload=payload)
 signed = receipt.sign(private_key)
 ```
-
-## Project layout
-
-| Directory | Description |
-|-----------|-------------|
-| [`spec/`](spec/) | Protocol specification, JSON schemas, governance |
-| [`sdk/go/`](sdk/go/) | Go SDK |
-| [`sdk/ts/`](sdk/ts/) | TypeScript SDK |
-| [`sdk/py/`](sdk/py/) | Python SDK |
-| [`mcp-proxy/`](mcp-proxy/) | MCP proxy with receipt signing, policy engine, intent tracking |
-| [`cross-sdk-tests/`](cross-sdk-tests/) | Cross-language verification tests |
-
-## Tooling
-
-| Project | Description |
-|---------|-------------|
-| [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
-| [openclaw](https://github.com/agent-receipts/openclaw) | Agent Receipts plugin for OpenClaw |
 
 ## Contributing
 
