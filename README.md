@@ -18,6 +18,7 @@
 | **Blog** | [Your AI Agent Just Sent an Email](https://jongerius.solutions/post/your-ai-agent-just-sent-an-email/) |
 | **npm** | [@agnt-rcpt/sdk-ts](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts) |
 | **PyPI** | [agent-receipts](https://pypi.org/project/agent-receipts/) |
+| **Dashboard** | [agent-receipts/dashboard](https://github.com/agent-receipts/dashboard) |
 
 ---
 
