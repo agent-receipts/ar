@@ -13,7 +13,11 @@ from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
 from agent_receipts.receipt.signing import generate_key_pair, verify_receipt
 from agent_receipts.receipt.types import AgentReceipt
 
-VECTORS = Path(__file__).parent.parent.parent.parent / "cross-sdk-tests" / "go_vectors.json"
+VECTORS = (
+    Path(__file__).parent.parent.parent.parent
+    / "cross-sdk-tests"
+    / "go_vectors.json"
+)
 
 
 def _load_vectors() -> dict:

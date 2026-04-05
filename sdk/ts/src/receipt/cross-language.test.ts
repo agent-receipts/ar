@@ -26,7 +26,10 @@ interface TestVectors {
 }
 
 function loadGoVectors(): TestVectors {
-	const path = resolve(__dirname, "../../../../cross-sdk-tests/go_vectors.json");
+	const path = resolve(
+		__dirname,
+		"../../../../cross-sdk-tests/go_vectors.json",
+	);
 	return JSON.parse(readFileSync(path, "utf-8"));
 }
 
@@ -66,15 +69,17 @@ describe("cross-language: Go SDK", () => {
 	describe("Go-signed receipt verification", () => {
 		it("verifies in TypeScript", () => {
 			const vectors = loadGoVectors();
-			expect(verifyReceipt(vectors.signing.signed, vectors.keys.publicKey)).toBe(
-				true,
-			);
+			expect(
+				verifyReceipt(vectors.signing.signed, vectors.keys.publicKey),
+			).toBe(true);
 		});
 
 		it("fails with wrong key", () => {
 			const vectors = loadGoVectors();
 			const other = generateKeyPair();
-			expect(verifyReceipt(vectors.signing.signed, other.publicKey)).toBe(false);
+			expect(verifyReceipt(vectors.signing.signed, other.publicKey)).toBe(
+				false,
+			);
 		});
 
 		it("fails when tampered", () => {
