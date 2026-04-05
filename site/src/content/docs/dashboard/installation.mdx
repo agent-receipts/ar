@@ -1,0 +1,45 @@
+---
+title: Installation
+description: Install and run the Agent Receipts Dashboard.
+---
+
+## Install with Go
+
+```sh
+go install github.com/agent-receipts/dashboard/cmd/dashboard@latest
+```
+
+## Build from source
+
+```sh
+git clone https://github.com/agent-receipts/dashboard.git
+cd dashboard
+make build
+```
+
+## Usage
+
+Point the dashboard at a receipt database:
+
+```sh
+dashboard --db ./receipts.db
+```
+
+Then open [http://localhost:8080](http://localhost:8080) in your browser.
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db` | *(required)* | Path to a receipt SQLite database |
+| `--port` | `8080` | Port to serve on |
+
+### Example
+
+```sh
+# View receipts from the MCP proxy
+dashboard --db ~/.config/ar/receipts.db
+
+# Use a custom port
+dashboard --db ./receipts.db --port 9090
+```

@@ -79,6 +79,13 @@ export default defineConfig({
           ],
         },
         {
+          label: "Dashboard",
+          items: [
+            { label: "Overview", slug: "dashboard/overview" },
+            { label: "Installation", slug: "dashboard/installation" },
+          ],
+        },
+        {
           label: "OpenClaw",
           items: [
             { label: "Overview", slug: "openclaw/overview" },

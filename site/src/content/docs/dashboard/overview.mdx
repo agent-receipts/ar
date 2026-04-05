@@ -1,0 +1,28 @@
+---
+title: Dashboard
+description: Local web UI for browsing and verifying Agent Receipt databases.
+---
+
+:::caution
+The dashboard is an early prototype. Expect rough edges and breaking changes.
+:::
+
+The Agent Receipts Dashboard is a lightweight, read-only web UI for browsing receipt databases produced by any Agent Receipts SDK or the MCP proxy. It ships as a single Go binary with no external runtime dependencies.
+
+**Repository:** [agent-receipts/dashboard](https://github.com/agent-receipts/dashboard)
+
+## Features
+
+- Browse receipts stored in any Agent Receipts SQLite database
+- Filter by action type, risk level, status, time range, and chain ID
+- Chain verification — validates hash linkage and sequence ordering
+- Receipt detail view with raw JSON
+- Dark theme with risk-level color coding
+
+## How it works
+
+The dashboard opens your SQLite receipt database in **read-only** mode and serves a web UI at localhost. It never modifies your data.
+
+All three SDKs and the MCP proxy use an identical SQLite schema for receipt storage. The dashboard reads from any of them.
+
+See [Installation](/dashboard/installation/) to get started.

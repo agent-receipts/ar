@@ -81,10 +81,11 @@ signed = receipt.sign(private_key)
 | [`mcp-proxy/`](mcp-proxy/) | MCP proxy with receipt signing, policy engine, intent tracking |
 | [`cross-sdk-tests/`](cross-sdk-tests/) | Cross-language verification tests |
 
-## Integrations
+## Tooling
 
 | Project | Description |
 |---------|-------------|
+| [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
 | [openclaw](https://github.com/agent-receipts/openclaw) | Agent Receipts plugin for OpenClaw |
 
 ## Contributing
