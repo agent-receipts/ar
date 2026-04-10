@@ -15,8 +15,8 @@ jobs:
       run:
         working-directory: sdk/go
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: sdk/go/go.mod
 
@@ -55,8 +55,8 @@ jobs:
       run:
         working-directory: mcp-proxy
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: mcp-proxy/go.mod
 
