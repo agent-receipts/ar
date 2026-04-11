@@ -1,2 +1,8 @@
 go.work
 go.work.sum
+
+# Local dev files
+.claude/
+*.db
+*.db-shm
+*.db-wal
