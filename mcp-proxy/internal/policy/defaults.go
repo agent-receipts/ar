@@ -6,20 +6,20 @@ func DefaultRules() []Rule {
 	risk50 := 50
 	return []Rule{
 		{
-			Name:        "block_destructive_ops",
-			Description: "Block delete operations on sensitive tools",
-			Enabled:     true,
-			ToolPattern: "delete_*",
+			Name:           "block_destructive_ops",
+			Description:    "Block delete operations on sensitive tools",
+			Enabled:        true,
+			ToolPattern:    "delete_*",
 			OperationTypes: []string{"delete"},
-			MinRiskScore: &risk70,
-			Action:      "block",
+			MinRiskScore:   &risk70,
+			Action:         "block",
 		},
 		{
-			Name:        "pause_high_risk",
-			Description: "Pause high-risk operations for approval",
-			Enabled:     true,
+			Name:         "pause_high_risk",
+			Description:  "Pause high-risk operations for approval",
+			Enabled:      true,
 			MinRiskScore: &risk50,
-			Action:      "pause",
+			Action:       "pause",
 		},
 		{
 			Name:           "flag_sql_mutations",

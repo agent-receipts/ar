@@ -46,7 +46,7 @@ var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`ghp_[A-Za-z0-9]{36,}`),             // GitHub PAT
 	regexp.MustCompile(`gho_[A-Za-z0-9]{36,}`),             // GitHub OAuth
 	regexp.MustCompile(`sk-[A-Za-z0-9\-]{20,}`),            // OpenAI/Anthropic
-	regexp.MustCompile(`AKIA[A-Z0-9]{16}`),                  // AWS access key
+	regexp.MustCompile(`AKIA[A-Z0-9]{16}`),                 // AWS access key
 	regexp.MustCompile(`Bearer\s+[A-Za-z0-9._\-/+=]{20,}`), // Bearer tokens
 	regexp.MustCompile(`xox[bpras]-[A-Za-z0-9\-]+`),        // Slack tokens
 	// PEM private keys: match the entire block from BEGIN to END.

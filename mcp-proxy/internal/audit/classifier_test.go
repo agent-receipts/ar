@@ -9,6 +9,7 @@ func TestClassifyOperation(t *testing.T) {
 	}{
 		{"read_file", "read"},
 		{"list_directory", "read"},
+		{"list_issues", "read"},
 		{"create_issue", "write"},
 		{"update_record", "write"},
 		{"delete_file", "delete"},
