@@ -22,7 +22,7 @@ jobs:
 
       - name: Reject local replace directives
         run: |
-          go mod edit -json | python3 - <<'PY'
+          go mod edit -json | python3 -c '
           import json, re, sys
           mod = json.load(sys.stdin)
           for entry in mod.get("Replace") or []:
@@ -31,7 +31,7 @@ jobs:
                   or path.startswith("/") or re.match(r"^[A-Za-z]:[\\\\/]", path)):
                   print(f"::error::go.mod contains a local replace directive ({path}) — remove it before releasing")
                   sys.exit(1)
-          PY
+          '
 
       - run: go vet ./...
       - run: go build ./...
@@ -62,7 +62,7 @@ jobs:
 
       - name: Reject local replace directives
         run: |
-          go mod edit -json | python3 - <<'PY'
+          go mod edit -json | python3 -c '
           import json, re, sys
           mod = json.load(sys.stdin)
           for entry in mod.get("Replace") or []:
@@ -71,7 +71,7 @@ jobs:
                   or path.startswith("/") or re.match(r"^[A-Za-z]:[\\\\/]", path)):
                   print(f"::error::go.mod contains a local replace directive ({path}) — remove it before releasing")
                   sys.exit(1)
-          PY
+          '
 
       - run: go vet ./...
       - run: go build ./...
