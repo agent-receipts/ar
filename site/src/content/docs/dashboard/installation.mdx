@@ -22,7 +22,7 @@ make build
 Point the dashboard at a receipt database:
 
 ```sh
-dashboard --db ./receipts.db
+dashboard -db ./receipts.db
 ```
 
 Then open [http://localhost:8080](http://localhost:8080) in your browser.
@@ -31,15 +31,15 @@ Then open [http://localhost:8080](http://localhost:8080) in your browser.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--db` | *(required)* | Path to a receipt SQLite database |
-| `--port` | `8080` | Port to serve on |
+| `-db` | *(required)* | Path to a receipt SQLite database |
+| `-port` | `8080` | Port to serve on |
 
 ### Example
 
 ```sh
 # View receipts from the MCP proxy
-dashboard --db ~/.config/ar/receipts.db
+dashboard -db ~/.config/ar/receipts.db
 
 # Use a custom port
-dashboard --db ./receipts.db --port 9090
+dashboard -db ./receipts.db -port 9090
 ```
