@@ -7,16 +7,16 @@ description: CLI flags, policy rules, redaction, and encryption options for the 
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--db` | `audit.db` | SQLite audit database path |
-| `--receipt-db` | `receipts.db` | SQLite receipt store path |
-| `--key` | (ephemeral) | Ed25519 private key PEM file for signing receipts |
-| `--taxonomy` | (none) | Taxonomy mappings JSON file for action classification |
-| `--rules` | (built-in defaults) | Policy rules YAML file |
-| `--name` | (inferred from command) | Server name for the audit trail |
-| `--issuer` | `did:agent:mcp-proxy` | Issuer DID for receipts |
-| `--principal` | `did:user:unknown` | Principal DID for receipts |
-| `--chain` | (auto UUID) | Chain ID for receipt chaining |
-| `--http` | `127.0.0.1:8080` | HTTP address for the approval endpoint |
+| `-db` | `audit.db` | SQLite audit database path |
+| `-receipt-db` | `receipts.db` | SQLite receipt store path |
+| `-key` | (ephemeral) | Ed25519 private key PEM file for signing receipts |
+| `-taxonomy` | (none) | Taxonomy mappings JSON file for action classification |
+| `-rules` | (built-in defaults) | Policy rules YAML file |
+| `-name` | (inferred from command) | Server name for the audit trail |
+| `-issuer` | `did:agent:mcp-proxy` | Issuer DID for receipts |
+| `-principal` | `did:user:unknown` | Principal DID for receipts |
+| `-chain` | (auto UUID) | Chain ID for receipt chaining |
+| `-http` | `127.0.0.1:8080` | HTTP address for the approval endpoint |
 
 ## Policy rules
 
@@ -89,7 +89,7 @@ Tool names are classified by prefix (case-insensitive):
 | read | get\_, read\_, list\_, search\_, describe\_, show\_ |
 | unknown | (fallback) |
 
-For more precise classification, provide a `--taxonomy` JSON file mapping tool names to action types from the Agent Receipts taxonomy.
+For more precise classification, provide a `-taxonomy` JSON file mapping tool names to action types from the Agent Receipts taxonomy.
 
 ## Approval workflow
 
