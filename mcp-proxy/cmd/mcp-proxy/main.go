@@ -59,6 +59,10 @@ func serve() {
 		rulesPath    = flag.String("rules", "", "Policy rules (YAML file)")
 		serverName   = flag.String("name", "", "Server name for audit trail")
 		issuerDID    = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
+		issuerName   = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
+		issuerModel  = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
+		operatorID   = flag.String("operator-id", "", "Operator DID (organisation running the agent)")
+		operatorName = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
 		principalDID = flag.String("principal", "did:user:unknown", "Principal DID")
 		chainID      = flag.String("chain", "", "Chain ID (auto-generated if empty)")
 		httpAddr     = flag.String("http", "127.0.0.1:8080", "HTTP address for approval endpoints")
@@ -412,14 +416,27 @@ func serve() {
 				currentSeq := sequence
 				currentPrevHash := prevReceiptHash
 
+				issuer := receipt.Issuer{
+					ID:    *issuerDID,
+					Name:  *issuerName,
+					Model: *issuerModel,
+				}
+				if *operatorID != "" || *operatorName != "" {
+					issuer.Operator = &receipt.Operator{
+						ID:   *operatorID,
+						Name: *operatorName,
+					}
+				}
+
 				unsigned := receipt.Create(receipt.CreateInput{
-					Issuer:    receipt.Issuer{ID: *issuerDID},
+					Issuer:    issuer,
 					Principal: receipt.Principal{ID: *principalDID},
 					Action: receipt.Action{
 						Type:           actionType,
 						ToolName:       pc.toolName,
 						RiskLevel:      riskLevel,
 						ParametersHash: argsHash,
+						Target:         &receipt.ActionTarget{System: *serverName},
 					},
 					Outcome: receipt.Outcome{Status: status},
 					Chain: receipt.Chain{
