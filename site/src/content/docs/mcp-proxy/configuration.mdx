@@ -14,6 +14,10 @@ description: CLI flags, policy rules, redaction, and encryption options for the 
 | `-rules` | (built-in defaults) | Policy rules YAML file |
 | `-name` | (inferred from command) | Server name for the audit trail |
 | `-issuer` | `did:agent:mcp-proxy` | Issuer DID for receipts |
+| `-issuer-name` | (none) | Issuer name, e.g. `Claude Code` or `Codex` |
+| `-issuer-model` | (none) | AI model identifier, e.g. `claude-sonnet-4-6`. Static per session — omit if the client can switch models mid-session |
+| `-operator-id` | (none) | Operator DID (organisation running the agent), e.g. `did:web:anthropic.com` |
+| `-operator-name` | (none) | Operator name, e.g. `Anthropic` |
 | `-principal` | `did:user:unknown` | Principal DID for receipts |
 | `-chain` | (auto UUID) | Chain ID for receipt chaining |
 | `-http` | `127.0.0.1:8080` | HTTP address for the approval endpoint |
@@ -89,7 +93,25 @@ Tool names are classified by prefix (case-insensitive):
 | read | get\_, read\_, list\_, search\_, describe\_, show\_ |
 | unknown | (fallback) |
 
-For more precise classification, provide a `-taxonomy` JSON file mapping tool names to action types from the Agent Receipts taxonomy.
+MCP tool names are automatically stripped of their `mcp__<server>__` prefix before classification. For example, `mcp__github-audited__create_branch` is classified as `create_branch` (write). This means taxonomy mappings and policy rules use bare tool names.
+
+## Taxonomy mappings
+
+For more precise classification than prefix-based inference, provide a `-taxonomy` JSON file mapping tool names to action types:
+
+```json
+{
+  "mappings": [
+    {"tool_name": "merge_pull_request", "action_type": "data.api.write"},
+    {"tool_name": "list_issues", "action_type": "data.api.read"},
+    {"tool_name": "delete_file", "action_type": "data.api.delete"}
+  ]
+}
+```
+
+Available action types include `filesystem.file.*`, `system.*`, and `data.api.*` (read, write, delete). See the [taxonomy spec](https://github.com/agent-receipts/ar/blob/main/spec/spec/taxonomy/action-types.json) for the full list.
+
+A bundled [`configs/github_taxonomy.json`](https://github.com/agent-receipts/ar/blob/main/mcp-proxy/configs/github_taxonomy.json) provides mappings for GitHub MCP server tools.
 
 ## Approval workflow
 
@@ -134,3 +156,29 @@ BEACON_ENCRYPTION_KEY="my-passphrase" mcp-proxy node server.js
 ```
 
 Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored with an `enc:` prefix and transparently decrypted on retrieval.
+
+## Troubleshooting
+
+### Port conflict when multiple MCP clients use the proxy
+
+Each `mcp-proxy` instance binds an HTTP server for the approval workflow (default `127.0.0.1:8080`). If two or more MCP clients launch the same proxy simultaneously — for example, Claude Desktop and Claude Code, or Cursor and a custom agent — the second instance will fail with:
+
+```
+listen tcp 127.0.0.1:8080: bind: address already in use
+```
+
+**Fix:** assign each instance a different port with `-http`:
+
+```bash
+# First client uses the default
+mcp-proxy -name github ... /path/to/server
+
+# Second client uses a different port
+mcp-proxy -name github -http 127.0.0.1:8081 ... /path/to/server
+```
+
+Each instance can also use separate `-db` and `-receipt-db` paths if you want isolated audit trails, or share the same databases if you want a unified log.
+
+:::note
+The approval HTTP server is only needed when policy rules use the `pause` action. If you don't use approval workflows, the port conflict is harmless — the proxy logs the error but continues to function normally.
+:::
