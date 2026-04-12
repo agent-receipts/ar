@@ -1,0 +1,102 @@
+---
+title: Claude Code Integration
+description: How to route Claude Code MCP servers through the Agent Receipts proxy for cryptographic audit trails.
+---
+
+Claude Code is a CLI-based agent that connects to MCP servers for tools like GitHub, databases, and file systems. The Agent Receipts proxy wraps any MCP server transparently — Claude Code doesn't know or care that the proxy is there.
+
+## Prerequisites
+
+- [mcp-proxy installed](/mcp-proxy/installation/)
+- A signing key pair generated (see below)
+- Claude Code installed (`npm install -g @anthropic-ai/claude-code`)
+
+## Generate a signing key
+
+```bash
+mkdir -p ~/.agent-receipts
+openssl genpkey -algorithm Ed25519 -out ~/.agent-receipts/github-proxy.pem
+openssl pkey -in ~/.agent-receipts/github-proxy.pem -pubout \
+  -out ~/.agent-receipts/github-proxy-pub.pem
+```
+
+Use absolute paths everywhere — Claude Code launches MCP servers with a clean environment where `~` expansion and `$PATH` may not behave as expected.
+
+## Register the proxy with Claude Code
+
+Use `claude mcp add-json` to register a proxied server. The example below wraps `mcp-server-github`:
+
+```bash
+claude mcp add-json github-audited --scope user '{
+  "command": "/Users/YOU/go/bin/mcp-proxy",
+  "args": [
+    "-name", "github",
+    "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+    "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+    "/opt/homebrew/bin/mcp-server-github"
+  ],
+  "env": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+  }
+}'
+```
+
+`--scope user` makes the server available across all projects. Omit it for project-local scope only.
+
+Verify the server is registered:
+
+```bash
+claude mcp list
+```
+
+## Project-scoped setup via .mcp.json
+
+For a shared team configuration, add a `.mcp.json` file at the project root. This is committed to version control — do not put tokens directly in it. Reference environment variables instead:
+
+```json
+{
+  "mcpServers": {
+    "github-audited": {
+      "command": "/Users/YOU/go/bin/mcp-proxy",
+      "args": [
+        "-name", "github",
+        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+        "/opt/homebrew/bin/mcp-server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Each developer sets `GITHUB_PERSONAL_ACCESS_TOKEN` in their shell environment. The proxy path and key path will need to be consistent across the team, or handled via a wrapper script.
+
+## Verifying receipts
+
+After making tool calls through Claude Code, inspect the receipt store from your terminal:
+
+```bash
+# List all receipts
+mcp-proxy list -receipt-db ~/.agent-receipts/receipts.db
+
+# Verify chain integrity
+mcp-proxy verify \
+  -key ~/.agent-receipts/github-proxy-pub.pem \
+  -receipt-db ~/.agent-receipts/receipts.db \
+  <chain-id>
+```
+
+`list_issues`, `create_issue`, `get_file_contents` and other read operations will show `Action: read, Risk: low`. Write operations like `create_or_update_file` will show `Action: write, Risk: medium`.
+
+## Gotchas
+
+**Absolute paths required.** Claude Code launches MCP servers with a clean `PATH`. Use the full path to `mcp-proxy` (find it with `which mcp-proxy`) and the full path to the wrapped server binary.
+
+**Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
+
+**Per-session chain IDs.** By default the proxy generates a new chain ID each session. Pass `-chain <id>` to persist a chain across sessions.
+
+**Old receipts show `unknown`.** If you upgraded from a version before v0.2.0, existing receipts in the DB will always show `Action: unknown` — the tool name was never stored. Clear the DB and start fresh after upgrading.
