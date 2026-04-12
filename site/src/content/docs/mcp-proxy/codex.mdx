@@ -1,0 +1,93 @@
+---
+title: Codex Integration
+description: How to route OpenAI Codex MCP servers through the Agent Receipts proxy for cryptographic audit trails.
+---
+
+OpenAI Codex (CLI and IDE extension) stores MCP configuration in `~/.codex/config.toml`. The Agent Receipts proxy wraps any MCP server transparently — Codex doesn't know or care that the proxy is there.
+
+## Prerequisites
+
+- [mcp-proxy installed](/mcp-proxy/installation/)
+- A signing key pair generated (see below)
+- Codex installed (`npm install -g @openai/codex` or via the IDE extension)
+
+## Generate a signing key
+
+```bash
+mkdir -p ~/.agent-receipts
+openssl genpkey -algorithm Ed25519 -out ~/.agent-receipts/github-proxy.pem
+openssl pkey -in ~/.agent-receipts/github-proxy.pem -pubout \
+  -out ~/.agent-receipts/github-proxy-pub.pem
+```
+
+Use absolute paths everywhere — Codex launches MCP servers with a clean environment where `~` expansion and `$PATH` may not behave as expected.
+
+## Configure via CLI
+
+Use `codex mcp add` to register the proxy wrapping any MCP server:
+
+```bash
+codex mcp add github-audited \
+  --env GITHUB_PERSONAL_ACCESS_TOKEN=YOUR_TOKEN \
+  -- /Users/YOU/go/bin/mcp-proxy \
+    -name github \
+    -key /Users/YOU/.agent-receipts/github-proxy.pem \
+    -receipt-db /Users/YOU/.agent-receipts/receipts.db \
+    /opt/homebrew/bin/mcp-server-github
+```
+
+Add `--scope user` to make the server available across all projects (default is project-scoped).
+
+## Configure via config.toml
+
+Alternatively, edit `~/.codex/config.toml` directly:
+
+```toml
+[mcp_servers.github-audited]
+command = "/Users/YOU/go/bin/mcp-proxy"
+args = [
+  "-name", "github",
+  "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+  "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+  "/opt/homebrew/bin/mcp-server-github"
+]
+enabled = true
+
+[mcp_servers.github-audited.env]
+GITHUB_PERSONAL_ACCESS_TOKEN = "YOUR_TOKEN"
+```
+
+For project-scoped setup, place the same config in `.codex/config.toml` at the project root (only applies in trusted projects).
+
+Verify the server is registered:
+
+```bash
+codex mcp get github-audited
+```
+
+Or check active servers inside the Codex TUI with `/mcp`.
+
+## Verifying receipts
+
+After making tool calls through Codex, inspect the receipt store from your terminal:
+
+```bash
+# List all receipts
+mcp-proxy list -receipt-db ~/.agent-receipts/receipts.db
+
+# Verify chain integrity
+mcp-proxy verify \
+  -key ~/.agent-receipts/github-proxy-pub.pem \
+  -receipt-db ~/.agent-receipts/receipts.db \
+  <chain-id>
+```
+
+## Gotchas
+
+**Absolute paths required.** Codex launches MCP servers with a clean `PATH`. Use the full path to `mcp-proxy` (find it with `which mcp-proxy`) and the full path to the wrapped server binary.
+
+**TOML syntax for args.** Unlike JSON (Claude Desktop) or the `--` CLI pattern (Claude Code), Codex config.toml uses a TOML array for `args`. Each flag and its value must be a separate string in the array.
+
+**Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
+
+**Per-session chain IDs.** By default the proxy generates a new chain ID each session. Pass `-chain <id>` to persist a chain across sessions.
