@@ -42,17 +42,17 @@ The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, for
 
 ```bash
 # Install
-go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
+go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@mcp-proxy/v0.2.0
 
 # Wrap any MCP server
 mcp-proxy node /path/to/mcp-server.js
 
 # With configuration
 mcp-proxy \
-  --name github \
-  --key private.pem \
-  --rules rules.yaml \
-  --taxonomy taxonomy.json \
+  -name github \
+  -key private.pem \
+  -rules rules.yaml \
+  -taxonomy taxonomy.json \
   node /path/to/github-mcp-server.js
 ```
 
@@ -64,11 +64,16 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "github-audited": {
-      "command": "mcp-proxy",
+      "command": "/Users/YOU/go/bin/mcp-proxy",
       "args": [
-        "--name", "github",
-        "node", "/path/to/github-mcp-server.js"
-      ]
+        "-name", "github",
+        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+        "/opt/homebrew/bin/mcp-server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+      }
     }
   }
 }
