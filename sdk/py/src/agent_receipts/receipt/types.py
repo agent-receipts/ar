@@ -65,6 +65,7 @@ class Action(BaseModel):
 
     id: str
     type: str
+    tool_name: str | None = None
     risk_level: RiskLevel
     target: ActionTarget | None = None
     parameters_hash: str | None = None

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS receipts (
   chain_id TEXT NOT NULL,
   sequence INTEGER NOT NULL,
   action_type TEXT NOT NULL,
+  tool_name TEXT NOT NULL DEFAULT '',
   risk_level TEXT NOT NULL,
   status TEXT NOT NULL,
   timestamp TEXT NOT NULL,
@@ -68,6 +69,25 @@ class ReceiptStore:
         self._conn = sqlite3.connect(db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        self._migrate_tool_name()
+
+    def _migrate_tool_name(self) -> None:
+        """Add tool_name column to pre-existing databases that lack it.
+
+        The try/except handles the race where concurrent processes both
+        detect the missing column and one ALTER succeeds before the other.
+        """
+        cursor = self._conn.execute("PRAGMA table_info(receipts)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "tool_name" not in columns:
+            try:
+                self._conn.execute(
+                    "ALTER TABLE receipts ADD COLUMN tool_name TEXT NOT NULL DEFAULT ''"
+                )
+                self._conn.commit()
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
 
     def insert(self, receipt: AgentReceipt, receipt_hash: str) -> None:
         """Insert a signed receipt into the store."""
@@ -82,16 +102,17 @@ class ReceiptStore:
         self._conn.execute(
             """
             INSERT INTO receipts
-                (id, chain_id, sequence, action_type, risk_level, status,
+                (id, chain_id, sequence, action_type, tool_name, risk_level, status,
                  timestamp, issuer_id, principal_id, receipt_json, receipt_hash,
                  previous_receipt_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 receipt.id,
                 chain.chain_id,
                 chain.sequence,
                 action.type,
+                action.tool_name or "",
                 action.risk_level,
                 outcome.status,
                 action.timestamp,

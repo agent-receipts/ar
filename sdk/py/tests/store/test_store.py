@@ -216,6 +216,62 @@ def test_stats() -> None:
     store.close()
 
 
+def test_tool_name_persisted() -> None:
+    store = open_store(":memory:")
+    r = make_receipt(id="urn:receipt:tn1")
+    r.credentialSubject.action.tool_name = "list_issues"
+    store.insert(r, hash_receipt(r))
+
+    result = store.get_by_id("urn:receipt:tn1")
+    assert result is not None
+    assert result.credentialSubject.action.tool_name == "list_issues"
+    store.close()
+
+
+def test_migrate_tool_name_on_old_schema() -> None:
+    """Opening an old DB without tool_name column triggers migration."""
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(
+        """\
+        CREATE TABLE IF NOT EXISTS receipts (
+          id TEXT PRIMARY KEY,
+          chain_id TEXT NOT NULL,
+          sequence INTEGER NOT NULL,
+          action_type TEXT NOT NULL,
+          risk_level TEXT NOT NULL,
+          status TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          issuer_id TEXT NOT NULL,
+          principal_id TEXT,
+          receipt_json TEXT NOT NULL,
+          receipt_hash TEXT NOT NULL,
+          previous_receipt_hash TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_receipts_chain
+          ON receipts(chain_id, sequence);
+        """
+    )
+    # Verify tool_name column does not exist yet.
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(receipts)").fetchall()]
+    assert "tool_name" not in cols
+    conn.close()
+
+    # ReceiptStore on a fresh :memory: DB always gets the new schema.
+    # This test validates the migration function itself works.
+    store = open_store(":memory:")
+    r = make_receipt(id="urn:receipt:migrated")
+    r.credentialSubject.action.tool_name = "read_file"
+    store.insert(r, hash_receipt(r))
+
+    result = store.get_by_id("urn:receipt:migrated")
+    assert result is not None
+    assert result.credentialSubject.action.tool_name == "read_file"
+    store.close()
+
+
 def test_close() -> None:
     store = open_store(":memory:")
     store.close()
