@@ -59,6 +59,7 @@ export interface ActionTarget {
 export interface Action {
 	id: string;
 	type: string;
+	tool_name?: string;
 	risk_level: RiskLevel;
 	target?: ActionTarget;
 	parameters_hash?: string;

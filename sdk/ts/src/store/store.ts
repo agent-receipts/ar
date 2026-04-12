@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS receipts (
   chain_id TEXT NOT NULL,
   sequence INTEGER NOT NULL,
   action_type TEXT NOT NULL,
+  tool_name TEXT NOT NULL DEFAULT '',
   risk_level TEXT NOT NULL,
   status TEXT NOT NULL,
   timestamp TEXT NOT NULL,
@@ -81,6 +82,28 @@ export class ReceiptStore {
 	constructor(dbPath: string) {
 		this.db = new DatabaseSync(dbPath);
 		this.db.exec(SCHEMA);
+		this.migrateToolName();
+	}
+
+	/**
+	 * Add tool_name column to pre-existing databases that lack it.
+	 */
+	private migrateToolName(): void {
+		const rows = this.db
+			.prepare("PRAGMA table_info(receipts)")
+			.all() as unknown[];
+		const hasColumn = rows.some(
+			(r) =>
+				typeof r === "object" &&
+				r !== null &&
+				"name" in r &&
+				(r as Record<string, unknown>).name === "tool_name",
+		);
+		if (!hasColumn) {
+			this.db.exec(
+				"ALTER TABLE receipts ADD COLUMN tool_name TEXT NOT NULL DEFAULT ''",
+			);
+		}
 	}
 
 	/**
@@ -91,16 +114,17 @@ export class ReceiptStore {
 		this.db
 			.prepare(
 				`INSERT INTO receipts
-				(id, chain_id, sequence, action_type, risk_level, status,
+				(id, chain_id, sequence, action_type, tool_name, risk_level, status,
 				 timestamp, issuer_id, principal_id, receipt_json, receipt_hash,
 				 previous_receipt_hash)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.run(
 				receipt.id,
 				subject.chain.chain_id,
 				subject.chain.sequence,
 				subject.action.type,
+				subject.action.tool_name ?? "",
 				subject.action.risk_level,
 				subject.outcome.status,
 				subject.action.timestamp,

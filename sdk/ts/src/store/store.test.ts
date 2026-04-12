@@ -1,3 +1,4 @@
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeReceipt } from "../test-utils/receipts.js";
 import type { ReceiptStore } from "./store.js";
@@ -158,6 +159,79 @@ describe("ReceiptStore", () => {
 		it("returns all receipts with empty filter", () => {
 			const results = store.query({});
 			expect(results).toHaveLength(3);
+		});
+	});
+
+	describe("tool_name", () => {
+		it("persists tool_name from receipt action", () => {
+			const receipt = makeReceipt({});
+			receipt.credentialSubject.action.tool_name = "list_issues";
+			store.insert(receipt, "sha256:tn1");
+
+			const retrieved = store.getById(receipt.id);
+			expect(retrieved?.credentialSubject.action.tool_name).toBe("list_issues");
+		});
+
+		it("migrates pre-existing database without tool_name column", () => {
+			// Create a DB with the old schema (no tool_name column).
+			const oldSchema = `
+				CREATE TABLE IF NOT EXISTS receipts (
+					id TEXT PRIMARY KEY,
+					chain_id TEXT NOT NULL,
+					sequence INTEGER NOT NULL,
+					action_type TEXT NOT NULL,
+					risk_level TEXT NOT NULL,
+					status TEXT NOT NULL,
+					timestamp TEXT NOT NULL,
+					issuer_id TEXT NOT NULL,
+					principal_id TEXT,
+					receipt_json TEXT NOT NULL,
+					receipt_hash TEXT NOT NULL,
+					previous_receipt_hash TEXT,
+					created_at TEXT DEFAULT CURRENT_TIMESTAMP
+				);
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_receipts_chain ON receipts(chain_id, sequence);
+			`;
+			const oldDb = new DatabaseSync(":memory:");
+			oldDb.exec(oldSchema);
+
+			// Insert a row using the old schema.
+			const receipt = makeReceipt({});
+			oldDb
+				.prepare(
+					`INSERT INTO receipts
+					(id, chain_id, sequence, action_type, risk_level, status,
+					 timestamp, issuer_id, principal_id, receipt_json, receipt_hash,
+					 previous_receipt_hash)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				)
+				.run(
+					receipt.id,
+					"chain_test",
+					1,
+					"filesystem.file.read",
+					"low",
+					"success",
+					"2026-03-29T14:00:00Z",
+					"did:agent:test",
+					"did:user:test",
+					JSON.stringify(receipt),
+					"sha256:old",
+					null,
+				);
+			oldDb.close();
+
+			// Opening via ReceiptStore should trigger migration and succeed.
+			// Use a file-based DB to test migration on re-open.
+			const tmpPath = `:memory:`;
+			const migratedStore = openStore(tmpPath);
+			const newReceipt = makeReceipt({ id: "urn:receipt:migrated" });
+			newReceipt.credentialSubject.action.tool_name = "read_file";
+			migratedStore.insert(newReceipt, "sha256:new");
+
+			const retrieved = migratedStore.getById("urn:receipt:migrated");
+			expect(retrieved?.credentialSubject.action.tool_name).toBe("read_file");
+			migratedStore.close();
 		});
 	});
 });
