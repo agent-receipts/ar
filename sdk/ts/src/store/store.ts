@@ -89,10 +89,16 @@ export class ReceiptStore {
 	 * Add tool_name column to pre-existing databases that lack it.
 	 */
 	private migrateToolName(): void {
-		const rows = this.db.prepare("PRAGMA table_info(receipts)").all() as {
-			name: string;
-		}[];
-		const hasColumn = rows.some((r) => r.name === "tool_name");
+		const rows = this.db
+			.prepare("PRAGMA table_info(receipts)")
+			.all() as unknown[];
+		const hasColumn = rows.some(
+			(r) =>
+				typeof r === "object" &&
+				r !== null &&
+				"name" in r &&
+				(r as Record<string, unknown>).name === "tool_name",
+		);
 		if (!hasColumn) {
 			this.db.exec(
 				"ALTER TABLE receipts ADD COLUMN tool_name TEXT NOT NULL DEFAULT ''",
