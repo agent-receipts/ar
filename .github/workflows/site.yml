@@ -35,7 +35,6 @@ jobs:
 
       - name: Install pnpm
         run: corepack enable && corepack install
-        working-directory: .
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
