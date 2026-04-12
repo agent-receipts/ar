@@ -1,0 +1,74 @@
+---
+title: Claude Desktop Integration
+description: How to route Claude Desktop MCP servers through the Agent Receipts proxy for cryptographic audit trails.
+---
+
+Claude Desktop connects to MCP servers via `claude_desktop_config.json`. The Agent Receipts proxy wraps any MCP server transparently — Claude Desktop doesn't know or care that the proxy is there.
+
+## Prerequisites
+
+- [mcp-proxy installed](/mcp-proxy/installation/)
+- A signing key pair generated (see below)
+
+## Generate a signing key
+
+```bash
+mkdir -p ~/.agent-receipts
+openssl genpkey -algorithm Ed25519 -out ~/.agent-receipts/github-proxy.pem
+openssl pkey -in ~/.agent-receipts/github-proxy.pem -pubout \
+  -out ~/.agent-receipts/github-proxy-pub.pem
+```
+
+Use absolute paths everywhere — Claude Desktop launches MCP servers with a clean environment where `~` expansion and `$PATH` are not available.
+
+## Configure claude_desktop_config.json
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "github-audited": {
+      "command": "/Users/YOU/go/bin/mcp-proxy",
+      "args": [
+        "-name", "github",
+        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+        "/opt/homebrew/bin/mcp-server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The GitHub MCP server now runs behind the proxy — every tool call goes through it transparently.
+
+> **Note:** `claude_desktop_config.json` is not encrypted. Avoid committing it to version control, and prefer sourcing tokens from your OS keychain or a secret manager where possible.
+
+## Verifying receipts
+
+After making tool calls, inspect the receipt store from your terminal:
+
+```bash
+# List all receipts
+mcp-proxy list -receipt-db ~/.agent-receipts/receipts.db
+
+# Verify chain integrity
+mcp-proxy verify \
+  -key ~/.agent-receipts/github-proxy-pub.pem \
+  -receipt-db ~/.agent-receipts/receipts.db \
+  <chain-id>
+```
+
+## Gotchas
+
+**Absolute paths required.** Claude Desktop launches MCP servers with a clean `PATH`. Use the full path to `mcp-proxy` (find it with `which mcp-proxy`) and the full path to the wrapped server binary.
+
+**Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
+
+**Per-session chain IDs.** By default the proxy generates a new chain ID each session. Pass `-chain <id>` to persist a chain across sessions.
+
+**Old receipts show `unknown`.** If you upgraded from a version before v0.2.0, existing receipts in the DB will always show `Action: unknown` — the tool name was never stored. Clear the DB and start fresh after upgrading.
