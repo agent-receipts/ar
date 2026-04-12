@@ -6,7 +6,7 @@ description: Install and run the MCP Proxy.
 ## Install
 
 ```bash
-go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
+go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@mcp-proxy/v0.2.0
 ```
 
 ## Requirements
@@ -35,7 +35,7 @@ openssl genpkey -algorithm Ed25519 -out private.pem
 openssl pkey -in private.pem -pubout -out public.pem
 
 # Run with persistent key
-mcp-proxy --key private.pem node /path/to/mcp-server.js
+mcp-proxy -key private.pem node /path/to/mcp-server.js
 ```
 
 ## Next steps
