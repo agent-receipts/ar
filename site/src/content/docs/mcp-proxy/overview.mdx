@@ -11,9 +11,12 @@ The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP clien
 
 - **Risk scoring** -- scores every tool call 0-100 based on operation type, sensitive keywords, and patterns
 - **Operation classification** -- classifies calls as read, write, delete, or execute by tool name
+- **Action taxonomy** -- classify tool calls using configurable taxonomy mappings, with a bundled config for GitHub MCP server tools
+- **MCP prefix stripping** -- automatically strips `mcp__<server>__` prefixes so receipts and classification use clean tool names
 - **Policy enforcement** -- YAML rules engine with four actions: pass, flag, pause (approval required), and block
 - **Approval workflows** -- HTTP endpoints for async approval of paused operations
 - **Cryptographic receipts** -- Ed25519-signed W3C Verifiable Credentials, hash-chained per session
+- **Issuer identity** -- receipts identify the AI agent, model, and operator via CLI flags
 - **Intent tracking** -- groups related tool calls by temporal proximity
 - **Data redaction** -- JSON-aware and pattern-based redaction of secrets before storage
 - **Encryption at rest** -- optional AES-256-GCM encryption of audit data
@@ -58,7 +61,7 @@ mcp-proxy \
 
 ## Claude Desktop integration
 
-Add to `claude_desktop_config.json`:
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
@@ -68,7 +71,12 @@ Add to `claude_desktop_config.json`:
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-db", "/Users/YOU/.agent-receipts/audit.db",
         "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+        "-issuer-name", "Claude Desktop",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
+        "-taxonomy", "/Users/YOU/.agent-receipts/github_taxonomy.json",
         "/opt/homebrew/bin/mcp-server-github"
       ],
       "env": {
@@ -91,7 +99,13 @@ claude mcp add-json github-audited --scope user '{
   "args": [
     "-name", "github",
     "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+    "-db", "/Users/YOU/.agent-receipts/audit.db",
     "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+    "-http", "127.0.0.1:8081",
+    "-issuer-name", "Claude Code",
+    "-operator-id", "did:web:anthropic.com",
+    "-operator-name", "Anthropic",
+    "-taxonomy", "/Users/YOU/.agent-receipts/github_taxonomy.json",
     "/opt/homebrew/bin/mcp-server-github"
   ],
   "env": {
@@ -107,5 +121,43 @@ claude mcp list
 ```
 
 See the [Claude Code integration guide](/mcp-proxy/claude-code/) for a full walkthrough including project-scoped setup and `.mcp.json` configuration.
+
+:::note
+If both Claude Desktop and Claude Code run simultaneously, the second instance will fail to bind the default approval port. Use `-http 127.0.0.1:8081` (or any free port) on one of them to avoid the conflict.
+:::
+
+## What receipts look like
+
+Each tool call produces a signed W3C Verifiable Credential:
+
+```json
+{
+  "issuer": {
+    "id": "did:agent:mcp-proxy",
+    "name": "Claude Code",
+    "operator": {
+      "id": "did:web:anthropic.com",
+      "name": "Anthropic"
+    }
+  },
+  "credentialSubject": {
+    "principal": { "id": "did:user:otto" },
+    "action": {
+      "type": "data.api.read",
+      "tool_name": "get_issue",
+      "risk_level": "low",
+      "target": { "system": "github" }
+    },
+    "outcome": { "status": "success" },
+    "chain": {
+      "sequence": 1,
+      "previous_receipt_hash": null,
+      "chain_id": "9351bc33-..."
+    }
+  }
+}
+```
+
+Receipts are Ed25519-signed, hash-chained per session, and stored in a local SQLite database. Use `mcp-proxy list`, `inspect`, and `verify` to query and validate them.
 
 See [Installation](/mcp-proxy/installation/) to get started, or [Configuration](/mcp-proxy/configuration/) for the full set of options.
