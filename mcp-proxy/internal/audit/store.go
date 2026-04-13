@@ -138,6 +138,15 @@ func Open(dbPath string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
+	// Migrate: add timing columns to existing databases.
+	for _, col := range []string{
+		"ALTER TABLE tool_calls ADD COLUMN policy_eval_us INTEGER",
+		"ALTER TABLE tool_calls ADD COLUMN approval_wait_us INTEGER",
+		"ALTER TABLE tool_calls ADD COLUMN upstream_us INTEGER",
+		"ALTER TABLE tool_calls ADD COLUMN receipt_sign_us INTEGER",
+	} {
+		db.Exec(col) // Ignore "duplicate column" errors.
+	}
 	return &Store{db: db}, nil
 }
 
