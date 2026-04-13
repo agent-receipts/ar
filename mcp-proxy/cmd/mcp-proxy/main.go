@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -24,9 +25,27 @@ import (
 	"github.com/google/uuid"
 )
 
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z".
+// Falls back to the module version from Go's build info (set automatically
+// for binaries installed with `go install`), then to "dev".
+var version string
+
+func resolveVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
+
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "-version", "--version":
+			fmt.Printf("mcp-proxy %s\n", resolveVersion())
+			return
 		case "list":
 			cmdList(os.Args[2:])
 			return
