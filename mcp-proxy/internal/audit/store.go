@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -50,7 +51,11 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 	approved_at TEXT,
 	requested_at TEXT NOT NULL,
 	responded_at TEXT,
-	duration_ms INTEGER
+	duration_ms INTEGER,
+	policy_eval_us INTEGER,
+	approval_wait_us INTEGER,
+	upstream_us INTEGER,
+	receipt_sign_us INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS intent_contexts (
@@ -87,20 +92,24 @@ type Store struct {
 
 // ToolCallRecord holds a completed tool call for insertion.
 type ToolCallRecord struct {
-	SessionID     string
-	RequestMsgID  int64
-	ResponseMsgID int64
-	ToolName      string
-	Arguments     string
-	Result        string
-	Error         string
-	OperationType string
-	RiskScore     int
-	RiskReasons   []string
-	PolicyAction  string
-	ApprovedBy    string
-	RequestedAt   time.Time
-	RespondedAt   time.Time
+	SessionID      string
+	RequestMsgID   int64
+	ResponseMsgID  int64
+	ToolName       string
+	Arguments      string
+	Result         string
+	Error          string
+	OperationType  string
+	RiskScore      int
+	RiskReasons    []string
+	PolicyAction   string
+	ApprovedBy     string
+	RequestedAt    time.Time
+	RespondedAt    time.Time
+	PolicyEvalUs   *int64
+	ApprovalWaitUs *int64
+	UpstreamUs     *int64
+	ReceiptSignUs  *int64
 }
 
 // Open opens or creates the audit database.
@@ -129,6 +138,15 @@ func Open(dbPath string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
+	}
+	// Migrate: add timing columns to existing databases.
+	for _, col := range []string{
+		"ALTER TABLE tool_calls ADD COLUMN policy_eval_us INTEGER",
+		"ALTER TABLE tool_calls ADD COLUMN approval_wait_us INTEGER",
+		"ALTER TABLE tool_calls ADD COLUMN upstream_us INTEGER",
+		"ALTER TABLE tool_calls ADD COLUMN receipt_sign_us INTEGER",
+	} {
+		db.Exec(col) // Ignore "duplicate column" errors.
 	}
 	return &Store{db: db}, nil
 }
@@ -190,18 +208,29 @@ func (s *Store) InsertToolCall(tc ToolCallRecord) (int64, error) {
 		INSERT INTO tool_calls
 		(session_id, request_msg_id, response_msg_id, tool_name, arguments,
 		 result, error, operation_type, risk_score, risk_reasons, policy_action,
-		 approved_by, approved_at, requested_at, responded_at, duration_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 approved_by, approved_at, requested_at, responded_at, duration_ms,
+		 policy_eval_us, approval_wait_us, upstream_us, receipt_sign_us)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		tc.SessionID, tc.RequestMsgID, tc.ResponseMsgID, tc.ToolName,
 		tc.Arguments, tc.Result, tc.Error,
 		tc.OperationType, tc.RiskScore, string(reasons), tc.PolicyAction,
 		approvedBy, approvedAt,
 		tc.RequestedAt.UTC().Format(time.RFC3339Nano), respondedAt, durationMs,
+		tc.PolicyEvalUs, tc.ApprovalWaitUs, tc.UpstreamUs, tc.ReceiptSignUs,
 	)
 	if err != nil {
 		return 0, err
 	}
 	return result.LastInsertId()
+}
+
+// UpdateReceiptSignUs updates the receipt_sign_us timing for a tool call.
+func (s *Store) UpdateReceiptSignUs(toolCallID int64, us int64) error {
+	_, err := s.db.Exec(`UPDATE tool_calls SET receipt_sign_us = ? WHERE id = ?`, us, toolCallID)
+	if err != nil {
+		return fmt.Errorf("update receipt_sign_us: %w", err)
+	}
+	return nil
 }
 
 // CreateIntentContext creates a new intent grouping.
@@ -256,6 +285,176 @@ func (s *Store) EncryptionSalt() ([]byte, error) {
 		return nil, fmt.Errorf("invalid encryption salt length: got %d, want 16", len(salt))
 	}
 	return salt, nil
+}
+
+// ToolTiming holds per-tool aggregate timing data.
+type ToolTiming struct {
+	ToolName      string `json:"tool_name"`
+	Count         int    `json:"count"`
+	AvgUpstreamUs *int64 `json:"avg_upstream_us"`
+	AvgPolicyUs   *int64 `json:"avg_policy_eval_us"`
+	AvgReceiptUs  *int64 `json:"avg_receipt_sign_us"`
+	AvgApprovalUs *int64 `json:"avg_approval_wait_us"`
+	AvgDurationMs *int64 `json:"avg_duration_ms"`
+}
+
+// Percentiles holds p50/p95/p99 values for a timing phase.
+type Percentiles struct {
+	P50 int64 `json:"p50"`
+	P95 int64 `json:"p95"`
+	P99 int64 `json:"p99"`
+}
+
+// TimingStats holds aggregate timing data for tool calls.
+type TimingStats struct {
+	Total       int                    `json:"total"`
+	ByTool      []ToolTiming           `json:"by_tool"`
+	Percentiles map[string]Percentiles `json:"percentiles"`
+}
+
+// TimingStats queries aggregate timing data from the tool_calls table.
+// If sessionID is non-empty, results are filtered to that session.
+func (s *Store) TimingStats(sessionID string, limit int) (TimingStats, error) {
+	var st TimingStats
+
+	// Total count.
+	countQuery := "SELECT COUNT(*) FROM tool_calls WHERE duration_ms IS NOT NULL"
+	args := []any{}
+	if sessionID != "" {
+		countQuery += " AND session_id = ?"
+		args = append(args, sessionID)
+	}
+	if err := s.db.QueryRow(countQuery, args...).Scan(&st.Total); err != nil {
+		return TimingStats{}, err
+	}
+	if st.Total == 0 {
+		st.ByTool = []ToolTiming{}
+		st.Percentiles = map[string]Percentiles{}
+		return st, nil
+	}
+
+	// Per-tool averages.
+	toolQuery := `SELECT tool_name, COUNT(*),
+		AVG(upstream_us), AVG(policy_eval_us), AVG(receipt_sign_us),
+		AVG(approval_wait_us), AVG(duration_ms)
+		FROM tool_calls WHERE duration_ms IS NOT NULL`
+	toolArgs := []any{}
+	if sessionID != "" {
+		toolQuery += " AND session_id = ?"
+		toolArgs = append(toolArgs, sessionID)
+	}
+	toolQuery += " GROUP BY tool_name ORDER BY COUNT(*) DESC"
+	if limit > 0 {
+		toolQuery += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	rows, err := s.db.Query(toolQuery, toolArgs...)
+	if err != nil {
+		return TimingStats{}, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tt ToolTiming
+		var avgUpstream, avgPolicy, avgReceipt, avgApproval, avgDuration *float64
+		if err := rows.Scan(&tt.ToolName, &tt.Count,
+			&avgUpstream, &avgPolicy, &avgReceipt,
+			&avgApproval, &avgDuration); err != nil {
+			return TimingStats{}, err
+		}
+		tt.AvgUpstreamUs = floatToInt64(avgUpstream)
+		tt.AvgPolicyUs = floatToInt64(avgPolicy)
+		tt.AvgReceiptUs = floatToInt64(avgReceipt)
+		tt.AvgApprovalUs = floatToInt64(avgApproval)
+		tt.AvgDurationMs = floatToInt64(avgDuration)
+		st.ByTool = append(st.ByTool, tt)
+	}
+	if err := rows.Err(); err != nil {
+		return TimingStats{}, err
+	}
+
+	// Percentiles via ordered subqueries.
+	st.Percentiles = map[string]Percentiles{}
+	phases := []struct {
+		name   string
+		column string
+	}{
+		{"upstream", "upstream_us"},
+		{"policy_eval", "policy_eval_us"},
+		{"receipt_sign", "receipt_sign_us"},
+		{"duration_ms", "duration_ms"},
+	}
+	for _, phase := range phases {
+		p, err := s.percentiles(phase.column, sessionID)
+		if err != nil {
+			return TimingStats{}, err
+		}
+		if p != nil {
+			st.Percentiles[phase.name] = *p
+		}
+	}
+
+	return st, nil
+}
+
+// percentiles computes p50/p95/p99 for a column using ordered offset.
+func (s *Store) percentiles(column, sessionID string) (*Percentiles, error) {
+	where := fmt.Sprintf("WHERE %s IS NOT NULL AND duration_ms IS NOT NULL", column)
+	args := []any{}
+	if sessionID != "" {
+		where += " AND session_id = ?"
+		args = append(args, sessionID)
+	}
+
+	var total int
+	countQ := fmt.Sprintf("SELECT COUNT(*) FROM tool_calls %s", where)
+	if err := s.db.QueryRow(countQ, args...).Scan(&total); err != nil {
+		return nil, err
+	}
+	if total == 0 {
+		return nil, nil
+	}
+
+	valueAt := func(pct float64) (int64, error) {
+		idx := int(math.Ceil(float64(total)*pct)) - 1
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= total {
+			idx = total - 1
+		}
+		q := fmt.Sprintf("SELECT %s FROM tool_calls %s ORDER BY %s LIMIT 1 OFFSET ?",
+			column, where, column)
+		a := append(append([]any{}, args...), idx)
+		var val int64
+		if err := s.db.QueryRow(q, a...).Scan(&val); err != nil {
+			return 0, err
+		}
+		return val, nil
+	}
+
+	p50, err := valueAt(0.50)
+	if err != nil {
+		return nil, err
+	}
+	p95, err := valueAt(0.95)
+	if err != nil {
+		return nil, err
+	}
+	p99, err := valueAt(0.99)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Percentiles{P50: p50, P95: p95, P99: p99}, nil
+}
+
+func floatToInt64(f *float64) *int64 {
+	if f == nil {
+		return nil
+	}
+	v := int64(math.Round(*f))
+	return &v
 }
 
 // Close closes the database.

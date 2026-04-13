@@ -61,6 +61,9 @@ func main() {
 		case "stats":
 			cmdStats(os.Args[2:])
 			return
+		case "timing":
+			cmdTiming(os.Args[2:])
+			return
 		case "serve":
 			os.Args = append(os.Args[:1], os.Args[2:]...)
 			// Fall through to serve.
@@ -90,7 +93,7 @@ func serve() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
 		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
-		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats\n\n")
+		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing\n\n")
 		fmt.Fprintf(os.Stderr, "  -version\n\tPrint version and exit\n")
 		flag.PrintDefaults()
 	}
@@ -201,16 +204,19 @@ func serve() {
 
 	// Pending tool call requests (keyed by JSON-RPC id).
 	type pendingCall struct {
-		msgID      int64
-		toolName   string
-		arguments  map[string]any
-		rawArgs    string
-		opType     string
-		riskScore  int
-		reasons    []string
-		policyAct  string
-		approvedBy string
-		timestamp  time.Time
+		msgID          int64
+		toolName       string
+		arguments      map[string]any
+		rawArgs        string
+		opType         string
+		riskScore      int
+		reasons        []string
+		policyAct      string
+		approvedBy     string
+		timestamp      time.Time
+		policyEvalUs   int64
+		approvalWaitUs int64
+		forwardedAt    time.Time
 	}
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
@@ -274,12 +280,14 @@ func serve() {
 				opType := audit.ClassifyOperation(toolName)
 				riskScore, reasons := audit.ScoreRisk(toolName, params.Arguments)
 
+				evalStart := time.Now()
 				decision := engine.Evaluate(policy.EvalContext{
 					ToolName:      toolName,
 					ServerName:    *serverName,
 					OperationType: opType,
 					RiskScore:     riskScore,
 				})
+				policyEvalUs := time.Since(evalStart).Microseconds()
 
 				argJSON, _ := json.Marshal(params.Arguments)
 				redactedArgs := audit.Redact(string(argJSON))
@@ -294,15 +302,16 @@ func serve() {
 
 				pendingMu.Lock()
 				pendingCalls[jsonrpcID] = &pendingCall{
-					msgID:     msgID,
-					toolName:  toolName,
-					arguments: params.Arguments,
-					rawArgs:   redactedArgs,
-					opType:    opType,
-					riskScore: riskScore,
-					reasons:   reasons,
-					policyAct: decision.Action,
-					timestamp: time.Now(),
+					msgID:        msgID,
+					toolName:     toolName,
+					arguments:    params.Arguments,
+					rawArgs:      redactedArgs,
+					opType:       opType,
+					riskScore:    riskScore,
+					reasons:      reasons,
+					policyAct:    decision.Action,
+					timestamp:    time.Now(),
+					policyEvalUs: policyEvalUs,
 				}
 				pendingMu.Unlock()
 
@@ -319,7 +328,9 @@ func serve() {
 				if decision.Action == "pause" {
 					approvalID := generateToken(16)
 					log.Printf("mcp-proxy: PAUSED %s (rule: %s, risk: %d) — approval id: %s", toolName, decision.RuleName, riskScore, approvalID)
+					waitStart := time.Now()
 					approved := approvals.WaitForApproval(approvalID, 60*time.Second)
+					approvalWaitUs := time.Since(waitStart).Microseconds()
 					if !approved {
 						log.Printf("mcp-proxy: DENIED %s (timeout or explicit deny)", toolName)
 						return &proxy.HandlerResult{
@@ -329,6 +340,11 @@ func serve() {
 					}
 					approvedBy = "http"
 					log.Printf("mcp-proxy: APPROVED %s", toolName)
+					pendingMu.Lock()
+					if pc, ok := pendingCalls[jsonrpcID]; ok {
+						pc.approvalWaitUs = approvalWaitUs
+					}
+					pendingMu.Unlock()
 				}
 
 				if approvedBy != "" {
@@ -342,6 +358,13 @@ func serve() {
 				if decision.Action == "flag" {
 					log.Printf("mcp-proxy: FLAGGED %s (rule: %s, risk: %d)", toolName, decision.RuleName, riskScore)
 				}
+
+				// Record when request is forwarded to upstream for upstream_us calculation.
+				pendingMu.Lock()
+				if pc, ok := pendingCalls[jsonrpcID]; ok {
+					pc.forwardedAt = time.Now()
+				}
+				pendingMu.Unlock()
 			}
 		}
 
@@ -356,6 +379,13 @@ func serve() {
 
 			if ok {
 				now := time.Now()
+
+				// Compute upstream duration: time between forwarding and receiving response.
+				var upstreamUs *int64
+				if !pc.forwardedAt.IsZero() {
+					u := now.Sub(pc.forwardedAt).Microseconds()
+					upstreamUs = &u
+				}
 
 				resultStr := ""
 				errorStr := ""
@@ -381,21 +411,30 @@ func serve() {
 					}
 				}
 
+				policyEvalUs := &pc.policyEvalUs
+				var approvalWaitUs *int64
+				if pc.approvalWaitUs > 0 {
+					approvalWaitUs = &pc.approvalWaitUs
+				}
+
 				tcID, err := auditDB.InsertToolCall(audit.ToolCallRecord{
-					SessionID:     sessionID,
-					RequestMsgID:  pc.msgID,
-					ResponseMsgID: msgID,
-					ToolName:      pc.toolName,
-					Arguments:     pc.rawArgs,
-					Result:        redactedResult,
-					Error:         redactedError,
-					OperationType: pc.opType,
-					RiskScore:     pc.riskScore,
-					RiskReasons:   pc.reasons,
-					PolicyAction:  pc.policyAct,
-					ApprovedBy:    pc.approvedBy,
-					RequestedAt:   pc.timestamp,
-					RespondedAt:   now,
+					SessionID:      sessionID,
+					RequestMsgID:   pc.msgID,
+					ResponseMsgID:  msgID,
+					ToolName:       pc.toolName,
+					Arguments:      pc.rawArgs,
+					Result:         redactedResult,
+					Error:          redactedError,
+					OperationType:  pc.opType,
+					RiskScore:      pc.riskScore,
+					RiskReasons:    pc.reasons,
+					PolicyAction:   pc.policyAct,
+					ApprovedBy:     pc.approvedBy,
+					RequestedAt:    pc.timestamp,
+					RespondedAt:    now,
+					PolicyEvalUs:   policyEvalUs,
+					ApprovalWaitUs: approvalWaitUs,
+					UpstreamUs:     upstreamUs,
 				})
 				if err != nil {
 					log.Printf("mcp-proxy: insert tool call: %v", err)
@@ -441,6 +480,7 @@ func serve() {
 					log.Printf("mcp-proxy: marshal args for hash: %v", jsonErr)
 				}
 
+				receiptStart := time.Now()
 				seqMu.Lock()
 				sequence++
 				currentSeq := sequence
@@ -496,6 +536,14 @@ func serve() {
 							prevReceiptHash = &h
 							seqMu.Unlock()
 						}
+					}
+				}
+
+				// Update tool call with receipt signing duration.
+				if tcID > 0 {
+					receiptSignUs := time.Since(receiptStart).Microseconds()
+					if updateErr := auditDB.UpdateReceiptSignUs(tcID, receiptSignUs); updateErr != nil {
+						log.Printf("mcp-proxy: update receipt sign timing: %v", updateErr)
 					}
 				}
 			}

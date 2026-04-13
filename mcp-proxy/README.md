@@ -86,6 +86,8 @@ mcp-proxy inspect <receipt-id>          # Show receipt details
 mcp-proxy verify --key pub.pem <chain>  # Verify chain integrity
 mcp-proxy export <chain-id>             # Export chain as JSON
 mcp-proxy stats                         # Show statistics
+mcp-proxy timing                        # Show per-tool timing breakdown
+mcp-proxy timing --json                 # JSON output for dashboards
 ```
 
 ## Policy engine

@@ -14,7 +14,7 @@ go vet ./...                           # static analysis
 ## Project structure
 
 ```
-cmd/mcp-proxy/     # CLI entry point (serve, list, inspect, verify, export, stats)
+cmd/mcp-proxy/     # CLI entry point (serve, list, inspect, verify, export, stats, timing)
 internal/
   proxy/           # STDIO proxy, JSON-RPC parsing
   audit/           # SQLite audit store, classifier, risk scorer, redaction, encryption, intent tracker
