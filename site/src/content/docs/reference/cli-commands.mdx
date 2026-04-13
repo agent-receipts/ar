@@ -80,3 +80,21 @@ mcp-proxy stats -json
 |------|-------------|
 | `-json` | Output as JSON |
 | `-receipt-db` | Receipt store path (default: `receipts.db`) |
+
+## `mcp-proxy timing`
+
+Show per-tool timing breakdown from the audit database. Reports average phase durations (policy evaluation, upstream call, receipt signing) and p50/p95/p99 percentiles.
+
+```bash
+mcp-proxy timing                              # all sessions
+mcp-proxy timing -session <session-id>        # filter by session
+mcp-proxy timing -json                        # JSON output
+mcp-proxy timing -limit 10                    # top 10 tools
+```
+
+| Flag | Description |
+|------|-------------|
+| `-db` | Audit database path (default: `audit.db`) |
+| `-session` | Filter by session ID |
+| `-limit` | Maximum number of tools to show (default: `20`) |
+| `-json` | Output as JSON |
