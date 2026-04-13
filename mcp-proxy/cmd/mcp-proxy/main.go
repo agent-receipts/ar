@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -24,9 +25,27 @@ import (
 	"github.com/google/uuid"
 )
 
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z".
+// Falls back to the module version from Go's build info (set automatically
+// for binaries installed with `go install`), then to "dev".
+var version string
+
+func resolveVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
+
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "-version", "--version":
+			fmt.Printf("mcp-proxy %s\n", resolveVersion())
+			return
 		case "list":
 			cmdList(os.Args[2:])
 			return
@@ -71,14 +90,18 @@ func serve() {
 		chainID      = flag.String("chain", "", "Chain ID (auto-generated if empty)")
 		httpAddr     = flag.String("http", "127.0.0.1:8080", "HTTP address for approval endpoints")
 	)
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
+		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
+		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing\n\n")
+		fmt.Fprintf(os.Stderr, "  -version\n\tPrint version and exit\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
 	args := flag.Args()
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
-		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
-		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing\n\n")
-		flag.PrintDefaults()
+		flag.Usage()
 		os.Exit(1)
 	}
 

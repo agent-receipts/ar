@@ -71,6 +71,12 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
+### Check version
+
+```sh
+mcp-proxy -version
+```
+
 ### CLI subcommands
 
 ```sh
