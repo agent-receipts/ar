@@ -87,15 +87,18 @@ func serve() {
 		chainID      = flag.String("chain", "", "Chain ID (auto-generated if empty)")
 		httpAddr     = flag.String("http", "127.0.0.1:8080", "HTTP address for approval endpoints")
 	)
-	flag.Parse()
-
-	args := flag.Args()
-	if len(args) == 0 {
+	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
 		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
 		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats\n\n")
 		fmt.Fprintf(os.Stderr, "  -version\n\tPrint version and exit\n")
 		flag.PrintDefaults()
+	}
+	flag.Parse()
+
+	args := flag.Args()
+	if len(args) == 0 {
+		flag.Usage()
 		os.Exit(1)
 	}
 
