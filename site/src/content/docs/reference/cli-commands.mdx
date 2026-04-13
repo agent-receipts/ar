@@ -107,3 +107,29 @@ mcp-proxy timing -limit 10                    # top 10 tools
 | `-session` | Filter by session ID |
 | `-limit` | Maximum number of tools to show (default: `20`) |
 | `-json` | Output as JSON |
+
+### Example output
+
+```
+$ mcp-proxy timing -db ~/.agent-receipts/audit.db
+Tool call timing (73 calls)
+
+Per-tool averages:
+TOOL                            COUNT UPSTREAM(us) POLICY(us) RECEIPT(us)  APPROVAL(us)  TOTAL(ms)
+get_file_contents                  21            -          -           -             -        679
+create_or_update_file              15            -          -           -             -       1162
+search_issues                       6       747952          2         468             -        790
+create_issue                        5            -          -           -             -       3742
+create_branch                       5            -          -           -             -       1123
+
+Percentiles:
+PHASE                  p50        p95        p99
+upstream            715744     946737     946737 (us)
+policy_eval              2          5          5 (us)
+receipt_sign           830       2420       2420 (us)
+duration_ms            708       2489      16230 (ms)
+```
+
+Columns with `-` indicate tool calls recorded before timing instrumentation was added. New calls will populate all phase columns automatically.
+
+The data shows that for a GitHub MCP server, upstream API latency dominates (about 716-947ms based on the upstream percentiles shown), while policy evaluation (2-5us) and receipt signing (0.8-2.4ms) add negligible overhead.
