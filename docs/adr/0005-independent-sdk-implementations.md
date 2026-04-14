@@ -1,4 +1,4 @@
-# ADR-0004: Independent SDK Implementations (Not Code Generation)
+# ADR-0005: Independent SDK Implementations (Not Code Generation)
 
 ## Status
 
