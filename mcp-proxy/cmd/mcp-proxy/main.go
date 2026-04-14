@@ -228,14 +228,18 @@ func serve() {
 			log.Fatalf("mcp-proxy: http server: %v", err)
 		}
 		approvalURL := "http://" + ln.Addr().String()
-		// Human-readable line (one copy-pasteable string).
-		log.Printf("mcp-proxy: approvals at %s (token: %s)", approvalURL, approvalToken)
+		// Human-readable line (one copy-pasteable string, no log timestamp prefix).
+		fmt.Fprintf(os.Stderr, "mcp-proxy: approvals at %s (token: %s)\n", approvalURL, approvalToken)
 		// Machine-readable line — minimal discovery primitive for future tooling.
-		endpointJSON, _ := json.Marshal(map[string]string{
+		endpointJSON, err := json.Marshal(map[string]string{
 			"event": "approval_endpoint",
 			"url":   approvalURL,
 			"token": approvalToken,
 		})
+		if err != nil {
+			log.Printf("mcp-proxy: marshal approval endpoint discovery payload: %v", err)
+			endpointJSON = []byte(`{"event":"approval_endpoint"}`)
+		}
 		fmt.Fprintln(os.Stderr, string(endpointJSON))
 		go startHTTPServer(ln, approvals, approvalToken)
 	}

@@ -127,9 +127,12 @@ When a tool call is paused by a policy rule:
 
    The JSON line is a stable contract for tooling that wants to discover the endpoint without parsing the human line.
 
-3. Approve or deny via HTTP (substitute the URL from your stderr):
+3. Approve or deny via HTTP (substitute the URL from your stderr, and export the token first):
 
 ```bash
+# Copy the token from the stderr line above (or parse the JSON event).
+export APPROVAL_TOKEN=5fce4e79...
+
 # Approve
 curl -X POST http://127.0.0.1:59850/api/tool-calls/{id}/approve \
   -H "Authorization: Bearer $APPROVAL_TOKEN"
