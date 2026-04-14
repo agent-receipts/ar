@@ -34,8 +34,8 @@ Key reasons:
 
 ## Consequences
 
-- Policy rules are decoupled from proxy code — operators can modify `default_rules.yaml` (or supply a custom file via `--rules`) without recompiling.
+- Policy rules are decoupled from proxy code — the proxy uses built-in Go defaults unless a rules file is explicitly supplied via `--rules`. Operators can use the repository's example file at `mcp-proxy/configs/default_rules.yaml` as a starting point or provide their own, with no recompilation required.
 - The rule format is intentionally simple: glob patterns, optional field matching, and a severity-ordered action. If future requirements demand cross-rule dependencies, computed fields, or conditional logic, YAML may become insufficient and this decision should be revisited (OPA/Rego would be the natural next step).
-- YAML parsing quirks (the Norway problem, implicit type coercion) are low-risk here because rule fields are typed Go structs — `yaml.Unmarshal` rejects values that don't fit the target types.
+- YAML parsing quirks (the Norway problem, implicit type coercion) are somewhat constrained by decoding into typed Go structs, but `yaml.Unmarshal` is not strict by default — surprising coercions and silently ignored unknown fields are still possible unless explicit validation or strict decoding (e.g., `yaml.Decoder` with `KnownFields(true)`) is added.
 - No schema validation beyond Go struct tags exists today. Adding a JSON Schema or validation step would improve error messages for malformed rule files.
 - Contributors who are unfamiliar with YAML indentation rules may introduce subtle errors. A CI lint step (e.g., `yamllint`) would mitigate this.
