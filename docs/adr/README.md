@@ -17,6 +17,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0001](0001-ed25519-for-receipt-signing.md) | Ed25519 for Receipt Signing | Accepted |
 | [ADR-0002](0002-rfc8785-json-canonicalization.md) | RFC 8785 for JSON Canonicalization | Accepted |
 | [ADR-0003](0003-w3c-vc-envelope-format.md) | W3C Verifiable Credentials as the Receipt Envelope | Accepted |
+| [ADR-0004](0004-sqlite-for-local-receipt-storage.md) | SQLite for Local Receipt Storage | Accepted |
 | [ADR-0005](0005-independent-sdk-implementations.md) | Independent SDK Implementations (Not Code Generation) | Accepted |
 
 ## References
