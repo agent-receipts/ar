@@ -20,7 +20,7 @@ description: CLI flags, policy rules, redaction, and encryption options for the 
 | `-operator-name` | (none) | Operator name, e.g. `Anthropic` |
 | `-principal` | `did:user:unknown` | Principal DID for receipts |
 | `-chain` | (auto UUID) | Chain ID for receipt chaining |
-| `-http` | `127.0.0.1:8080` | HTTP address for the approval endpoint |
+| `-http` | `127.0.0.1:0` | HTTP address for the approval endpoint (default: random port, logged to stderr) |
 
 ## Policy rules
 
@@ -118,20 +118,30 @@ A bundled [`configs/github_taxonomy.json`](https://github.com/agent-receipts/ar/
 When a tool call is paused by a policy rule:
 
 1. The proxy logs an approval ID and waits up to 60 seconds
-2. An approval token is printed to stderr on startup
-3. Approve or deny via HTTP:
+2. The approval URL and token are logged to stderr at startup, in two formats:
+
+   ```
+   mcp-proxy: approvals at http://127.0.0.1:59850 (token: 5fce4e79...)
+   {"event":"approval_endpoint","url":"http://127.0.0.1:59850","token":"5fce4e79..."}
+   ```
+
+   The JSON line is a stable contract for tooling that wants to discover the endpoint without parsing the human line.
+
+3. Approve or deny via HTTP (substitute the URL from your stderr):
 
 ```bash
 # Approve
-curl -X POST http://localhost:8080/api/tool-calls/{id}/approve \
+curl -X POST http://127.0.0.1:59850/api/tool-calls/{id}/approve \
   -H "Authorization: Bearer $APPROVAL_TOKEN"
 
 # Deny
-curl -X POST http://localhost:8080/api/tool-calls/{id}/deny \
+curl -X POST http://127.0.0.1:59850/api/tool-calls/{id}/deny \
   -H "Authorization: Bearer $APPROVAL_TOKEN"
 ```
 
 If no response within 60 seconds, the call is automatically denied.
+
+If you need a stable, predictable URL, pin the port with `-http 127.0.0.1:8080` (or any free port).
 
 ## Data redaction
 
@@ -159,26 +169,22 @@ Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored wit
 
 ## Troubleshooting
 
-### Port conflict when multiple MCP clients use the proxy
+### Multiple MCP clients running the proxy simultaneously
 
-Each `mcp-proxy` instance binds an HTTP server for the approval workflow (default `127.0.0.1:8080`). If two or more MCP clients launch the same proxy simultaneously — for example, Claude Desktop and Claude Code, or Cursor and a custom agent — the second instance will fail with:
+Each `mcp-proxy` instance binds its own HTTP server for the approval workflow. By default the OS picks a random free port, so multiple instances (Claude Desktop + Claude Code, Codex alongside either, etc.) coexist without configuration. The actual address is logged to stderr at startup.
 
-```
-listen tcp 127.0.0.1:8080: bind: address already in use
-```
-
-**Fix:** assign each instance a different port with `-http`:
+If you want a fixed port for each client (e.g. so an external approval UI can connect reliably), pin it with `-http`:
 
 ```bash
-# First client uses the default
-mcp-proxy -name github ... /path/to/server
+# Pin one client to 8080
+mcp-proxy -name github -http 127.0.0.1:8080 ... /path/to/server
 
-# Second client uses a different port
+# Pin another to 8081
 mcp-proxy -name github -http 127.0.0.1:8081 ... /path/to/server
 ```
 
 Each instance can also use separate `-db` and `-receipt-db` paths if you want isolated audit trails, or share the same databases if you want a unified log.
 
 :::note
-The approval HTTP server is only needed when policy rules use the `pause` action. If you don't use approval workflows, the port conflict is harmless — the proxy logs the error but continues to function normally.
+The approval HTTP server is only needed when policy rules use the `pause` action. If you don't use approval workflows, the random-port default has no observable effect.
 :::

@@ -88,7 +88,7 @@ func serve() {
 		operatorName = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
 		principalDID = flag.String("principal", "did:user:unknown", "Principal DID")
 		chainID      = flag.String("chain", "", "Chain ID (auto-generated if empty)")
-		httpAddr     = flag.String("http", "127.0.0.1:8080", "HTTP address for approval endpoints")
+		httpAddr     = flag.String("http", "127.0.0.1:0", "HTTP address for approval endpoints (default: random port)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
@@ -227,6 +227,16 @@ func serve() {
 		if err != nil {
 			log.Fatalf("mcp-proxy: http server: %v", err)
 		}
+		approvalURL := "http://" + ln.Addr().String()
+		// Human-readable line (one copy-pasteable string).
+		log.Printf("mcp-proxy: approvals at %s (token: %s)", approvalURL, approvalToken)
+		// Machine-readable line — minimal discovery primitive for future tooling.
+		endpointJSON, _ := json.Marshal(map[string]string{
+			"event": "approval_endpoint",
+			"url":   approvalURL,
+			"token": approvalToken,
+		})
+		fmt.Fprintln(os.Stderr, string(endpointJSON))
 		go startHTTPServer(ln, approvals, approvalToken)
 	}
 
@@ -606,8 +616,6 @@ func startHTTPServer(ln net.Listener, approvals *audit.ApprovalManager, token st
 		}
 	})
 
-	log.Printf("mcp-proxy: approval HTTP server on %s (token printed below)", ln.Addr())
-	fmt.Fprintln(os.Stderr, "APPROVAL_TOKEN="+token)
 	if err := http.Serve(ln, mux); err != nil {
 		log.Fatalf("mcp-proxy: http server: %v", err)
 	}

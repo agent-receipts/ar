@@ -95,26 +95,7 @@ mcp-proxy verify \
 
 **Absolute paths required.** Claude Code launches MCP servers with a clean `PATH`. Use the full path to `mcp-proxy` (find it with `which mcp-proxy`) and the full path to the wrapped server binary.
 
-**Port conflict when running Claude Desktop and Claude Code simultaneously.** Both clients spawn their own `mcp-proxy` instance, and both try to bind the approval HTTP server on `127.0.0.1:8080`. The second one fails with `bind: address already in use`. Fix by adding `-http 127.0.0.1:8081` to the Claude Code config:
-
-```bash
-claude mcp remove github-audited
-claude mcp add-json github-audited --scope user '{
-  "command": "/Users/YOU/go/bin/mcp-proxy",
-  "args": [
-    "-name", "github",
-    "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-    "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
-    "-http", "127.0.0.1:8081",
-    "/opt/homebrew/bin/mcp-server-github"
-  ],
-  "env": {
-    "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
-  }
-}'
-```
-
-See [#125](https://github.com/agent-receipts/ar/issues/125) for the underlying fix.
+**Approval server picks a random port.** By default the proxy binds the approval HTTP server on a random free port (logged to stderr at startup) so multiple MCP clients — Claude Desktop, Claude Code, Codex — can run simultaneously without conflicting. If you want a stable, predictable URL (for an external approval UI, for example), pass `-http 127.0.0.1:8080` (or any free port) explicitly.
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
