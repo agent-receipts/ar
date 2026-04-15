@@ -22,6 +22,22 @@
 
 ---
 
+## Start here
+
+The fastest way to try Agent Receipts is to put [`mcp-proxy/`](mcp-proxy/) in front of an MCP server you already use.
+
+In one step, you get:
+
+- Signed receipts for every tool call
+- A tamper-evident audit chain you can verify later
+- Risk scoring and policy hooks without changing the client or server
+
+If you want to audit GitHub MCP in a real agent workflow, start with:
+
+- [Claude Desktop integration](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
+- [Claude Code integration](https://agentreceipts.ai/mcp-proxy/claude-code/)
+- [Codex integration](https://agentreceipts.ai/mcp-proxy/codex/)
+
 ## What is this?
 
 Agent Receipts is an open protocol and set of SDKs for producing cryptographically signed, tamper-evident records of AI agent actions. Every action an agent takes -- API calls, tool use, data access -- gets a verifiable receipt that can be audited later.
@@ -44,7 +60,35 @@ Agent Receipts is an open protocol and set of SDKs for producing cryptographical
 | [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
 | [openclaw](https://github.com/agent-receipts/openclaw) | Agent Receipts plugin for OpenClaw |
 
-## Quick start
+## 10-minute audited MCP quick start
+
+Install the proxy:
+
+```bash
+go install github.com/agent-receipts/mcp-proxy/cmd/mcp-proxy@latest
+```
+
+Wrap any MCP server:
+
+```bash
+mcp-proxy node /path/to/mcp-server.js
+```
+
+Then point your agent client at the proxy instead of the raw server:
+
+- [Claude Desktop setup](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
+- [Claude Code setup](https://agentreceipts.ai/mcp-proxy/claude-code/)
+- [Codex setup](https://agentreceipts.ai/mcp-proxy/codex/)
+
+Once your agent makes tool calls, inspect the signed audit trail:
+
+```bash
+mcp-proxy list
+mcp-proxy inspect <receipt-id>
+mcp-proxy verify --key pub.pem <chain-id>
+```
+
+## SDK quick start
 
 ### Go
 
