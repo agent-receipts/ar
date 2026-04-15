@@ -34,7 +34,7 @@ func cmdList(args []string) {
 	s := openReceiptStore(*db)
 	defer s.Close()
 
-	q := store.Query{Limit: limit}
+	q := store.Query{Limit: limit, NewestFirst: true}
 	if *chainID != "" {
 		q.ChainID = chainID
 	}
@@ -59,15 +59,22 @@ func cmdList(args []string) {
 		return
 	}
 
-	fmt.Printf("%-40s %-30s %-8s %-10s %s\n", "ID", "ACTION", "RISK", "STATUS", "TIMESTAMP")
+	const rowFmt = "%-40s %-22s %-6s %-8s %-14s %-22s %s\n"
+	fmt.Printf(rowFmt, "ID", "ACTION", "RISK", "STATUS", "ISSUER", "OPERATOR", "TIMESTAMP")
 	fmt.Println("---")
 	for _, r := range receipts {
 		subj := r.CredentialSubject
-		fmt.Printf("%-40s %-30s %-8s %-10s %s\n",
+		operator := ""
+		if r.Issuer.Operator != nil {
+			operator = r.Issuer.Operator.ID
+		}
+		fmt.Printf(rowFmt,
 			truncate(r.ID, 40),
-			subj.Action.Type,
+			truncate(subj.Action.Type, 22),
 			subj.Action.RiskLevel,
 			subj.Outcome.Status,
+			truncate(r.Issuer.Name, 14),
+			truncate(operator, 22),
 			subj.Action.Timestamp,
 		)
 	}
