@@ -65,7 +65,7 @@ Agent Receipts is an open protocol and set of SDKs for producing cryptographical
 Install the proxy:
 
 ```bash
-go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
+go install github.com/agent-receipts/mcp-proxy/cmd/mcp-proxy@latest
 ```
 
 Wrap any MCP server:
