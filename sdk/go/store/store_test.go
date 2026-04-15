@@ -176,6 +176,64 @@ func TestInsertDuplicateChainSequence(t *testing.T) {
 	}
 }
 
+func TestQueryReceiptsOrdering(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	// Insert three receipts with timestamps a few seconds apart by
+	// stamping them post-Create (Create sets the Action.Timestamp to now).
+	timestamps := []string{
+		"2024-01-01T00:00:01Z",
+		"2024-01-01T00:00:02Z",
+		"2024-01-01T00:00:03Z",
+	}
+	for i, ts := range timestamps {
+		unsigned := receipt.Create(receipt.CreateInput{
+			Issuer:    receipt.Issuer{ID: "did:agent:test"},
+			Principal: receipt.Principal{ID: "did:user:test"},
+			Action: receipt.Action{
+				Type:      "filesystem.file.read",
+				RiskLevel: receipt.RiskLow,
+				Timestamp: ts,
+			},
+			Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+			Chain:   receipt.Chain{Sequence: i + 1, ChainID: "chain-1"},
+		})
+		signed, err := receipt.Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, _ := receipt.HashReceipt(signed)
+		if err := s.Insert(signed, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Ascending by default.
+	asc, err := s.QueryReceipts(Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asc) != 3 {
+		t.Fatalf("expected 3 receipts, got %d", len(asc))
+	}
+	if got := asc[0].CredentialSubject.Action.Timestamp; got != timestamps[0] {
+		t.Errorf("default ordering: expected oldest %s first, got %s", timestamps[0], got)
+	}
+
+	// Newest-first when opted in.
+	desc, err := s.QueryReceipts(Query{NewestFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desc) != 3 {
+		t.Fatalf("expected 3 receipts, got %d", len(desc))
+	}
+	if got := desc[0].CredentialSubject.Action.Timestamp; got != timestamps[2] {
+		t.Errorf("NewestFirst: expected newest %s first, got %s", timestamps[2], got)
+	}
+}
+
 func TestQueryReceiptsCombinedFilters(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()

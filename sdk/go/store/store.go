@@ -61,6 +61,10 @@ type Query struct {
 	After      *string // ISO 8601 timestamp
 	Before     *string // ISO 8601 timestamp
 	Limit      *int    // Default 10000
+	// NewestFirst reverses the default ascending-timestamp ordering so the
+	// most recent receipts are returned first. Default is false (ascending)
+	// to preserve historical behavior.
+	NewestFirst bool
 }
 
 // Stats holds aggregate statistics for the store.
@@ -242,9 +246,13 @@ func (s *Store) QueryReceipts(q Query) ([]receipt.AgentReceipt, error) {
 		limit = *q.Limit
 	}
 
+	order := "ASC"
+	if q.NewestFirst {
+		order = "DESC"
+	}
 	query := fmt.Sprintf(
-		"SELECT receipt_json FROM receipts %s ORDER BY timestamp ASC LIMIT ?",
-		where,
+		"SELECT receipt_json FROM receipts %s ORDER BY timestamp %s LIMIT ?",
+		where, order,
 	)
 	args = append(args, limit)
 
