@@ -45,12 +45,12 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: pip
+  - package-ecosystem: uv
     directory: /sdk/py
     schedule:
       interval: weekly
     groups:
-      pip:
+      uv:
         patterns:
           - "*"
 

@@ -31,7 +31,14 @@
 	"files": [
 		"dist"
 	],
+	"engines": {
+		"node": ">=22.11.0"
+	},
 	"scripts": {
+		"sync-version": "node scripts/sync-version.mjs",
+		"prebuild": "pnpm run sync-version",
+		"pretest": "pnpm run sync-version",
+		"pretypecheck": "pnpm run sync-version",
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",
 		"lint": "biome check .",
@@ -50,7 +57,7 @@
 		"@biomejs/biome": "^2.4.9",
 		"@types/node": "^25.5.0",
 		"lefthook": "^2.1.4",
-		"typescript": "^6.0.2",
+		"typescript": "~6.0.2",
 		"vite": "^8.0.8",
 		"vitest": "^4.1.2"
 	}

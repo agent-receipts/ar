@@ -11,11 +11,22 @@ export {
 	signReceipt,
 	verifyReceipt,
 } from "./signing.js";
-// Backwards compatibility aliases (deprecated, use AgentReceipt/UnsignedAgentReceipt)
-export type {
-	AgentReceipt as ActionReceipt,
-	UnsignedAgentReceipt as UnsignedActionReceipt,
+
+// Backwards-compatibility aliases — see src/index.ts for the same pattern.
+import type {
+	AgentReceipt as _AgentReceipt,
+	UnsignedAgentReceipt as _UnsignedAgentReceipt,
 } from "./types.js";
+/**
+ * @deprecated Use {@link AgentReceipt} instead. Renamed in 0.3.0; this
+ * alias will be dropped before 1.0.
+ */
+export type ActionReceipt = _AgentReceipt;
+/**
+ * @deprecated Use {@link UnsignedAgentReceipt} instead. Renamed in 0.3.0;
+ * this alias will be dropped before 1.0.
+ */
+export type UnsignedActionReceipt = _UnsignedAgentReceipt;
 export {
 	type ActionTarget,
 	type AgentReceipt,

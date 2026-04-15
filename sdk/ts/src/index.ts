@@ -1,11 +1,8 @@
-export const VERSION = "0.1.0";
-
 export {
 	type ChainVerification,
 	type ReceiptVerification,
 	verifyChain,
 } from "./receipt/chain.js";
-
 export { type CreateReceiptInput, createReceipt } from "./receipt/create.js";
 export { canonicalize, hashReceipt, sha256 } from "./receipt/hash.js";
 export {
@@ -14,11 +11,25 @@ export {
 	signReceipt,
 	verifyReceipt,
 } from "./receipt/signing.js";
-// Backwards compatibility aliases (deprecated, use AgentReceipt/UnsignedAgentReceipt)
-export type {
-	AgentReceipt as ActionReceipt,
-	UnsignedAgentReceipt as UnsignedActionReceipt,
+
+// Backwards-compatibility aliases kept as standalone `type` declarations so
+// each symbol carries its own @deprecated JSDoc (IDE deprecation hints bind
+// per name, not per export block — biome's organize-imports collapses
+// `export type { X as Y, ... }` blocks together, which loses that mapping).
+import type {
+	AgentReceipt as _AgentReceipt,
+	UnsignedAgentReceipt as _UnsignedAgentReceipt,
 } from "./receipt/types.js";
+/**
+ * @deprecated Use {@link AgentReceipt} instead. Renamed in 0.3.0; this
+ * alias will be dropped before 1.0.
+ */
+export type ActionReceipt = _AgentReceipt;
+/**
+ * @deprecated Use {@link UnsignedAgentReceipt} instead. Renamed in 0.3.0;
+ * this alias will be dropped before 1.0.
+ */
+export type UnsignedActionReceipt = _UnsignedAgentReceipt;
 export {
 	type Action,
 	type ActionTarget,
@@ -40,7 +51,6 @@ export {
 	type UnsignedAgentReceipt,
 	VERSION as RECEIPT_VERSION,
 } from "./receipt/types.js";
-
 export {
 	openStore,
 	type ReceiptQuery,
@@ -68,3 +78,4 @@ export type {
 	ActionTypeEntry,
 	TaxonomyMapping,
 } from "./taxonomy/types.js";
+export { VERSION } from "./version.js";

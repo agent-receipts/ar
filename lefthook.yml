@@ -71,5 +71,7 @@ pre-push:
 
 commit-msg:
   commands:
+    # convco is a hard requirement (documented in CONTRIBUTING.md) — fail fast
+    # with an actionable message instead of soft-skipping like shellcheck.
     conventional-commit:
-      run: command -v convco >/dev/null 2>&1 || { echo "convco not found — install via 'brew install convco' or see https://convco.github.io/check/"; exit 1; } && convco check --from-stdin < "{1}"
+      run: command -v convco >/dev/null 2>&1 || { echo "convco not found — install via 'brew install convco' or 'cargo install convco' (see CONTRIBUTING.md#commit-messages)"; exit 1; } && convco check --from-stdin < "{1}"
