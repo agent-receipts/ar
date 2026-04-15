@@ -2,14 +2,8 @@ module github.com/agent-receipts/ar/mcp-proxy
 
 go 1.26.1
 
-// Dev-time replace: build against the in-tree SDK so changes that add new
-// exported fields (e.g. store.Query.NewestFirst) are picked up before an
-// sdk/go release is cut. Drop this line — and bump the require below — when
-// a matching sdk/go version is released.
-replace github.com/agent-receipts/ar/sdk/go => ../sdk/go
-
 require (
-	github.com/agent-receipts/ar/sdk/go v0.3.0
+	github.com/agent-receipts/ar/sdk/go v0.3.1
 	github.com/google/uuid v1.6.0
 	golang.org/x/crypto v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
