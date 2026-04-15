@@ -6,6 +6,7 @@ go.work.sum
 
 # Local dev files
 .claude/
+.codex-worktrees/
 *.db
 *.db-shm
 *.db-wal
