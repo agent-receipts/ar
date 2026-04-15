@@ -3,6 +3,30 @@ title: Introduction
 description: What Agent Receipts are and why they exist.
 ---
 
+## Start with a real agent workflow
+
+If you want to try Agent Receipts in minutes, start with the MCP Proxy.
+
+It sits in front of an MCP server you already use and gives you:
+
+- Signed receipts for every tool call
+- A tamper-evident audit chain
+- Risk scoring and policy enforcement without modifying the client or server
+
+### Best first paths
+
+- [Claude Desktop + GitHub MCP](/mcp-proxy/claude-desktop/)
+- [Claude Code + GitHub MCP](/mcp-proxy/claude-code/)
+- [Codex + GitHub MCP](/mcp-proxy/codex/)
+- [MCP Proxy overview](/mcp-proxy/overview/)
+
+### What you will do
+
+1. Install `mcp-proxy`
+2. Wrap one MCP server
+3. Make a few tool calls from your agent
+4. Inspect and verify the signed receipts
+
 <div style="background: #f5f6fa; border: 1px solid #d0d4e0; border-radius: 6px; padding: 1.25rem 1rem 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
 <svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto; min-width: 600px;">
   <defs>
@@ -110,3 +134,9 @@ Parameters are hashed, not stored in plaintext. The human principal controls wha
 ## Design principles
 
 The protocol is privacy-preserving by default, built on existing standards (W3C VCs, Ed25519, SHA-256, RFC 3161), agent-agnostic, and minimal by default with room for domain-specific extensions. See the [Specification Overview](/specification/overview/) for the full set of design principles.
+
+## Choose your next step
+
+- Want the fastest hands-on experience? Start with the [MCP Proxy overview](/mcp-proxy/overview/).
+- Want to create receipts directly in your app? Use the [TypeScript SDK](/sdk-ts/overview/), [Python SDK](/sdk-py/overview/), or [Go SDK](/sdk-go/overview/).
+- Want the protocol details first? Read the [Specification Overview](/specification/overview/).
