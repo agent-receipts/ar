@@ -16,10 +16,10 @@ mcp-proxy -version
 
 ## `mcp-proxy list`
 
-List receipts from the audit store.
+List receipts from the audit store. Results are sorted **newest first** — the most recent receipts appear at the top. Default limit is 50.
 
 ```bash
-mcp-proxy list                            # all receipts
+mcp-proxy list                            # latest 50 receipts, newest first
 mcp-proxy list -risk high                 # filter by risk level
 mcp-proxy list -action read_file          # filter by action type
 mcp-proxy list -chain <chain-id>          # filter by chain
@@ -32,9 +32,26 @@ mcp-proxy list -json                      # JSON output
 | `-risk` | Filter by risk level: `low`, `medium`, `high`, `critical` |
 | `-action` | Filter by action type |
 | `-chain` | Filter by chain ID |
-| `-limit` | Maximum number of receipts to return |
+| `-limit` | Maximum number of receipts to return (default: `50`) |
 | `-json` | Output as JSON |
 | `-receipt-db` | Receipt store path (default: `receipts.db`) |
+
+### Example output
+
+```
+$ mcp-proxy list
+ID                                       ACTION                 RISK   STATUS   ISSUER         OPERATOR               TIMESTAMP
+---
+urn:receipt:58b9c7ff-cbed-45ed-a5bd-2... read                   low    success  codex          did:web:anthropic.com  2026-04-15T00:06:48Z
+urn:receipt:3384715f-d633-4031-b96f-c... read                   low    success  codex          did:web:anthropic.com  2026-04-15T00:06:26Z
+urn:receipt:c2e7b34f-04b2-42d1-a2f5-5... write                  medium success  Claude Code    did:web:anthropic.com  2026-04-15T00:01:39Z
+urn:receipt:ccf92d30-8369-411d-af29-d... read                   low    success                                        2026-04-14T23:56:09Z
+urn:receipt:ccc6860a-f1b5-4e2f-b3ea-a... read                   low    success  Claude Code    did:web:anthropic.com  2026-04-14T23:54:09Z
+
+50 receipts
+```
+
+ISSUER is the agent name set via `--name`; OPERATOR is the operator DID set via `--operator`. Both are empty when the proxy is run without those flags.
 
 ## `mcp-proxy inspect`
 

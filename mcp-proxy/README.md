@@ -80,7 +80,7 @@ mcp-proxy -version
 ### CLI subcommands
 
 ```sh
-mcp-proxy list                          # List receipts
+mcp-proxy list                          # Latest 50 receipts, newest first
 mcp-proxy list --risk high              # Filter by risk
 mcp-proxy inspect <receipt-id>          # Show receipt details
 mcp-proxy verify --key pub.pem <chain>  # Verify chain integrity
