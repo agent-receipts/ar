@@ -29,7 +29,9 @@ class ChainVerification:
 
     valid: bool
     length: int
-    receipts: list[ReceiptVerification] = field(default_factory=list)
+    receipts: list[ReceiptVerification] = field(
+        default_factory=list[ReceiptVerification]
+    )
     broken_at: int = -1
 
 

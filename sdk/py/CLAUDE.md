@@ -11,7 +11,7 @@ uv sync --all-extras       # install deps
 uv run pytest -v           # run tests
 uv run ruff check .        # lint
 uv run ruff format .       # format
-uv run pyright src         # type check (168 pre-existing Pydantic errors are expected)
+uv run pyright src         # type check (strict mode, must pass)
 ```
 
 ## Architecture

@@ -102,11 +102,7 @@ def sign_receipt(
 def verify_receipt(receipt: AgentReceipt, public_key: str) -> bool:
     """Verify the Ed25519 signature on a signed receipt."""
     proof_value = receipt.proof.proofValue
-    if (
-        not isinstance(proof_value, str)
-        or len(proof_value) < 2
-        or not proof_value.startswith(MULTIBASE_BASE64URL)
-    ):
+    if len(proof_value) < 2 or not proof_value.startswith(MULTIBASE_BASE64URL):
         return False
 
     # Reconstruct unsigned receipt

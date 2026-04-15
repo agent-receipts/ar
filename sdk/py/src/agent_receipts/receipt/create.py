@@ -88,14 +88,13 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
     if input.authorization is not None:
         cs_data["authorization"] = input.authorization
 
-    return UnsignedAgentReceipt(
-        **{
-            "@context": list(CONTEXT),
-            "id": f"urn:receipt:{uuid.uuid4()}",
-            "type": list(CREDENTIAL_TYPE),
-            "version": VERSION,
-            "issuer": input.issuer,
-            "issuanceDate": now,
-            "credentialSubject": CredentialSubject(**cs_data),
-        }
-    )
+    receipt_data: dict[str, Any] = {
+        "@context": list(CONTEXT),
+        "id": f"urn:receipt:{uuid.uuid4()}",
+        "type": list(CREDENTIAL_TYPE),
+        "version": VERSION,
+        "issuer": input.issuer,
+        "issuanceDate": now,
+        "credentialSubject": CredentialSubject(**cs_data),
+    }
+    return UnsignedAgentReceipt.model_validate(receipt_data)

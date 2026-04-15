@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 from agent_receipts.taxonomy.actions import get_action_type
 from agent_receipts.taxonomy.types import TaxonomyMapping
@@ -14,11 +15,16 @@ def load_taxonomy_config(file_path: str) -> list[TaxonomyMapping]:
     raw = Path(file_path).read_text(encoding="utf-8")
     parsed: object = json.loads(raw)
 
-    if not isinstance(parsed, dict) or not isinstance(parsed.get("mappings"), list):
+    if not isinstance(parsed, dict):
+        msg = 'Invalid taxonomy config: expected { "mappings": [...] }'
+        raise ValueError(msg)
+    parsed_dict = cast("dict[str, Any]", parsed)
+    raw_mappings = parsed_dict.get("mappings")
+    if not isinstance(raw_mappings, list):
         msg = 'Invalid taxonomy config: expected { "mappings": [...] }'
         raise ValueError(msg)
 
-    mappings_list: list[object] = parsed["mappings"]
+    mappings_list = cast("list[Any]", raw_mappings)
     seen: set[str] = set()
     result: list[TaxonomyMapping] = []
 
@@ -29,8 +35,9 @@ def load_taxonomy_config(file_path: str) -> list[TaxonomyMapping]:
                 'non-empty "tool_name" and "action_type" strings'
             )
             raise ValueError(msg)
-        tool_name: object = entry.get("tool_name")
-        action_type: object = entry.get("action_type")
+        entry_dict = cast("dict[str, Any]", entry)
+        tool_name: object = entry_dict.get("tool_name")
+        action_type: object = entry_dict.get("action_type")
         if (
             not isinstance(tool_name, str)
             or not isinstance(action_type, str)

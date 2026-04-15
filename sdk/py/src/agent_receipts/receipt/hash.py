@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from agent_receipts.receipt.types import AgentReceipt
 
 
 def _utf16_sort_key(s: str) -> list[int]:
@@ -39,12 +42,13 @@ def canonicalize(value: Any) -> str:  # noqa: ANN401
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False)
     if isinstance(value, list):
-        return "[" + ",".join(canonicalize(item) for item in value) + "]"
+        items = cast("list[Any]", value)
+        return "[" + ",".join(canonicalize(item) for item in items) + "]"
     if isinstance(value, dict):
-        keys = sorted(value.keys(), key=_utf16_sort_key)
+        d = cast("dict[str, Any]", value)
+        keys = sorted(d.keys(), key=_utf16_sort_key)
         entries = [
-            f"{json.dumps(k, ensure_ascii=False)}:{canonicalize(value[k])}"
-            for k in keys
+            f"{json.dumps(k, ensure_ascii=False)}:{canonicalize(d[k])}" for k in keys
         ]
         return "{" + ",".join(entries) + "}"
     msg = f"RFC 8785: unsupported type: {type(value).__name__}"
@@ -76,7 +80,7 @@ def _canonicalize_number(n: float) -> str:
     return s
 
 
-def hash_receipt(receipt: Any) -> str:  # noqa: ANN401
+def hash_receipt(receipt: AgentReceipt | dict[str, Any]) -> str:
     """Compute SHA-256 hash of a receipt, excluding the proof field.
 
     Accepts either an AgentReceipt Pydantic model or a plain dict.
@@ -85,18 +89,15 @@ def hash_receipt(receipt: Any) -> str:  # noqa: ANN401
     from agent_receipts.receipt.types import AgentReceipt
 
     if isinstance(receipt, AgentReceipt):
-        d = receipt.model_dump(by_alias=True, exclude_none=True)
-    elif isinstance(receipt, dict):
-        d = dict(receipt)
+        d: dict[str, Any] = receipt.model_dump(by_alias=True, exclude_none=True)
     else:
-        msg = f"Expected AgentReceipt or dict, got {type(receipt).__name__}"
-        raise TypeError(msg)
+        d = dict(receipt)
 
     d.pop("proof", None)
 
     # Ensure previous_receipt_hash is preserved as null when None
-    cs = d.get("credentialSubject", {})
-    chain = cs.get("chain", {})
+    cs: dict[str, Any] = d.get("credentialSubject", {})
+    chain: dict[str, Any] = cs.get("chain", {})
     if "previous_receipt_hash" not in chain:
         chain["previous_receipt_hash"] = None
 
