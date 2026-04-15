@@ -33,10 +33,15 @@ codex mcp add github-audited \
     -name github \
     -key /Users/YOU/.agent-receipts/github-proxy.pem \
     -receipt-db /Users/YOU/.agent-receipts/receipts.db \
+    -issuer-name Codex \
+    -operator-id did:web:openai.com \
+    -operator-name OpenAI \
     /opt/homebrew/bin/mcp-server-github
 ```
 
 Add `--scope user` to make the server available across all projects (default is project-scoped).
+
+`-issuer-name`, `-operator-id`, and `-operator-name` stamp the signed receipt with the agent and the organisation running it. Setting `-issuer-name` to `Codex` here (and to `Claude Code` in the [Claude Code integration](/mcp-proxy/claude-code/)) is what lets you tell at receipt-inspection time which client made a given call — without it, every receipt just shows the default `did:agent:mcp-proxy` issuer. See the [configuration reference](/mcp-proxy/configuration/#cli-flags) for the full set of identity flags.
 
 ## Configure via config.toml
 
@@ -49,6 +54,9 @@ args = [
   "-name", "github",
   "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
   "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+  "-issuer-name", "Codex",
+  "-operator-id", "did:web:openai.com",
+  "-operator-name", "OpenAI",
   "/opt/homebrew/bin/mcp-server-github"
 ]
 enabled = true

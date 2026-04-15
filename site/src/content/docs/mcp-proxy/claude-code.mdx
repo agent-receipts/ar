@@ -33,6 +33,9 @@ claude mcp add-json github-audited --scope user '{
     "-name", "github",
     "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
     "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+    "-issuer-name", "Claude Code",
+    "-operator-id", "did:web:anthropic.com",
+    "-operator-name", "Anthropic",
     "/opt/homebrew/bin/mcp-server-github"
   ],
   "env": {
@@ -42,6 +45,8 @@ claude mcp add-json github-audited --scope user '{
 ```
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
+
+`-issuer-name`, `-operator-id`, and `-operator-name` stamp the signed receipt with the agent and the organisation running it. Setting `-issuer-name` to `Claude Code` here (and to `Codex` in the [Codex integration](/mcp-proxy/codex/)) is what lets you tell at receipt-inspection time which client made a given call — without it, every receipt just shows the default `did:agent:mcp-proxy` issuer. See the [configuration reference](/mcp-proxy/configuration/#cli-flags) for the full set of identity flags.
 
 Verify the server is registered:
 
@@ -62,6 +67,9 @@ For a shared team configuration, add a `.mcp.json` file at the project root. Thi
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
         "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+        "-issuer-name", "Claude Code",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
         "/opt/homebrew/bin/mcp-server-github"
       ],
       "env": {
