@@ -33,7 +33,7 @@ Each subdirectory has its own AGENTS.md with project-specific details.
 - CI is path-filtered: changes to `sdk/go/` only trigger Go SDK CI
 - mcp-proxy CI also triggers on `sdk/go/` changes (dependency)
 - Site deploys on `site/**` or `spec/**` changes
-- Go modules use a `replace` directive for local development (mcp-proxy → sdk/go)
+- Go modules share a repo-root `go.work` (see [Go workspace](#go-workspace)); never add a local `replace` directive in any published `go.mod`
 - Run language-specific linters before committing (go vet, biome, ruff)
 
 ## Dependencies
@@ -41,12 +41,23 @@ Each subdirectory has its own AGENTS.md with project-specific details.
 ```
 spec (protocol definition)
   ↓
-sdk/go ← mcp-proxy (Go replace directive for local dev)
+sdk/go ← mcp-proxy (linked locally via repo-root go.work)
+sdk/go ← cross-sdk-tests (linked locally via repo-root go.work)
 sdk/ts
 sdk/py
 ```
 
 SDKs are independent implementations of the same spec. They do not depend on each other but must produce compatible receipts (same canonical JSON, same signature encoding, same hash format).
+
+## Go workspace
+
+The repo-root `go.work` lists `./sdk/go`, `./mcp-proxy`, and `./cross-sdk-tests`. It is committed so that:
+
+- Local builds and tests of `mcp-proxy` exercise the in-tree `sdk/go` (not the published version).
+- CI does the same — `mcp-proxy` PR checks catch breakage from `sdk/go` changes in the same PR, closing the gap where two passing per-module workflows could still ship a broken integration.
+- Published `go.mod` files stay free of local `replace` directives — `publish-go.yml` rejects those at release time. Use `go.work` for monorepo wiring instead.
+
+After cloning, no extra setup is required: `go build`, `go test`, and `go vet` from any module directory will pick up the workspace automatically.
 
 ## Security
 

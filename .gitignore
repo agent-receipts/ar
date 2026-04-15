@@ -1,4 +1,7 @@
-go.work
+# go.work is committed (see AGENTS.md): closes the CI gap where mcp-proxy
+# would otherwise build against the published sdk/go instead of the local one.
+# go.work.sum is generated only when go.work has extra dependencies; not
+# currently produced, so leave it untracked if it ever appears.
 go.work.sum
 
 # Local dev files

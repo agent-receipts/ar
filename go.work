@@ -1,0 +1,7 @@
+go 1.26.1
+
+use (
+	./cross-sdk-tests
+	./mcp-proxy
+	./sdk/go
+)
