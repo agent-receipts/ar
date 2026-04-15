@@ -2,7 +2,8 @@
 // Regenerate src/version.ts from package.json so the exported VERSION
 // constant cannot drift from the published package version.
 //
-// Wired into the `prebuild` and `pretest` scripts in package.json.
+// Invoked by package.json scripts before tasks that need src/version.ts
+// to match package.json.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
