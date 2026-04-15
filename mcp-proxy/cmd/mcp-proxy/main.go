@@ -362,7 +362,7 @@ func serve() {
 									"risk_score":              riskScore,
 									"approval_id":             approvalID,
 									"approval_url":            approvalURL,
-									"approval_timeout_ms":     approvalWait.Milliseconds(),
+									"approval_timeout_ms":     (*approvalWait).Milliseconds(),
 									"approval_required":       true,
 									"approval_token_required": true,
 								},
