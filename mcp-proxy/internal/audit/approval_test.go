@@ -8,7 +8,7 @@ import (
 func TestApproveBeforeTimeout(t *testing.T) {
 	am := NewApprovalManager()
 
-	done := make(chan bool, 1)
+	done := make(chan ApprovalStatus, 1)
 	go func() {
 		done <- am.WaitForApproval("req-1", 5*time.Second)
 	}()
@@ -21,15 +21,15 @@ func TestApproveBeforeTimeout(t *testing.T) {
 	}
 
 	result := <-done
-	if !result {
-		t.Error("expected WaitForApproval to return true")
+	if result != ApprovalApproved {
+		t.Errorf("expected WaitForApproval to return %q, got %q", ApprovalApproved, result)
 	}
 }
 
 func TestDenyBeforeTimeout(t *testing.T) {
 	am := NewApprovalManager()
 
-	done := make(chan bool, 1)
+	done := make(chan ApprovalStatus, 1)
 	go func() {
 		done <- am.WaitForApproval("req-2", 5*time.Second)
 	}()
@@ -41,8 +41,8 @@ func TestDenyBeforeTimeout(t *testing.T) {
 	}
 
 	result := <-done
-	if result {
-		t.Error("expected WaitForApproval to return false after deny")
+	if result != ApprovalDenied {
+		t.Errorf("expected WaitForApproval to return %q after deny, got %q", ApprovalDenied, result)
 	}
 }
 
@@ -50,8 +50,8 @@ func TestApprovalTimeout(t *testing.T) {
 	am := NewApprovalManager()
 
 	result := am.WaitForApproval("req-3", 50*time.Millisecond)
-	if result {
-		t.Error("expected WaitForApproval to return false on timeout")
+	if result != ApprovalTimedOut {
+		t.Errorf("expected WaitForApproval to return %q on timeout, got %q", ApprovalTimedOut, result)
 	}
 }
 

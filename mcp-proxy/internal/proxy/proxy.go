@@ -155,13 +155,24 @@ func (p *Proxy) pipe(src io.Reader, dst io.Writer, direction string) {
 
 // MakeErrorResponse creates a JSON-RPC error response for the given request ID.
 func MakeErrorResponse(id json.RawMessage, code int, message string) []byte {
+	return MakeErrorResponseWithData(id, code, message, nil)
+}
+
+// MakeErrorResponseWithData creates a JSON-RPC error response with optional
+// structured error data for the given request ID.
+func MakeErrorResponseWithData(id json.RawMessage, code int, message string, data map[string]any) []byte {
+	errObj := map[string]any{
+		"code":    code,
+		"message": message,
+	}
+	if data != nil {
+		errObj["data"] = data
+	}
+
 	resp := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      json.RawMessage(id),
-		"error": map[string]any{
-			"code":    code,
-			"message": message,
-		},
+		"error":   errObj,
 	}
 	b, _ := json.Marshal(resp)
 	return b

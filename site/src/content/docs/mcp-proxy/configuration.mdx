@@ -21,6 +21,7 @@ description: CLI flags, policy rules, redaction, and encryption options for the 
 | `-principal` | `did:user:unknown` | Principal DID for receipts |
 | `-chain` | (auto UUID) | Chain ID for receipt chaining |
 | `-http` | `127.0.0.1:0` | HTTP address for the approval endpoint (default: random port, logged to stderr) |
+| `-approval-timeout` | `1m0s` | Maximum time to wait for HTTP approval before a paused call is auto-denied |
 
 ## Policy rules
 
@@ -63,7 +64,7 @@ rules:
 |--------|----------|
 | `pass` | Log only, forward normally |
 | `flag` | Log with highlight, forward normally |
-| `pause` | Hold for HTTP approval (60-second timeout, auto-denied on timeout) |
+| `pause` | Hold for HTTP approval (configurable timeout, auto-denied on timeout) |
 | `block` | Reject immediately with error |
 
 When multiple rules match, the most restrictive action wins (block > pause > flag > pass).
@@ -117,7 +118,7 @@ A bundled [`configs/github_taxonomy.json`](https://github.com/agent-receipts/ar/
 
 When a tool call is paused by a policy rule:
 
-1. The proxy logs an approval ID and waits up to 60 seconds
+1. The proxy logs an approval ID and waits up to the configured `-approval-timeout` duration
 2. The approval URL and token are logged to stderr at startup, in two formats:
 
    ```
@@ -142,7 +143,15 @@ curl -X POST http://127.0.0.1:59850/api/tool-calls/{id}/deny \
   -H "Authorization: Bearer $APPROVAL_TOKEN"
 ```
 
-If no response within 60 seconds, the call is automatically denied.
+If no response arrives before `-approval-timeout` elapses, the call is automatically denied.
+
+Paused calls return a JSON-RPC error with structured details in `error.data`, including:
+
+- `status` (`denied` or `timed_out`)
+- `rule_name`
+- `risk_score`
+- `approval_id`
+- `approval_url`
 
 If you need a stable, predictable URL, pin the port with `-http 127.0.0.1:8080` (or any free port).
 

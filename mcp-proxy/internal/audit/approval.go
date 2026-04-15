@@ -5,6 +5,15 @@ import (
 	"time"
 )
 
+// ApprovalStatus describes the outcome of a pause/approval flow.
+type ApprovalStatus string
+
+const (
+	ApprovalApproved ApprovalStatus = "approved"
+	ApprovalDenied   ApprovalStatus = "denied"
+	ApprovalTimedOut ApprovalStatus = "timed_out"
+)
+
 // ApprovalManager handles pause/approve/deny flows for tool calls
 // that require human approval before proceeding.
 type ApprovalManager struct {
@@ -20,8 +29,8 @@ func NewApprovalManager() *ApprovalManager {
 }
 
 // WaitForApproval blocks until the given approval ID is approved, denied, or
-// the timeout elapses. Returns true if approved, false otherwise.
-func (a *ApprovalManager) WaitForApproval(id string, timeout time.Duration) bool {
+// the timeout elapses.
+func (a *ApprovalManager) WaitForApproval(id string, timeout time.Duration) ApprovalStatus {
 	ch := make(chan bool, 1)
 	a.mu.Lock()
 	a.pending[id] = ch
@@ -35,9 +44,12 @@ func (a *ApprovalManager) WaitForApproval(id string, timeout time.Duration) bool
 
 	select {
 	case approved := <-ch:
-		return approved
+		if approved {
+			return ApprovalApproved
+		}
+		return ApprovalDenied
 	case <-time.After(timeout):
-		return false
+		return ApprovalTimedOut
 	}
 }
 

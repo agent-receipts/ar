@@ -89,6 +89,7 @@ func serve() {
 		principalDID = flag.String("principal", "did:user:unknown", "Principal DID")
 		chainID      = flag.String("chain", "", "Chain ID (auto-generated if empty)")
 		httpAddr     = flag.String("http", "127.0.0.1:0", "HTTP address for approval endpoints (default: random port)")
+		approvalWait = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
@@ -196,6 +197,7 @@ func serve() {
 	// Approval channels for pause actions.
 	approvalToken := generateToken(32)
 	approvals := audit.NewApprovalManager()
+	approvalURL := ""
 
 	// Receipt chain state.
 	sequence := 0
@@ -227,7 +229,7 @@ func serve() {
 		if err != nil {
 			log.Fatalf("mcp-proxy: http server: %v", err)
 		}
-		approvalURL := "http://" + ln.Addr().String()
+		approvalURL = "http://" + ln.Addr().String()
 		// Human-readable line (one copy-pasteable string, no log timestamp prefix).
 		fmt.Fprintf(os.Stderr, "mcp-proxy: approvals at %s (token: %s)\n", approvalURL, approvalToken)
 		// Machine-readable line — minimal discovery primitive for future tooling.
@@ -343,13 +345,28 @@ func serve() {
 					approvalID := generateToken(16)
 					log.Printf("mcp-proxy: PAUSED %s (rule: %s, risk: %d) — approval id: %s", toolName, decision.RuleName, riskScore, approvalID)
 					waitStart := time.Now()
-					approved := approvals.WaitForApproval(approvalID, 60*time.Second)
+					approvalStatus := approvals.WaitForApproval(approvalID, *approvalWait)
 					approvalWaitUs := time.Since(waitStart).Microseconds()
-					if !approved {
-						log.Printf("mcp-proxy: DENIED %s (timeout or explicit deny)", toolName)
+					if approvalStatus != audit.ApprovalApproved {
+						log.Printf("mcp-proxy: DENIED %s (%s)", toolName, approvalStatus)
 						return &proxy.HandlerResult{
-							Block:          true,
-							ClientResponse: proxy.MakeErrorResponse(msg.ID, -32002, "tool call denied: approval timeout or rejected"),
+							Block: true,
+							ClientResponse: proxy.MakeErrorResponseWithData(
+								msg.ID,
+								-32002,
+								buildApprovalDeniedMessage(toolName, decision.RuleName, riskScore, approvalID, approvalStatus, *approvalWait),
+								map[string]any{
+									"status":                  string(approvalStatus),
+									"tool_name":               toolName,
+									"rule_name":               decision.RuleName,
+									"risk_score":              riskScore,
+									"approval_id":             approvalID,
+									"approval_url":            approvalURL,
+									"approval_timeout_ms":     (*approvalWait).Milliseconds(),
+									"approval_required":       true,
+									"approval_token_required": true,
+								},
+							),
 						}
 					}
 					approvedBy = "http"
@@ -571,6 +588,17 @@ func serve() {
 	if err := p.Run(); err != nil {
 		log.Printf("mcp-proxy: %v", err)
 		os.Exit(1)
+	}
+}
+
+func buildApprovalDeniedMessage(toolName, ruleName string, riskScore int, approvalID string, status audit.ApprovalStatus, timeout time.Duration) string {
+	switch status {
+	case audit.ApprovalDenied:
+		return fmt.Sprintf("tool call denied by approval workflow: tool=%s rule=%s risk=%d approval_id=%s", toolName, ruleName, riskScore, approvalID)
+	case audit.ApprovalTimedOut:
+		return fmt.Sprintf("tool call approval timed out after %s: tool=%s rule=%s risk=%d approval_id=%s", timeout, toolName, ruleName, riskScore, approvalID)
+	default:
+		return fmt.Sprintf("tool call denied by approval workflow: tool=%s rule=%s risk=%d approval_id=%s", toolName, ruleName, riskScore, approvalID)
 	}
 }
 
