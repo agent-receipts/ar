@@ -64,7 +64,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
     "session_id": "session_xyz789"
   },
 
-  "validFrom": "2026-03-31T14:30:00Z",
+  "issuanceDate": "2026-03-31T14:30:00Z",
 
   "credentialSubject": {
     "principal": {
@@ -137,7 +137,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `type` | Yes | Must be `["VerifiableCredential", "AgentReceipt"]`. |
 | `version` | Yes | Spec version. Must be `"0.1.0"` for this version. |
 | `issuer` | Yes | The agent or platform that issued the receipt. |
-| `validFrom` | Yes | ISO 8601 datetime when the receipt was issued. May differ from `action.timestamp`. |
+| `issuanceDate` | Yes | ISO 8601 datetime when the receipt was issued. May differ from `action.timestamp`. |
 | `credentialSubject` | Yes | The receipt payload. |
 | `proof` | Yes | Cryptographic proof. |
 

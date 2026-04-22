@@ -52,7 +52,7 @@ callers cannot place `null` on optional fields (e.g. `error?: string` not
 `error?: string | null`); the SDK's canonicalise step must also normalise
 null → absent at runtime as belt-and-braces.
 
-The spec (§4.3.2) gains normative language stating this rule. The JSON schema
+The spec (§7.1.1) gains normative language stating this rule. The JSON schema
 is tightened: optional fields that previously declared `"type": ["string",
 "null"]` now declare `"type": "string"` — the only remaining nullable type in
 the schema is `previous_receipt_hash`.
@@ -102,7 +102,7 @@ error. The `receipt_required_null_preserved` vector in
 
 - `spec/schema/agent-receipt.schema.json`: `validFrom` → `issuanceDate`,
   version enum gains `"0.2.1"`, optional fields lose `null` from their type.
-- Spec §5 and all examples: `validFrom` → `issuanceDate`.
+- Spec §4.3 (Field Reference) and all examples: `validFrom` → `issuanceDate`.
 - ADR-0002 *Known Risks* section: `issuanceDate` / `validFrom` risk marked
   resolved, linking here.
 - ADR-0003 *Decision* section: removes the "must be aligned" note on

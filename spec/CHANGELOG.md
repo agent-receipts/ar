@@ -12,6 +12,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **BREAKING:** Spec document renamed from `action-receipt-spec-v0.1.md` to `agent-receipt-spec-v0.1.md`
 - All example receipts updated to use `AgentReceipt` credential type
 
+## [0.2.1] - 2026-04-22
+
+### Changed
+- **Field rename (schema-and-spec only):** `validFrom` → `issuanceDate`. All three SDKs have always emitted `issuanceDate` (VC 1.x naming); the schema is now aligned. No wire-format change for any existing receipt. See ADR-0009.
+- **Optional-nullable types tightened:** `outcome.error`, `authorization.grant_ref`, and `action.trusted_timestamp` no longer declare `null` in their schema type. These fields MUST be absent (not `null`) when not applicable. The sole remaining nullable type in the schema is `chain.previous_receipt_hash` (required-nullable).
+- `version` field now accepts `"0.1.0"`, `"0.2.0"`, or `"0.2.1"`. Verifiers MUST accept all three.
+
+### Added
+- Spec §7.1.1: normative null/optional field handling rule — required-nullable fields MUST be emitted with their value (including explicit `null`); optional fields MUST NOT be emitted when null or absent. Closes #85 at the spec level.
+- `cross-sdk-tests/canonicalization_vectors.json`: shared canonicalisation test vectors covering UTF-16 key-sort edge cases, ES6 number boundaries, RFC 8259 string escaping, null normalisation, and signature preservation.
+- ADR-0009: records the two spec-level decisions (VC field name commitment, null rule) and the signature-preservation invariant for existing receipts.
+
+### Upgrade notes
+
+**Issuers and verifiers:** No action required for existing receipts. All shipped 0.1.0 and 0.2.0 receipts already use `issuanceDate` and none emit `null` on optional fields, so the wire format is unchanged. Upgrade to `"version": "0.2.1"` when emitting new receipts to signal conformance to the null-rule and the tightened schema.
+
 ## [0.2.0] - 2026-04-22
 
 ### Added

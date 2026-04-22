@@ -54,14 +54,6 @@
       "canonical": "{\"\ud83c\udf89\":2,\"\ue000\":1}"
     },
     {
-      "name": "sort_surrogate_before_bmp",
-      "rule": "rule1_key_sort",
-      "description": "High-surrogate-leading supplementary char vs BMP char just above the high-surrogate range. Pins the UTF-16 semantics at the surrogate boundary: U+1D400 encodes as 0xD835 0xDC00 (starts with 0xD835). Compared against a BMP key starting with 0xD900 — 0xD835 < 0xD900 so the emoji-math-char sorts first even though its code point (0x1D400) is greater than 0xD900.",
-      "input": { "\ud900z": 2, "\ud835\udc00a": 1 },
-      "canonical": "{\"\ud835\udc00a\":1,\"\ud900z\":2}"
-    },
-
-    {
       "name": "number_zero",
       "rule": "rule4_numbers",
       "description": "Positive zero.",

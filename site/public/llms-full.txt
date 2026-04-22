@@ -28,7 +28,7 @@ An Agent Receipt is a JSON object conforming to W3C VC Data Model 2.0:
 - `type`: ["VerifiableCredential", "AgentReceipt"]
 - `version`: "0.1.0"
 - `issuer`: { id, type?, name?, operator?, model?, session_id? }
-- `validFrom`: ISO 8601 datetime
+- `issuanceDate`: ISO 8601 datetime
 - `credentialSubject`: { principal, action, intent?, outcome, authorization?, delegation?, chain }
 - `proof`: { type: "Ed25519Signature2020", created, verificationMethod, proofPurpose: "assertionMethod", proofValue }
 
@@ -60,7 +60,7 @@ An Agent Receipt is a JSON object conforming to W3C VC Data Model 2.0:
   "type": ["VerifiableCredential", "AgentReceipt"],
   "version": "0.1.0",
   "issuer": { "id": "did:agent:my-agent" },
-  "validFrom": "2026-03-31T14:31:00Z",
+  "issuanceDate": "2026-03-31T14:31:00Z",
   "credentialSubject": {
     "principal": { "id": "did:user:alice" },
     "action": {
