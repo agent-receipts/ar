@@ -33,13 +33,15 @@ fish_add_path (go env GOPATH)/bin
 
 ## Basic usage
 
-Wrap any MCP server by passing its command as arguments:
+Wrap any MCP server by passing its command as arguments. For a quick smoke test, use the official filesystem MCP server:
 
 ```bash
-mcp-proxy node /path/to/mcp-server.js
+mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 ```
 
-The proxy intercepts stdin/stdout, logs every tool call, and forwards messages transparently. By default it generates an ephemeral Ed25519 key pair for signing receipts.
+The proxy intercepts stdin/stdout, logs every tool call, and forwards messages transparently. By default it generates an ephemeral Ed25519 key pair for signing receipts. Press `Ctrl-C` to stop.
+
+For wiring the proxy into an actual client, jump to [Claude Code](/mcp-proxy/claude-code/), [Claude Desktop](/mcp-proxy/claude-desktop/), or [Codex](/mcp-proxy/codex/).
 
 ## Persistent signing key
 
@@ -51,7 +53,7 @@ openssl genpkey -algorithm Ed25519 -out private.pem
 openssl pkey -in private.pem -pubout -out public.pem
 
 # Run with persistent key
-mcp-proxy -key private.pem node /path/to/mcp-server.js
+mcp-proxy -key private.pem npx -y @modelcontextprotocol/server-filesystem ~/Documents
 ```
 
 ## Next steps
