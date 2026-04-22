@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from agent_receipts.receipt.hash import hash_receipt
+from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
 from agent_receipts.receipt.signing import verify_receipt
 
 if TYPE_CHECKING:
@@ -49,6 +49,7 @@ def verify_chain(
     expected_length: int | None = None,
     expected_final_hash: str | None = None,
     require_terminal: bool = False,
+    response_bodies: dict[str, object] | None = None,
 ) -> ChainVerification:
     """Verify a chain of signed receipts.
 
@@ -67,6 +68,12 @@ def verify_chain(
 
     Chains that are open-ended and have no external witness cannot be detected
     as truncated. See spec §7.3.1 for the full treatment.
+
+    Supply response_bodies (mapping receipt id → pre-redacted body) to verify
+    outcome.response_hash fields. For each receipt whose id appears in the map,
+    the hash is recomputed (canonicalize → SHA-256) and verification fails on
+    mismatch. When the entry is absent an informational note is emitted instead.
+    An absent body is not a verification failure.
     """
     if not receipts:
         if expected_length is not None and expected_length != 0:
@@ -135,21 +142,40 @@ def verify_chain(
                 ),
             )
 
-    # Response hash note (informational).
-    response_hash_note = ""
-    if any(r.credentialSubject.outcome.response_hash is not None for r in receipts):
-        response_hash_note = (
-            "response_hash present in one or more receipts; "
-            "response body not supplied — hash cannot be verified offline"
-        )
-
     cv = ChainVerification(
         valid=broken_at == -1,
         length=len(receipts),
         receipts=results,
         broken_at=broken_at,
-        response_hash_note=response_hash_note,
     )
+
+    # Response-hash verification (spec §4.3.2).
+    # When a body is supplied: recompute and fail on mismatch.
+    # When the body is absent: emit an informational note only.
+    bodies = response_bodies or {}
+    for i, r in enumerate(receipts):
+        expected_hash = r.credentialSubject.outcome.response_hash
+        if expected_hash is None:
+            continue
+        body = bodies.get(r.id)
+        if body is None:
+            cv.response_hash_note = (
+                "response_hash present in one or more receipts; "
+                "response body not supplied — hash cannot be verified offline"
+            )
+            continue
+        if not cv.valid:
+            continue
+        canonical = canonicalize(body)
+        computed = sha256(canonical)
+        if computed != expected_hash:
+            cv.valid = False
+            cv.broken_at = i
+            cv.error = (
+                f"response_hash mismatch at index {i}: "
+                f"receipt has {expected_hash}, body hashes to {computed}"
+            )
+            return cv
 
     if not cv.valid:
         return cv

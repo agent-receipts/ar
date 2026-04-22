@@ -491,6 +491,82 @@ func TestChainMarshalDropsFalseTerminal(t *testing.T) {
 	}
 }
 
+func TestResponseHashVerificationMatch(t *testing.T) {
+	// When a matching body is supplied, VerifyChain recomputes and passes.
+	kp, _ := GenerateKeyPair()
+	body := json.RawMessage(`{"result":"ok","status":200}`)
+	unsigned := Create(CreateInput{
+		Issuer:       Issuer{ID: "did:agent:test"},
+		Principal:    Principal{ID: "did:user:test"},
+		Action:       Action{Type: "data.api.read", RiskLevel: RiskLow},
+		Outcome:      Outcome{Status: StatusSuccess},
+		Chain:        Chain{Sequence: 1, ChainID: "chain-verify"},
+		ResponseBody: body,
+	})
+	signed, _ := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+
+	result := VerifyChain([]AgentReceipt{signed}, kp.PublicKey, ChainVerifyOptions{
+		ResponseBodies: map[string]json.RawMessage{signed.ID: body},
+	})
+	if !result.Valid {
+		t.Errorf("expected valid when response body matches hash: %s", result.Error)
+	}
+	if result.ResponseHashNote != "" {
+		t.Errorf("expected no note when body is supplied: %s", result.ResponseHashNote)
+	}
+}
+
+func TestResponseHashVerificationMismatch(t *testing.T) {
+	// When the supplied body does not match the stored hash, verification fails.
+	kp, _ := GenerateKeyPair()
+	goodBody := json.RawMessage(`{"result":"ok"}`)
+	badBody := json.RawMessage(`{"result":"tampered"}`)
+	unsigned := Create(CreateInput{
+		Issuer:       Issuer{ID: "did:agent:test"},
+		Principal:    Principal{ID: "did:user:test"},
+		Action:       Action{Type: "data.api.read", RiskLevel: RiskLow},
+		Outcome:      Outcome{Status: StatusSuccess},
+		Chain:        Chain{Sequence: 1, ChainID: "chain-mismatch"},
+		ResponseBody: goodBody,
+	})
+	signed, _ := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+
+	result := VerifyChain([]AgentReceipt{signed}, kp.PublicKey, ChainVerifyOptions{
+		ResponseBodies: map[string]json.RawMessage{signed.ID: badBody},
+	})
+	if result.Valid {
+		t.Error("expected invalid when supplied body does not match stored hash")
+	}
+	if !containsStr(result.Error, "response_hash mismatch") {
+		t.Errorf("expected mismatch error, got: %s", result.Error)
+	}
+}
+
+func TestResponseHashNoBodyInMap(t *testing.T) {
+	// response_hash present but receipt ID not in ResponseBodies → note, not failure.
+	kp, _ := GenerateKeyPair()
+	unsigned := Create(CreateInput{
+		Issuer:       Issuer{ID: "did:agent:test"},
+		Principal:    Principal{ID: "did:user:test"},
+		Action:       Action{Type: "data.api.read", RiskLevel: RiskLow},
+		Outcome:      Outcome{Status: StatusSuccess},
+		Chain:        Chain{Sequence: 1, ChainID: "chain-note2"},
+		ResponseBody: []byte(`{"result":"ok"}`),
+	})
+	signed, _ := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+
+	// Supply an empty ResponseBodies map (no entry for this receipt).
+	result := VerifyChain([]AgentReceipt{signed}, kp.PublicKey, ChainVerifyOptions{
+		ResponseBodies: map[string]json.RawMessage{},
+	})
+	if !result.Valid {
+		t.Errorf("absent body entry must not fail verification: %s", result.Error)
+	}
+	if result.ResponseHashNote == "" {
+		t.Error("expected informational note when body is absent from map")
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || findStr(s, sub))
 }

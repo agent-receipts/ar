@@ -411,3 +411,80 @@ class TestAdr0008ChainBehaviours:
             )
         )
         assert unsigned.credentialSubject.chain.terminal is True
+
+    # --- response_bodies verification ---
+
+    def test_response_bodies_matching_body_passes(self) -> None:
+        """When the supplied body matches the stored hash, verification passes."""
+        body = {"result": "ok", "status": 200}
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="data.api.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=1, previous_receipt_hash=None, chain_id="chain-rb"
+                ),
+                response_body=body,
+            )
+        )
+        signed = sign_receipt(unsigned, TEST_PRIVATE_KEY, "did:agent:test#key-1")
+
+        result = verify_chain(
+            [signed],
+            TEST_PUBLIC_KEY,
+            response_bodies={signed.id: body},
+        )
+        assert result.valid
+        assert result.response_hash_note == ""
+
+    def test_response_bodies_mismatch_fails(self) -> None:
+        """When the supplied body does not match the stored hash, verification fails."""
+        good_body = {"result": "ok"}
+        bad_body = {"result": "tampered"}
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="data.api.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=1, previous_receipt_hash=None, chain_id="chain-mm"
+                ),
+                response_body=good_body,
+            )
+        )
+        signed = sign_receipt(unsigned, TEST_PRIVATE_KEY, "did:agent:test#key-1")
+
+        result = verify_chain(
+            [signed],
+            TEST_PUBLIC_KEY,
+            response_bodies={signed.id: bad_body},
+        )
+        assert not result.valid
+        assert "response_hash mismatch" in result.error
+
+    def test_response_bodies_absent_entry_emits_note(self) -> None:
+        """When response_hash is present but receipt id is not in the map, emit note."""
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="data.api.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=1, previous_receipt_hash=None, chain_id="chain-note3"
+                ),
+                response_body={"result": "ok"},
+            )
+        )
+        signed = sign_receipt(unsigned, TEST_PRIVATE_KEY, "did:agent:test#key-1")
+
+        result = verify_chain(
+            [signed],
+            TEST_PUBLIC_KEY,
+            response_bodies={},  # empty map — no entry for this receipt
+        )
+        assert result.valid
+        assert result.response_hash_note != ""

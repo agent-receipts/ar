@@ -1,4 +1,4 @@
-import { hashReceipt } from "./hash.js";
+import { canonicalize, hashReceipt, sha256 } from "./hash.js";
 import { verifyReceipt } from "./signing.js";
 import type { AgentReceipt } from "./types.js";
 
@@ -32,6 +32,8 @@ export interface ChainVerification {
 	brokenAt: number;
 	/** Non-empty when one or more receipts carry response_hash but no response body was supplied. */
 	responseHashNote?: string;
+	/** Non-empty when verification failed with a descriptive message. */
+	error?: string;
 }
 
 /**
@@ -55,6 +57,13 @@ export interface ChainVerifyOptions {
 	 * chain.terminal: true. Use for chains that must close cleanly.
 	 */
 	requireTerminal?: boolean;
+	/**
+	 * Maps receipt id → pre-redacted response body. When a receipt carries
+	 * outcome.response_hash and its id appears here, verifyChain recomputes the
+	 * hash and fails on mismatch. When the entry is absent an informational note
+	 * is emitted instead. An absent body is not a verification failure.
+	 */
+	responseBodies?: Record<string, unknown>;
 }
 
 /**
@@ -159,21 +168,40 @@ export function verifyChain(
 		}
 	}
 
-	// Check for response_hash note.
-	const hasResponseHash = receipts.some(
-		(r) => r.credentialSubject.outcome.response_hash !== undefined,
-	);
-	const responseHashNote = hasResponseHash
-		? "response_hash present in one or more receipts; response body not supplied — hash cannot be verified offline"
-		: undefined;
-
 	const cv: ChainVerification = {
 		valid: brokenAt === -1,
 		length: receipts.length,
 		receipts: results,
 		brokenAt,
-		responseHashNote,
 	};
+
+	// Response-hash verification (spec §4.3.2).
+	// When a body is supplied: recompute and fail on mismatch.
+	// When the body is absent: emit an informational note only.
+	for (let i = 0; i < receipts.length; i++) {
+		const r = receipts[i];
+		if (!r) continue;
+		const expectedHash = r.credentialSubject.outcome.response_hash;
+		if (!expectedHash) continue;
+
+		const body = options?.responseBodies?.[r.id];
+		if (body === undefined) {
+			cv.responseHashNote =
+				"response_hash present in one or more receipts; response body not supplied — hash cannot be verified offline";
+			continue;
+		}
+		if (!cv.valid) continue;
+
+		const computed = sha256(canonicalize(body));
+		if (computed !== expectedHash) {
+			return {
+				...cv,
+				valid: false,
+				brokenAt: i,
+				error: `response_hash mismatch at index ${i}: receipt has ${expectedHash}, body hashes to ${computed}`,
+			};
+		}
+	}
 
 	if (!cv.valid) return cv;
 

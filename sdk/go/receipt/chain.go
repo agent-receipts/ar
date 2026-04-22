@@ -1,6 +1,9 @@
 package receipt
 
-import "strconv"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 // ReceiptVerification holds the verification result for a single receipt in a chain.
 type ReceiptVerification struct {
@@ -42,6 +45,14 @@ type ChainVerifyOptions struct {
 	// that must close cleanly. When false (the default), absence of a terminal
 	// marker is not a failure.
 	RequireTerminal bool
+
+	// ResponseBodies maps receipt ID → pre-redacted response body (JSON-encoded).
+	// When a receipt carries outcome.response_hash and its ID appears here,
+	// VerifyChain recomputes the hash (canonicalize → SHA-256) and fails on
+	// mismatch. When an entry is absent the verifier emits an informational note
+	// instead (see ChainVerification.ResponseHashNote). An absent body is not a
+	// verification failure.
+	ResponseBodies map[string]json.RawMessage
 }
 
 // VerifyChain verifies a chain of signed receipts. It checks:
@@ -58,6 +69,11 @@ type ChainVerifyOptions struct {
 //
 // Chains that are open-ended and have no external witness cannot be detected as
 // truncated. See spec §7.3.1 for the full treatment.
+//
+// Supply ResponseBodies to verify outcome.response_hash fields: for each receipt
+// whose ID maps to a body, the hash is recomputed and verification fails on
+// mismatch. When no body is supplied for a receipt that carries response_hash, an
+// informational note is emitted but verification continues.
 func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVerifyOptions) ChainVerification {
 	var opt ChainVerifyOptions
 	if len(opts) > 0 {
@@ -161,11 +177,43 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		BrokenAt: brokenAt,
 	}
 
-	// Check for response_hash without body (informational note only).
-	for _, r := range receipts {
-		if r.CredentialSubject.Outcome.ResponseHash != "" {
+	// Response-hash verification (spec §4.3.2).
+	// When a body is supplied: recompute and fail on mismatch.
+	// When the body is absent: emit an informational note only.
+	for i, r := range receipts {
+		expectedHash := r.CredentialSubject.Outcome.ResponseHash
+		if expectedHash == "" {
+			continue
+		}
+		body, hasBody := opt.ResponseBodies[r.ID]
+		if !hasBody {
 			cv.ResponseHashNote = "response_hash present in one or more receipts; response body not supplied — hash cannot be verified offline"
-			break
+			continue
+		}
+		if !cv.Valid {
+			// Chain already broken; skip comparison.
+			continue
+		}
+		var bodyAny any
+		if err := json.Unmarshal(body, &bodyAny); err != nil {
+			cv.Valid = false
+			cv.BrokenAt = i
+			cv.Error = "response_hash: failed to parse response body at index " + strconv.Itoa(i) + ": " + err.Error()
+			return cv
+		}
+		canonical, err := Canonicalize(bodyAny)
+		if err != nil {
+			cv.Valid = false
+			cv.BrokenAt = i
+			cv.Error = "response_hash: failed to canonicalize response body at index " + strconv.Itoa(i) + ": " + err.Error()
+			return cv
+		}
+		computed := SHA256Hash(canonical)
+		if computed != expectedHash {
+			cv.Valid = false
+			cv.BrokenAt = i
+			cv.Error = "response_hash mismatch at index " + strconv.Itoa(i) + ": receipt has " + expectedHash + ", body hashes to " + computed
+			return cv
 		}
 	}
 

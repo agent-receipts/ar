@@ -444,4 +444,72 @@ describe("verifyChain", () => {
 
 		expect(unsigned.credentialSubject.chain.terminal).toBe(true);
 	});
+
+	it("responseBodies: matching body passes verification and sets no note", () => {
+		const { privateKey, publicKey } = generateKeyPair();
+		const body = { result: "ok", status: 200 };
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "data.api.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: { sequence: 1, previous_receipt_hash: null, chain_id: "chain-rb" },
+			responseBody: body,
+		});
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+
+		const result = verifyChain([signed], publicKey, {
+			responseBodies: { [signed.id]: body },
+		});
+
+		expect(result.valid).toBe(true);
+		expect(result.responseHashNote).toBeUndefined();
+	});
+
+	it("responseBodies: mismatched body fails verification with error", () => {
+		const { privateKey, publicKey } = generateKeyPair();
+		const goodBody = { result: "ok" };
+		const badBody = { result: "tampered" };
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "data.api.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: { sequence: 1, previous_receipt_hash: null, chain_id: "chain-mm" },
+			responseBody: goodBody,
+		});
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+
+		const result = verifyChain([signed], publicKey, {
+			responseBodies: { [signed.id]: badBody },
+		});
+
+		expect(result.valid).toBe(false);
+		expect(result.error).toMatch(/response_hash mismatch/);
+	});
+
+	it("responseBodies: absent entry emits note but does not fail", () => {
+		const { privateKey, publicKey } = generateKeyPair();
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "data.api.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 1,
+				previous_receipt_hash: null,
+				chain_id: "chain-absent",
+			},
+			responseBody: { result: "ok" },
+		});
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+
+		// responseBodies supplied but no entry for this receipt id.
+		const result = verifyChain([signed], publicKey, {
+			responseBodies: {},
+		});
+
+		expect(result.valid).toBe(true);
+		expect(result.responseHashNote).toBeTruthy();
+	});
 });
