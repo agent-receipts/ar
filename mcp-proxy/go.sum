@@ -1,5 +1,7 @@
 github.com/agent-receipts/ar/sdk/go v0.3.1 h1:20mU2aszom4gG7BvZyyT/mxMgeDJniBJv630771yqUI=
 github.com/agent-receipts/ar/sdk/go v0.3.1/go.mod h1:W/Lgz1a3s8mtlNP8MQq+2llwzWukokud+4NeMMOVhXI=
+github.com/agent-receipts/ar/sdk/go v0.4.0 h1:BqybWy9ha8ePQKckG9dC2FS5Y6mCuO1Eens/JJgK/wI=
+github.com/agent-receipts/ar/sdk/go v0.4.0/go.mod h1:Y8j3xhKAyaJF7LEuo15IWZWAptOA6b489CI3OFbZC6s=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e h1:ijClszYn+mADRFY17kjQEVQ1XRhq2/JR1M3sGqeJoxs=
