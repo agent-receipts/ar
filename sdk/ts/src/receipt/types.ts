@@ -64,7 +64,7 @@ export interface Action {
 	target?: ActionTarget;
 	parameters_hash?: string;
 	timestamp: string;
-	trusted_timestamp?: string | null;
+	trusted_timestamp?: string;
 }
 
 // --- Intent ---
@@ -85,7 +85,7 @@ export interface StateChange {
 
 export interface Outcome {
 	status: OutcomeStatus;
-	error?: string | null;
+	error?: string;
 	reversible?: boolean;
 	reversal_method?: string;
 	reversal_window_seconds?: number;
@@ -101,7 +101,7 @@ export interface Authorization {
 	scopes: string[];
 	granted_at: string;
 	expires_at?: string;
-	grant_ref?: string | null;
+	grant_ref?: string;
 }
 
 // --- Chain ---

@@ -56,12 +56,38 @@ function canonicalizeNumber(n: number): string {
 /**
  * Compute SHA-256 hash of a receipt, excluding the proof field.
  *
+ * Applies ADR-0009 Rule 2 before canonicalising: optional fields whose value
+ * is null are normalised to absent. The sole required-nullable field,
+ * chain.previous_receipt_hash, is always emitted (including as JSON null).
+ *
  * Returns the hash in "sha256:<hex>" format as used throughout the spec.
  */
 export function hashReceipt(receipt: AgentReceipt): string {
 	const { proof: _, ...unsigned } = receipt;
-	const canonical = canonicalize(unsigned as UnsignedAgentReceipt);
-	return sha256(canonical);
+	const stripped = stripOptionalNulls(unsigned) as UnsignedAgentReceipt;
+	// stripOptionalNulls removes null values including previous_receipt_hash: null.
+	// Re-insert it — it is required-nullable and must always be emitted.
+	if (stripped.credentialSubject?.chain) {
+		stripped.credentialSubject.chain.previous_receipt_hash =
+			receipt.credentialSubject?.chain?.previous_receipt_hash ?? null;
+	}
+	return sha256(canonicalize(stripped));
+}
+
+/**
+ * Recursively remove null-valued keys from plain objects (ADR-0009 Rule 2).
+ * Optional fields must be absent when null; this enforces that at runtime.
+ */
+function stripOptionalNulls(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(stripOptionalNulls);
+	if (value !== null && typeof value === "object") {
+		const out: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+			if (v !== null) out[k] = stripOptionalNulls(v);
+		}
+		return out;
+	}
+	return value;
 }
 
 /**
