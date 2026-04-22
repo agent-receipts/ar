@@ -22,7 +22,7 @@
           "https://www.w3.org/ns/credentials/v2",
           "https://agentreceipts.ai/context/v1"
         ],
-        "id": "urn:receipt:a8e2ba43-d2b9-4089-a208-012eff179272",
+        "id": "urn:receipt:v020-terminal-1",
         "type": [
           "VerifiableCredential",
           "AgentReceipt"
@@ -31,16 +31,16 @@
         "issuer": {
           "id": "did:agent:test"
         },
-        "issuanceDate": "2026-04-22T05:44:56Z",
+        "issuanceDate": "2026-04-22T00:00:00Z",
         "credentialSubject": {
           "principal": {
             "id": "did:user:test"
           },
           "action": {
-            "id": "act_6e36aa40-796b-42f7-b58b-1eb8d300a1db",
+            "id": "act_v020_1",
             "type": "filesystem.file.read",
             "risk_level": "low",
-            "timestamp": "2026-04-22T05:44:56Z"
+            "timestamp": "2026-04-22T00:00:00Z"
           },
           "outcome": {
             "status": "success",
@@ -54,10 +54,10 @@
         },
         "proof": {
           "type": "Ed25519Signature2020",
-          "created": "2026-04-22T05:44:56Z",
+          "created": "2026-04-22T00:00:00Z",
           "verificationMethod": "did:agent:test#key-1",
           "proofPurpose": "assertionMethod",
-          "proofValue": "uHypMUsLp-O1QKrbD_elfnaBGe68duazVF1W_1tQosomEWwEij8cxvbOPYdx7Tx6gW4fU4ajJkf6flkSS85-3Cg"
+          "proofValue": "uccX9yc-qpoh7pkdehRKVMHSJKwpVG3WVMU1yiRCWlNLtvW6ortDHE-KfPJF3PZ0-7Gdm510L_IkVvPNrY72xAw"
         }
       },
       {
@@ -65,7 +65,7 @@
           "https://www.w3.org/ns/credentials/v2",
           "https://agentreceipts.ai/context/v1"
         ],
-        "id": "urn:receipt:6fc317fc-3b0f-4207-8dde-7a2bffcf7792",
+        "id": "urn:receipt:v020-terminal-2",
         "type": [
           "VerifiableCredential",
           "AgentReceipt"
@@ -74,16 +74,16 @@
         "issuer": {
           "id": "did:agent:test"
         },
-        "issuanceDate": "2026-04-22T05:44:56Z",
+        "issuanceDate": "2026-04-22T00:00:00Z",
         "credentialSubject": {
           "principal": {
             "id": "did:user:test"
           },
           "action": {
-            "id": "act_1fd716d3-b76c-4d2a-9217-c85ced259d59",
+            "id": "act_v020_2",
             "type": "filesystem.file.read",
             "risk_level": "low",
-            "timestamp": "2026-04-22T05:44:56Z"
+            "timestamp": "2026-04-22T00:00:00Z"
           },
           "outcome": {
             "status": "success",
@@ -91,16 +91,16 @@
           },
           "chain": {
             "sequence": 2,
-            "previous_receipt_hash": "sha256:ba939e902b90bb4a382731915ac168da71b35c0c5663b1a08a4daff36d2bc287",
+            "previous_receipt_hash": "sha256:d7e9047eb39d91caa935c5a58fab566e2bb3078a81dc61ecc749779feec6df0b",
             "chain_id": "chain_v020_test"
           }
         },
         "proof": {
           "type": "Ed25519Signature2020",
-          "created": "2026-04-22T05:44:56Z",
+          "created": "2026-04-22T00:00:00Z",
           "verificationMethod": "did:agent:test#key-1",
           "proofPurpose": "assertionMethod",
-          "proofValue": "uvaxWWzS3bmtMYKyn49VhB79lGkOFvLoCgonlRFWQjvrLoKrCo7I1TczgdwSrROouIOHZ2I2DJxOgSdDVFnyNAQ"
+          "proofValue": "uW82_6Iui_boSwcb1RSK8svNzJrK_EpksmNjTLGZ3yviH3MFngDgoO0N4WPgXCJ4tvWXuQW1H-Yf97Bg8KNAODg"
         }
       },
       {
@@ -108,7 +108,7 @@
           "https://www.w3.org/ns/credentials/v2",
           "https://agentreceipts.ai/context/v1"
         ],
-        "id": "urn:receipt:d41ab7e0-b3d3-48da-b946-a10c965852f8",
+        "id": "urn:receipt:v020-terminal-3",
         "type": [
           "VerifiableCredential",
           "AgentReceipt"
@@ -117,16 +117,16 @@
         "issuer": {
           "id": "did:agent:test"
         },
-        "issuanceDate": "2026-04-22T05:44:56Z",
+        "issuanceDate": "2026-04-22T00:00:00Z",
         "credentialSubject": {
           "principal": {
             "id": "did:user:test"
           },
           "action": {
-            "id": "act_727f7710-bc11-46d3-adfa-0ef7076a8297",
+            "id": "act_v020_3",
             "type": "filesystem.file.read",
             "risk_level": "low",
-            "timestamp": "2026-04-22T05:44:56Z"
+            "timestamp": "2026-04-22T00:00:00Z"
           },
           "outcome": {
             "status": "success",
@@ -134,17 +134,17 @@
           },
           "chain": {
             "sequence": 3,
-            "previous_receipt_hash": "sha256:12f2bb053f860ca694f79332da84c1585d6ee8caa64ed987d86bf401fe7699f5",
+            "previous_receipt_hash": "sha256:a0112ea993d0abf0812026add9d0551b06dd868df2d4b79baf855796a9368ca5",
             "chain_id": "chain_v020_test",
             "terminal": true
           }
         },
         "proof": {
           "type": "Ed25519Signature2020",
-          "created": "2026-04-22T05:44:56Z",
+          "created": "2026-04-22T00:00:00Z",
           "verificationMethod": "did:agent:test#key-1",
           "proofPurpose": "assertionMethod",
-          "proofValue": "uy3svL0b08w6Q1F3Rdh0BJ4YFHoST1j3N6ZSOa_NxuvwSEOxlFTJTek8Uuvf5abNdINiWXzYniNQWLP82goxGDw"
+          "proofValue": "uSvZnk-poxWvjjpttEGrWps_CnIamNjBitlM054xCFtITkC-pzY4tvpbOJaEl3ZbQ0ymE5rXEAx3Eqjr-MOYXAQ"
         }
       }
     ],

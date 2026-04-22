@@ -173,7 +173,16 @@ func main() {
 }
 
 // generateV020Vectors builds and writes v020_vectors.json using a fresh key pair.
+//
+// Fields that Create/Sign populate from the clock and the UUID package are
+// overridden with fixed values so the output is byte-identical across runs.
+// This keeps the checked-in test vector stable (no spurious diffs on
+// regeneration) and makes the file usable as a signature-level cross-SDK
+// oracle. Ed25519 is deterministic (RFC 8032), so identical signed bytes
+// plus identical key produce identical proofValue.
 func generateV020Vectors(keys keysSection) error {
+	const fixedTimestamp = "2026-04-22T00:00:00Z"
+
 	// Response hash vectors: redact → canonicalize → SHA-256.
 	rawResponse := map[string]any{
 		"result":   "ok",
@@ -199,18 +208,27 @@ func generateV020Vectors(keys keysSection) error {
 	for i := 1; i <= 3; i++ {
 		isTerminal := i == 3
 		r := receipt.Create(receipt.CreateInput{
-			Issuer:    receipt.Issuer{ID: "did:agent:test"},
-			Principal: receipt.Principal{ID: "did:user:test"},
-			Action:    receipt.Action{Type: "filesystem.file.read", RiskLevel: receipt.RiskLow},
-			Outcome:   receipt.Outcome{Status: receipt.StatusSuccess},
-			Chain:     receipt.Chain{Sequence: i, PreviousReceiptHash: prevHash, ChainID: "chain_v020_test"},
+			Issuer:       receipt.Issuer{ID: "did:agent:test"},
+			Principal:    receipt.Principal{ID: "did:user:test"},
+			Action:       receipt.Action{Type: "filesystem.file.read", RiskLevel: receipt.RiskLow},
+			Outcome:      receipt.Outcome{Status: receipt.StatusSuccess},
+			Chain:        receipt.Chain{Sequence: i, PreviousReceiptHash: prevHash, ChainID: "chain_v020_test"},
 			ResponseBody: redactedJSON,
-			Terminal: isTerminal,
+			Terminal:     isTerminal,
 		})
+		// Override Create-assigned non-deterministic fields (UUIDs, timestamps).
+		r.ID = fmt.Sprintf("urn:receipt:v020-terminal-%d", i)
+		r.IssuanceDate = fixedTimestamp
+		r.CredentialSubject.Action.ID = fmt.Sprintf("act_v020_%d", i)
+		r.CredentialSubject.Action.Timestamp = fixedTimestamp
+
 		s, err := receipt.Sign(r, keys.PrivateKey, "did:agent:test#key-1")
 		if err != nil {
 			return fmt.Errorf("sign receipt %d: %w", i, err)
 		}
+		// proof.created is outside the signed payload — safe to fix afterwards.
+		s.Proof.Created = fixedTimestamp
+
 		terminalReceipts = append(terminalReceipts, s)
 		h, err := receipt.HashReceipt(s)
 		if err != nil {

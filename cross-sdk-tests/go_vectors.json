@@ -128,7 +128,7 @@
       },
       "proof": {
         "type": "Ed25519Signature2020",
-        "created": "2026-04-22T05:44:56Z",
+        "created": "2026-04-22T06:03:42Z",
         "verificationMethod": "did:agent:test-agent#key-1",
         "proofPurpose": "assertionMethod",
         "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
