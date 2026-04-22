@@ -33,12 +33,27 @@ function canonicalizeReceipt(receipt: UnsignedAgentReceipt): Buffer {
 
 /**
  * Sign an unsigned receipt, returning a complete AgentReceipt with proof.
+ *
+ * Throws if the receipt carries `chain.terminal: false`. Per spec §4.3.2,
+ * `terminal` is restricted to the constant `true` or absent — explicit
+ * `false` is schema-invalid. This runtime guard mirrors Python's Pydantic
+ * `Literal[True] | None` validation and Go's `Chain.MarshalJSON`
+ * structural drop. TypeScript's `terminal?: true` type prevents this at
+ * compile time, but untyped JSON or `as AgentReceipt` casts can bypass
+ * the type system.
  */
 export function signReceipt(
 	unsigned: UnsignedAgentReceipt,
 	privateKey: string,
 	verificationMethod: string,
 ): AgentReceipt {
+	const terminal = unsigned.credentialSubject?.chain?.terminal;
+	if (terminal !== undefined && terminal !== true) {
+		throw new Error(
+			"signReceipt: chain.terminal must be true or absent (got false); spec §4.3.2 forbids terminal: false on the wire",
+		);
+	}
+
 	const data = canonicalizeReceipt(unsigned);
 	const signature = sign(null, data, privateKey);
 

@@ -42,8 +42,8 @@
       "description": "MUST be [\"VerifiableCredential\", \"AgentReceipt\"]."
     },
     "version": {
-      "const": "0.1.0",
-      "description": "Protocol version. MUST be \"0.1.0\" for this version of the spec."
+      "enum": ["0.1.0", "0.2.0"],
+      "description": "Protocol version. MUST be \"0.1.0\" or \"0.2.0\". Verifiers MUST accept both."
     },
     "issuer": { "$ref": "#/$defs/issuer" },
     "validFrom": {
@@ -257,6 +257,10 @@
               "description": "SHA-256 hash of relevant state after the action."
             }
           }
+        },
+        "response_hash": {
+          "$ref": "#/$defs/sha256Hash",
+          "description": "SHA-256 hash of the RFC 8785 canonical JSON of the server's response, computed after secret redaction (redact → hash → sign). Absent when the issuer did not commit to the response."
         }
       }
     },
@@ -338,6 +342,10 @@
         "chain_id": {
           "type": "string",
           "description": "Opaque identifier grouping receipts into a logical chain."
+        },
+        "terminal": {
+          "enum": [true],
+          "description": "When present, asserts this is the final receipt in the chain. MUST be true if present; absence means no claim. Explicit false is not a valid value — the schema restricts this field to the constant true."
         }
       },
       "allOf": [

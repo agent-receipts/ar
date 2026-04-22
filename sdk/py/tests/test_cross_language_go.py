@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from agent_receipts.receipt.chain import verify_chain
 from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
 from agent_receipts.receipt.signing import generate_key_pair, verify_receipt
 from agent_receipts.receipt.types import AgentReceipt
@@ -17,9 +18,18 @@ VECTORS = (
     Path(__file__).parent.parent.parent.parent / "cross-sdk-tests" / "go_vectors.json"
 )
 
+V020_VECTORS = (
+    Path(__file__).parent.parent.parent.parent / "cross-sdk-tests" / "v020_vectors.json"
+)
+
 
 def _load_vectors() -> dict:
     with open(VECTORS) as f:
+        return json.load(f)
+
+
+def _load_v020_vectors() -> dict:
+    with open(V020_VECTORS) as f:
         return json.load(f)
 
 
@@ -80,3 +90,38 @@ class TestVerifyGoSignature:
         receipt = AgentReceipt(**signed_data)
         receipt.credentialSubject.action.type = "filesystem.file.delete"
         assert verify_receipt(receipt, public_key) is False
+
+
+class TestV020Vectors:
+    """ADR-0008 cross-SDK vectors: response_hash and chain.terminal."""
+
+    def test_response_hash_matches_go(self) -> None:
+        """Python canonicalize+sha256 of redacted response matches Go."""
+        vectors = _load_v020_vectors()
+        redacted = vectors["responseHash"]["redactedResponse"]
+        expected = vectors["responseHash"]["expectedHash"]
+        assert sha256(canonicalize(redacted)) == expected
+
+    def test_terminal_chain_verifies(self) -> None:
+        """Go-signed terminal chain verifies in Python."""
+        vectors = _load_v020_vectors()
+        public_key = vectors["keys"]["publicKey"]
+        receipts = [AgentReceipt(**r) for r in vectors["terminalChain"]["receipts"]]
+
+        result = verify_chain(receipts, public_key)
+        assert result.valid is True
+
+    def test_terminal_chain_with_require_terminal(self) -> None:
+        """Go-signed terminal chain passes require_terminal in Python."""
+        vectors = _load_v020_vectors()
+        public_key = vectors["keys"]["publicKey"]
+        receipts = [AgentReceipt(**r) for r in vectors["terminalChain"]["receipts"]]
+
+        result = verify_chain(receipts, public_key, require_terminal=True)
+        assert result.valid is True
+
+    def test_last_receipt_has_terminal_true(self) -> None:
+        """Terminal marker is set on the last receipt in the Go-generated chain."""
+        vectors = _load_v020_vectors()
+        receipts = [AgentReceipt(**r) for r in vectors["terminalChain"]["receipts"]]
+        assert receipts[-1].credentialSubject.chain.terminal is True

@@ -119,4 +119,16 @@ describe("verifyReceipt", () => {
 
 		expect(verifyReceipt(signed, other.publicKey)).toBe(false);
 	});
+
+	it("throws when chain.terminal is explicitly false (spec §4.3.2 guard)", () => {
+		const { privateKey } = generateKeyPair();
+		const unsigned = makeUnsignedReceipt();
+		// Bypass the type system the way an untyped JSON consumer would.
+		(unsigned.credentialSubject.chain as { terminal: unknown }).terminal =
+			false;
+
+		expect(() =>
+			signReceipt(unsigned, privateKey, "did:agent:test#key-1"),
+		).toThrow(/terminal/);
+	});
 });

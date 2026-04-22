@@ -58,6 +58,8 @@ func TestSpecExamplesHaveRequiredFields(t *testing.T) {
 		"chain-receipt-2.json",
 		"chain-receipt-3.json",
 		"delegation-receipt.json",
+		"v0-2-response-hash-receipt.json",
+		"v0-2-terminal-chain-receipt-3.json",
 	}
 
 	for _, name := range examples {
@@ -79,8 +81,8 @@ func TestSpecExamplesHaveRequiredFields(t *testing.T) {
 				t.Errorf("unexpected type: %v", r.Type)
 			}
 
-			if r.Version != "0.1.0" {
-				t.Errorf("unexpected version: %s", r.Version)
+			if r.Version != "0.1.0" && r.Version != "0.2.0" {
+				t.Errorf("unexpected version: %s (expected 0.1.0 or 0.2.0)", r.Version)
 			}
 
 			if r.Issuer["id"] == nil || r.Issuer["id"] == "" {

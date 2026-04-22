@@ -163,6 +163,10 @@ func cmdVerify(args []string) {
 		os.Exit(1)
 	}
 
+	if result.ResponseHashNote != "" {
+		fmt.Fprintf(os.Stderr, "Note: %s\n", result.ResponseHashNote)
+	}
+
 	if result.Valid {
 		fmt.Printf("Chain %s: VALID (%d receipts)\n", chainID, result.Length)
 	} else {

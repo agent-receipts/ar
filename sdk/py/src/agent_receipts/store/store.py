@@ -97,7 +97,16 @@ class ReceiptStore:
         outcome = subject.outcome
         principal = subject.principal
 
-        receipt_json = json.dumps(receipt.model_dump(by_alias=True), default=str)
+        # exclude_none=True strips optional None fields (terminal, response_hash)
+        # so they don't appear schema-invalid in stored JSON.
+        # previous_receipt_hash is a required field that may legitimately be null
+        # (first receipt in a chain) — restore it so the stored JSON round-trips.
+        # Direct indexing (not .get()) so shape drift fails loudly.
+        receipt_data = receipt.model_dump(by_alias=True, exclude_none=True)
+        chain_data = receipt_data["credentialSubject"]["chain"]
+        if "previous_receipt_hash" not in chain_data:
+            chain_data["previous_receipt_hash"] = None
+        receipt_json = json.dumps(receipt_data, default=str)
 
         self._conn.execute(
             """

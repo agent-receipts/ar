@@ -51,6 +51,8 @@ class CreateReceiptInput(BaseModel):
     intent: Intent | None = None
     authorization: Authorization | None = None
     action_timestamp: str | None = None
+    response_body: Any = None  # noqa: ANN401  # any JSON value, not just objects
+    terminal: bool = False
 
 
 def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
@@ -76,12 +78,37 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
     if input.action.trusted_timestamp is not None:
         action_data["trusted_timestamp"] = input.action.trusted_timestamp
 
+    # Compute response_hash when a response body is supplied.
+    if input.response_body is not None:
+        from agent_receipts.receipt.hash import canonicalize, sha256
+
+        canonical = canonicalize(input.response_body)
+        response_hash = sha256(canonical)
+        # Merge into outcome
+        outcome_with_hash = Outcome(
+            **input.outcome.model_dump(exclude={"response_hash"}),
+            response_hash=response_hash,
+        )
+    else:
+        outcome_with_hash = input.outcome
+
+    # Set terminal marker (never set False).
+    # exclude_none=True strips terminal: null (desired) but also drops
+    # previous_receipt_hash: null for the first receipt in a chain.
+    # Re-add it explicitly because Chain requires the field (no default).
+    chain_data = input.chain.model_dump(exclude_none=True)
+    if "previous_receipt_hash" not in chain_data:
+        chain_data["previous_receipt_hash"] = None
+    if input.terminal:
+        chain_data["terminal"] = True
+    chain_with_terminal = Chain(**chain_data)
+
     # Build credential subject
     cs_data: dict[str, Any] = {
         "principal": input.principal,
         "action": Action(**action_data),
-        "outcome": input.outcome,
-        "chain": input.chain,
+        "outcome": outcome_with_hash,
+        "chain": chain_with_terminal,
     }
     if input.intent is not None:
         cs_data["intent"] = input.intent

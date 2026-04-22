@@ -2,6 +2,8 @@
 // verifying Action Receipts — W3C Verifiable Credentials for AI agent actions.
 package receipt
 
+import "encoding/json"
+
 // Protocol constants (unexported to prevent mutation).
 var (
 	protocolContext        = []string{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"}
@@ -14,7 +16,7 @@ func Context() []string { return append([]string{}, protocolContext...) }
 // CredentialType returns a copy of the credential type array.
 func CredentialType() []string { return append([]string{}, protocolCredentialType...) }
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 // RiskLevel classifies the security risk of an action.
 type RiskLevel string
@@ -97,6 +99,7 @@ type Outcome struct {
 	ReversalMethod        string        `json:"reversal_method,omitempty"`
 	ReversalWindowSeconds *int          `json:"reversal_window_seconds,omitempty"`
 	StateChange           *StateChange  `json:"state_change,omitempty"`
+	ResponseHash          string        `json:"response_hash,omitempty"`
 }
 
 // Authorization captures the scope and expiry of an action.
@@ -112,6 +115,23 @@ type Chain struct {
 	Sequence            int     `json:"sequence"`
 	PreviousReceiptHash *string `json:"previous_receipt_hash"`
 	ChainID             string  `json:"chain_id"`
+	// Terminal, when non-nil and true, asserts this is the final receipt in
+	// the chain. Spec §4.3.2 restricts the wire form to the constant true or
+	// absent — explicit false is schema-invalid. MarshalJSON silently drops
+	// Terminal when it is non-nil but false so external callers who set
+	// Terminal: &falseVal still produce a valid JSON document.
+	Terminal *bool `json:"terminal,omitempty"`
+}
+
+// MarshalJSON serializes Chain, silently omitting Terminal when it is set
+// to false (spec §4.3.2 forbids `terminal: false` on the wire).
+func (c Chain) MarshalJSON() ([]byte, error) {
+	type chainAlias Chain
+	a := chainAlias(c)
+	if a.Terminal != nil && !*a.Terminal {
+		a.Terminal = nil
+	}
+	return json.Marshal(a)
 }
 
 // CredentialSubject contains the core receipt payload.
