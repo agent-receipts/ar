@@ -6,17 +6,17 @@ Accepted
 
 ## Context
 
-Two independent gaps in the current receipt model (v0.1.0) motivate this ADR. The initial framing was that bundling them would let the protocol migrate from `0.1.0` once. Working through the chain-completeness mechanism closely (see §"Why in-chain truncation detection does not work" below) narrowed which in-chain designs are actually viable: an "expected length" or "hash of successors" commitment reduces to a transparency-log protocol and is rejected, but a terminal-marker flag is a single optional boolean with unambiguous semantics and no caller discipline required at the happy path. The schema-bump-once rationale therefore holds, for that one mechanism — alongside an out-of-band verifier parameter for the general open-ended case.
+Two independent gaps in the current receipt model (v0.1.0) motivate this ADR. The initial framing was that bundling them would let the protocol migrate from `0.1.0` once. Working through the chain-completeness mechanism closely (see §"Why in-chain positive commitment to successors does not work" below) narrowed which in-chain designs are actually viable: a *positive* commitment to successors ("expected length", "hash of the next receipt") reduces to a transparency-log protocol and is rejected, but a *negative* commitment — a terminal-marker flag meaning "no more receipts will follow" — is a single optional boolean with unambiguous semantics, an automatic integrity check against extension, and an opt-in affordance for verifiers that want to demand closure. The schema-bump-once rationale therefore holds for that one mechanism, alongside an out-of-band verifier parameter for the general open-ended case.
 
 **Gap 1 — Receipts hash the request but not the response (#153).** The `credentialSubject.action.parameters_hash` field (see spec §4.3.2, [agent-receipt.schema.json#L158](../../spec/schema/agent-receipt.schema.json#L158)) captures what the agent asked. The `outcome` block captures status and result metadata but not a cryptographic commitment to the server's response body. A compromised MCP server, a tampering proxy, or an incident investigator cannot distinguish a legitimate response from a modified one from the receipt alone. The receipt chain proves intent but not outcome.
 
 **Gap 2 — Chain verification does not detect tail truncation (#171).** The SDK verifiers in [sdk/go/receipt/chain.go](../../sdk/go/receipt/chain.go), [sdk/ts/src/receipt/chain.ts](../../sdk/ts/src/receipt/chain.ts), and [sdk/py/src/agent_receipts/receipt/chain.py](../../sdk/py/src/agent_receipts/receipt/chain.py) check signatures, hash linkage, and strict sequence increment. Dropping the last N receipts from a chain still verifies as `Valid: true` because there is no anchor for "this chain is complete". Mid-chain deletion is caught; tail truncation is not.
 
-### Why in-chain truncation detection does not work
+### Why in-chain positive commitment to successors does not work
 
-Before enumerating options, a cryptographic floor: no purely in-chain commitment can detect truncation of receipts that do not yet exist at signing time. A receipt can only commit to values its issuer already knows.
+Before enumerating options, a cryptographic floor: no in-chain field that makes a *positive* claim about future receipts — their count, their hashes, their Merkle root — can detect truncation, because the issuer does not know at signing time what those successors will be. A receipt can only commit to values its issuer already knows.
 
-| What an in-chain field could commit to | Detects tail truncation? |
+| What an in-chain field could positively commit to | Detects tail truncation? |
 |---|---|
 | "Current length at this receipt" | No — equivalent to `sequence`, already present |
 | "Expected final length" | Only if the issuer knows its end state at sign time, which open-ended agents do not |
@@ -24,9 +24,11 @@ Before enumerating options, a cryptographic floor: no purely in-chain commitment
 | "Hash of the next receipt" | Requires delaying signing until the next action is chosen; still leaves the last signed receipt unprotected |
 | Merkle accumulator of prior receipts | Detects prior-receipt deletion (already covered by hash chaining); does nothing for the tail |
 
-The only mechanisms that genuinely detect tail truncation are (a) an external witness supplied at verification time (expected length or final hash), or (b) an explicit closure marker — a terminal-marker receipt that the issuer sets on the final receipt of a chain it intends to close. Anything in-chain that goes beyond these is effectively a transparency-log protocol — substantially larger than a single field, deferred to a future ADR if a real deployment needs it.
+A *negative* commitment — "no more receipts will follow this one" — sits outside the floor. The issuer always knows whether it intends to close the chain at the receipt it is currently signing. This is the category Option D belongs to: the issuer makes a one-bit closure claim, and verifiers enforce it by rejecting any later receipt that points back at a terminal predecessor. Terminal does not detect truncation of an open (non-terminal) chain, and it does not detect truncation of a chain where the terminal receipt itself was dropped — neither can be detected in-chain, which is exactly the floor above.
 
-Both (a) and (b) are adopted in this ADR. They are complementary: (a) is the only option for open-ended chains where the issuer never knows it is emitting the final receipt; (b) is the cheap in-band signal for chains that do close cleanly (CLI tool runs, single agent tasks, workflow-bound proxies). Absence of a terminal marker in (b) is not an error — it simply means "no claim", identical to today's behaviour.
+The mechanisms adopted in this ADR are therefore: (a) an external witness supplied at verification time (`ExpectedLength` / `ExpectedFinalHash`), which handles the open-ended case — the only way to detect truncation of a chain that was never closed; and (b) a negative in-chain commitment (`chain.terminal: true`), which handles the close-cleanly case — automatic rejection of extension past closure, plus an opt-in `RequireTerminal` verifier parameter for callers that want to demand closure. Anything in-chain that goes beyond these is effectively a transparency-log protocol — substantially larger than a single field, deferred to a future ADR if a real deployment needs it.
+
+Absence of a terminal marker is not an error — it simply means "no claim", identical to today's behaviour. A verifier that does not set `RequireTerminal` treats a non-terminal tail as it does today.
 
 ### Options considered
 
@@ -36,13 +38,13 @@ Both (a) and (b) are adopted in this ADR. They are complementary: (a) is the onl
 
 - **Option C (rejected): In-chain length commitment schema field.** An earlier draft of this ADR proposed adding an optional `credentialSubject.chain.length_commitment` field signed into each receipt. On closer analysis, see the table above: every concrete interpretation of such a field either duplicates `sequence`, requires knowledge the issuer does not have, or reduces to a transparency-log protocol. The ADR rejects this option as security theatre. If in-chain truncation detection is pursued in the future, it needs a purpose-designed ADR covering checkpoint receipts, external anchoring, and the accompanying verifier state — not a single hand-wavy field.
 
-- **Option D: Terminal-marker receipt.** Add an optional `chain.terminal: true` flag to mark the final receipt in a chain. This is a positive claim, not a required one: its presence means the issuer asserts the chain ends here; its absence means no claim (same as today). Verifiers gain one integrity check — if receipt N has `terminal: true`, no receipt with `previous_receipt_hash` pointing at N may exist — and one new API affordance — callers can ask "is this chain explicitly closed?" and fail verification when closure is required. Chains that crash, are killed, or are long-running simply never emit a terminal and are no worse off than today. A single optional boolean, unambiguous semantics, no caller discipline required on the happy path. Pairs cleanly with the `0.2.0` schema bump motivated by §1.
+- **Option D: Terminal-marker receipt.** Add an optional `chain.terminal: true` flag to mark the final receipt in a chain. This is a positive claim, not a required one: its presence means the issuer asserts the chain ends here; its absence means no claim (same as today). Schema-restricted to the constant `true` or absent — `false` is disallowed to avoid canonicalization/signature ambiguity between two "no claim" forms. Verifiers gain one integrity check — if receipt N has `terminal: true`, no receipt with `previous_receipt_hash` pointing at N may exist — and one opt-in API affordance — callers can pass `RequireTerminal` and fail verification when closure is required. The integrity check runs automatically; the truncation-detection aspect requires caller discipline on the `RequireTerminal` side, same as Option B. Chains that crash, are killed, or are long-running simply never emit a terminal and are no worse off than today. Pairs cleanly with the `0.2.0` schema bump motivated by §1.
 
 Related: #153, #171, spec §7.3 (chain integrity verification), spec §9.3 (open question on receipt tampering), ADR-0002 (RFC 8785 canonicalization), ADR-0003 (VC envelope format).
 
 ## Decision
 
-*Both sub-decisions below are concrete and intended for immediate implementation. The open questions listed at the end are for community input on details, not on the overall shape.*
+*All four sub-decisions below are concrete and intended for immediate implementation. The open questions listed at the end are for community input on details, not on the overall shape.*
 
 The release that closes #153 and #171 ships four things together:
 
@@ -87,15 +89,15 @@ This is the concrete mitigation the original #171 follow-up gestured at, landed 
 
 ### 4. Terminal-marker receipt (Option D)
 
-Add an optional boolean field `credentialSubject.chain.terminal` to the receipt schema:
+Add an optional field `credentialSubject.chain.terminal` to the receipt schema:
 
-- **Field name and location.** `chain.terminal`, optional boolean. Absence and explicit `false` are equivalent ("no claim, chain may or may not continue"). Explicit `true` is a positive claim from the issuer that this is the final receipt on the chain.
+- **Field name and location.** `chain.terminal`, optional. Schema-level type: the constant `true` (`"enum": [true]` or equivalent). The field is either present with value `true` or omitted entirely; explicit `false` is **not** a valid value. This avoids a canonicalization ambiguity: `{"terminal": false}` and `{}` produce different RFC 8785 canonical forms and therefore different signatures, so allowing both would fragment what is supposed to be a single "no claim" state. Omission is the only way to express "no claim".
 - **Issuer guidance.** Issuers with a defined chain lifecycle — single-task agents, CLI tools on normal exit, workflow-bound MCP proxies — set `terminal: true` on the last receipt they emit. Open-ended agents simply never set it. The issuer is not required to predict closure at arbitrary mid-chain points.
-- **Verifier behaviour (new integrity check).** If any receipt in the chain has `terminal: true`, no subsequent receipt whose `previous_receipt_hash` points at it is permitted. Verifiers fail with a clear error ("receipt after terminal") if this is observed. This catches an attacker who attempts to extend a chain that its issuer marked closed.
-- **Verifier behaviour (new caller affordance).** Chain-verification APIs gain an optional `RequireTerminal` / `require_terminal=True` parameter. When supplied, verification fails if the last observed receipt is not explicitly `terminal: true`. When unsupplied, default remains "no claim either way" — absence of a terminal is not a verification failure.
-- **Delegation interaction.** Delegation links (spec §7.6) are distinct from chain closure. A receipt that delegates to another chain is not automatically terminal. `terminal: true` means "no more receipts on *this* chain", regardless of whether downstream delegated chains exist.
+- **Verifier behaviour (new integrity check, automatic).** If any receipt in the chain has `terminal: true`, no subsequent receipt whose `previous_receipt_hash` points at it is permitted. Verifiers fail with a clear error ("receipt after terminal") if this is observed, regardless of caller parameters. This catches an attacker who attempts to extend a chain that its issuer marked closed.
+- **Verifier behaviour (opt-in caller affordance).** Chain-verification APIs gain an optional `RequireTerminal` / `require_terminal=True` parameter. When supplied, verification fails if the last observed receipt is not explicitly `terminal: true`. When unsupplied, default remains "no claim either way" — absence of a terminal is not a verification failure. Truncation-detection for terminal-ended chains requires callers to opt in via this parameter; without it, a truncated terminal-ended chain still verifies as `Valid: true`, exactly like any other non-terminal chain today.
+- **Delegation interaction.** Delegation links (spec §7.6) are distinct from chain closure. A receipt that delegates to another chain is not automatically terminal. `terminal: true` means "no more receipts on *this* chain", regardless of whether downstream delegated chains exist. A receipt may both delegate and be terminal — those are orthogonal claims.
 
-Schema-wise this is one optional boolean, signed as part of the receipt body like any other field. Pairs with §1 in the same `0.2.0` bump.
+Schema-wise this is one optional field restricted to the constant `true`, signed as part of the receipt body like any other field. Pairs with §1 in the same `0.2.0` bump.
 
 ### Open questions for community input
 
@@ -117,7 +119,7 @@ If response hashing happens before secret redaction, the hash commits to a value
 
 ### Truncation detection has a floor
 
-No mechanism can detect truncation of receipts that never existed. A receipt only commits to values its issuer already knows; it cannot commit to its own successors. §4 (Option D) detects truncation only when the issuer had a chance to mark the chain terminal — if an attacker drops all receipts *including* a terminal one, or drops the tail of a chain that was never closed, §4 is blind. §3 (Option B) catches the open-ended case by pushing the commitment out of band. Neither mechanism helps for chains that are both open-ended and lack any external witness — the spec must state this explicitly so operators understand what the protocol does and does not guarantee.
+No mechanism can detect truncation of receipts that never existed. A receipt only commits to values its issuer already knows; it cannot commit to its own successors. §4's terminal marker is a negative claim ("no more will follow"), which the issuer always knows at signing time — but it only fires as a truncation detector when (a) the original chain actually ended in a terminal receipt *and* (b) the verifier opted in with `RequireTerminal`. If an attacker drops the terminal receipt itself, or drops the tail of a chain that was never closed, §4 is blind. §3 catches the open-ended case by pushing the commitment out of band. Neither mechanism helps for chains that are both open-ended and lack any external witness — the spec must state this explicitly so operators understand what the protocol does and does not guarantee.
 
 ### Terminal marker is a positive claim only
 
@@ -144,8 +146,8 @@ SHA-256 is consistent with existing hashes in the schema. No algorithm change is
 ## Consequences
 
 - Receipt schema version bumps from `0.1.0` to `0.2.0`. Verifiers must accept both; issuers may emit either, with clear guidance to prefer `0.2.0`.
-- Spec §4.3 (outcome field reference) must be updated to describe `response_hash`, the ordering rule, and the verifier's handling of a missing field.
-- Spec §4.3 (chain field reference) must be updated to describe `chain.terminal`, its semantics (positive claim only), and the new "receipt after terminal" integrity rule.
+- Spec §4.3.2 (`credentialSubject` — `outcome` sub-field) must be updated to describe `response_hash`, the ordering rule, and the verifier's handling of a missing field.
+- Spec §4.3.2 (`credentialSubject` — `chain` sub-field) must be updated to describe `chain.terminal`, its schema restriction (constant `true` or absent; explicit `false` not allowed), its semantics (positive claim only), and the new "receipt after terminal" integrity rule.
 - Spec §7.3 (chain integrity verification) must gain a subsection stating that chain verification does not detect tail truncation by default, document the `ExpectedLength` / `ExpectedFinalHash` verifier parameters as the out-of-band mitigation, and document `terminal` + `RequireTerminal` as the in-band mitigation for chains with clean closure.
 - All three SDKs must implement (a) response hashing on the issuer side and verification on the verifier side, (b) the optional `ExpectedLength` / `ExpectedFinalHash` verifier parameters, (c) setting `chain.terminal` on the issuer side when the caller indicates chain closure, and (d) the "receipt after terminal" integrity check plus the optional `RequireTerminal` verifier parameter. Shared test vectors in `sdk/shared-test-vectors/` (or equivalent) enforce cross-SDK interop in CI.
 - Each SDK gains tests for: `Valid: true` for a tail-truncated chain when no expected length/hash/terminal requirement is supplied; `Valid: false` when `ExpectedLength`/`ExpectedFinalHash` is supplied and does not match; terminal marker round-trip; `Valid: false` for a receipt whose `previous_receipt_hash` points at a terminal predecessor; `Valid: false` when `RequireTerminal` is set but the chain does not end in a terminal receipt.
