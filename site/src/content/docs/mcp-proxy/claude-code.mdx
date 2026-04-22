@@ -24,24 +24,27 @@ Use absolute paths everywhere — Claude Code launches MCP servers with a clean 
 
 ## Register the proxy with Claude Code
 
-Use `claude mcp add-json` to register a proxied server. The example below wraps `mcp-server-github`:
+Use `claude mcp add-json` to register a proxied server. The example below wraps `mcp-server-github`. The heredoc lets your shell resolve the proxy, key, and server paths at paste time — no manual substitution required (replace only `YOUR_TOKEN`):
 
 ```bash
-claude mcp add-json github-audited --scope user '{
-  "command": "/Users/YOU/go/bin/mcp-proxy",
+claude mcp add-json github-audited --scope user "$(cat <<JSON
+{
+  "command": "$(go env GOPATH)/bin/mcp-proxy",
   "args": [
     "-name", "github",
-    "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-    "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+    "-key", "$HOME/.agent-receipts/github-proxy.pem",
+    "-receipt-db", "$HOME/.agent-receipts/receipts.db",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
-    "/opt/homebrew/bin/mcp-server-github"
+    "$(which mcp-server-github)"
   ],
   "env": {
     "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
   }
-}'
+}
+JSON
+)"
 ```
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
@@ -56,7 +59,16 @@ claude mcp list
 
 ## Project-scoped setup via .mcp.json
 
-For a shared team configuration, add a `.mcp.json` file at the project root. This is committed to version control — do not put tokens directly in it. Reference environment variables instead:
+For a shared team configuration, add a `.mcp.json` file at the project root. This is committed to version control — do not put tokens directly in it. Reference environment variables instead.
+
+Since JSON files can't shell-expand, print the absolute paths you need first and paste them into the template below:
+
+```bash
+echo "command: $(go env GOPATH)/bin/mcp-proxy"
+echo "key:     $HOME/.agent-receipts/github-proxy.pem"
+echo "db:      $HOME/.agent-receipts/receipts.db"
+echo "server:  $(which mcp-server-github)"
+```
 
 ```json
 {

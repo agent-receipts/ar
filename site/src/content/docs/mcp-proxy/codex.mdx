@@ -24,19 +24,19 @@ Use absolute paths everywhere — Codex launches MCP servers with a clean enviro
 
 ## Configure via CLI
 
-Use `codex mcp add` to register the proxy wrapping any MCP server:
+Use `codex mcp add` to register the proxy wrapping any MCP server. The shell resolves the proxy, key, and server paths at paste time (replace only `YOUR_TOKEN`):
 
 ```bash
 codex mcp add github-audited \
   --env GITHUB_PERSONAL_ACCESS_TOKEN=YOUR_TOKEN \
-  -- /Users/YOU/go/bin/mcp-proxy \
+  -- "$(go env GOPATH)/bin/mcp-proxy" \
     -name github \
-    -key /Users/YOU/.agent-receipts/github-proxy.pem \
-    -receipt-db /Users/YOU/.agent-receipts/receipts.db \
+    -key "$HOME/.agent-receipts/github-proxy.pem" \
+    -receipt-db "$HOME/.agent-receipts/receipts.db" \
     -issuer-name Codex \
     -operator-id did:web:openai.com \
     -operator-name OpenAI \
-    /opt/homebrew/bin/mcp-server-github
+    "$(which mcp-server-github)"
 ```
 
 Add `--scope user` to make the server available across all projects (default is project-scoped).
@@ -45,7 +45,16 @@ Add `--scope user` to make the server available across all projects (default is 
 
 ## Configure via config.toml
 
-Alternatively, edit `~/.codex/config.toml` directly:
+Alternatively, edit `~/.codex/config.toml` directly. TOML doesn't shell-expand, so print your absolute paths first:
+
+```bash
+echo "command: $(go env GOPATH)/bin/mcp-proxy"
+echo "key:     $HOME/.agent-receipts/github-proxy.pem"
+echo "db:      $HOME/.agent-receipts/receipts.db"
+echo "server:  $(which mcp-server-github)"
+```
+
+Then substitute them into the template:
 
 ```toml
 [mcp_servers.github-audited]
