@@ -21,7 +21,7 @@ CREDENTIAL_TYPE: list[str] = [
     "AgentReceipt",
 ]
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 RiskLevel = Literal["low", "medium", "high", "critical"]
 
@@ -98,6 +98,7 @@ class Outcome(BaseModel):
     reversal_method: str | None = None
     reversal_window_seconds: int | None = None
     state_change: StateChange | None = None
+    response_hash: str | None = None
 
 
 class Authorization(BaseModel):
@@ -115,6 +116,7 @@ class Chain(BaseModel):
     sequence: int
     previous_receipt_hash: str | None
     chain_id: str
+    terminal: Literal[True] | None = None
 
 
 class CredentialSubject(BaseModel):

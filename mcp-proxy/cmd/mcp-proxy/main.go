@@ -428,6 +428,11 @@ func serve() {
 				}
 
 				redactedResult := audit.Redact(resultStr)
+				// Keep pre-encryption copy for response_hash computation.
+				receiptResponseBody := json.RawMessage(nil)
+				if redactedResult != "" && json.Valid([]byte(redactedResult)) {
+					receiptResponseBody = json.RawMessage(redactedResult)
+				}
 				redactedError := audit.Redact(errorStr)
 				if encryptor != nil {
 					if enc, encErr := encryptor.Encrypt(redactedResult); encErr != nil {
@@ -539,7 +544,8 @@ func serve() {
 						ParametersHash: argsHash,
 						Target:         &receipt.ActionTarget{System: *serverName},
 					},
-					Outcome: receipt.Outcome{Status: status},
+					Outcome:      receipt.Outcome{Status: status},
+					ResponseBody: receiptResponseBody,
 					Chain: receipt.Chain{
 						Sequence:            currentSeq,
 						PreviousReceiptHash: currentPrevHash,

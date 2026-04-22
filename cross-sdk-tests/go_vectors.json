@@ -5,8 +5,8 @@
   },
   "canonicalization": {
     "simpleInput": {
-      "b": 2,
       "a": 1,
+      "b": 2,
       "c": [
         3,
         1,
@@ -19,35 +19,35 @@
         "https://www.w3.org/ns/credentials/v2",
         "https://agentreceipts.ai/context/v1"
       ],
-      "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
-      "type": [
-        "VerifiableCredential",
-        "AgentReceipt"
-      ],
-      "version": "0.1.0",
-      "issuer": {
-        "id": "did:agent:test-agent"
-      },
-      "issuanceDate": "2026-03-29T14:00:00.000Z",
       "credentialSubject": {
-        "principal": {
-          "id": "did:user:alice"
-        },
         "action": {
           "id": "act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5",
-          "type": "filesystem.file.read",
           "risk_level": "low",
-          "timestamp": "2026-03-29T14:00:00.000Z"
+          "timestamp": "2026-03-29T14:00:00.000Z",
+          "type": "filesystem.file.read"
+        },
+        "chain": {
+          "chain_id": "chain_test_vectors",
+          "previous_receipt_hash": null,
+          "sequence": 1
         },
         "outcome": {
           "status": "success"
         },
-        "chain": {
-          "sequence": 1,
-          "previous_receipt_hash": null,
-          "chain_id": "chain_test_vectors"
+        "principal": {
+          "id": "did:user:alice"
         }
-      }
+      },
+      "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+      "issuanceDate": "2026-03-29T14:00:00.000Z",
+      "issuer": {
+        "id": "did:agent:test-agent"
+      },
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.1.0"
     },
     "receiptExpected": "{\"@context\":[\"https://www.w3.org/ns/credentials/v2\",\"https://agentreceipts.ai/context/v1\"],\"credentialSubject\":{\"action\":{\"id\":\"act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5\",\"risk_level\":\"low\",\"timestamp\":\"2026-03-29T14:00:00.000Z\",\"type\":\"filesystem.file.read\"},\"chain\":{\"chain_id\":\"chain_test_vectors\",\"previous_receipt_hash\":null,\"sequence\":1},\"outcome\":{\"status\":\"success\"},\"principal\":{\"id\":\"did:user:alice\"}},\"id\":\"urn:receipt:550e8400-e29b-41d4-a716-446655440000\",\"issuanceDate\":\"2026-03-29T14:00:00.000Z\",\"issuer\":{\"id\":\"did:agent:test-agent\"},\"type\":[\"VerifiableCredential\",\"AgentReceipt\"],\"version\":\"0.1.0\"}"
   },
@@ -128,7 +128,7 @@
       },
       "proof": {
         "type": "Ed25519Signature2020",
-        "created": "2026-04-05T10:08:24Z",
+        "created": "2026-04-22T05:08:25Z",
         "verificationMethod": "did:agent:test-agent#key-1",
         "proofPurpose": "assertionMethod",
         "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"

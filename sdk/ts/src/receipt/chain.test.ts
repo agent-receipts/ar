@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { makeUnsigned } from "../test-utils/receipts.js";
 import { verifyChain } from "./chain.js";
-import { hashReceipt } from "./hash.js";
+import { createReceipt } from "./create.js";
+import { canonicalize, hashReceipt, sha256 } from "./hash.js";
 import { generateKeyPair, signReceipt } from "./signing.js";
 
 function buildChain(count: number, privateKey: string) {
@@ -16,6 +17,26 @@ function buildChain(count: number, privateKey: string) {
 	}
 
 	return receipts;
+}
+
+function buildTerminalChain(count: number, privateKey: string) {
+	const chain = buildChain(count - 1, privateKey);
+	const lastReceipt = chain.at(-1);
+	const prevHash = lastReceipt != null ? hashReceipt(lastReceipt) : null;
+	const unsigned = createReceipt({
+		issuer: { id: "did:agent:test" },
+		principal: { id: "did:user:test" },
+		action: { type: "filesystem.file.read", risk_level: "low" },
+		outcome: { status: "success" },
+		chain: {
+			sequence: count,
+			previous_receipt_hash: prevHash,
+			chain_id: "chain_test",
+		},
+		terminal: true,
+	});
+	const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+	return [...chain, signed];
 }
 
 describe("verifyChain", () => {
@@ -157,5 +178,270 @@ describe("verifyChain", () => {
 		// Third receipt: own signature valid, but hash link to tampered second is broken
 		expect(result.receipts[2]?.signatureValid).toBe(true);
 		expect(result.receipts[2]?.hashLinkValid).toBe(false);
+	});
+
+	// --- ADR-0008 tests ---
+
+	it("truncated chain is valid without expected options (pinned behaviour, spec §7.3.1)", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(5, privateKey);
+		const truncated = chain.slice(0, 3);
+
+		const result = verifyChain(truncated, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.length).toBe(3);
+	});
+
+	it("expectedLength detects truncation", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(5, privateKey);
+		const truncated = chain.slice(0, 3);
+
+		const result = verifyChain(truncated, publicKey, { expectedLength: 5 });
+
+		expect(result.valid).toBe(false);
+	});
+
+	it("expectedLength passes when chain matches", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(5, privateKey);
+
+		const result = verifyChain(chain, publicKey, { expectedLength: 5 });
+
+		expect(result.valid).toBe(true);
+	});
+
+	it("expectedFinalHash detects truncation", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(5, privateKey);
+		const last = chain.at(-1);
+		const realFinalHash = last != null ? hashReceipt(last) : "";
+		const truncated = chain.slice(0, 3);
+
+		const result = verifyChain(truncated, publicKey, {
+			expectedFinalHash: realFinalHash,
+		});
+
+		expect(result.valid).toBe(false);
+	});
+
+	it("expectedFinalHash passes when chain matches", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(5, privateKey);
+		const last = chain.at(-1);
+		const finalHash = last != null ? hashReceipt(last) : "";
+
+		const result = verifyChain(chain, publicKey, {
+			expectedFinalHash: finalHash,
+		});
+
+		expect(result.valid).toBe(true);
+	});
+
+	it("terminal chain round-trips as valid", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildTerminalChain(3, privateKey);
+
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(chain.at(-1)?.credentialSubject.chain.terminal).toBe(true);
+	});
+
+	it("receipt after terminal is always invalid", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(3, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+
+		// Append a receipt after the terminal one — protocol violation.
+		const extra = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 4,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const extraSigned = signReceipt(extra, privateKey, "did:agent:test#key-1");
+		const bad = [...terminalChain, extraSigned];
+
+		const result = verifyChain(bad, publicKey);
+
+		expect(result.valid).toBe(false);
+		expect(result.brokenAt).toBeGreaterThan(-1);
+	});
+
+	it("receipt after terminal fires unconditionally (no caller options needed)", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+
+		const extra = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const extraSigned = signReceipt(extra, privateKey, "did:agent:test#key-1");
+
+		const result = verifyChain([...terminalChain, extraSigned], publicKey);
+
+		expect(result.valid).toBe(false);
+	});
+
+	it("requireTerminal passes when chain ends in terminal", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildTerminalChain(3, privateKey);
+
+		const result = verifyChain(chain, publicKey, { requireTerminal: true });
+
+		expect(result.valid).toBe(true);
+	});
+
+	it("requireTerminal fails when terminal receipt was dropped", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildTerminalChain(3, privateKey);
+		const truncated = chain.slice(0, 2); // drop terminal receipt
+
+		const result = verifyChain(truncated, publicKey, { requireTerminal: true });
+
+		expect(result.valid).toBe(false);
+	});
+
+	it("requireTerminal not set — non-terminal chain is valid", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(3, privateKey);
+
+		const result = verifyChain(chain, publicKey); // no options
+
+		expect(result.valid).toBe(true);
+	});
+
+	it("response_hash note is set when receipt has hash but no body supplied", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "data.api.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 1,
+				previous_receipt_hash: null,
+				chain_id: "chain_test",
+			},
+			responseBody: { result: "ok" },
+		});
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+
+		const result = verifyChain([signed], publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.responseHashNote).toBeTruthy();
+	});
+
+	it("no response_hash note when response_hash absent", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(1, privateKey);
+
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.responseHashNote).toBeFalsy();
+	});
+
+	it("createReceipt computes correct response_hash", () => {
+		const responseBody = { result: "ok", status: 200 };
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "data.api.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 1,
+				previous_receipt_hash: null,
+				chain_id: "chain_test",
+			},
+			responseBody,
+		});
+
+		const expected = sha256(canonicalize(responseBody));
+		expect(unsigned.credentialSubject.outcome.response_hash).toBe(expected);
+	});
+
+	it("redact-then-hash ordering: hash must equal hash(redacted), not hash(raw)", () => {
+		const rawResponse = { result: "ok", password: "super-secret" };
+		const redactedResponse = { result: "ok", password: "[REDACTED]" };
+
+		const hashOfRedacted = sha256(canonicalize(redactedResponse));
+		const hashOfRaw = sha256(canonicalize(rawResponse));
+		expect(hashOfRedacted).not.toBe(hashOfRaw);
+
+		// Caller pre-redacts and passes redacted body.
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "data.api.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 1,
+				previous_receipt_hash: null,
+				chain_id: "chain_test",
+			},
+			responseBody: redactedResponse,
+		});
+
+		expect(unsigned.credentialSubject.outcome.response_hash).toBe(
+			hashOfRedacted,
+		);
+		expect(unsigned.credentialSubject.outcome.response_hash).not.toBe(
+			hashOfRaw,
+		);
+	});
+
+	it("no terminal option — terminal field is absent", () => {
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 1,
+				previous_receipt_hash: null,
+				chain_id: "chain_test",
+			},
+			// terminal not set
+		});
+
+		expect(unsigned.credentialSubject.chain.terminal).toBeUndefined();
+	});
+
+	it("terminal: true emits terminal field", () => {
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 1,
+				previous_receipt_hash: null,
+				chain_id: "chain_test",
+			},
+			terminal: true,
+		});
+
+		expect(unsigned.credentialSubject.chain.terminal).toBe(true);
 	});
 });

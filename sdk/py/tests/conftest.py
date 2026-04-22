@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import pytest
+
 from agent_receipts.receipt.signing import generate_key_pair
 from agent_receipts.receipt.types import (
     CONTEXT,
@@ -17,6 +21,9 @@ from agent_receipts.receipt.types import (
     Proof,
     UnsignedAgentReceipt,
 )
+
+if TYPE_CHECKING:
+    from agent_receipts.receipt.signing import KeyPair
 
 # Shared test key pair
 _TEST_KEYS = generate_key_pair()
@@ -98,3 +105,11 @@ def make_unsigned(
             ),
         }
     )
+
+
+@pytest.fixture
+def generate_key_pair() -> KeyPair:
+    """Return a fresh Ed25519 key pair for each test."""
+    from agent_receipts.receipt.signing import generate_key_pair as _gkp
+
+    return _gkp()

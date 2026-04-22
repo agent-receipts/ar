@@ -1,12 +1,57 @@
 """Tests for chain verification."""
 
 from agent_receipts.receipt.chain import verify_chain
-from agent_receipts.receipt.hash import hash_receipt
+from agent_receipts.receipt.create import (
+    ActionInput,
+    CreateReceiptInput,
+    create_receipt,
+)
+from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
 from agent_receipts.receipt.signing import (
     generate_key_pair,
     sign_receipt,
 )
+from agent_receipts.receipt.types import (
+    Chain,
+    Issuer,
+    Outcome,
+    Principal,
+)
 from tests.conftest import TEST_PRIVATE_KEY, TEST_PUBLIC_KEY, make_unsigned
+
+
+def _build_chain(count: int, private_key: str) -> list:
+    """Build a signed chain of `count` receipts."""
+    chain = []
+    previous_hash = None
+    for i in range(1, count + 1):
+        unsigned = make_unsigned(i, previous_hash)
+        signed = sign_receipt(unsigned, private_key, "did:agent:test#key-1")
+        chain.append(signed)
+        previous_hash = hash_receipt(signed)
+    return chain
+
+
+def _build_terminal_chain(count: int, private_key: str) -> list:
+    """Build a chain of `count` receipts where the last has chain.terminal=True."""
+    chain = _build_chain(count - 1, private_key)
+    prev_hash = hash_receipt(chain[-1]) if chain else None
+    unsigned = create_receipt(
+        CreateReceiptInput(
+            issuer=Issuer(id="did:agent:test"),
+            principal=Principal(id="did:user:test"),
+            action=ActionInput(type="filesystem.file.read", risk_level="low"),
+            outcome=Outcome(status="success"),
+            chain=Chain(
+                sequence=count,
+                previous_receipt_hash=prev_hash,
+                chain_id="chain_test",
+            ),
+            terminal=True,
+        )
+    )
+    signed = sign_receipt(unsigned, private_key, "did:agent:test#key-1")
+    return [*chain, signed]
 
 
 class TestVerifyChain:
@@ -105,3 +150,264 @@ class TestVerifyChain:
         assert result.length == 3
         assert len(result.receipts) == 3
         assert result.broken_at == 1
+
+
+class TestAdr0008ChainBehaviours:
+    """ADR-0008: response_hash, chain.terminal, and truncation detection."""
+
+    # --- truncation pin ---
+
+    def test_truncated_chain_is_valid_without_options(self) -> None:
+        """Dropping tail receipts must not break verification (pins §7.3.1)."""
+        kp = generate_key_pair()
+        chain = _build_chain(5, kp.private_key)
+        truncated = chain[:3]
+
+        result = verify_chain(truncated, kp.public_key)
+        assert result.valid is True
+        assert result.length == 3
+
+    # --- expected_length ---
+
+    def test_expected_length_detects_truncation(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_chain(5, kp.private_key)
+        truncated = chain[:3]
+
+        result = verify_chain(truncated, kp.public_key, expected_length=5)
+        assert result.valid is False
+
+    def test_expected_length_passes_when_matches(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_chain(5, kp.private_key)
+
+        result = verify_chain(chain, kp.public_key, expected_length=5)
+        assert result.valid is True
+
+    # --- expected_final_hash ---
+
+    def test_expected_final_hash_detects_truncation(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_chain(5, kp.private_key)
+        real_final_hash = hash_receipt(chain[-1])
+        truncated = chain[:3]
+
+        result = verify_chain(
+            truncated, kp.public_key, expected_final_hash=real_final_hash
+        )
+        assert result.valid is False
+
+    def test_expected_final_hash_passes_when_matches(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_chain(5, kp.private_key)
+        final_hash = hash_receipt(chain[-1])
+
+        result = verify_chain(chain, kp.public_key, expected_final_hash=final_hash)
+        assert result.valid is True
+
+    # --- terminal round-trip ---
+
+    def test_terminal_chain_round_trips_as_valid(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_terminal_chain(3, kp.private_key)
+
+        result = verify_chain(chain, kp.public_key)
+        assert result.valid is True
+        assert chain[-1].credentialSubject.chain.terminal is True
+
+    # --- receipt after terminal ---
+
+    def test_receipt_after_terminal_is_always_invalid(self) -> None:
+        kp = generate_key_pair()
+        terminal_chain = _build_terminal_chain(3, kp.private_key)
+        terminal_hash = hash_receipt(terminal_chain[-1])
+
+        extra_unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="filesystem.file.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=4,
+                    previous_receipt_hash=terminal_hash,
+                    chain_id="chain_test",
+                ),
+            )
+        )
+        extra_signed = sign_receipt(
+            extra_unsigned, kp.private_key, "did:agent:test#key-1"
+        )
+        bad = [*terminal_chain, extra_signed]
+
+        result = verify_chain(bad, kp.public_key)
+        assert result.valid is False
+        assert result.broken_at > -1
+
+    def test_receipt_after_terminal_fires_unconditionally(self) -> None:
+        """receipt-after-terminal must fire even with no caller options."""
+        kp = generate_key_pair()
+        terminal_chain = _build_terminal_chain(2, kp.private_key)
+        terminal_hash = hash_receipt(terminal_chain[-1])
+
+        extra_unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="filesystem.file.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=3,
+                    previous_receipt_hash=terminal_hash,
+                    chain_id="chain_test",
+                ),
+            )
+        )
+        extra_signed = sign_receipt(
+            extra_unsigned, kp.private_key, "did:agent:test#key-1"
+        )
+
+        result = verify_chain([*terminal_chain, extra_signed], kp.public_key)
+        assert result.valid is False
+
+    # --- require_terminal ---
+
+    def test_require_terminal_passes_when_chain_ends_in_terminal(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_terminal_chain(3, kp.private_key)
+
+        result = verify_chain(chain, kp.public_key, require_terminal=True)
+        assert result.valid is True
+
+    def test_require_terminal_fails_when_terminal_receipt_dropped(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_terminal_chain(3, kp.private_key)
+        truncated = chain[:2]  # drop terminal receipt
+
+        result = verify_chain(truncated, kp.public_key, require_terminal=True)
+        assert result.valid is False
+
+    def test_require_terminal_not_set_non_terminal_is_valid(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_chain(3, kp.private_key)
+
+        result = verify_chain(chain, kp.public_key)  # no require_terminal
+        assert result.valid is True
+
+    # --- response_hash note ---
+
+    def test_response_hash_note_set_when_hash_present_no_body(self) -> None:
+        kp = generate_key_pair()
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="data.api.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=1,
+                    previous_receipt_hash=None,
+                    chain_id="chain_test",
+                ),
+                response_body={"result": "ok"},
+            )
+        )
+        signed = sign_receipt(unsigned, kp.private_key, "did:agent:test#key-1")
+
+        result = verify_chain([signed], kp.public_key)
+        assert result.valid is True
+        assert result.response_hash_note != ""
+
+    def test_no_response_hash_note_when_hash_absent(self) -> None:
+        kp = generate_key_pair()
+        chain = _build_chain(1, kp.private_key)
+
+        result = verify_chain(chain, kp.public_key)
+        assert result.valid is True
+        assert result.response_hash_note == ""
+
+    # --- create_receipt response_hash ---
+
+    def test_create_receipt_computes_correct_response_hash(self) -> None:
+        response_body = {"result": "ok", "status": 200}
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="data.api.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=1,
+                    previous_receipt_hash=None,
+                    chain_id="chain_test",
+                ),
+                response_body=response_body,
+            )
+        )
+        expected = sha256(canonicalize(response_body))
+        assert unsigned.credentialSubject.outcome.response_hash == expected
+
+    def test_redact_then_hash_ordering(self) -> None:
+        """Hash must equal hash(redacted), not hash(raw)."""
+        raw_response = {"result": "ok", "password": "super-secret"}
+        redacted_response = {"result": "ok", "password": "[REDACTED]"}
+
+        hash_of_redacted = sha256(canonicalize(redacted_response))
+        hash_of_raw = sha256(canonicalize(raw_response))
+        assert hash_of_redacted != hash_of_raw
+
+        # Caller pre-redacts and passes redacted body.
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="data.api.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=1,
+                    previous_receipt_hash=None,
+                    chain_id="chain_test",
+                ),
+                response_body=redacted_response,
+            )
+        )
+
+        assert unsigned.credentialSubject.outcome.response_hash == hash_of_redacted
+        assert unsigned.credentialSubject.outcome.response_hash != hash_of_raw
+
+    # --- terminal field presence ---
+
+    def test_no_terminal_option_field_is_absent(self) -> None:
+        """When terminal is not set, chain.terminal must be absent (None)."""
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="filesystem.file.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=1,
+                    previous_receipt_hash=None,
+                    chain_id="chain_test",
+                ),
+                # terminal not set (defaults to False)
+            )
+        )
+        assert unsigned.credentialSubject.chain.terminal is None
+
+    def test_terminal_true_emits_terminal_field(self) -> None:
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="filesystem.file.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=1,
+                    previous_receipt_hash=None,
+                    chain_id="chain_test",
+                ),
+                terminal=True,
+            )
+        )
+        assert unsigned.credentialSubject.chain.terminal is True

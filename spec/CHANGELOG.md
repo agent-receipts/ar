@@ -12,6 +12,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **BREAKING:** Spec document renamed from `action-receipt-spec-v0.1.md` to `agent-receipt-spec-v0.1.md`
 - All example receipts updated to use `AgentReceipt` credential type
 
+## [0.2.0] - 2026-04-22
+
+### Added
+- `outcome.response_hash` — optional `sha256:`-prefixed hash of the RFC 8785 canonical JSON of the server's response, computed after secret redaction (redact → hash → sign). Issuers populate when emitting responses they wish to commit to; verifiers recompute when the response body is available and fail on mismatch. When the response body is absent the verifier notes "response hash present, body not supplied" and continues. Absence of the field is not a failure.
+- `chain.terminal` — optional field restricted to the constant `true`. Marks the last receipt in a chain as closed. Explicit `false` is schema-invalid; absence means no claim. An automatic "receipt after terminal" integrity check fires whenever a receipt's `previous_receipt_hash` points at a terminal predecessor, regardless of caller parameters.
+- `VerifyChain` gains three optional parameters across all SDKs — `ExpectedLength`, `ExpectedFinalHash`, `RequireTerminal` — for out-of-band and in-band truncation detection. When unsupplied, behaviour is identical to v0.1.0.
+- Spec §7.3.1: normative language stating that chain verification does **not** detect tail truncation by default, documenting the three available mitigations, and stating the detection floor.
+- Spec §7.3.2: normative language defining the unconditional receipt-after-terminal integrity check.
+
+### Changed
+- `version` field now accepts both `"0.1.0"` and `"0.2.0"`. Verifiers MUST accept both values. All new receipts SHOULD use `"0.2.0"`.
+
+### Upgrade notes
+
+**Issuers:** No action required to remain protocol-valid. To commit to the server's response, redact the response body, canonicalize (RFC 8785), hash (SHA-256), and populate `outcome.response_hash` before signing. To mark a chain as closed, set `chain.terminal: true` on the final receipt — omit the field entirely otherwise (never emit `false`).
+
+**Verifiers:** No breaking changes. `VerifyChain` with no new parameters is identical to v0.1.0 behaviour. Pass `RequireTerminal: true` for chains that must close cleanly. Pass `ExpectedFinalHash` when you maintain an external audit record of chain state.
+
 ## [0.1.0] - 2026-03-31
 
 ### Added

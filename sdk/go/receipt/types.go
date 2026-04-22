@@ -14,7 +14,7 @@ func Context() []string { return append([]string{}, protocolContext...) }
 // CredentialType returns a copy of the credential type array.
 func CredentialType() []string { return append([]string{}, protocolCredentialType...) }
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 // RiskLevel classifies the security risk of an action.
 type RiskLevel string
@@ -97,6 +97,7 @@ type Outcome struct {
 	ReversalMethod        string        `json:"reversal_method,omitempty"`
 	ReversalWindowSeconds *int          `json:"reversal_window_seconds,omitempty"`
 	StateChange           *StateChange  `json:"state_change,omitempty"`
+	ResponseHash          string        `json:"response_hash,omitempty"`
 }
 
 // Authorization captures the scope and expiry of an action.
@@ -112,6 +113,7 @@ type Chain struct {
 	Sequence            int     `json:"sequence"`
 	PreviousReceiptHash *string `json:"previous_receipt_hash"`
 	ChainID             string  `json:"chain_id"`
+	Terminal            *bool   `json:"terminal,omitempty"`
 }
 
 // CredentialSubject contains the core receipt payload.

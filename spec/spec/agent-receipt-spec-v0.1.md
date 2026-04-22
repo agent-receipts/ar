@@ -265,6 +265,7 @@ All five `proof` fields are required even in the minimal form.
 | `outcome.reversal_of` | No | `urn:receipt:<uuid>` referencing the `id` of the original receipt this receipt reverses. Present only on reversal receipts (see §7.4). |
 | `outcome.state_change.before_hash` | Yes* | `sha256:` prefixed hash of relevant state before the action. *Required when `outcome.state_change` is present. |
 | `outcome.state_change.after_hash` | Yes* | `sha256:` prefixed hash of relevant state after the action. *Required when `outcome.state_change` is present. |
+| `outcome.response_hash` | No | SHA-256 hash of the RFC 8785 canonical JSON of the server's response, computed **after** secret redaction. Ordering: redact → hash → populate `outcome` → sign. When present and the response body is available, verifiers MUST recompute and compare; a mismatch is a verification failure. When the response body is absent, verifiers MUST continue and note "response hash present, body not supplied". Absence of this field is not a verification failure — it means the issuer did not commit to the response. |
 | `authorization` | No | Authorization context under which the action was taken. |
 | `authorization.scopes` | Yes* | List of authorization scopes active at time of action. *Required when `authorization` is present. |
 | `authorization.granted_at` | Yes* | ISO 8601 datetime when authorization was granted. *Required when `authorization` is present. |
@@ -279,6 +280,7 @@ All five `proof` fields are required even in the minimal form.
 | `chain.chain_id` | Yes | Opaque identifier grouping receipts into a logical chain (e.g. per session). |
 | `chain.sequence` | Yes | Monotonically increasing integer position within the chain. Starts at `1`. |
 | `chain.previous_receipt_hash` | Yes | `sha256:` prefixed hash of the previous receipt's canonical form. MUST be `null` for the first receipt in a chain (`sequence: 1`). The field MUST always be present; `null` is not the same as omitting it. |
+| `chain.terminal` | No | When present, MUST be `true`. Asserts that no further receipts will be appended to this chain. Explicit `false` is schema-invalid; absence is the only valid way to express "no claim". Verifiers that observe a receipt whose `previous_receipt_hash` points at a terminal predecessor MUST fail with a "receipt after terminal" error regardless of caller parameters. See §7.3.2. |
 
 #### 4.3.2.1 Intent field guidance (non-normative)
 
@@ -439,6 +441,22 @@ To verify a receipt chain:
    c. If _i < n - 1_, confirm _R(i+1)_'s `chain.previous_receipt_hash` equals `sha256:` concatenated with that hex digest.
 3. For each receipt _R(i)_ where _i > 0_, confirm `chain.sequence` equals _R(i-1)_'s `chain.sequence` + 1.
 4. Confirm _R(0)_'s `chain.previous_receipt_hash` is `null`.
+
+#### 7.3.1 Chain truncation detection
+
+Chain verification as defined in steps 1–4 does **not** detect tail truncation: dropping the last N receipts from a chain still produces `Valid: true`, because no in-chain field commits to the chain's total length or final state. This is a deliberate design floor — a receipt can only commit to values its issuer already knows at signing time.
+
+Three mitigations are available:
+
+1. **Out-of-band witness (`ExpectedLength` / `ExpectedFinalHash`).** Callers who maintain an external record of chain state (audit log, transparency log, signed checkpoint) MAY supply `ExpectedLength` and/or `ExpectedFinalHash` to `VerifyChain`. Verification fails when the observed chain does not match. When unsupplied, the verifier preserves current behaviour — `Valid: true` for a tail-truncated chain is intentional and documented.
+
+2. **In-band terminal marker (`chain.terminal` + `RequireTerminal`).** When the final receipt in a chain bears `chain.terminal: true`, no receipt referencing it via `previous_receipt_hash` is permitted — this check runs unconditionally (§7.3.2). Callers MAY additionally supply `RequireTerminal`; verification then fails if the final observed receipt is not explicitly terminal. If the terminal receipt itself was dropped, `RequireTerminal` fires, but `chain.terminal` alone cannot detect this case.
+
+3. **Floor.** Tail truncation of an open (non-terminal) chain without any external witness **cannot** be detected by any mechanism defined in this specification. Operators whose compliance requirements demand detection of such truncation MUST maintain an out-of-band chain record and supply `ExpectedFinalHash`.
+
+#### 7.3.2 Receipt-after-terminal integrity check (automatic)
+
+If any receipt R(i) in the verified input has `chain.terminal: true`, and a receipt R(i+1) exists whose `chain.previous_receipt_hash` equals the hash of R(i), verification MUST fail immediately with a clear "receipt after terminal" error. This check is unconditional — no caller parameter can suppress it. It is the verifier's enforcement mechanism against an issuer who marks a chain closed and then extends it, or an attacker who appends a receipt to a chain its issuer marked terminal.
 
 If any step fails, the chain is broken at that point. Receipts before the break may still be individually valid; receipts after are suspect.
 

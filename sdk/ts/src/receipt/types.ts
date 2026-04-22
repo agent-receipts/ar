@@ -16,7 +16,7 @@ export const CREDENTIAL_TYPE = [
 	"AgentReceipt",
 ] as const;
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 // --- Risk levels ---
 
@@ -90,6 +90,9 @@ export interface Outcome {
 	reversal_method?: string;
 	reversal_window_seconds?: number;
 	state_change?: StateChange;
+	/** SHA-256 hash of the RFC 8785 canonical JSON of the server's response,
+	 *  computed after secret redaction (redact → hash → sign). */
+	response_hash?: string;
 }
 
 // --- Authorization ---
@@ -107,6 +110,9 @@ export interface Chain {
 	sequence: number;
 	previous_receipt_hash: string | null;
 	chain_id: string;
+	/** When present, MUST be true. Marks this as the final receipt in the chain.
+	 *  Explicit false is not valid — use absence to express "no claim". */
+	terminal?: true;
 }
 
 // --- Credential Subject ---

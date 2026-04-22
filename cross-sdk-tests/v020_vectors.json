@@ -1,0 +1,154 @@
+{
+  "version": "0.2.0",
+  "keys": {
+    "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZMzh2Qtdx/p40WlXhD+gKmaTDv3rLGm6TeY7TsJUKSQ=\n-----END PUBLIC KEY-----\n",
+    "privateKey": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIJqomA2cjqhLUYPhkMJyg4+A7hU8GiZtVzkN0Yz6jJPF\n-----END PRIVATE KEY-----\n"
+  },
+  "responseHash": {
+    "rawResponse": {
+      "password": "super-secret-value",
+      "result": "ok"
+    },
+    "redactedResponse": {
+      "password": "[REDACTED]",
+      "result": "ok"
+    },
+    "expectedHash": "sha256:d2ce0301242c6a135693d31c6a41ea16d5937d96bd2111231fd8d86c3f853ef3"
+  },
+  "terminalChain": {
+    "receipts": [
+      {
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          "https://agentreceipts.ai/context/v1"
+        ],
+        "id": "urn:receipt:6b7e8235-5064-421a-a6c0-34ce82a7acc2",
+        "type": [
+          "VerifiableCredential",
+          "AgentReceipt"
+        ],
+        "version": "0.2.0",
+        "issuer": {
+          "id": "did:agent:test"
+        },
+        "issuanceDate": "2026-04-22T05:08:25Z",
+        "credentialSubject": {
+          "principal": {
+            "id": "did:user:test"
+          },
+          "action": {
+            "id": "act_94bc7095-d5c8-4d29-be56-3e1cd9126e8f",
+            "type": "filesystem.file.read",
+            "risk_level": "low",
+            "timestamp": "2026-04-22T05:08:25Z"
+          },
+          "outcome": {
+            "status": "success",
+            "response_hash": "sha256:d2ce0301242c6a135693d31c6a41ea16d5937d96bd2111231fd8d86c3f853ef3"
+          },
+          "chain": {
+            "sequence": 1,
+            "previous_receipt_hash": null,
+            "chain_id": "chain_v020_test"
+          }
+        },
+        "proof": {
+          "type": "Ed25519Signature2020",
+          "created": "2026-04-22T05:08:25Z",
+          "verificationMethod": "did:agent:test#key-1",
+          "proofPurpose": "assertionMethod",
+          "proofValue": "uAq7Bgs7ZUu8zIm6yIxvsWb4z9IrWt-3DLHwg2j44VWHSsLTD6VQ_SGUv3sNPRVwvx66FWU40yhxMV3kiJUgZCw"
+        }
+      },
+      {
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          "https://agentreceipts.ai/context/v1"
+        ],
+        "id": "urn:receipt:721878bf-03b7-4a8c-a61f-6c2dd5341c2f",
+        "type": [
+          "VerifiableCredential",
+          "AgentReceipt"
+        ],
+        "version": "0.2.0",
+        "issuer": {
+          "id": "did:agent:test"
+        },
+        "issuanceDate": "2026-04-22T05:08:25Z",
+        "credentialSubject": {
+          "principal": {
+            "id": "did:user:test"
+          },
+          "action": {
+            "id": "act_7200497e-e82c-4691-8264-8ca4bc728298",
+            "type": "filesystem.file.read",
+            "risk_level": "low",
+            "timestamp": "2026-04-22T05:08:25Z"
+          },
+          "outcome": {
+            "status": "success",
+            "response_hash": "sha256:d2ce0301242c6a135693d31c6a41ea16d5937d96bd2111231fd8d86c3f853ef3"
+          },
+          "chain": {
+            "sequence": 2,
+            "previous_receipt_hash": "sha256:4593fdc469a192e856ad78b4e2b428dfb0fec44b0938920c40b55246a7e7a6ac",
+            "chain_id": "chain_v020_test"
+          }
+        },
+        "proof": {
+          "type": "Ed25519Signature2020",
+          "created": "2026-04-22T05:08:25Z",
+          "verificationMethod": "did:agent:test#key-1",
+          "proofPurpose": "assertionMethod",
+          "proofValue": "usMsoq8fKcmgsP6tlai3T8oHqiIiKiXOyn2Q3J0AIPHNFPoguG392xWn1Hn9Ao_78aQX70cfowU0SH0DsFJIZCw"
+        }
+      },
+      {
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          "https://agentreceipts.ai/context/v1"
+        ],
+        "id": "urn:receipt:567ceadd-fb1f-4a27-b98c-174f2df89f30",
+        "type": [
+          "VerifiableCredential",
+          "AgentReceipt"
+        ],
+        "version": "0.2.0",
+        "issuer": {
+          "id": "did:agent:test"
+        },
+        "issuanceDate": "2026-04-22T05:08:25Z",
+        "credentialSubject": {
+          "principal": {
+            "id": "did:user:test"
+          },
+          "action": {
+            "id": "act_6cd14ed2-0b8a-4de2-9650-3ceafdd50b4a",
+            "type": "filesystem.file.read",
+            "risk_level": "low",
+            "timestamp": "2026-04-22T05:08:25Z"
+          },
+          "outcome": {
+            "status": "success",
+            "response_hash": "sha256:d2ce0301242c6a135693d31c6a41ea16d5937d96bd2111231fd8d86c3f853ef3"
+          },
+          "chain": {
+            "sequence": 3,
+            "previous_receipt_hash": "sha256:9ecd77491da13ef02aa054a7dfeadae69a680a866813fa1e8b0da4fcbc7edee8",
+            "chain_id": "chain_v020_test",
+            "terminal": true
+          }
+        },
+        "proof": {
+          "type": "Ed25519Signature2020",
+          "created": "2026-04-22T05:08:25Z",
+          "verificationMethod": "did:agent:test#key-1",
+          "proofPurpose": "assertionMethod",
+          "proofValue": "uY-G6k2HiqMUzgpFsGr_2Ic0ai51_PTIRH0ZYeZceThn5pPYHYl9orIjX3qPi3oa7FcZs72tyd58PIMHW6D3hCg"
+        }
+      }
+    ],
+    "expectedValid": true,
+    "expectedValidWithRequireTerminal": true
+  }
+}

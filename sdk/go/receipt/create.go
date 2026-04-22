@@ -1,6 +1,7 @@
 package receipt
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -16,6 +17,14 @@ type CreateInput struct {
 	Chain         Chain
 	Intent        *Intent
 	Authorization *Authorization
+	// ResponseBody is the pre-redacted response body to hash. When non-empty,
+	// the hash is computed (redact → hash → sign ordering) and stored in
+	// outcome.ResponseHash. Callers must redact before passing.
+	ResponseBody json.RawMessage
+
+	// Terminal marks this as the final receipt in the chain.
+	// When true, sets chain.terminal: true. Never emits false.
+	Terminal bool
 }
 
 // Create builds an unsigned AgentReceipt from structured inputs.
@@ -39,6 +48,22 @@ func Create(input CreateInput) UnsignedAgentReceipt {
 		Chain:         input.Chain,
 		Intent:        input.Intent,
 		Authorization: input.Authorization,
+	}
+
+	// Compute response_hash when a response body is supplied.
+	if len(input.ResponseBody) > 0 {
+		var responseAny any
+		if err := json.Unmarshal(input.ResponseBody, &responseAny); err == nil {
+			if canonical, err := Canonicalize(responseAny); err == nil {
+				subject.Outcome.ResponseHash = SHA256Hash(canonical)
+			}
+		}
+	}
+
+	// Set terminal marker when requested (never set false).
+	if input.Terminal {
+		t := true
+		subject.Chain.Terminal = &t
 	}
 
 	return UnsignedAgentReceipt{
