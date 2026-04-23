@@ -5,6 +5,10 @@ description: How to route OpenAI Codex MCP servers through the Agent Receipts pr
 
 OpenAI Codex (CLI and IDE extension) stores MCP configuration in `~/.codex/config.toml`. The Agent Receipts proxy wraps any MCP server transparently — Codex doesn't know or care that the proxy is there.
 
+:::note[Approval server — when you need it]
+The default policy pauses calls scoring ≥50. Scores stack a base (write 20, execute 30, delete 40) with modifiers (+30 sensitive keyword, +30 SQL mutation without `WHERE`, +20 `config`/`setting`), so `create_token` (50), `update_auth_config` (70), and `delete_credential` (70) pause, but ordinary GitHub writes like `create_pull_request` (20) do not. The configs below pin `-http 127.0.0.1:8082` so an approver has a stable URL when your server does expose tools that cross 50. See [Approval Server](/mcp-proxy/approval-ui/).
+:::
+
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
@@ -39,6 +43,7 @@ codex mcp add github-audited \
   -- "$(which mcp-proxy)" \
     -name github \
     -key "$HOME/.agent-receipts/github-proxy.pem" \
+    -http 127.0.0.1:8082 \
     -issuer-name Codex \
     -operator-id did:web:openai.com \
     -operator-name OpenAI \
@@ -67,6 +72,7 @@ command = "/Users/YOU/go/bin/mcp-proxy"
 args = [
   "-name", "github",
   "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+  "-http", "127.0.0.1:8082",
   "-issuer-name", "Codex",
   "-operator-id", "did:web:openai.com",
   "-operator-name", "OpenAI",
@@ -112,4 +118,4 @@ mcp-proxy verify \
 
 **Per-session chain IDs.** By default the proxy generates a new chain ID each session. Pass `-chain <id>` to persist a chain across sessions.
 
-**Approval server picks a random port.** By default the proxy binds the approval HTTP server on a random free port (logged to stderr at startup), so Codex can run alongside other MCP clients (Claude Code, Claude Desktop) with no port-conflict configuration. If you want a stable URL, add `-http 127.0.0.1:8080` (or any free port) to the args array.
+**Pin `-http` when running an external approver.** The default policy's `pause_high_risk` rule catches anything scoring ≥50 — combinations like write + sensitive keyword (`create_token` = 50), delete + sensitive (`delete_credential` = 70), execute + SQL mutation without `WHERE` (60). Ordinary GitHub writes (`create_pull_request`, `push_files`) score below that, so most Codex sessions never pause. But if one does, the random-port default (`-http 127.0.0.1:0`) means external approvers can't find the endpoint without parsing stderr, and the paused call eventually fails with JSON-RPC code `-32002` (message `tool call approval timed out after <duration>…`; `error.data.status` is `timed_out` for a timeout, `denied` for a deny). Pin a port (`127.0.0.1:8082` above) and run an approver — see [Approval Server](/mcp-proxy/approval-ui/). Or drop `pause`/`block` rules from a custom `-rules` YAML if you don't want approvals at all.

@@ -5,6 +5,10 @@ description: How to route Claude Code MCP servers through the Agent Receipts pro
 
 Claude Code is a CLI-based agent that connects to MCP servers for tools like GitHub, databases, and file systems. The Agent Receipts proxy wraps any MCP server transparently — Claude Code doesn't know or care that the proxy is there.
 
+:::note[Approval server — when you need it]
+The default policy pauses calls scoring ≥50. Scores stack a base (write 20, execute 30, delete 40) with modifiers (+30 sensitive keyword, +30 SQL mutation without `WHERE`, +20 `config`/`setting`), so `create_token` (50), `update_auth_config` (70), and `delete_credential` (70) pause, but ordinary GitHub writes like `create_pull_request` (20) and `merge_pull_request` (10) do not. The configs below pin `-http 127.0.0.1:8081` so an approver has a stable URL when your server does expose tools that cross 50. If you're seeing `-32002` on tools that *shouldn't* pause, suspect client-side denial first — see [troubleshooting](/mcp-proxy/configuration/#-32002-errors-on-tool-calls).
+:::
+
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
@@ -40,6 +44,7 @@ claude mcp add-json github-audited --scope user "$(cat <<JSON
   "args": [
     "-name", "github",
     "-key", "$HOME/.agent-receipts/github-proxy.pem",
+    "-http", "127.0.0.1:8081",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -83,6 +88,7 @@ echo "server:  $(which github-mcp-server)"
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-http", "127.0.0.1:8081",
         "-issuer-name", "Claude Code",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -118,7 +124,7 @@ mcp-proxy verify \
 
 **Absolute paths required.** Claude Code launches MCP servers with a clean `PATH`. Use the full path to `mcp-proxy` (find it with `which mcp-proxy`) and the full path to the wrapped server binary.
 
-**Approval server picks a random port.** By default the proxy binds the approval HTTP server on a random free port (logged to stderr at startup) so multiple MCP clients — Claude Desktop, Claude Code, Codex — can run simultaneously without conflicting. If you want a stable, predictable URL (for an external approval UI, for example), pass `-http 127.0.0.1:8080` (or any free port) explicitly.
+**Pin `-http` when running an external approver.** The default policy's `pause_high_risk` rule catches anything scoring ≥50 — combinations like write + sensitive keyword (`create_token` = 50), delete + sensitive (`delete_credential` = 70), execute + SQL mutation without `WHERE` (60). Ordinary GitHub writes (`create_pull_request`, `push_files`) score below that, so most Claude Code sessions never pause. But if one does, the random-port default (`-http 127.0.0.1:0`) means external approvers can't find the endpoint without parsing stderr, and the paused call eventually fails with JSON-RPC code `-32002` (message `tool call approval timed out after <duration>…`; `error.data.status` is `timed_out` for a timeout, `denied` for a deny). Pin a port (`127.0.0.1:8081` above) and run an approver — see [Approval Server](/mcp-proxy/approval-ui/). Or drop `pause`/`block` rules from a custom `-rules` YAML if you don't want approvals at all.
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
