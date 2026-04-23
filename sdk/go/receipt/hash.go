@@ -20,7 +20,7 @@ func marshalNoHTMLEscape(v any) ([]byte, error) {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encode json (no html escape): %w", err)
 	}
 	// Encode appends a trailing newline; strip it.
 	b := buf.Bytes()
@@ -62,11 +62,11 @@ func Canonicalize(v any) (string, error) {
 	// marshal to get a JSON intermediate, then unmarshal to a generic tree.
 	raw, err := marshalNoHTMLEscape(v)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal without html-escape: %w", err)
 	}
 	var generic any
 	if err := json.Unmarshal(raw, &generic); err != nil {
-		return "", err
+		return "", fmt.Errorf("unmarshal canonical intermediate: %w", err)
 	}
 	return canonicalizeValue(generic)
 }
@@ -96,19 +96,25 @@ func canonicalizeValue(v any) (string, error) {
 		}
 		return "[" + strings.Join(parts, ",") + "]", nil
 	case map[string]any:
-		keys := make([]string, 0, len(val))
-		for k := range val {
-			keys = append(keys, k)
-		}
 		// RFC 8785 §3.2.3: sort by UTF-16 code-unit order, not UTF-8 byte order.
-		sort.Slice(keys, func(i, j int) bool {
-			return utf16Less(keys[i], keys[j])
+		// Precompute UTF-16 code units once per key to avoid O(n log n) allocations
+		// inside the comparator.
+		type keyEntry struct {
+			s     string
+			units []uint16
+		}
+		entries := make([]keyEntry, 0, len(val))
+		for k := range val {
+			entries = append(entries, keyEntry{s: k, units: utf16.Encode([]rune(k))})
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			return utf16UnitsLess(entries[i].units, entries[j].units)
 		})
 
 		parts := make([]string, 0, len(val))
-		for _, k := range keys {
-			keyStr := canonicalizeString(k)
-			valStr, err := canonicalizeValue(val[k])
+		for _, e := range entries {
+			keyStr := canonicalizeString(e.s)
+			valStr, err := canonicalizeValue(val[e.s])
 			if err != nil {
 				return "", err
 			}
@@ -120,21 +126,19 @@ func canonicalizeValue(v any) (string, error) {
 	}
 }
 
-// utf16Less reports whether a sorts before b in UTF-16 code-unit order,
+// utf16UnitsLess reports whether a sorts before b in UTF-16 code-unit order,
 // as required by RFC 8785 §3.2.3.
-func utf16Less(a, b string) bool {
-	ua := utf16.Encode([]rune(a))
-	ub := utf16.Encode([]rune(b))
-	n := len(ua)
-	if len(ub) < n {
-		n = len(ub)
+func utf16UnitsLess(a, b []uint16) bool {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
 	}
 	for i := 0; i < n; i++ {
-		if ua[i] != ub[i] {
-			return ua[i] < ub[i]
+		if a[i] != b[i] {
+			return a[i] < b[i]
 		}
 	}
-	return len(ua) < len(ub)
+	return len(a) < len(b)
 }
 
 // canonicalizeString serialises a Go string to its RFC 8785 JSON form.

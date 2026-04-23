@@ -221,7 +221,7 @@
     {
       "name": "parameters_hash_non_ascii",
       "rule": "rule4_parameters_hash",
-      "description": "Non-ASCII keys in a parameters map: catches Go's json.Marshal shortcut (#118) directly, because json.Marshal sorts by UTF-8 bytes not UTF-16 code units. UTF-16 sort: Ā (0x0100) > ÿ (0x00FF). UTF-8 byte sort of the same keys: Ā = C4 80 vs ÿ = C3 BF — C3 < C4 so ÿ first. Both sorts agree here by coincidence; the value difference exposes the bug.",
+      "description": "Non-ASCII keys in a parameters map. Verifies hashing of canonical bytes for non-ASCII BMP property names. Note: this vector does not by itself distinguish Go's json.Marshal shortcut (#118) from RFC 8785 — for these specific keys, ÿ (U+00FF) and Ā (U+0100), UTF-8 byte order and UTF-16 code-unit order both place ÿ before Ā. A vector exercising supplementary-plane keys (where UTF-16 surrogate pairs invert the order vs UTF-8 bytes) is needed to fully cover that divergence.",
       "input": { "\u0100": 2, "\u00ff": 1 },
       "canonical": "{\"\u00ff\":1,\"\u0100\":2}",
       "expectedHash": "sha256:ee1cd34f799a67b79d3a981b2f4a79ff7050af6787ae9861d5a7a40ef951f3a8"
