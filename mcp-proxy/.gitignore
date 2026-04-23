@@ -1,0 +1,6 @@
+# GoReleaser build output
+dist/
+
+# LICENSE is copied from the repo root by a GoReleaser `before` hook
+# so archives can include it without path traversal gymnastics.
+LICENSE

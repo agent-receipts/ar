@@ -30,8 +30,20 @@ Single binary. No external dependencies. Drop-in for any MCP server.
 
 ## Install
 
+### Homebrew (macOS, Linux)
+
 ```sh
-go install github.com/agent-receipts/mcp-proxy/cmd/mcp-proxy@latest
+brew install agent-receipts/tap/mcp-proxy
+```
+
+### Prebuilt binaries
+
+Download from the [releases page](https://github.com/agent-receipts/ar/releases?q=mcp-proxy) (darwin and linux, amd64 and arm64).
+
+### From source
+
+```sh
+go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
 ```
 
 ## Usage

@@ -44,8 +44,9 @@ The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, for
 ## Quick start
 
 ```bash
-# Install
-go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
+# Install (Homebrew, macOS/Linux)
+brew install agent-receipts/tap/mcp-proxy
+# …or from source: go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
 
 # Wrap any MCP server (example: the filesystem server via npx)
 mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
