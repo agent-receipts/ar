@@ -51,6 +51,17 @@ function isV020VectorFile(v: unknown): v is V020VectorFile {
 	return Array.isArray(chain.receipts);
 }
 
+// Minimal shape check for an AgentReceipt loaded from a JSON fixture. Only
+// validates the fields hashReceipt and verifyReceipt actually read; full
+// schema validation is the verifier's job.
+function isAgentReceipt(v: unknown): v is AgentReceipt {
+	if (!isRecord(v)) return false;
+	if (typeof v.id !== "string") return false;
+	const proof = v.proof;
+	if (!isRecord(proof) || typeof proof.proofValue !== "string") return false;
+	return isRecord(v.credentialSubject);
+}
+
 function loadReferencedFile(relPath: string): unknown {
 	const path = join(import.meta.dirname, "../../../..", relPath);
 	return JSON.parse(readFileSync(path, "utf-8"));
@@ -81,10 +92,17 @@ function resolveReceiptsFrom(ref: string): {
 	if (!Array.isArray(cursor)) {
 		throw new Error(`receiptsFrom did not resolve to an array: ${ref}`);
 	}
-	return {
-		receipts: cursor as AgentReceipt[],
-		publicKey: root.keys.publicKey,
-	};
+	const receipts: AgentReceipt[] = [];
+	for (let i = 0; i < cursor.length; i++) {
+		const item: unknown = cursor[i];
+		if (!isAgentReceipt(item)) {
+			throw new Error(
+				`receiptsFrom ${ref}: element [${i}] is not a valid AgentReceipt`,
+			);
+		}
+		receipts.push(item);
+	}
+	return { receipts, publicKey: root.keys.publicKey };
 }
 
 describe("canonicalization_vectors", () => {

@@ -98,8 +98,21 @@ function pluckChain(stripped: unknown): Record<string, unknown> | null {
 }
 
 /**
- * Recursively remove null-valued keys from plain objects (ADR-0009 Rule 2).
- * Optional fields must be absent when null; this enforces that at runtime.
+ * Recursively remove null-valued keys from plain objects.
+ *
+ * Implements ADR-0009 Rule 2 ("optional fields MUST be absent, not null") as
+ * a *global* strip: every null-valued key is dropped, anywhere in the tree.
+ * The schema disallows null on required fields with the single exception of
+ * chain.previous_receipt_hash, which hashReceipt() restores explicitly after
+ * this pass — so for valid inputs the global strip and a path-restricted
+ * one would produce identical output.
+ *
+ * For invalid inputs (null on a required field other than
+ * previous_receipt_hash), the null is silently dropped here. That's
+ * acceptable preprocessing — downstream signature verification and schema
+ * validation will reject the resulting structure — and avoids coupling this
+ * helper to a hard-coded list of optional field paths that would need to
+ * track schema changes.
  *
  * Non-plain objects (Date, Map, class instances) are passed through unchanged
  * so canonicalize() throws with its clearer error message rather than silently
