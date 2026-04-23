@@ -489,9 +489,13 @@ func (s *Store) policyActionBreakdown(sessionID string, limit int) ([]ToolPolicy
 	for _, name := range order {
 		result = append(result, *byTool[name])
 	}
-	// Sort by total descending so hot tools appear first.
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Total > result[j].Total
+	// Sort by total descending so hot tools appear first. Break ties on tool
+	// name so CLI output and JSON snapshots stay deterministic.
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Total != result[j].Total {
+			return result[i].Total > result[j].Total
+		}
+		return result[i].ToolName < result[j].ToolName
 	})
 	if limit > 0 && len(result) > limit {
 		result = result[:limit]

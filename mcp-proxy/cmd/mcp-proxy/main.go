@@ -234,9 +234,11 @@ func serve() {
 	var pendingMu sync.Mutex
 
 	// Start HTTP server for approvals only when pause rules exist and the
-	// operator hasn't disabled the approver via -http=none.
-	approverDisabled := strings.EqualFold(strings.TrimSpace(*httpAddr), "none") || *httpAddr == ""
-	if engine.HasPauseRules() && !approverDisabled {
+	// operator hasn't disabled the approver via -http=none. Only the literal
+	// "none" counts as an explicit opt-out; empty -http (e.g. `-http=`) is
+	// treated as not-configured so the banner still warns.
+	approverDisabled := strings.EqualFold(strings.TrimSpace(*httpAddr), "none")
+	if engine.HasPauseRules() && !approverDisabled && *httpAddr != "" {
 		ln, err := net.Listen("tcp", *httpAddr)
 		if err != nil {
 			log.Fatalf("mcp-proxy: http server: %v", err)
@@ -334,6 +336,7 @@ func serve() {
 					}
 				}
 
+				requestedAt := time.Now()
 				pendingMu.Lock()
 				pendingCalls[jsonrpcID] = &pendingCall{
 					msgID:        msgID,
@@ -344,7 +347,7 @@ func serve() {
 					riskScore:    riskScore,
 					reasons:      reasons,
 					policyAct:    decision.Action,
-					timestamp:    time.Now(),
+					timestamp:    requestedAt,
 					policyEvalUs: policyEvalUs,
 				}
 				pendingMu.Unlock()
@@ -365,7 +368,7 @@ func serve() {
 						riskScore:    riskScore,
 						reasons:      reasons,
 						policyAction: "block",
-						requestedAt:  time.Now(),
+						requestedAt:  requestedAt,
 						policyEvalUs: policyEvalUs,
 					})
 					return &proxy.HandlerResult{
@@ -401,7 +404,7 @@ func serve() {
 							riskScore:      riskScore,
 							reasons:        reasons,
 							policyAction:   "rejected",
-							requestedAt:    time.Now(),
+							requestedAt:    requestedAt,
 							policyEvalUs:   policyEvalUs,
 							approvalWaitUs: approvalWaitUs,
 						})
@@ -716,9 +719,13 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 		blockDesc = fmt.Sprintf(", %d block (%s)", blockCount, strings.Join(summary.BlockRules, ", "))
 	}
 
+	rulesSuffix := ""
+	if summary.TotalRules != summary.EnabledRules {
+		rulesSuffix = fmt.Sprintf(" (%d disabled)", summary.TotalRules-summary.EnabledRules)
+	}
 	fmt.Fprintf(os.Stderr,
-		"mcp-proxy: [%s] policy: %d rules loaded, %d require approval%s%s; approver: %s%s\n",
-		level, summary.EnabledRules, pauseCount, pauseDesc, blockDesc, approverState, suffix,
+		"mcp-proxy: [%s] policy: %d rules enabled%s, %d require approval%s%s; approver: %s%s\n",
+		level, summary.EnabledRules, rulesSuffix, pauseCount, pauseDesc, blockDesc, approverState, suffix,
 	)
 
 	// Machine-readable companion line for tooling.

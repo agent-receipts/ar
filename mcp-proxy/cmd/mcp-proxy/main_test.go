@@ -115,8 +115,10 @@ func TestEnsureDBDirNoOpForBareFilename(t *testing.T) {
 // captureStderr redirects os.Stderr for the duration of fn and returns the
 // captured output. Log package output is routed through the same pipe.
 //
-// Uses defer so the reader goroutine is unblocked even if fn() panics or
-// calls t.Fatal — otherwise the test would hang indefinitely on io.ReadAll.
+// fn() runs inside an IIFE with a deferred w.Close(), so the reader
+// goroutine unblocks even if fn() panics or calls t.Fatal — otherwise the
+// test would hang indefinitely on io.ReadAll. The write end is closed
+// exactly once.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -140,9 +142,10 @@ func captureStderr(t *testing.T, fn func()) string {
 		r.Close()
 	})
 
-	defer w.Close() // Ensure reader unblocks even on fn() panic/Fatal.
-	fn()
-	w.Close()
+	func() {
+		defer w.Close()
+		fn()
+	}()
 	return <-done
 }
 
