@@ -29,29 +29,12 @@ jobs:
           echo "MCP_PROXY_VERSION=${VERSION}" >> "$GITHUB_ENV"
           git tag "${VERSION}" HEAD
 
-      - name: Build binaries and archives
-        uses: goreleaser/goreleaser-action@e24998b8b67b290c2fa8b7c14fcfa7de2c5c9b8c # v7
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean --skip=validate,homebrew,announce
-          workdir: mcp-proxy
-        env:
-          GORELEASER_CURRENT_TAG: ${{ env.MCP_PROXY_VERSION }}
-
-      - name: Create GitHub release and upload binaries
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "mcp-proxy ${MCP_PROXY_VERSION}" \
-            --generate-notes \
-            mcp-proxy/dist/*.tar.gz \
-            mcp-proxy/dist/checksums.txt
-
-      # Second GoReleaser run publishes the Homebrew formula. Rebuilds are
-      # unavoidable (no --skip=build flag) but cheap (~30s for 4 targets).
-      - name: Publish Homebrew formula
+      # Single GoReleaser run: builds, archives, pushes Homebrew formula.
+      # Release creation + binary upload happen in the next step with `gh`
+      # so the same dist/ artifacts (and therefore matching SHA256s) are
+      # used for both the formula and the release assets — re-running
+      # GoReleaser would produce different tar hashes.
+      - name: Build and publish Homebrew formula
         uses: goreleaser/goreleaser-action@e24998b8b67b290c2fa8b7c14fcfa7de2c5c9b8c # v7
         with:
           distribution: goreleaser
@@ -61,3 +44,13 @@ jobs:
         env:
           GORELEASER_CURRENT_TAG: ${{ env.MCP_PROXY_VERSION }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Create GitHub release with binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "mcp-proxy ${MCP_PROXY_VERSION}" \
+            --generate-notes \
+            mcp-proxy/dist/*.tar.gz \
+            mcp-proxy/dist/checksums.txt
