@@ -44,11 +44,16 @@ brews:
       owner: agent-receipts
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-      # Open a PR instead of pushing directly so `brew audit` (required
-      # status check on the tap's main branch) runs before the formula
-      # becomes visible to users.
+      # Push the formula to a feature branch, then open a PR against
+      # main. Without an explicit branch, GoReleaser pushes to the
+      # default branch (main) and tries to open a main→main PR, which
+      # the GitHub API rejects — so the formula sneaks onto main and
+      # skips the `brew audit` gate.
+      branch: "bump-{{.ProjectName}}-{{.Version}}"
       pull_request:
         enabled: true
+        base:
+          branch: main
     directory: Formula
     url_template: "https://github.com/agent-receipts/ar/releases/download/mcp-proxy%2Fv{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/agent-receipts/ar/tree/main/mcp-proxy"
