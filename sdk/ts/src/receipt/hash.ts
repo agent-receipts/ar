@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import type { AgentReceipt, UnsignedAgentReceipt } from "./types.js";
+import type { AgentReceipt } from "./types.js";
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+	if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
+	const ctor = (v as { constructor?: unknown }).constructor;
+	return ctor === Object || ctor === undefined || ctor === null;
+}
 
 /**
  * Serialize a value to canonical JSON per RFC 8785 (JSON Canonicalization Scheme).
@@ -23,19 +29,14 @@ export function canonicalize(value: unknown): string {
 		return `[${value.map(canonicalize).join(",")}]`;
 	}
 	if (typeof value === "object") {
-		if (
-			value.constructor !== Object &&
-			value.constructor !== undefined &&
-			value.constructor !== null
-		) {
+		if (!isPlainObject(value)) {
 			throw new Error(
-				`RFC 8785: non-plain objects are not valid JSON: ${value.constructor.name}`,
+				`RFC 8785: non-plain objects are not valid JSON: ${(value as { constructor?: { name?: string } }).constructor?.name ?? "object"}`,
 			);
 		}
 		const keys = Object.keys(value).sort();
 		const entries = keys.map(
-			(k) =>
-				`${JSON.stringify(k)}:${canonicalize((value as Record<string, unknown>)[k])}`,
+			(k) => `${JSON.stringify(k)}:${canonicalize(value[k])}`,
 		);
 		return `{${entries.join(",")}}`;
 	}
@@ -63,26 +64,41 @@ function canonicalizeNumber(n: number): string {
  * Returns the hash in "sha256:<hex>" format as used throughout the spec.
  */
 export function hashReceipt(receipt: AgentReceipt): string {
-	const { proof: _, ...unsigned } = receipt;
-	const stripped = stripOptionalNulls(unsigned) as UnsignedAgentReceipt;
-	// stripOptionalNulls removes null values including previous_receipt_hash: null.
-	// Re-insert it — it is required-nullable and must always be emitted.
-	if (stripped.credentialSubject?.chain) {
-		stripped.credentialSubject.chain.previous_receipt_hash =
+	const { proof: _proof, ...unsigned } = receipt;
+	const stripped = stripOptionalNulls(unsigned);
+	// stripOptionalNulls drops null-valued keys, including
+	// previous_receipt_hash when it is null. previous_receipt_hash is the sole
+	// required-nullable field per ADR-0009; restore it so it is always emitted.
+	const chain = pluckChain(stripped);
+	if (chain) {
+		chain.previous_receipt_hash =
 			receipt.credentialSubject?.chain?.previous_receipt_hash ?? null;
 	}
 	return sha256(canonicalize(stripped));
 }
 
+function pluckChain(stripped: unknown): Record<string, unknown> | null {
+	if (!isPlainObject(stripped)) return null;
+	const cs = stripped.credentialSubject;
+	if (!isPlainObject(cs)) return null;
+	const chain = cs.chain;
+	return isPlainObject(chain) ? chain : null;
+}
+
 /**
  * Recursively remove null-valued keys from plain objects (ADR-0009 Rule 2).
  * Optional fields must be absent when null; this enforces that at runtime.
+ *
+ * Non-plain objects (Date, Map, class instances) are passed through unchanged
+ * so canonicalize() throws with its clearer error message rather than silently
+ * coercing them to {}.
  */
 function stripOptionalNulls(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map(stripOptionalNulls);
 	if (value !== null && typeof value === "object") {
+		if (!isPlainObject(value)) return value;
 		const out: Record<string, unknown> = {};
-		for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+		for (const [k, v] of Object.entries(value)) {
 			if (v !== null) out[k] = stripOptionalNulls(v);
 		}
 		return out;
