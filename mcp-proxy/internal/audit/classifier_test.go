@@ -162,4 +162,65 @@ func TestScoreRisk_SQLMutationHeuristic(t *testing.T) {
 	if containsReason(reasons, sqlMutationReason) {
 		t.Errorf("create_pull_request prose delete title: SQL mutation reason must not be present, reasons=%v", reasons)
 	}
+
+	// 7. Array recursion: {"batch": [{"query": "UPDATE users SET x=1"}]} — should trigger.
+	score, reasons = ScoreRisk("run_query", map[string]any{
+		"batch": []any{
+			map[string]any{"query": "UPDATE users SET x=1"},
+		},
+	})
+	// run_query is execute (+30) + SQL mutation (+30) = 60
+	if score != 60 {
+		t.Errorf("array batch UPDATE: expected 60, got %d", score)
+	}
+	if !containsReason(reasons, sqlMutationReason) {
+		t.Errorf("array batch UPDATE: SQL mutation reason must be present, reasons=%v", reasons)
+	}
+
+	// 8. Nested map-in-array: {"params": {"items": [{"sql": "DROP TABLE foo"}]}} — should trigger.
+	score, reasons = ScoreRisk("exec_command", map[string]any{
+		"params": map[string]any{
+			"items": []any{
+				map[string]any{"sql": "DROP TABLE foo"},
+			},
+		},
+	})
+	// exec_command is execute (+30) + SQL mutation (+30) = 60
+	if score != 60 {
+		t.Errorf("nested map-in-array DROP: expected 60, got %d", score)
+	}
+	if !containsReason(reasons, sqlMutationReason) {
+		t.Errorf("nested map-in-array DROP: SQL mutation reason must be present, reasons=%v", reasons)
+	}
+
+	// 9. "somewhere" must not suppress the mutation signal —
+	//    {"query": "UPDATE users SET note='find somewhere else'"} should trigger.
+	score, reasons = ScoreRisk("run_query", map[string]any{
+		"query": "UPDATE users SET note='find somewhere else'",
+	})
+	// run_query is execute (+30) + SQL mutation (+30) = 60
+	if score != 60 {
+		t.Errorf("UPDATE with 'somewhere' in value: expected 60, got %d", score)
+	}
+	if !containsReason(reasons, sqlMutationReason) {
+		t.Errorf("UPDATE with 'somewhere' in value: SQL mutation reason must be present, reasons=%v", reasons)
+	}
+
+	// 10. Real WHERE clause still suppresses — uppercase.
+	score, _ = ScoreRisk("run_query", map[string]any{
+		"query": "UPDATE users SET x=1 WHERE id=1",
+	})
+	// run_query is execute (+30) only
+	if score != 30 {
+		t.Errorf("UPDATE with uppercase WHERE: expected 30, got %d", score)
+	}
+
+	// 11. Real where clause still suppresses — lowercase.
+	score, _ = ScoreRisk("run_query", map[string]any{
+		"query": "UPDATE users SET x=1 where id=1",
+	})
+	// run_query is execute (+30) only
+	if score != 30 {
+		t.Errorf("UPDATE with lowercase where: expected 30, got %d", score)
+	}
 }

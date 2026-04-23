@@ -1,8 +1,15 @@
 package audit
 
 import (
+	"regexp"
 	"strings"
 )
+
+// whereClauseRe matches the SQL keyword "where" with token boundaries, so
+// words like "somewhere" or "whereabouts" do not falsely suppress the
+// mutation signal. Case-insensitive; boundaries are start/end of string or
+// any non-letter character.
+var whereClauseRe = regexp.MustCompile(`(?i)(^|[^a-z])where([^a-z]|$)`)
 
 // ClassifyOperation determines the operation type from a tool name.
 func ClassifyOperation(toolName string) string {
@@ -79,7 +86,9 @@ func sqlValContainsMutation(args map[string]any, sqlContextKeys, mutations []str
 			for _, ctxKey := range sqlContextKeys {
 				if kLower == ctxKey {
 					s := strings.ToLower(val)
-					if strings.Contains(s, "where") {
+					// Token-boundary check: "somewhere" / "whereabouts"
+					// must not count as a WHERE clause.
+					if whereClauseRe.MatchString(s) {
 						break
 					}
 					for _, m := range mutations {
@@ -93,6 +102,30 @@ func sqlValContainsMutation(args map[string]any, sqlContextKeys, mutations []str
 		case map[string]any:
 			// Recurse into nested argument objects.
 			if sqlValContainsMutation(val, sqlContextKeys, mutations) {
+				return true
+			}
+		case []any:
+			// Recurse into arrays: SQL-context keys may live inside list
+			// elements (e.g. batch: [{"query": "..."}, ...]).
+			if sqlSliceContainsMutation(val, sqlContextKeys, mutations) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sqlSliceContainsMutation walks a []any and recurses into each element,
+// delegating maps to sqlValContainsMutation and slices back to itself.
+func sqlSliceContainsMutation(arr []any, sqlContextKeys, mutations []string) bool {
+	for _, item := range arr {
+		switch v := item.(type) {
+		case map[string]any:
+			if sqlValContainsMutation(v, sqlContextKeys, mutations) {
+				return true
+			}
+		case []any:
+			if sqlSliceContainsMutation(v, sqlContextKeys, mutations) {
 				return true
 			}
 		}
