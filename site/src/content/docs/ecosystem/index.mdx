@@ -3,6 +3,8 @@ title: Agent Security Tooling Landscape — April 2026
 description: A neutral overview of the agent security, policy enforcement, and governance space as of April 2026.
 ---
 
+We've been mapping the agent security space since March 26, 2026 while building Agent Receipts. This page is our working view of the landscape as of April 2026 — the tools, the architectural approaches, the primitives that are converging, and the gaps that remain.
+
 ## Executive Summary
 
 The agent security space has rapidly matured. Every major architectural approach — MCP proxying, egress firewalling, kernel-level enforcement, application-level policy engines, and enterprise gateways — now has at least one serious implementation. Microsoft's entry (Agent Governance Toolkit, April 2026) is the most comprehensive single project, covering policy, identity, compliance, and SRE across five language SDKs.
@@ -27,7 +29,6 @@ These are the tools most relevant to an individual builder or small team enterin
 | **Released** | Apr 2026 | Jan 2026 | Feb 2026 | 2025–2026 | Feb 2026 | 2026 |
 | **Language** | Python (primary), TS, .NET, Rust, Go SDKs | Go | Python | Go + system-level | Node.js | Rust |
 | **License** | MIT | Apache 2.0 | AGPL-3.0 (commercial available) | Source-available (commercial) | MIT | MIT |
-| **Stars** | New (days old) | 29 | ~50+ | ~100+ | ~30 | ~20 |
 | **Approach** | Application middleware | Egress proxy + MCP proxy | MCP stdio proxy + SDK library | Kernel enforcement (Landlock, FUSE, ptrace, seccomp) | MCP stdio proxy | Claude Code pre-tool-use hook |
 | **MCP proxy** | No (framework adapters) | Yes (stdio) | Yes (stdio) | No (syscall-level) | Yes (stdio) | No (hook-based) |
 | **HTTP/egress proxy** | No | Yes (7-layer scanner) | No | Yes (network proxy) | No | No |
