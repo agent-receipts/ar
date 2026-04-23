@@ -38,7 +38,7 @@ These are the tools most relevant to an individual builder or small team enterin
 | **Prompt injection detection** | MCP scanner module | Yes (response scanning) | Yes (8 inbound checks) | No | Yes | No |
 | **Cryptographic identity** | Ed25519 DIDs + ML-DSA-65 | Ed25519 signing | Ed25519 audit chain | No | No | No |
 | **Audit logging** | Structured + OTEL | JSON + Prometheus | JSON + signed hash chain | Structured + OTEL | JSON | No |
-| **Compliance reporting** | EU AI Act, NIST, HIPAA, SOC2, OWASP | OWASP mapping | DORA, FINMA, SOC2 | No | No | No |
+| **Compliance reporting** | EU AI Act, NIST, HIPAA, SOC 2, OWASP | OWASP mapping | DORA, FINMA, SOC 2 | No | No | No |
 | **Dashboard** | No | Prometheus/stats endpoint | Yes (web UI) | Via Watchtower (commercial) | Yes (web UI) | No |
 | **Framework integrations** | 12+ (LangChain, CrewAI, AutoGen, etc.) | Claude Code, Cursor | Claude Desktop, Cursor, any MCP client | Vercel, E2B, Daytona, Cloudflare, etc. | Any MCP client | Claude Code, Copilot CLI |
 | **Trust model** | Same-process middleware | Capability separation (proxy has no secrets) | Same-process proxy | Kernel-enforced isolation | Same-process proxy | Hook-based |
