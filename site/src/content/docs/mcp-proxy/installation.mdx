@@ -5,15 +5,23 @@ description: Install and run the MCP Proxy.
 
 ## Install
 
+### Homebrew (macOS, Linux)
+
+```bash
+brew install agent-receipts/tap/mcp-proxy
+```
+
+### Prebuilt binaries
+
+Download a tarball for your platform (darwin/linux, amd64/arm64) from the [releases page](https://github.com/agent-receipts/ar/releases?q=mcp-proxy) and move `mcp-proxy` onto your `$PATH`.
+
+### From source
+
 ```bash
 go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
 ```
 
-## Requirements
-
-- Go 1.26+
-
-No CGO or external C libraries required -- the proxy uses pure Go SQLite.
+Requires Go 1.26+. No CGO or external C libraries — the proxy uses pure Go SQLite.
 
 ## Verify installation
 
@@ -21,7 +29,7 @@ No CGO or external C libraries required -- the proxy uses pure Go SQLite.
 mcp-proxy -version
 ```
 
-If `mcp-proxy` isn't found (bash/zsh say `command not found`; fish says `Unknown command`), the Go bin directory isn't on your `$PATH`. `go install` writes binaries to `$GOBIN` when it's set, otherwise to `$(go env GOPATH)/bin` (usually `~/go/bin`). Add whichever applies to your shell profile:
+If `mcp-proxy` isn't found after `go install` (bash/zsh say `command not found`; fish says `Unknown command`), the Go bin directory isn't on your `$PATH`. `go install` writes binaries to `$GOBIN` when it's set, otherwise to `$(go env GOPATH)/bin` (usually `~/go/bin`). Add whichever applies to your shell profile:
 
 ```bash
 # bash / zsh
