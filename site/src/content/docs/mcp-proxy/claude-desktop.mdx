@@ -32,14 +32,16 @@ Use absolute paths everywhere — Claude Desktop launches MCP servers with a cle
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
 
-Claude Desktop doesn't shell-expand config values, so paste absolute paths. Print yours:
+Claude Desktop doesn't shell-expand config values, so paste absolute paths. On macOS/Linux, print yours:
 
 ```bash
-echo "command: $(go env GOPATH)/bin/mcp-proxy"
+echo "command: $(which mcp-proxy)"
 echo "key:     $HOME/.agent-receipts/github-proxy.pem"
 echo "db:      $HOME/.agent-receipts/receipts.db"
 echo "server:  $(which github-mcp-server)"
 ```
+
+On Windows (PowerShell), use `(Get-Command mcp-proxy).Source`, `$env:USERPROFILE`, and `(Get-Command github-mcp-server).Source` to obtain the equivalent values.
 
 Then substitute the four values into the template:
 

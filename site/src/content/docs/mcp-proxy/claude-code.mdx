@@ -36,7 +36,7 @@ Use `claude mcp add-json` to register a proxied server. The example below wraps 
 ```bash
 claude mcp add-json github-audited --scope user "$(cat <<JSON
 {
-  "command": "$(go env GOPATH)/bin/mcp-proxy",
+  "command": "$(which mcp-proxy)",
   "args": [
     "-name", "github",
     "-key", "$HOME/.agent-receipts/github-proxy.pem",
@@ -71,7 +71,7 @@ For a shared team configuration, add a `.mcp.json` file at the project root. Thi
 Since JSON files can't shell-expand, print the absolute paths you need first and paste them into the template below:
 
 ```bash
-echo "command: $(go env GOPATH)/bin/mcp-proxy"
+echo "command: $(which mcp-proxy)"
 echo "key:     $HOME/.agent-receipts/github-proxy.pem"
 echo "db:      $HOME/.agent-receipts/receipts.db"
 echo "server:  $(which github-mcp-server)"

@@ -36,7 +36,7 @@ Use `codex mcp add` to register the proxy wrapping any MCP server. The shell res
 ```bash
 codex mcp add github-audited \
   --env GITHUB_PERSONAL_ACCESS_TOKEN=YOUR_TOKEN \
-  -- "$(go env GOPATH)/bin/mcp-proxy" \
+  -- "$(which mcp-proxy)" \
     -name github \
     -key "$HOME/.agent-receipts/github-proxy.pem" \
     -receipt-db "$HOME/.agent-receipts/receipts.db" \
@@ -55,7 +55,7 @@ Add `--scope user` to make the server available across all projects (default is 
 Alternatively, edit `~/.codex/config.toml` directly. TOML doesn't shell-expand, so print your absolute paths first:
 
 ```bash
-echo "command: $(go env GOPATH)/bin/mcp-proxy"
+echo "command: $(which mcp-proxy)"
 echo "key:     $HOME/.agent-receipts/github-proxy.pem"
 echo "db:      $HOME/.agent-receipts/receipts.db"
 echo "server:  $(which github-mcp-server)"
