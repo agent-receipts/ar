@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
+	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
@@ -334,6 +337,153 @@ func cmdTiming(args []string) {
 			}
 		}
 	}
+
+	if len(st.PolicyActions) > 0 {
+		fmt.Println("\nPolicy actions:")
+		fmt.Printf("%-30s %6s %6s %6s %6s %10s\n", "TOOL", "PASS", "FLAG", "PAUSE", "BLOCK", "REJECTED")
+		for _, pa := range st.PolicyActions {
+			fmt.Printf("%-30s %6d %6d %6d %6d %10d\n",
+				truncate(pa.ToolName, 30),
+				pa.Pass, pa.Flag, pa.Pause, pa.Block, pa.Rejected,
+			)
+		}
+	}
+}
+
+// DoctorReport is the structured output of `mcp-proxy doctor`. Exposed for
+// test-only consumers; the CLI renders it to text or JSON.
+type DoctorReport struct {
+	RulesPath      string   `json:"rules_path"`
+	TotalRules     int      `json:"total_rules"`
+	EnabledRules   int      `json:"enabled_rules"`
+	PauseRules     []string `json:"pause_rules"`
+	BlockRules     []string `json:"block_rules"`
+	FlagRules      []string `json:"flag_rules"`
+	DisabledRules  []string `json:"disabled_rules,omitempty"`
+	ApproverURL    string   `json:"approver_url"`
+	ApproverReach  string   `json:"approver_reachable"` // reachable | unreachable | not_configured
+	ApproverDetail string   `json:"approver_detail,omitempty"`
+	Issues         []string `json:"issues"`
+	Healthy        bool     `json:"healthy"`
+}
+
+// DiagnoseConfig builds a DoctorReport from a rules path and approver URL.
+// Pure function — no I/O beyond reading the rules file and probing the URL.
+// Returns the report and an overall exit-code bool (true = healthy).
+func DiagnoseConfig(rulesPath, approverURL string, probe func(url string) (string, error)) (DoctorReport, bool) {
+	report := DoctorReport{
+		RulesPath:   rulesPath,
+		ApproverURL: approverURL,
+	}
+
+	var rules []policy.Rule
+	var err error
+	if rulesPath == "" {
+		rules = policy.DefaultRules()
+		report.RulesPath = "(built-in defaults)"
+	} else {
+		rules, err = policy.LoadRules(rulesPath)
+		if err != nil {
+			report.Issues = append(report.Issues, fmt.Sprintf("load rules: %v", err))
+			return report, false
+		}
+	}
+	engine := policy.NewEngine(rules)
+	summary := engine.Describe()
+	report.TotalRules = summary.TotalRules
+	report.EnabledRules = summary.EnabledRules
+	report.PauseRules = summary.PauseRules
+	report.BlockRules = summary.BlockRules
+	report.FlagRules = summary.FlagRules
+	report.DisabledRules = summary.DisabledRules
+
+	switch {
+	case approverURL == "":
+		report.ApproverReach = "not_configured"
+		if summary.NeedsApprover() {
+			report.Issues = append(report.Issues,
+				fmt.Sprintf("%d pause rule(s) loaded but no approver URL configured — pause calls will fail with -32003", len(summary.PauseRules)))
+		}
+	default:
+		detail, perr := probe(approverURL)
+		if perr == nil {
+			report.ApproverReach = "reachable"
+			report.ApproverDetail = detail
+		} else {
+			report.ApproverReach = "unreachable"
+			report.ApproverDetail = perr.Error()
+			report.Issues = append(report.Issues, fmt.Sprintf("approver at %s is unreachable: %v", approverURL, perr))
+		}
+	}
+
+	report.Healthy = len(report.Issues) == 0
+	return report, report.Healthy
+}
+
+// probeApprover makes a lightweight HEAD/GET against the approver URL to
+// check it's alive. It accepts any HTTP response — including 401/404 —
+// because the goal is reachability, not endpoint correctness. Only
+// connection-level failures (DNS, refused, TLS) are treated as unreachable.
+func probeApprover(url string) (string, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url + "/")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	return fmt.Sprintf("HTTP %d", resp.StatusCode), nil
+}
+
+func cmdDoctor(args []string) {
+	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+	rulesPath := fs.String("rules", "", "Policy rules YAML (default: built-in)")
+	approverURL := fs.String("approver", "", "Approver URL to probe (default: none)")
+	asJSON := fs.Bool("json", false, "Output as JSON")
+	fs.Parse(args)
+
+	report, healthy := DiagnoseConfig(*rulesPath, *approverURL, probeApprover)
+
+	if *asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(report)
+		if !healthy {
+			os.Exit(1)
+		}
+		return
+	}
+
+	fmt.Printf("mcp-proxy doctor\n")
+	fmt.Printf("  rules:         %s\n", report.RulesPath)
+	fmt.Printf("  loaded:        %d enabled (%d total)\n", report.EnabledRules, report.TotalRules)
+	if len(report.PauseRules) > 0 {
+		fmt.Printf("  pause rules:   %s\n", strings.Join(report.PauseRules, ", "))
+	}
+	if len(report.BlockRules) > 0 {
+		fmt.Printf("  block rules:   %s\n", strings.Join(report.BlockRules, ", "))
+	}
+	if len(report.FlagRules) > 0 {
+		fmt.Printf("  flag rules:    %s\n", strings.Join(report.FlagRules, ", "))
+	}
+	fmt.Printf("  approver:      %s", report.ApproverReach)
+	if report.ApproverURL != "" {
+		fmt.Printf(" (%s)", report.ApproverURL)
+	}
+	if report.ApproverDetail != "" {
+		fmt.Printf(" — %s", report.ApproverDetail)
+	}
+	fmt.Println()
+
+	if len(report.Issues) == 0 {
+		fmt.Println("\nOK — configuration is healthy.")
+		return
+	}
+
+	fmt.Println("\nIssues:")
+	for _, issue := range report.Issues {
+		fmt.Printf("  - %s\n", issue)
+	}
+	os.Exit(1)
 }
 
 func fmtOptInt(v *int64) string {

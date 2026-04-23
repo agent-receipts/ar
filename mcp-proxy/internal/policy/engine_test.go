@@ -121,6 +121,62 @@ func TestDisabledRulesSkipped(t *testing.T) {
 	}
 }
 
+func TestDescribe(t *testing.T) {
+	engine := NewEngine(DefaultRules())
+	s := engine.Describe()
+
+	if s.TotalRules != 6 {
+		t.Errorf("expected 6 total rules, got %d", s.TotalRules)
+	}
+	if s.EnabledRules != 6 {
+		t.Errorf("expected 6 enabled rules, got %d", s.EnabledRules)
+	}
+
+	wantPause := "pause_high_risk"
+	found := false
+	for _, r := range s.PauseRules {
+		if r == wantPause {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected pause rule %q in Describe().PauseRules, got %v", wantPause, s.PauseRules)
+	}
+
+	if !s.NeedsApprover() {
+		t.Error("expected Summary.NeedsApprover() to be true when pause rules exist")
+	}
+}
+
+func TestDescribeEmpty(t *testing.T) {
+	engine := NewEngine([]Rule{})
+	s := engine.Describe()
+	if s.TotalRules != 0 || s.EnabledRules != 0 {
+		t.Errorf("expected empty summary, got %+v", s)
+	}
+	if s.NeedsApprover() {
+		t.Error("expected NeedsApprover=false with no rules")
+	}
+}
+
+func TestDescribeDisabled(t *testing.T) {
+	engine := NewEngine([]Rule{
+		{Name: "off_pause", Enabled: false, Action: "pause"},
+		{Name: "on_flag", Enabled: true, Action: "flag"},
+	})
+	s := engine.Describe()
+	if s.EnabledRules != 1 {
+		t.Errorf("expected 1 enabled rule, got %d", s.EnabledRules)
+	}
+	if len(s.PauseRules) != 0 {
+		t.Errorf("expected no pause rules (disabled), got %v", s.PauseRules)
+	}
+	if len(s.DisabledRules) != 1 || s.DisabledRules[0] != "off_pause" {
+		t.Errorf("expected [off_pause] in DisabledRules, got %v", s.DisabledRules)
+	}
+}
+
 func TestHasPauseRules(t *testing.T) {
 	// Default rules include pause_high_risk.
 	engine := NewEngine(DefaultRules())
