@@ -47,16 +47,16 @@ The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, for
 # Install
 go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
 
-# Wrap any MCP server
-mcp-proxy node /path/to/mcp-server.js
+# Wrap any MCP server (example: the filesystem server via npx)
+mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 
-# With configuration
+# With configuration (example: GitHub's official MCP server — brew install github-mcp-server)
 mcp-proxy \
   -name github \
   -key private.pem \
   -rules rules.yaml \
   -taxonomy taxonomy.json \
-  node /path/to/github-mcp-server.js
+  github-mcp-server
 ```
 
 ## Claude Desktop integration
@@ -77,7 +77,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
         "-taxonomy", "/Users/YOU/.agent-receipts/github_taxonomy.json",
-        "/opt/homebrew/bin/mcp-server-github"
+        "/opt/homebrew/bin/github-mcp-server"
       ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
@@ -106,7 +106,7 @@ claude mcp add-json github-audited --scope user '{
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
     "-taxonomy", "/Users/YOU/.agent-receipts/github_taxonomy.json",
-    "/opt/homebrew/bin/mcp-server-github"
+    "/opt/homebrew/bin/github-mcp-server"
   ],
   "env": {
     "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"

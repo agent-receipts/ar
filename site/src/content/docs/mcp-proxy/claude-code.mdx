@@ -10,13 +10,13 @@ Claude Code is a CLI-based agent that connects to MCP servers for tools like Git
 - [mcp-proxy installed](/mcp-proxy/installation/)
 - A signing key pair generated (see below)
 - Claude Code installed (`npm install -g @anthropic-ai/claude-code`)
-- The MCP server you want to audit. The examples below wrap the GitHub MCP server:
+- The MCP server you want to audit. The examples below wrap GitHub's official MCP server:
 
   ```bash
-  npm install -g @modelcontextprotocol/server-github
+  brew install github-mcp-server
   ```
 
-  This puts an `mcp-server-github` binary on your `$PATH`. Verify with `which mcp-server-github`.
+  This puts a `github-mcp-server` binary on your `$PATH`. Verify with `which github-mcp-server`.
 
 ## Generate a signing key
 
@@ -31,7 +31,7 @@ Use absolute paths everywhere — Claude Code launches MCP servers with a clean 
 
 ## Register the proxy with Claude Code
 
-Use `claude mcp add-json` to register a proxied server. The example below wraps `mcp-server-github`. The heredoc lets your shell resolve the proxy, key, and server paths at paste time — no manual substitution required (replace only `YOUR_TOKEN`):
+Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. The heredoc lets your shell resolve the proxy, key, and server paths at paste time — no manual substitution required (replace only `YOUR_TOKEN`):
 
 ```bash
 claude mcp add-json github-audited --scope user "$(cat <<JSON
@@ -44,7 +44,7 @@ claude mcp add-json github-audited --scope user "$(cat <<JSON
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
-    "$(which mcp-server-github)"
+    "$(which github-mcp-server)"
   ],
   "env": {
     "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
@@ -74,7 +74,7 @@ Since JSON files can't shell-expand, print the absolute paths you need first and
 echo "command: $(go env GOPATH)/bin/mcp-proxy"
 echo "key:     $HOME/.agent-receipts/github-proxy.pem"
 echo "db:      $HOME/.agent-receipts/receipts.db"
-echo "server:  $(which mcp-server-github)"
+echo "server:  $(which github-mcp-server)"
 ```
 
 ```json
@@ -89,7 +89,7 @@ echo "server:  $(which mcp-server-github)"
         "-issuer-name", "Claude Code",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
-        "/opt/homebrew/bin/mcp-server-github"
+        "/opt/homebrew/bin/github-mcp-server"
       ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"

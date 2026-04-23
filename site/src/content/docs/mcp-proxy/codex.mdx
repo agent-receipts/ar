@@ -10,13 +10,13 @@ OpenAI Codex (CLI and IDE extension) stores MCP configuration in `~/.codex/confi
 - [mcp-proxy installed](/mcp-proxy/installation/)
 - A signing key pair generated (see below)
 - Codex installed (`npm install -g @openai/codex` or via the IDE extension)
-- The MCP server you want to audit. The examples below wrap the GitHub MCP server:
+- The MCP server you want to audit. The examples below wrap GitHub's official MCP server:
 
   ```bash
-  npm install -g @modelcontextprotocol/server-github
+  brew install github-mcp-server
   ```
 
-  This puts an `mcp-server-github` binary on your `$PATH`. Verify with `which mcp-server-github`.
+  This puts a `github-mcp-server` binary on your `$PATH`. Verify with `which github-mcp-server`.
 
 ## Generate a signing key
 
@@ -43,7 +43,7 @@ codex mcp add github-audited \
     -issuer-name Codex \
     -operator-id did:web:openai.com \
     -operator-name OpenAI \
-    "$(which mcp-server-github)"
+    "$(which github-mcp-server)"
 ```
 
 Add `--scope user` to make the server available across all projects (default is project-scoped).
@@ -58,7 +58,7 @@ Alternatively, edit `~/.codex/config.toml` directly. TOML doesn't shell-expand, 
 echo "command: $(go env GOPATH)/bin/mcp-proxy"
 echo "key:     $HOME/.agent-receipts/github-proxy.pem"
 echo "db:      $HOME/.agent-receipts/receipts.db"
-echo "server:  $(which mcp-server-github)"
+echo "server:  $(which github-mcp-server)"
 ```
 
 Then substitute them into the template:
@@ -73,7 +73,7 @@ args = [
   "-issuer-name", "Codex",
   "-operator-id", "did:web:openai.com",
   "-operator-name", "OpenAI",
-  "/opt/homebrew/bin/mcp-server-github"
+  "/opt/homebrew/bin/github-mcp-server"
 ]
 enabled = true
 

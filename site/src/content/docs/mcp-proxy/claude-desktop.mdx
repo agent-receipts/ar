@@ -9,13 +9,13 @@ Claude Desktop connects to MCP servers via `claude_desktop_config.json`. The Age
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
 - A signing key pair generated (see below)
-- The MCP server you want to audit. The example below wraps the GitHub MCP server:
+- The MCP server you want to audit. The example below wraps GitHub's official MCP server:
 
   ```bash
-  npm install -g @modelcontextprotocol/server-github
+  brew install github-mcp-server
   ```
 
-  This puts an `mcp-server-github` binary on your `$PATH`. Verify with `which mcp-server-github`.
+  This puts a `github-mcp-server` binary on your `$PATH`. Verify with `which github-mcp-server`.
 
 ## Generate a signing key
 
@@ -38,7 +38,7 @@ Claude Desktop doesn't shell-expand config values, so paste absolute paths. Prin
 echo "command: $(go env GOPATH)/bin/mcp-proxy"
 echo "key:     $HOME/.agent-receipts/github-proxy.pem"
 echo "db:      $HOME/.agent-receipts/receipts.db"
-echo "server:  $(which mcp-server-github)"
+echo "server:  $(which github-mcp-server)"
 ```
 
 Then substitute the four values into the template:
@@ -52,7 +52,7 @@ Then substitute the four values into the template:
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
         "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
-        "/opt/homebrew/bin/mcp-server-github"
+        "/opt/homebrew/bin/github-mcp-server"
       ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
