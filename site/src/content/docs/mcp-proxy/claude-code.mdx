@@ -40,8 +40,6 @@ claude mcp add-json github-audited --scope user "$(cat <<JSON
   "args": [
     "-name", "github",
     "-key", "$HOME/.agent-receipts/github-proxy.pem",
-    "-db", "$HOME/.agent-receipts/audit.db",
-    "-receipt-db", "$HOME/.agent-receipts/receipts.db",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -72,11 +70,9 @@ For a shared team configuration, add a `.mcp.json` file at the project root. Thi
 Since JSON files can't shell-expand, print the absolute paths you need first and paste them into the template below:
 
 ```bash
-echo "command:    $(which mcp-proxy)"
-echo "key:        $HOME/.agent-receipts/github-proxy.pem"
-echo "audit-db:   $HOME/.agent-receipts/audit.db"
-echo "receipt-db: $HOME/.agent-receipts/receipts.db"
-echo "server:     $(which github-mcp-server)"
+echo "command: $(which mcp-proxy)"
+echo "key:     $HOME/.agent-receipts/github-proxy.pem"
+echo "server:  $(which github-mcp-server)"
 ```
 
 ```json
@@ -87,8 +83,6 @@ echo "server:     $(which github-mcp-server)"
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-        "-db", "/Users/YOU/.agent-receipts/audit.db",
-        "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
         "-issuer-name", "Claude Code",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -109,13 +103,12 @@ Each developer sets `GITHUB_PERSONAL_ACCESS_TOKEN` in their shell environment. T
 After making tool calls through Claude Code, inspect the receipt store from your terminal:
 
 ```bash
-# List all receipts
-mcp-proxy list -receipt-db ~/.agent-receipts/receipts.db
+# List all receipts (uses the default ~/.agent-receipts/receipts.db)
+mcp-proxy list
 
 # Verify chain integrity
 mcp-proxy verify \
   -key ~/.agent-receipts/github-proxy-pub.pem \
-  -receipt-db ~/.agent-receipts/receipts.db \
   <chain-id>
 ```
 

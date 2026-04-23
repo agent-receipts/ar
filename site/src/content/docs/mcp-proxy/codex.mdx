@@ -39,8 +39,6 @@ codex mcp add github-audited \
   -- "$(which mcp-proxy)" \
     -name github \
     -key "$HOME/.agent-receipts/github-proxy.pem" \
-    -db "$HOME/.agent-receipts/audit.db" \
-    -receipt-db "$HOME/.agent-receipts/receipts.db" \
     -issuer-name Codex \
     -operator-id did:web:openai.com \
     -operator-name OpenAI \
@@ -56,11 +54,9 @@ Add `--scope user` to make the server available across all projects (default is 
 Alternatively, edit `~/.codex/config.toml` directly. TOML doesn't shell-expand, so print your absolute paths first:
 
 ```bash
-echo "command:    $(which mcp-proxy)"
-echo "key:        $HOME/.agent-receipts/github-proxy.pem"
-echo "audit-db:   $HOME/.agent-receipts/audit.db"
-echo "receipt-db: $HOME/.agent-receipts/receipts.db"
-echo "server:     $(which github-mcp-server)"
+echo "command: $(which mcp-proxy)"
+echo "key:     $HOME/.agent-receipts/github-proxy.pem"
+echo "server:  $(which github-mcp-server)"
 ```
 
 Then substitute them into the template:
@@ -71,8 +67,6 @@ command = "/Users/YOU/go/bin/mcp-proxy"
 args = [
   "-name", "github",
   "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-  "-db", "/Users/YOU/.agent-receipts/audit.db",
-  "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
   "-issuer-name", "Codex",
   "-operator-id", "did:web:openai.com",
   "-operator-name", "OpenAI",
@@ -99,13 +93,12 @@ Or check active servers inside the Codex TUI with `/mcp`.
 After making tool calls through Codex, inspect the receipt store from your terminal:
 
 ```bash
-# List all receipts
-mcp-proxy list -receipt-db ~/.agent-receipts/receipts.db
+# List all receipts (uses the default ~/.agent-receipts/receipts.db)
+mcp-proxy list
 
 # Verify chain integrity
 mcp-proxy verify \
   -key ~/.agent-receipts/github-proxy-pub.pem \
-  -receipt-db ~/.agent-receipts/receipts.db \
   <chain-id>
 ```
 
