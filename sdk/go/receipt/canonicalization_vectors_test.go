@@ -93,10 +93,12 @@ func TestCanonVectors(t *testing.T) {
 				t.Fatalf("unmarshal input: %v", err)
 			}
 
-			// Special case: number_negative_zero — JSON round-trip loses -0.
-			// The vector description says "hard-code -0"; we handle this by
-			// checking the canonical assertion directly since our canonicaliser
-			// maps -0 → 0 correctly (canonicalizeNumber handles n==0).
+			// Note: there is no test-level special-casing for any vector here.
+			// The harness always unmarshals v.Input via encoding/json and passes
+			// the result to Canonicalize. For number_negative_zero, the vector
+			// input is the float literal -0.0, which json.Unmarshal preserves
+			// as IEEE 754 negative zero in float64; canonicalizeNumber's n == 0
+			// branch then emits the RFC 8785 canonical form "0".
 
 			got, err := Canonicalize(input)
 			if err != nil {
