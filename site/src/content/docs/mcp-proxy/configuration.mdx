@@ -20,7 +20,7 @@ description: CLI flags, policy rules, redaction, and encryption options for the 
 | `-operator-name` | (none) | Operator name, e.g. `Anthropic` |
 | `-principal` | `did:user:unknown` | Principal DID for receipts |
 | `-chain` | (auto UUID) | Chain ID for receipt chaining |
-| `-http` | `127.0.0.1:0` | HTTP address for the approval endpoint (default: random port, logged to stderr) |
+| `-http` | `127.0.0.1:0` | HTTP address for the approval endpoint (default: random free port, logged to stderr). Pin a port (e.g. `127.0.0.1:8081`) whenever the policy has a `pause` rule — the built-in defaults do — so an approver has a stable URL. See [Approval Server](/mcp-proxy/approval-ui/). |
 | `-approval-timeout` | `1m0s` | Maximum time to wait for HTTP approval before a paused call is auto-denied |
 
 ## Policy rules
@@ -116,44 +116,14 @@ A bundled [`configs/github_taxonomy.json`](https://github.com/agent-receipts/ar/
 
 ## Approval workflow
 
-When a tool call is paused by a policy rule:
+The [Approval Server page](/mcp-proxy/approval-ui/) has the full treatment — endpoints, auth, running an approver, opting out. Quick reference:
 
-1. The proxy logs an approval ID and waits up to the configured `-approval-timeout` duration
-2. The approval URL and token are logged to stderr at startup, in two formats:
-
-   ```
-   mcp-proxy: approvals at http://127.0.0.1:59850 (token: 5fce4e79...)
-   {"event":"approval_endpoint","url":"http://127.0.0.1:59850","token":"5fce4e79..."}
-   ```
-
-   The JSON line is a stable contract for tooling that wants to discover the endpoint without parsing the human line.
-
-3. Approve or deny via HTTP (substitute the URL from your stderr, and export the token first):
-
-```bash
-# Copy the token from the stderr line above (or parse the JSON event).
-export APPROVAL_TOKEN=5fce4e79...
-
-# Approve
-curl -X POST http://127.0.0.1:59850/api/tool-calls/{id}/approve \
-  -H "Authorization: Bearer $APPROVAL_TOKEN"
-
-# Deny
-curl -X POST http://127.0.0.1:59850/api/tool-calls/{id}/deny \
-  -H "Authorization: Bearer $APPROVAL_TOKEN"
-```
-
-If no response arrives before `-approval-timeout` elapses, the call is automatically denied.
-
-Paused calls return a JSON-RPC error with structured details in `error.data`, including:
-
-- `status` (`denied` or `timed_out`)
-- `rule_name`
-- `risk_score`
-- `approval_id`
-- `approval_url`
-
-If you need a stable, predictable URL, pin the port with `-http 127.0.0.1:8080` (or any free port).
+- Endpoints: `POST /api/tool-calls/{id}/approve` and `POST /api/tool-calls/{id}/deny`, both require `Authorization: Bearer <token>`.
+- The URL and token are printed on stderr at startup, plus a machine-readable JSON line (`{"event":"approval_endpoint",...}`).
+- No `/pending` or index route — hitting `GET /` returns 404.
+- The HTTP server only starts when the policy has at least one `pause` rule. With the built-in defaults, that's always true.
+- Default `-http` is a random port; pin one (`127.0.0.1:8081`) so an approver has a stable URL. This is effectively required with the default policy.
+- On deny or timeout the client receives a JSON-RPC error with `code: -32002` and a `data` object including `status`, `rule_name`, `risk_score`, `approval_id`, and `approval_url`.
 
 ## Data redaction
 
@@ -181,22 +151,53 @@ Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored wit
 
 ## Troubleshooting
 
-### Multiple MCP clients running the proxy simultaneously
+### `-32002: approval timeout or rejected` on writes (reads still work)
 
-Each `mcp-proxy` instance binds its own HTTP server for the approval workflow. By default the OS picks a random free port, so multiple instances (Claude Desktop + Claude Code, Codex alongside either, etc.) coexist without configuration. The actual address is logged to stderr at startup.
+**Symptom:** `create_pull_request`, `merge_pull_request`, and similar high-risk writes fail with JSON-RPC error `-32002`. Low-risk calls in the same server — `push_files`, `create_branch`, reads — succeed. This makes the failure look tool-specific, but it's not.
 
-If you want a fixed port for each client (e.g. so an external approval UI can connect reliably), pin it with `-http`:
+**Cause:** the default policy contains `pause_high_risk` (`min_risk_score: 50`). Calls at or above 50 are paused waiting for approval. If nothing is POSTing `/api/tool-calls/{id}/approve`, every paused call sits until `-approval-timeout` elapses (default 60 s) and is then auto-denied with `-32002`. Everything below the threshold flows through normally.
+
+**Diagnose:**
 
 ```bash
-# Pin one client to 8080
-mcp-proxy -name github -http 127.0.0.1:8080 ... /path/to/server
+# Is -http set? (Random port means approvers can't find the endpoint reliably.)
+ps aux | grep mcp-proxy | grep -v grep
 
-# Pin another to 8081
-mcp-proxy -name github -http 127.0.0.1:8081 ... /path/to/server
+# What proportion of calls are being paused?
+sqlite3 ~/.agent-receipts/audit.db \
+  "SELECT policy_action, COUNT(*) FROM tool_calls GROUP BY policy_action;"
+
+# Recent pauses and their approval status.
+sqlite3 ~/.agent-receipts/audit.db \
+  "SELECT tool_name, policy_action, approved_by, created_at
+   FROM tool_calls
+   WHERE policy_action = 'pause'
+   ORDER BY id DESC LIMIT 20;"
 ```
 
-Each instance can also use separate `-db` and `-receipt-db` paths if you want isolated audit trails, or share the same databases if you want a unified log. By default both point at `$HOME/.agent-receipts/`, so all clients share one audit log unless you override them.
+A `pause` row with `approved_by` NULL is a call that timed out waiting for a decision.
 
-:::note
-The approval HTTP server is only needed when policy rules use the `pause` action. If you don't use approval workflows, the random-port default has no observable effect.
-:::
+**Fix:** pin a port with `-http 127.0.0.1:8081` in your MCP client config and run an approver against it — see [Approval Server](/mcp-proxy/approval-ui/). Or, if you don't want human review at all, load a custom `-rules` YAML without any `pause` or `block` rules.
+
+### 404 at `http://127.0.0.1:8081/`
+
+The approval server is not a web UI. `GET /` returns 404 by design. The only routes are `POST /api/tool-calls/{id}/approve` and `POST /api/tool-calls/{id}/deny`, both requiring a bearer token — see [Approval Server](/mcp-proxy/approval-ui/#endpoints).
+
+### Multiple MCP clients running the proxy simultaneously
+
+Each `mcp-proxy` instance binds its own HTTP server for the approval workflow. Give each instance a distinct port with `-http` so an approver can route to the right one:
+
+```bash
+# Claude Desktop
+mcp-proxy -name github -http 127.0.0.1:8080 ... /path/to/server
+
+# Claude Code
+mcp-proxy -name github -http 127.0.0.1:8081 ... /path/to/server
+
+# Codex
+mcp-proxy -name github -http 127.0.0.1:8082 ... /path/to/server
+```
+
+The random-port default (`127.0.0.1:0`) avoids collisions but leaves approvers without a stable URL — fine only when the approver parses stderr on startup.
+
+Each instance can also use separate `-db` and `-receipt-db` paths if you want isolated audit trails, or share the same databases if you want a unified log. By default both point at `$HOME/.agent-receipts/`, so all clients share one audit log unless you override them.

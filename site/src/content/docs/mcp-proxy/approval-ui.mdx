@@ -1,0 +1,151 @@
+---
+title: Approval Server
+description: HTTP endpoints that gate paused tool calls, how to approve or deny them, and how to auto-start an approver.
+---
+
+When a policy rule pauses a tool call, the proxy blocks forwarding until something POSTs an approve or deny decision to its HTTP endpoint. **If no approver is listening, every paused call fails with `-32002: approval timeout or rejected` after the configured `-approval-timeout`.**
+
+The default policy ships with a `pause_high_risk` rule (`min_risk_score: 50`), so this affects every deployment that uses the defaults — not just users who opt into pause rules.
+
+:::caution
+The HTTP server is **not** a web UI. There is no index page at `/` — requesting one returns 404. The server only exposes the endpoints documented below, all behind bearer-token auth.
+:::
+
+## When the server runs
+
+The proxy starts the HTTP listener on startup if and only if the loaded policy contains at least one `pause` rule. With the built-in defaults, that condition is always true. You can confirm the server is up by looking for these lines on stderr:
+
+```
+mcp-proxy: approvals at http://127.0.0.1:8081 (token: 5fce4e79...)
+{"event":"approval_endpoint","url":"http://127.0.0.1:8081","token":"5fce4e79..."}
+```
+
+The first line is human-readable; the second is a stable JSON event designed for approvers that parse stderr to discover the endpoint and token.
+
+## Pin a predictable port
+
+The default (`-http 127.0.0.1:0`) binds a random free port. That's fine when a co-located approver reads the stderr discovery event, but painful for everything else: launchd units, browser bookmarks, integration tests, anything that wants a hard-coded URL. Pin a port in your MCP client config:
+
+```json
+{
+  "args": [
+    "-http", "127.0.0.1:8081",
+    "..."
+  ]
+}
+```
+
+If you run more than one MCP client through the proxy (e.g. Claude Desktop and Claude Code at the same time), give each instance its own port — see [port conflicts](/mcp-proxy/configuration/#multiple-mcp-clients-running-the-proxy-simultaneously).
+
+## Endpoints
+
+All endpoints require `Authorization: Bearer <token>`, where `<token>` is the value printed on stderr at startup. Unauthenticated requests return `401 Unauthorized`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/tool-calls/{approval_id}/approve` | Approve a paused call. Unblocks the proxy to forward the request to the MCP server. |
+| `POST` | `/api/tool-calls/{approval_id}/deny` | Deny a paused call. The proxy returns `-32002` to the MCP client. |
+
+There is no `GET /pending` endpoint yet — approvers are expected to watch stderr (or the audit DB) for pending approvals. `{approval_id}` is the token logged on the `PAUSED` line:
+
+```
+mcp-proxy: PAUSED create_pull_request (rule: pause_high_risk, risk: 60) — approval id: a1b2c3d4...
+```
+
+### Approve a call
+
+```bash
+export APPROVAL_TOKEN=5fce4e79...
+curl -X POST http://127.0.0.1:8081/api/tool-calls/a1b2c3d4.../approve \
+  -H "Authorization: Bearer $APPROVAL_TOKEN"
+# {"status":"approved"}
+```
+
+### Deny a call
+
+```bash
+curl -X POST http://127.0.0.1:8081/api/tool-calls/a1b2c3d4.../deny \
+  -H "Authorization: Bearer $APPROVAL_TOKEN"
+# {"status":"denied"}
+```
+
+If the approval ID doesn't match a pending call (wrong ID, already decided, or timed out), the endpoint returns `404 Not Found`.
+
+## What the client sees
+
+On deny or timeout, the MCP client receives a JSON-RPC error (`code: -32002`) with a `data` payload that includes everything an approver needs to reconstruct context after the fact:
+
+```json
+{
+  "code": -32002,
+  "message": "tool call denied by approval workflow: tool=create_pull_request ...",
+  "data": {
+    "status": "timed_out",
+    "tool_name": "create_pull_request",
+    "rule_name": "pause_high_risk",
+    "risk_score": 60,
+    "approval_id": "a1b2c3d4...",
+    "approval_url": "http://127.0.0.1:8081",
+    "approval_timeout_ms": 60000,
+    "approval_required": true,
+    "approval_token_required": true
+  }
+}
+```
+
+`status` is one of `approved`, `denied`, or `timed_out`.
+
+## Opting out of approval
+
+If you don't want to run an approver, the alternative is to edit your policy so it never pauses. Two ways:
+
+**Option 1 — Disable the default rule.** Write a custom `-rules` YAML that omits `pause_high_risk`. Anything the default rule would have paused will now pass (and still be flagged if it matches other rules). This is a policy decision: high-risk writes now go through without human review.
+
+**Option 2 — Downgrade pause to flag.** Keep the rule but change `action: pause` to `action: flag`. Tool calls are still recorded and tagged, but no approval is required.
+
+See [policy rules](/mcp-proxy/configuration/#policy-rules) for the full rule schema.
+
+## Running an approver
+
+Today, approving is a manual `curl` loop against the endpoints above. A bundled approval UI is on the roadmap. In the meantime, minimal working approvers:
+
+### Watch stderr and prompt the terminal
+
+Tail the proxy's stderr (or its captured log file), watch for `PAUSED` lines, and prompt:
+
+```bash
+while read -r line; do
+  case "$line" in
+    *"PAUSED"*)
+      id=$(echo "$line" | sed -n 's/.*approval id: //p')
+      read -p "Approve $line? [y/N] " ans
+      if [ "$ans" = "y" ]; then
+        curl -sX POST "http://127.0.0.1:8081/api/tool-calls/$id/approve" \
+          -H "Authorization: Bearer $APPROVAL_TOKEN"
+      else
+        curl -sX POST "http://127.0.0.1:8081/api/tool-calls/$id/deny" \
+          -H "Authorization: Bearer $APPROVAL_TOKEN"
+      fi
+      ;;
+  esac
+done < <(tail -f /path/to/proxy.stderr)
+```
+
+### Auto-approve everything (non-production)
+
+For local testing only, auto-approve every paused call. This defeats the point of the pause rule — do not run it on anything you care about:
+
+```bash
+sqlite3 ~/.agent-receipts/audit.db \
+  "SELECT approval_id FROM tool_calls WHERE policy_action='pause' AND approved_by IS NULL;" |
+while read -r id; do
+  curl -sX POST "http://127.0.0.1:8081/api/tool-calls/$id/approve" \
+    -H "Authorization: Bearer $APPROVAL_TOKEN"
+done
+```
+
+## Auto-start with the MCP client
+
+The proxy's HTTP server runs inside the proxy process, so it starts and stops with the MCP client that launched the proxy (Claude Desktop, Claude Code, Codex). You don't need a separate launchd/systemd unit for the server itself — only for the approver, if you want one that outlives the client.
+
+A separate approver can be registered as a user-level service (macOS: `launchctl`; Linux: `systemd --user`) and pointed at the pinned `-http` port. Since the approval token rotates on every proxy restart, the approver must re-read stderr or the `approval_endpoint` event each time the proxy starts.

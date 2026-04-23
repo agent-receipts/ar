@@ -5,6 +5,10 @@ description: How to route OpenAI Codex MCP servers through the Agent Receipts pr
 
 OpenAI Codex (CLI and IDE extension) stores MCP configuration in `~/.codex/config.toml`. The Agent Receipts proxy wraps any MCP server transparently — Codex doesn't know or care that the proxy is there.
 
+:::caution[Approval server is required]
+With the default policy, high-risk writes (e.g. `create_pull_request`) are paused until approved. The configs below pin `-http 127.0.0.1:8082` so an approver has a stable URL to talk to. Skip the approver and those calls fail with `-32002: approval timeout or rejected` after the approval timeout — while reads and low-risk writes still succeed, making the symptom look tool-specific. See [Approval Server](/mcp-proxy/approval-ui/).
+:::
+
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
@@ -39,6 +43,7 @@ codex mcp add github-audited \
   -- "$(which mcp-proxy)" \
     -name github \
     -key "$HOME/.agent-receipts/github-proxy.pem" \
+    -http 127.0.0.1:8082 \
     -issuer-name Codex \
     -operator-id did:web:openai.com \
     -operator-name OpenAI \
@@ -67,6 +72,7 @@ command = "/Users/YOU/go/bin/mcp-proxy"
 args = [
   "-name", "github",
   "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+  "-http", "127.0.0.1:8082",
   "-issuer-name", "Codex",
   "-operator-id", "did:web:openai.com",
   "-operator-name", "OpenAI",
@@ -112,4 +118,4 @@ mcp-proxy verify \
 
 **Per-session chain IDs.** By default the proxy generates a new chain ID each session. Pass `-chain <id>` to persist a chain across sessions.
 
-**Approval server picks a random port.** By default the proxy binds the approval HTTP server on a random free port (logged to stderr at startup), so Codex can run alongside other MCP clients (Claude Code, Claude Desktop) with no port-conflict configuration. If you want a stable URL, add `-http 127.0.0.1:8080` (or any free port) to the args array.
+**`-http` is required, not optional.** The default policy pauses high-risk writes (`create_pull_request`, `merge_pull_request`, etc.) until approved. With the random-port default (`-http 127.0.0.1:0`), external approvers can't find the endpoint without parsing stderr, so paused calls silently time out. Pin a port (`127.0.0.1:8082` above) and run an approver against it — see [Approval Server](/mcp-proxy/approval-ui/). If you don't want approvals at all, load a custom `-rules` YAML with no `pause`/`block` rules.

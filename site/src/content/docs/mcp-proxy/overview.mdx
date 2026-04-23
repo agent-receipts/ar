@@ -7,6 +7,15 @@ The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP clien
 
 **Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy)
 
+:::caution[Approval server is required with the default policy]
+The built-in policy contains a `pause` rule (`pause_high_risk`, `min_risk_score: 50`). Any tool call scoring at or above 50 — most writes, like `create_pull_request` or `merge_pull_request` — is held until an approver POSTs a decision to the proxy's HTTP endpoint. Without an approver, those calls fail with `-32002: approval timeout or rejected` after the approval timeout elapses, while lower-scoring calls (reads, `push_files`, `create_branch`) still succeed — so the failure looks tool-specific.
+
+**You must either:**
+
+1. Pin `-http 127.0.0.1:8081` (or any free port) in your MCP client config and run an approver against it — see [Approval Server](/mcp-proxy/approval-ui/); **or**
+2. Load a custom `-rules` YAML that contains no `pause` or `block` rules (removing human-in-the-loop enforcement).
+:::
+
 ## Features
 
 - **Risk scoring** -- scores every tool call 0-100 based on operation type, sensitive keywords, and patterns
@@ -55,10 +64,13 @@ mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 mcp-proxy \
   -name github \
   -key private.pem \
+  -http 127.0.0.1:8081 \
   -rules rules.yaml \
   -taxonomy taxonomy.json \
   github-mcp-server stdio
 ```
+
+Then run an approver that POSTs to `http://127.0.0.1:8081/api/tool-calls/{id}/approve` as paused calls come in — see [Approval Server](/mcp-proxy/approval-ui/).
 
 ## Claude Desktop integration
 
@@ -72,6 +84,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-http", "127.0.0.1:8080",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -120,7 +133,7 @@ claude mcp list
 See the [Claude Code integration guide](/mcp-proxy/claude-code/) for a full walkthrough including project-scoped setup and `.mcp.json` configuration.
 
 :::tip
-Running multiple MCP clients simultaneously? See [Troubleshooting: port conflicts](/mcp-proxy/configuration/#port-conflict-when-multiple-mcp-clients-use-the-proxy) in the configuration guide.
+Running multiple MCP clients simultaneously? See [Troubleshooting: port conflicts](/mcp-proxy/configuration/#multiple-mcp-clients-running-the-proxy-simultaneously) in the configuration guide.
 :::
 
 ## What receipts look like

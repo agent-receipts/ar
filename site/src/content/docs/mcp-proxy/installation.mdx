@@ -53,6 +53,14 @@ The proxy intercepts stdin/stdout, logs every tool call, and forwards messages t
 
 For wiring the proxy into an actual client, jump to [Claude Code](/mcp-proxy/claude-code/), [Claude Desktop](/mcp-proxy/claude-desktop/), or [Codex](/mcp-proxy/codex/).
 
+## Approval server (required with the default policy)
+
+The default policy contains a `pause` rule (`pause_high_risk`, `min_risk_score: 50`). Any tool call above that score is held until an approver POSTs a decision. **Leave this unconfigured and every high-risk write — `create_pull_request`, `merge_pull_request`, destructive SQL, etc. — will fail with `-32002: approval timeout or rejected`** after `-approval-timeout` elapses. Lower-risk calls (reads, `push_files`, `create_branch`) still succeed, which makes the failure look tool-specific.
+
+**Minimum viable setup:** pin a port with `-http 127.0.0.1:8081` and run an approver against it. The dedicated [Approval Server](/mcp-proxy/approval-ui/) page documents the real HTTP routes (`POST /api/tool-calls/{id}/approve` and `/deny` — there is no index page at `/`) and shows a minimal shell approver.
+
+**If you don't want human-in-the-loop review**, opt out explicitly by loading a `-rules` YAML that contains no `pause` or `block` rules. The [Approval Server page](/mcp-proxy/approval-ui/#opting-out-of-approval) has templates. Do not leave the default policy active without an approver — that state is a misconfiguration, not a mode of operation.
+
 ## Persistent signing key
 
 Generate a key pair and use it across sessions:
@@ -68,5 +76,6 @@ mcp-proxy -key private.pem npx -y @modelcontextprotocol/server-filesystem ~/Docu
 
 ## Next steps
 
+- [Approval Server](/mcp-proxy/approval-ui/) — required reading if the default policy is active
 - [Configuration](/mcp-proxy/configuration/) for CLI flags, policy rules, redaction, and encryption
 - [CLI Commands](/reference/cli-commands/) for querying and verifying the audit trail
