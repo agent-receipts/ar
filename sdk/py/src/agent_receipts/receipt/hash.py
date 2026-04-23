@@ -190,8 +190,10 @@ def hash_receipt(receipt: AgentReceipt | dict[str, Any]) -> str:
     d.pop("proof", None)
 
     # Ensure previous_receipt_hash is preserved as null when None.
-    cs: dict[str, Any] = d.get("credentialSubject", {})
-    chain: dict[str, Any] = cs.get("chain", {})
+    # Use setdefault so an injected nested dict actually attaches to `d` —
+    # `.get(key, {})` returns a temporary that mutations would discard.
+    cs: dict[str, Any] = d.setdefault("credentialSubject", {})
+    chain: dict[str, Any] = cs.setdefault("chain", {})
     if "previous_receipt_hash" not in chain:
         chain["previous_receipt_hash"] = None
 
