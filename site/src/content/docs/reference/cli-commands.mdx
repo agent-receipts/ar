@@ -5,6 +5,8 @@ description: Command reference for the MCP Proxy audit CLI.
 
 The MCP Proxy includes subcommands for querying and verifying the audit trail.
 
+> The default `-db` and `-receipt-db` paths shown below resolve via Go's `os.UserHomeDir()`. On Unix and macOS this is `$HOME`; on Windows it is `%USERPROFILE%`.
+
 ## `mcp-proxy -version`
 
 Print the version and exit.
