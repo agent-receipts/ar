@@ -44,9 +44,11 @@ echo "server:     $(which github-mcp-server)"
 
 On Windows (PowerShell), use `(Get-Command mcp-proxy).Source`, `$env:USERPROFILE`, and `(Get-Command github-mcp-server).Source` to obtain the equivalent values.
 
-If the file doesn't exist yet, create it. If it exists but only contains app preferences (e.g. `{"preferences": {...}}`), that's normal — `mcpServers` is a top-level sibling key; add it alongside whatever is already there rather than replacing the file.
+If the file doesn't exist yet, create it.
 
-Substitute the four printed values into the `mcpServers` block:
+If it already contains app preferences (for example, `{"preferences": {...}}`), that's normal. Add `mcpServers` as another top-level key rather than replacing the file — the result should look like `{"preferences": {...}, "mcpServers": {...}}` (mind the comma between sibling keys).
+
+Substitute the printed absolute paths and binary values into the `mcpServers` block below, and replace `YOUR_TOKEN` in `env` with your actual GitHub personal access token:
 
 ```json
 {
