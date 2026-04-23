@@ -10,7 +10,7 @@
     "type",
     "version",
     "issuer",
-    "validFrom",
+    "issuanceDate",
     "credentialSubject",
     "proof"
   ],
@@ -42,14 +42,14 @@
       "description": "MUST be [\"VerifiableCredential\", \"AgentReceipt\"]."
     },
     "version": {
-      "enum": ["0.1.0", "0.2.0"],
-      "description": "Protocol version. MUST be \"0.1.0\" or \"0.2.0\". Verifiers MUST accept both."
+      "enum": ["0.1.0", "0.2.0", "0.2.1"],
+      "description": "Protocol version. MUST be \"0.1.0\", \"0.2.0\", or \"0.2.1\". Verifiers MUST accept all three."
     },
     "issuer": { "$ref": "#/$defs/issuer" },
-    "validFrom": {
+    "issuanceDate": {
       "type": "string",
       "format": "date-time",
-      "description": "ISO 8601 datetime when the receipt was issued. MAY differ from action.timestamp in batched scenarios."
+      "description": "ISO 8601 datetime when the receipt was issued. MAY differ from action.timestamp in batched scenarios. Uses the VC 1.x field name; see ADR-0009 for the rationale."
     },
     "credentialSubject": { "$ref": "#/$defs/credentialSubject" },
     "proof": { "$ref": "#/$defs/proof" }
@@ -165,9 +165,9 @@
           "description": "ISO 8601 datetime when the action was executed."
         },
         "trusted_timestamp": {
-          "type": ["string", "null"],
+          "type": "string",
           "contentEncoding": "base64",
-          "description": "Base64-encoded RFC 3161 TimeStampToken (DER encoding), or null if not present."
+          "description": "Base64-encoded RFC 3161 TimeStampToken (DER encoding). Absent when not present; MUST NOT be null."
         }
       },
       "allOf": [
@@ -222,8 +222,8 @@
           "description": "The result of the action."
         },
         "error": {
-          "type": ["string", "null"],
-          "description": "Error message if status is \"failure\"."
+          "type": "string",
+          "description": "Error message if status is \"failure\". Absent when not applicable; MUST NOT be null."
         },
         "reversible": {
           "type": "boolean",
@@ -287,8 +287,8 @@
           "description": "ISO 8601 datetime when authorization expires."
         },
         "grant_ref": {
-          "type": ["string", "null"],
-          "description": "Reference to the authorization grant (e.g. a Grantex grant token)."
+          "type": "string",
+          "description": "Reference to the authorization grant (e.g. a Grantex grant token). Absent when not applicable; MUST NOT be null."
         }
       }
     },

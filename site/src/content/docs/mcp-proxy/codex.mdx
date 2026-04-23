@@ -10,6 +10,13 @@ OpenAI Codex (CLI and IDE extension) stores MCP configuration in `~/.codex/confi
 - [mcp-proxy installed](/mcp-proxy/installation/)
 - A signing key pair generated (see below)
 - Codex installed (`npm install -g @openai/codex` or via the IDE extension)
+- The MCP server you want to audit. The examples below wrap GitHub's official MCP server:
+
+  ```bash
+  brew install github-mcp-server
+  ```
+
+  This puts a `github-mcp-server` binary on your `$PATH`. Verify with `which github-mcp-server`.
 
 ## Generate a signing key
 
@@ -24,19 +31,18 @@ Use absolute paths everywhere — Codex launches MCP servers with a clean enviro
 
 ## Configure via CLI
 
-Use `codex mcp add` to register the proxy wrapping any MCP server:
+Use `codex mcp add` to register the proxy wrapping any MCP server. The shell resolves the proxy, key, and server paths at paste time (replace only `YOUR_TOKEN`):
 
 ```bash
 codex mcp add github-audited \
   --env GITHUB_PERSONAL_ACCESS_TOKEN=YOUR_TOKEN \
-  -- /Users/YOU/go/bin/mcp-proxy \
+  -- "$(which mcp-proxy)" \
     -name github \
-    -key /Users/YOU/.agent-receipts/github-proxy.pem \
-    -receipt-db /Users/YOU/.agent-receipts/receipts.db \
+    -key "$HOME/.agent-receipts/github-proxy.pem" \
     -issuer-name Codex \
     -operator-id did:web:openai.com \
     -operator-name OpenAI \
-    /opt/homebrew/bin/mcp-server-github
+    "$(which github-mcp-server)" stdio
 ```
 
 Add `--scope user` to make the server available across all projects (default is project-scoped).
@@ -45,7 +51,15 @@ Add `--scope user` to make the server available across all projects (default is 
 
 ## Configure via config.toml
 
-Alternatively, edit `~/.codex/config.toml` directly:
+Alternatively, edit `~/.codex/config.toml` directly. TOML doesn't shell-expand, so print your absolute paths first:
+
+```bash
+echo "command: $(which mcp-proxy)"
+echo "key:     $HOME/.agent-receipts/github-proxy.pem"
+echo "server:  $(which github-mcp-server)"
+```
+
+Then substitute them into the template:
 
 ```toml
 [mcp_servers.github-audited]
@@ -53,11 +67,10 @@ command = "/Users/YOU/go/bin/mcp-proxy"
 args = [
   "-name", "github",
   "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-  "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
   "-issuer-name", "Codex",
   "-operator-id", "did:web:openai.com",
   "-operator-name", "OpenAI",
-  "/opt/homebrew/bin/mcp-server-github"
+  "/opt/homebrew/bin/github-mcp-server", "stdio"
 ]
 enabled = true
 
@@ -80,13 +93,12 @@ Or check active servers inside the Codex TUI with `/mcp`.
 After making tool calls through Codex, inspect the receipt store from your terminal:
 
 ```bash
-# List all receipts
-mcp-proxy list -receipt-db ~/.agent-receipts/receipts.db
+# List all receipts (uses the default ~/.agent-receipts/receipts.db)
+mcp-proxy list
 
 # Verify chain integrity
 mcp-proxy verify \
   -key ~/.agent-receipts/github-proxy-pub.pem \
-  -receipt-db ~/.agent-receipts/receipts.db \
   <chain-id>
 ```
 

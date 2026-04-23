@@ -102,7 +102,7 @@ The agent (or agent platform) that performed the action and produced the receipt
     "session_id": "session_xyz789"
   },
 
-  "validFrom": "2026-03-31T14:30:00Z",
+  "issuanceDate": "2026-03-31T14:30:00Z",
 
   "credentialSubject": {
     "principal": {
@@ -180,7 +180,7 @@ For lightweight or high-frequency actions, a minimal receipt containing only req
   "type": ["VerifiableCredential", "AgentReceipt"],
   "version": "0.1.0",
   "issuer": { "id": "did:agent:claude-cowork-instance-abc123" },
-  "validFrom": "2026-03-31T14:31:00Z",
+  "issuanceDate": "2026-03-31T14:31:00Z",
   "credentialSubject": {
     "principal": { "id": "did:user:otto-abc" },
     "action": {
@@ -219,7 +219,7 @@ All five `proof` fields are required even in the minimal form.
 | `type` | Yes | MUST be `["VerifiableCredential", "AgentReceipt"]`. |
 | `version` | Yes | Spec version this receipt conforms to. MUST be `"0.1.0"` for this version. |
 | `issuer` | Yes | The agent or platform that issued the receipt. See §4.3.1. |
-| `validFrom` | Yes | ISO 8601 datetime when the receipt was issued. This is the *receipt* timestamp (when the issuer created and signed the credential), which MAY differ from `action.timestamp` (when the action itself was executed). In real-time emitters these will be near-identical; in batched or retroactive scenarios they may diverge significantly. Conforms to VC Data Model 2.0. |
+| `issuanceDate` | Yes | ISO 8601 datetime when the receipt was issued. This is the *receipt* timestamp (when the issuer created and signed the credential), which MAY differ from `action.timestamp` (when the action itself was executed). In real-time emitters these will be near-identical; in batched or retroactive scenarios they may diverge significantly. Uses the VC Data Model 1.x field name; see ADR-0009 for the rationale. The VC 2.0 name `validFrom` is **not** used. |
 | `credentialSubject` | Yes | The receipt payload. See §4.3.2. |
 | `proof` | Yes | Cryptographic proof. See §4.3.3. |
 
@@ -426,6 +426,15 @@ Risk levels are assigned by action type as defaults. Implementations MAY escalat
 
 For hashing and signing, receipts MUST be serialized using the JSON Canonicalization Scheme (RFC 8785) with the `proof` field removed before hashing. This canonicalization step is aligned with the use of RFC 8785 in the W3C Verifiable Credentials Data Integrity specification; however, the overall signing procedure defined in this document (see §7.2 and §10.2) is intentionally simplified and is not a full implementation of the W3C Data Integrity algorithm.
 
+#### 7.1.1 Null and optional field handling
+
+Implementations MUST apply the following normalisation before serializing to RFC 8785:
+
+- **Required-nullable fields** — fields listed in the schema `required` array whose type permits `null` MUST be emitted with their value, including the explicit JSON `null` literal when the value is null. The only current required-nullable field is `credentialSubject.chain.previous_receipt_hash` (null for the first receipt in a chain, a hash string for all subsequent receipts).
+- **Optional fields** — fields not listed in `required` MUST NOT be emitted when their value is null or absent. An SDK that receives `null` on an optional field MUST normalise it to absent before canonicalising. The form `"error":null` is not a valid canonical representation.
+
+This rule ensures all three SDKs produce byte-identical canonical output for the same logical receipt regardless of whether an optional field is set to `null` or simply omitted by the caller. Cross-SDK test vectors in `cross-sdk-tests/canonicalization_vectors.json` pin the expected behaviour and are intended to enforce this invariant once integrated into each SDK's CI (tracked in #82, #86, #118).
+
 ### 7.2 Signing
 
 The issuer MUST sign the canonical receipt (proof field excluded) with its Ed25519 private key. The signature MUST be encoded as a multibase string (`z`-prefixed base58btc) and placed in `proof.proofValue`.
@@ -506,7 +515,7 @@ To verify a single Agent Receipt:
 1. **Schema validation.** Validate the receipt against the JSON Schema (§4.4). If validation fails, verification fails with `MALFORMED_RECEIPT`.
 2. **DID resolution.** Resolve the DID URL in `proof.verificationMethod` to obtain the issuer's public key. The resolution mechanism depends on the DID method used (see §9.6). If the DID cannot be resolved, verification fails with `UNRESOLVABLE_DID`.
 3. **Signature verification.** Compute the RFC 8785 canonical serialization (UTF-8 bytes) of the receipt with the `proof` field removed. Verify the Ed25519 signature in `proof.proofValue` (decoded from multibase z-base58btc) directly over these canonical bytes using the resolved public key. If verification fails, the receipt is `INVALID_SIGNATURE`.
-4. **Timestamp validation.** If `action.trusted_timestamp` is present and non-null, verify it per §7.7. If the trusted timestamp is invalid, the receipt is `INVALID_TIMESTAMP`. If no trusted timestamp is present, the receipt relies on `validFrom` and `action.timestamp` which are issuer-asserted and not independently verifiable.
+4. **Timestamp validation.** If `action.trusted_timestamp` is present, verify it per §7.7. If the trusted timestamp is invalid, the receipt is `INVALID_TIMESTAMP`. If no trusted timestamp is present, the receipt relies on `issuanceDate` and `action.timestamp` which are issuer-asserted and not independently verifiable.
 5. **Chain context.** If verifying as part of a chain, perform chain integrity checks per §7.3. If verifying a standalone receipt, chain fields indicate the issuer-asserted position in a chain. A verifier MAY perform local consistency checks (e.g., that `sequence` is a positive integer and `previous_receipt_hash` is well-formed), but the receipt's actual chain position cannot be confirmed without at least the preceding receipt.
 6. **Delegation context.** If the receipt includes a `delegation` field, verify per §7.6.
 

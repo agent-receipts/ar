@@ -5,6 +5,8 @@ description: Command reference for the MCP Proxy audit CLI.
 
 The MCP Proxy includes subcommands for querying and verifying the audit trail.
 
+> The default `-db` and `-receipt-db` paths shown below resolve via Go's `os.UserHomeDir()`. On Unix and macOS this is `$HOME`; on Windows this uses the OS user home directory, typically `%USERPROFILE%`.
+
 ## `mcp-proxy -version`
 
 Print the version and exit.
@@ -34,7 +36,7 @@ mcp-proxy list -json                      # JSON output
 | `-chain` | Filter by chain ID |
 | `-limit` | Maximum number of receipts to return (default: `50`) |
 | `-json` | Output as JSON |
-| `-receipt-db` | Receipt store path (default: `receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
 
 ### Example output
 
@@ -65,7 +67,7 @@ mcp-proxy inspect -key public.pem <receipt-id>   # verify signature
 | Flag | Description |
 |------|-------------|
 | `-key` | Public key PEM file to verify the receipt signature |
-| `-receipt-db` | Receipt store path (default: `receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
 
 ## `mcp-proxy verify`
 
@@ -78,7 +80,7 @@ mcp-proxy verify -key public.pem <chain-id>
 | Flag | Description |
 |------|-------------|
 | `-key` | Public key PEM file (required) |
-| `-receipt-db` | Receipt store path (default: `receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
 
 ## `mcp-proxy export`
 
@@ -91,7 +93,7 @@ mcp-proxy export <chain-id> > chain.json
 
 | Flag | Description |
 |------|-------------|
-| `-receipt-db` | Receipt store path (default: `receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
 
 ## `mcp-proxy stats`
 
@@ -105,7 +107,7 @@ mcp-proxy stats -json
 | Flag | Description |
 |------|-------------|
 | `-json` | Output as JSON |
-| `-receipt-db` | Receipt store path (default: `receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
 
 ## `mcp-proxy timing`
 
@@ -120,7 +122,7 @@ mcp-proxy timing -limit 10                    # top 10 tools
 
 | Flag | Description |
 |------|-------------|
-| `-db` | Audit database path (default: `audit.db`) |
+| `-db` | Audit database path (default: `$HOME/.agent-receipts/audit.db`) |
 | `-session` | Filter by session ID |
 | `-limit` | Maximum number of tools to show (default: `20`) |
 | `-json` | Output as JSON |
@@ -128,7 +130,7 @@ mcp-proxy timing -limit 10                    # top 10 tools
 ### Example output
 
 ```
-$ mcp-proxy timing -db ~/.agent-receipts/audit.db
+$ mcp-proxy timing
 Tool call timing (73 calls)
 
 Per-tool averages:

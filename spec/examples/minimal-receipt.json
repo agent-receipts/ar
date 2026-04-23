@@ -9,7 +9,7 @@
   "issuer": {
     "id": "did:agent:example-agent-instance-001"
   },
-  "validFrom": "2026-03-31T14:31:00Z",
+  "issuanceDate": "2026-03-31T14:31:00Z",
   "credentialSubject": {
     "principal": {
       "id": "did:user:alice"

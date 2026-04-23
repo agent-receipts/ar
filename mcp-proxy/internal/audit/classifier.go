@@ -38,6 +38,33 @@ func ClassifyOperation(toolName string) string {
 		}
 	}
 
+	// Suffix checks cover resource-first naming like `pull_request_read`
+	// (github-mcp-server) where the action word trails the resource.
+	deleteSuffixes := []string{"_delete", "_remove"}
+	for _, s := range deleteSuffixes {
+		if strings.HasSuffix(lower, s) {
+			return "delete"
+		}
+	}
+
+	execSuffixes := []string{"_run", "_exec"}
+	for _, s := range execSuffixes {
+		if strings.HasSuffix(lower, s) {
+			return "execute"
+		}
+	}
+
+	writeSuffixes := []string{"_create", "_update", "_write"}
+	for _, s := range writeSuffixes {
+		if strings.HasSuffix(lower, s) {
+			return "write"
+		}
+	}
+
+	if strings.HasSuffix(lower, "_read") {
+		return "read"
+	}
+
 	return "unknown"
 }
 

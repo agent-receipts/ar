@@ -26,7 +26,7 @@ Key structural choices:
 - **`credentialSubject`** carries the entire receipt payload: principal, action, intent, outcome, authorization, delegation, and chain linkage. This keeps domain-specific content cleanly separated from the VC envelope.
 - **`proof`** follows the W3C VC Data Integrity structure with `type`, `created`, `verificationMethod`, `proofPurpose`, and `proofValue`. The proof type is `Ed25519Signature2020` (see ADR-0001).
 - **`id`** is a required unique identifier for the receipt (e.g., a URN). Present in the JSON schema's `required` array but not defined by the protocol beyond uniqueness.
-- **`validFrom`** serves as the issuance timestamp per VC Data Model 2.0 naming. **Implementation note:** All SDKs currently serialize this field as `issuanceDate` (VC 1.x naming). The Go SDK documents this explicitly. Either the schema or the SDKs must be updated for consistency — see #83.
+- **`issuanceDate`** is the committed field name for the issuance timestamp. This uses the VC Data Model 1.x name; the VC 2.0 equivalent `validFrom` is not used. The schema and all SDKs are aligned on `issuanceDate`; see ADR-0009 for the rationale and #83 for the original tracking issue.
 - **`version`** is a protocol extension field (`"0.1.0"`) not defined by the VC Data Model. VC tooling that validates strictly against the VC schema should ignore unrecognized top-level fields.
 
 The protocol uses the W3C VC JSON shape but does not require a VC library dependency. Receipts may be constructed with plain JSON serialization (spec 10.1). No JSON-LD processing is required — the `@context` field is included for VC ecosystem compatibility but is not dereferenced at runtime.
@@ -65,7 +65,7 @@ The protocol does not include a `holder` field, nonce, or challenge-response mec
 
 ### Envelope field manipulation
 
-The separation of envelope (`issuer`, `validFrom`, `version`) from payload (`credentialSubject`) means both layers are covered by the signature. However, the `@context` and `type` fields are also signed, and any modification to these fields will break verification. Implementations should verify the full receipt structure, not just the `credentialSubject`, when checking signature validity.
+The separation of envelope (`issuer`, `issuanceDate`, `version`) from payload (`credentialSubject`) means both layers are covered by the signature. However, the `@context` and `type` fields are also signed, and any modification to these fields will break verification. Implementations should verify the full receipt structure, not just the `credentialSubject`, when checking signature validity.
 
 ## Known Risks
 
@@ -76,7 +76,7 @@ The separation of envelope (`issuer`, `validFrom`, `version`) from payload (`cre
 
 ## Consequences
 
-- Receipt schema follows the W3C VC Data Model 2.0 structure. All receipts have `@context`, `id`, `type`, `issuer`, `validFrom`, `credentialSubject`, and `proof` at the top level.
+- Receipt schema follows the W3C VC Data Model 2.0 structure. All receipts have `@context`, `id`, `type`, `issuer`, `issuanceDate`, `credentialSubject`, and `proof` at the top level. The field name `issuanceDate` (VC 1.x) is used in preference to VC 2.0's `validFrom`; see ADR-0009.
 - All SDKs (Go, Python, TypeScript) must implement the VC envelope structure and proof format per W3C VC Data Integrity, with the simplifications documented in spec 10.2.
 - Deviations from W3C defaults (RFC 8785 canonicalization, simplified signing input) must be explicitly documented in SDK conformance statements and any interoperability guides.
 - Interoperability with W3C VC tooling is possible but not guaranteed without full compliance. Receipts can be parsed by generic VC libraries, but verification may fail if the library expects the full Data Integrity signing algorithm.

@@ -13,7 +13,7 @@ block-beta
 
     version["★ version\n0.1.0"]
     issuer["★ issuer\nid · type · name\noperator · model\nsession_id"]
-    validFrom["★ validFrom\nISO 8601"]
+    issuanceDate["★ issuanceDate\nISO 8601"]
 
     block:cs["★ credentialSubject"]:3
       columns 2

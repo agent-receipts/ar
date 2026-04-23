@@ -44,19 +44,20 @@ The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, for
 ## Quick start
 
 ```bash
-# Install
-go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
+# Install (Homebrew, macOS/Linux)
+brew install agent-receipts/tap/mcp-proxy
+# …or from source: go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
 
-# Wrap any MCP server
-mcp-proxy node /path/to/mcp-server.js
+# Wrap any MCP server (example: the filesystem server via npx)
+mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 
-# With configuration
+# With configuration (example: GitHub's official MCP server — brew install github-mcp-server)
 mcp-proxy \
   -name github \
   -key private.pem \
   -rules rules.yaml \
   -taxonomy taxonomy.json \
-  node /path/to/github-mcp-server.js
+  github-mcp-server stdio
 ```
 
 ## Claude Desktop integration
@@ -71,13 +72,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-        "-db", "/Users/YOU/.agent-receipts/audit.db",
-        "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
         "-taxonomy", "/Users/YOU/.agent-receipts/github_taxonomy.json",
-        "/opt/homebrew/bin/mcp-server-github"
+        "/opt/homebrew/bin/github-mcp-server", "stdio"
       ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
@@ -99,14 +98,12 @@ claude mcp add-json github-audited --scope user '{
   "args": [
     "-name", "github",
     "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-    "-db", "/Users/YOU/.agent-receipts/audit.db",
-    "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
     "-http", "127.0.0.1:8081",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
     "-taxonomy", "/Users/YOU/.agent-receipts/github_taxonomy.json",
-    "/opt/homebrew/bin/mcp-server-github"
+    "/opt/homebrew/bin/github-mcp-server", "stdio"
   ],
   "env": {
     "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"

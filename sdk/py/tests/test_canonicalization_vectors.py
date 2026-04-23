@@ -31,14 +31,6 @@ def _sha256_hex(data: str) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
-# JSON has no signed-zero literal that round-trips through json.load: -0 parses
-# as the int 0, so we substitute -0.0 (a float) for the negative-zero vector to
-# exercise _canonicalize_number rather than the int branch.
-_VECTOR_INPUT_OVERRIDES: dict[str, object] = {
-    "number_negative_zero": -0.0,
-}
-
-
 # ---------------------------------------------------------------------------
 # Canonicalization vectors
 # ---------------------------------------------------------------------------
@@ -49,9 +41,8 @@ def _canon_params() -> list[pytest.param]:
     params = []
     for v in data["canonicalization_vectors"]:
         name = v["name"]
-        inp = _VECTOR_INPUT_OVERRIDES.get(name, v["input"])
         canonical = v["canonical"]
-        params.append(pytest.param(inp, canonical, id=name))
+        params.append(pytest.param(v["input"], canonical, id=name))
     return params
 
 
@@ -73,8 +64,7 @@ def _canon_hash_params() -> list[pytest.param]:
         name = v["name"]
         expected_hash = v.get("expectedHash")
         if expected_hash and expected_hash not in ("COMPUTE_AT_COMMIT_TIME",):
-            inp = _VECTOR_INPUT_OVERRIDES.get(name, v["input"])
-            params.append(pytest.param(inp, expected_hash, id=name))
+            params.append(pytest.param(v["input"], expected_hash, id=name))
     return params
 
 

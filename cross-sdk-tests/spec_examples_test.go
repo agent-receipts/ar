@@ -10,14 +10,13 @@ import (
 )
 
 // specReceipt is a loose representation of a spec example receipt.
-// Uses validFrom (spec convention) rather than issuanceDate (SDK convention).
 type specReceipt struct {
 	Context           []string              `json:"@context"`
 	ID                string                `json:"id"`
 	Type              []string              `json:"type"`
 	Version           string                `json:"version"`
 	Issuer            map[string]any        `json:"issuer"`
-	ValidFrom         string                `json:"validFrom"`
+	IssuanceDate      string                `json:"issuanceDate"`
 	CredentialSubject specCredentialSubject `json:"credentialSubject"`
 	Proof             map[string]any        `json:"proof"`
 }
@@ -81,16 +80,16 @@ func TestSpecExamplesHaveRequiredFields(t *testing.T) {
 				t.Errorf("unexpected type: %v", r.Type)
 			}
 
-			if r.Version != "0.1.0" && r.Version != "0.2.0" {
-				t.Errorf("unexpected version: %s (expected 0.1.0 or 0.2.0)", r.Version)
+			if r.Version != "0.1.0" && r.Version != "0.2.0" && r.Version != "0.2.1" {
+				t.Errorf("unexpected version: %s (expected 0.1.0, 0.2.0, or 0.2.1)", r.Version)
 			}
 
 			if r.Issuer["id"] == nil || r.Issuer["id"] == "" {
 				t.Error("missing issuer.id")
 			}
 
-			if r.ValidFrom == "" {
-				t.Error("missing validFrom")
+			if r.IssuanceDate == "" {
+				t.Error("missing issuanceDate")
 			}
 
 			if r.CredentialSubject.Principal["id"] == nil {
