@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -305,11 +306,28 @@ type Percentiles struct {
 	P99 int64 `json:"p99"`
 }
 
+// ToolPolicyBreakdown holds per-tool policy action counts.
+type ToolPolicyBreakdown struct {
+	ToolName string `json:"tool_name"`
+	Pass     int    `json:"pass"`
+	Flag     int    `json:"flag"`
+	Pause    int    `json:"pause"`
+	Block    int    `json:"block"`
+	Rejected int    `json:"rejected"`
+	Total    int    `json:"total"`
+}
+
 // TimingStats holds aggregate timing data for tool calls.
+//
+// Total counts every tool_calls row, including blocked/rejected calls that
+// never reached upstream and therefore have no duration. TimedTotal is the
+// subset used for duration-based averages and percentiles.
 type TimingStats struct {
-	Total       int                    `json:"total"`
-	ByTool      []ToolTiming           `json:"by_tool"`
-	Percentiles map[string]Percentiles `json:"percentiles"`
+	Total         int                    `json:"total"`
+	TimedTotal    int                    `json:"timed_total"`
+	ByTool        []ToolTiming           `json:"by_tool"`
+	Percentiles   map[string]Percentiles `json:"percentiles"`
+	PolicyActions []ToolPolicyBreakdown  `json:"policy_actions"`
 }
 
 // TimingStats queries aggregate timing data from the tool_calls table.
@@ -317,19 +335,32 @@ type TimingStats struct {
 func (s *Store) TimingStats(sessionID string, limit int) (TimingStats, error) {
 	var st TimingStats
 
-	// Total count.
-	countQuery := "SELECT COUNT(*) FROM tool_calls WHERE duration_ms IS NOT NULL"
+	// Two counts: Total is every row (including blocked/rejected), TimedTotal
+	// is the subset that has a duration and drives percentiles/averages.
+	totalQuery := "SELECT COUNT(*) FROM tool_calls"
+	timedQuery := "SELECT COUNT(*) FROM tool_calls WHERE duration_ms IS NOT NULL"
 	args := []any{}
 	if sessionID != "" {
-		countQuery += " AND session_id = ?"
+		totalQuery += " WHERE session_id = ?"
+		timedQuery += " AND session_id = ?"
 		args = append(args, sessionID)
 	}
-	if err := s.db.QueryRow(countQuery, args...).Scan(&st.Total); err != nil {
+	if err := s.db.QueryRow(totalQuery, args...).Scan(&st.Total); err != nil {
 		return TimingStats{}, err
 	}
-	if st.Total == 0 {
+	if err := s.db.QueryRow(timedQuery, args...).Scan(&st.TimedTotal); err != nil {
+		return TimingStats{}, err
+	}
+	if st.TimedTotal == 0 {
 		st.ByTool = []ToolTiming{}
 		st.Percentiles = map[string]Percentiles{}
+		// Still compute the policy breakdown — rejected/blocked rows have no
+		// duration_ms but callers need the counts to debug silent failures.
+		breakdown, err := s.policyActionBreakdown(sessionID, limit)
+		if err != nil {
+			return TimingStats{}, err
+		}
+		st.PolicyActions = breakdown
 		return st, nil
 	}
 
@@ -373,6 +404,13 @@ func (s *Store) TimingStats(sessionID string, limit int) (TimingStats, error) {
 		return TimingStats{}, err
 	}
 
+	// Policy action breakdown — includes blocked/rejected rows (no duration).
+	breakdown, err := s.policyActionBreakdown(sessionID, limit)
+	if err != nil {
+		return TimingStats{}, err
+	}
+	st.PolicyActions = breakdown
+
 	// Percentiles via ordered subqueries.
 	st.Percentiles = map[string]Percentiles{}
 	phases := []struct {
@@ -395,6 +433,74 @@ func (s *Store) TimingStats(sessionID string, limit int) (TimingStats, error) {
 	}
 
 	return st, nil
+}
+
+// policyActionBreakdown counts rows grouped by tool_name and policy_action.
+// Unlike TimingStats this includes rows without a duration (blocked/rejected
+// calls that never reached the upstream server).
+func (s *Store) policyActionBreakdown(sessionID string, limit int) ([]ToolPolicyBreakdown, error) {
+	q := `SELECT tool_name, policy_action, COUNT(*) FROM tool_calls`
+	args := []any{}
+	if sessionID != "" {
+		q += " WHERE session_id = ?"
+		args = append(args, sessionID)
+	}
+	q += " GROUP BY tool_name, policy_action"
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byTool := map[string]*ToolPolicyBreakdown{}
+	order := []string{}
+	for rows.Next() {
+		var tool, action string
+		var count int
+		if err := rows.Scan(&tool, &action, &count); err != nil {
+			return nil, err
+		}
+		b, ok := byTool[tool]
+		if !ok {
+			b = &ToolPolicyBreakdown{ToolName: tool}
+			byTool[tool] = b
+			order = append(order, tool)
+		}
+		switch action {
+		case "pass":
+			b.Pass += count
+		case "flag":
+			b.Flag += count
+		case "pause":
+			b.Pause += count
+		case "block":
+			b.Block += count
+		case "rejected":
+			b.Rejected += count
+		}
+		b.Total += count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]ToolPolicyBreakdown, 0, len(order))
+	for _, name := range order {
+		result = append(result, *byTool[name])
+	}
+	// Sort by total descending so hot tools appear first. Break ties on tool
+	// name so CLI output and JSON snapshots stay deterministic.
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Total != result[j].Total {
+			return result[i].Total > result[j].Total
+		}
+		return result[i].ToolName < result[j].ToolName
+	})
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, nil
 }
 
 // percentiles computes p50/p95/p99 for a column using ordered offset.

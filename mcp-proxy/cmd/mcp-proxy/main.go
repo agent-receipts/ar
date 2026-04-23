@@ -65,6 +65,9 @@ func main() {
 		case "timing":
 			cmdTiming(os.Args[2:])
 			return
+		case "doctor":
+			cmdDoctor(os.Args[2:])
+			return
 		case "serve":
 			os.Args = append(os.Args[:1], os.Args[2:]...)
 			// Fall through to serve.
@@ -89,13 +92,13 @@ func serve() {
 		operatorName = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
 		principalDID = flag.String("principal", "did:user:unknown", "Principal DID")
 		chainID      = flag.String("chain", "", "Chain ID (auto-generated if empty)")
-		httpAddr     = flag.String("http", "127.0.0.1:0", "HTTP address for approval endpoints (default: random port)")
+		httpAddr     = flag.String("http", "127.0.0.1:0", "HTTP address for approval endpoints (default: random port; pass \"none\" to disable the approver)")
 		approvalWait = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
 		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
-		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing\n\n")
+		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing, doctor\n\n")
 		fmt.Fprintf(os.Stderr, "  -version\n\tPrint version and exit\n")
 		flag.PrintDefaults()
 	}
@@ -230,8 +233,12 @@ func serve() {
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
 
-	// Start HTTP server for approvals only when pause rules exist.
-	if engine.HasPauseRules() {
+	// Start HTTP server for approvals only when pause rules exist and the
+	// operator hasn't disabled the approver via -http=none. Only the literal
+	// "none" counts as an explicit opt-out; empty -http (e.g. `-http=`) is
+	// treated as not-configured so the banner still warns.
+	approverDisabled := strings.EqualFold(strings.TrimSpace(*httpAddr), "none")
+	if engine.HasPauseRules() && !approverDisabled && *httpAddr != "" {
 		ln, err := net.Listen("tcp", *httpAddr)
 		if err != nil {
 			log.Fatalf("mcp-proxy: http server: %v", err)
@@ -252,6 +259,12 @@ func serve() {
 		fmt.Fprintln(os.Stderr, string(endpointJSON))
 		go startHTTPServer(ln, approvals, approvalToken)
 	}
+
+	// Boot-time summary: one line covers the bulk of "why did my call fail?"
+	// debugging. A WARN variant fires when the approver is absent but the
+	// ruleset needs one, which is the #1 silent-failure mode. Explicit
+	// -http=none is NOT treated as misconfiguration.
+	emitStartupBanner(engine.Describe(), approvalURL, approverDisabled)
 
 	handler := func(direction string, raw []byte, msg *proxy.Message) *proxy.HandlerResult {
 		method := ""
@@ -323,6 +336,7 @@ func serve() {
 					}
 				}
 
+				requestedAt := time.Now()
 				pendingMu.Lock()
 				pendingCalls[jsonrpcID] = &pendingCall{
 					msgID:        msgID,
@@ -333,7 +347,7 @@ func serve() {
 					riskScore:    riskScore,
 					reasons:      reasons,
 					policyAct:    decision.Action,
-					timestamp:    time.Now(),
+					timestamp:    requestedAt,
 					policyEvalUs: policyEvalUs,
 				}
 				pendingMu.Unlock()
@@ -342,6 +356,21 @@ func serve() {
 
 				if decision.Action == "block" {
 					log.Printf("mcp-proxy: BLOCKED %s (rule: %s, risk: %d)", toolName, decision.RuleName, riskScore)
+					emitPolicyEvent(toolName, decision.RuleName, riskScore, "block", approvalURL, "blocked", 0)
+					pendingMu.Lock()
+					delete(pendingCalls, jsonrpcID)
+					pendingMu.Unlock()
+					recordRejectedToolCall(auditDB, sessionID, rejectedCall{
+						requestMsgID: msgID,
+						toolName:     toolName,
+						arguments:    redactedArgs,
+						opType:       opType,
+						riskScore:    riskScore,
+						reasons:      reasons,
+						policyAction: "block",
+						requestedAt:  requestedAt,
+						policyEvalUs: policyEvalUs,
+					})
 					return &proxy.HandlerResult{
 						Block:          true,
 						ClientResponse: proxy.MakeErrorResponse(msg.ID, -32001, fmt.Sprintf("blocked by policy: %s", decision.Reason)),
@@ -352,16 +381,39 @@ func serve() {
 					approvalID := generateToken(16)
 					log.Printf("mcp-proxy: PAUSED %s (rule: %s, risk: %d) — approval id: %s", toolName, decision.RuleName, riskScore, approvalID)
 					waitStart := time.Now()
-					approvalStatus := approvals.WaitForApproval(approvalID, *approvalWait)
+					var approvalStatus audit.ApprovalStatus
+					if approvalURL == "" {
+						// No approver wired up — fail fast instead of timing out.
+						approvalStatus = audit.ApprovalNoApprover
+					} else {
+						approvalStatus = approvals.WaitForApproval(approvalID, *approvalWait)
+					}
 					approvalWaitUs := time.Since(waitStart).Microseconds()
 					if approvalStatus != audit.ApprovalApproved {
 						log.Printf("mcp-proxy: DENIED %s (%s)", toolName, approvalStatus)
+						emitPolicyEvent(toolName, decision.RuleName, riskScore, "pause", approvalURL, string(approvalStatus), approvalWaitUs/1000)
+						code, message := approvalRejectionResponse(toolName, decision.RuleName, riskScore, approvalID, approvalStatus, *approvalWait)
+						pendingMu.Lock()
+						delete(pendingCalls, jsonrpcID)
+						pendingMu.Unlock()
+						recordRejectedToolCall(auditDB, sessionID, rejectedCall{
+							requestMsgID:   msgID,
+							toolName:       toolName,
+							arguments:      redactedArgs,
+							opType:         opType,
+							riskScore:      riskScore,
+							reasons:        reasons,
+							policyAction:   "rejected",
+							requestedAt:    requestedAt,
+							policyEvalUs:   policyEvalUs,
+							approvalWaitUs: approvalWaitUs,
+						})
 						return &proxy.HandlerResult{
 							Block: true,
 							ClientResponse: proxy.MakeErrorResponseWithData(
 								msg.ID,
-								-32002,
-								buildApprovalDeniedMessage(toolName, decision.RuleName, riskScore, approvalID, approvalStatus, *approvalWait),
+								code,
+								message,
 								map[string]any{
 									"status":                  string(approvalStatus),
 									"tool_name":               toolName,
@@ -378,6 +430,7 @@ func serve() {
 					}
 					approvedBy = "http"
 					log.Printf("mcp-proxy: APPROVED %s", toolName)
+					emitPolicyEvent(toolName, decision.RuleName, riskScore, "pause", approvalURL, "approved", approvalWaitUs/1000)
 					pendingMu.Lock()
 					if pc, ok := pendingCalls[jsonrpcID]; ok {
 						pc.approvalWaitUs = approvalWaitUs
@@ -610,8 +663,137 @@ func buildApprovalDeniedMessage(toolName, ruleName string, riskScore int, approv
 		return fmt.Sprintf("tool call denied by approval workflow: tool=%s rule=%s risk=%d approval_id=%s", toolName, ruleName, riskScore, approvalID)
 	case audit.ApprovalTimedOut:
 		return fmt.Sprintf("tool call approval timed out after %s: tool=%s rule=%s risk=%d approval_id=%s", timeout, toolName, ruleName, riskScore, approvalID)
+	case audit.ApprovalNoApprover:
+		return fmt.Sprintf("tool call rejected: no approver configured for pause rule %q (pass -http=ADDR to enable, or -http=none to acknowledge): tool=%s risk=%d", ruleName, toolName, riskScore)
 	default:
 		return fmt.Sprintf("tool call denied by approval workflow: tool=%s rule=%s risk=%d approval_id=%s", toolName, ruleName, riskScore, approvalID)
+	}
+}
+
+// approvalRejectionResponse returns the JSON-RPC error code and message for a
+// non-approved pause outcome. -32002 covers the approved-channel cases (deny /
+// timeout). -32003 is used for the no-approver case so clients can distinguish
+// "configuration error" from "user rejected" and surface a different prompt.
+func approvalRejectionResponse(toolName, ruleName string, riskScore int, approvalID string, status audit.ApprovalStatus, timeout time.Duration) (int, string) {
+	code := -32002
+	if status == audit.ApprovalNoApprover {
+		code = -32003
+	}
+	return code, buildApprovalDeniedMessage(toolName, ruleName, riskScore, approvalID, status, timeout)
+}
+
+// emitStartupBanner prints a one-line policy/approver summary on stderr. When
+// pause rules exist without a reachable approver AND the operator didn't opt
+// out via -http=none, the line is marked WARN so misconfiguration is caught
+// before the first failing tool call.
+//
+// "require approval" is reserved for pause rules; block rules are enforced
+// without user interaction and are reported separately.
+func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisabled bool) {
+	pauseCount := len(summary.PauseRules)
+	blockCount := len(summary.BlockRules)
+
+	approverState := approvalURL
+	switch {
+	case approverDisabled:
+		approverState = "disabled"
+	case approverState == "":
+		approverState = "NONE"
+	}
+
+	level := "INFO"
+	suffix := ""
+	// Only warn on the accidental case: pause rules loaded, no approver,
+	// and operator didn't explicitly opt out.
+	if approvalURL == "" && !approverDisabled && pauseCount > 0 {
+		level = "WARN"
+		suffix = " — pause rules will fail (set -http=ADDR to enable approver, or -http=none to acknowledge)"
+	}
+
+	pauseDesc := ""
+	if pauseCount > 0 {
+		pauseDesc = fmt.Sprintf(" (%s)", strings.Join(summary.PauseRules, ", "))
+	}
+	blockDesc := ""
+	if blockCount > 0 {
+		blockDesc = fmt.Sprintf(", %d block (%s)", blockCount, strings.Join(summary.BlockRules, ", "))
+	}
+
+	rulesSuffix := ""
+	if summary.TotalRules != summary.EnabledRules {
+		rulesSuffix = fmt.Sprintf(" (%d disabled)", summary.TotalRules-summary.EnabledRules)
+	}
+	fmt.Fprintf(os.Stderr,
+		"mcp-proxy: [%s] policy: %d rules enabled%s, %d require approval%s%s; approver: %s%s\n",
+		level, summary.EnabledRules, rulesSuffix, pauseCount, pauseDesc, blockDesc, approverState, suffix,
+	)
+
+	// Machine-readable companion line for tooling.
+	payload := map[string]any{
+		"event":             "policy_banner",
+		"level":             level,
+		"rules_loaded":      summary.EnabledRules,
+		"pause_rules":       summary.PauseRules,
+		"block_rules":       summary.BlockRules,
+		"approver_url":      approvalURL,
+		"approver_set":      approvalURL != "",
+		"approver_disabled": approverDisabled,
+	}
+	if b, err := json.Marshal(payload); err == nil {
+		fmt.Fprintln(os.Stderr, string(b))
+	}
+}
+
+// emitPolicyEvent writes one structured key=value log line per pause/block
+// outcome. Cheap to grep, cheap to parse, small enough to ship to SIEMs.
+// String values are %q-quoted so rule/tool names with spaces or "=" remain
+// unambiguous when parsed.
+func emitPolicyEvent(tool, rule string, risk int, action, approverURL, outcome string, durationMs int64) {
+	approver := approverURL
+	if approver == "" {
+		approver = "NONE"
+	}
+	log.Printf("mcp-proxy: policy_event tool=%q rule=%q risk=%d action=%q approver=%q outcome=%q duration_ms=%d",
+		tool, rule, risk, action, approver, outcome, durationMs)
+}
+
+// rejectedCall is the subset of pendingCall fields needed to persist a
+// tool_calls row for a call that never reached the upstream server.
+type rejectedCall struct {
+	requestMsgID   int64
+	toolName       string
+	arguments      string
+	opType         string
+	riskScore      int
+	reasons        []string
+	policyAction   string
+	requestedAt    time.Time
+	policyEvalUs   int64
+	approvalWaitUs int64
+}
+
+func recordRejectedToolCall(db *audit.Store, sessionID string, rc rejectedCall) {
+	var approvalWait *int64
+	if rc.approvalWaitUs > 0 {
+		w := rc.approvalWaitUs
+		approvalWait = &w
+	}
+	eval := rc.policyEvalUs
+	if _, err := db.InsertToolCall(audit.ToolCallRecord{
+		SessionID:     sessionID,
+		RequestMsgID:  rc.requestMsgID,
+		ToolName:      rc.toolName,
+		Arguments:     rc.arguments,
+		OperationType: rc.opType,
+		RiskScore:     rc.riskScore,
+		RiskReasons:   rc.reasons,
+		PolicyAction:  rc.policyAction,
+		RequestedAt:   rc.requestedAt,
+		// RespondedAt intentionally zero — no upstream call happened.
+		PolicyEvalUs:   &eval,
+		ApprovalWaitUs: approvalWait,
+	}); err != nil {
+		log.Printf("mcp-proxy: insert rejected tool call: %v", err)
 	}
 }
 

@@ -118,6 +118,43 @@ func (e *Engine) HasPauseRules() bool {
 	return false
 }
 
+// Summary describes the loaded ruleset at a glance, for boot-time diagnostics.
+type Summary struct {
+	TotalRules    int
+	EnabledRules  int
+	PauseRules    []string
+	BlockRules    []string
+	FlagRules     []string
+	DisabledRules []string
+}
+
+// NeedsApprover reports whether at least one enabled rule requires an
+// approver to be configured in order to resolve — i.e. any pause rule.
+func (s Summary) NeedsApprover() bool {
+	return len(s.PauseRules) > 0
+}
+
+// Describe returns a structured snapshot of the loaded rules.
+func (e *Engine) Describe() Summary {
+	s := Summary{TotalRules: len(e.rules)}
+	for _, r := range e.rules {
+		if !r.Enabled {
+			s.DisabledRules = append(s.DisabledRules, r.Name)
+			continue
+		}
+		s.EnabledRules++
+		switch r.Action {
+		case "pause":
+			s.PauseRules = append(s.PauseRules, r.Name)
+		case "block":
+			s.BlockRules = append(s.BlockRules, r.Name)
+		case "flag":
+			s.FlagRules = append(s.FlagRules, r.Name)
+		}
+	}
+	return s
+}
+
 func matchesRule(rule Rule, ctx EvalContext) bool {
 	if rule.ToolPattern != "" {
 		if !globMatch(rule.ToolPattern, ctx.ToolName) {

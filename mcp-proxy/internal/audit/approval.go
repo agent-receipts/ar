@@ -9,9 +9,10 @@ import (
 type ApprovalStatus string
 
 const (
-	ApprovalApproved ApprovalStatus = "approved"
-	ApprovalDenied   ApprovalStatus = "denied"
-	ApprovalTimedOut ApprovalStatus = "timed_out"
+	ApprovalApproved   ApprovalStatus = "approved"
+	ApprovalDenied     ApprovalStatus = "denied"
+	ApprovalTimedOut   ApprovalStatus = "timed_out"
+	ApprovalNoApprover ApprovalStatus = "no_approver"
 )
 
 // ApprovalManager handles pause/approve/deny flows for tool calls
