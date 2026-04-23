@@ -24,7 +24,7 @@ func ClassifyOperation(toolName string) string {
 		}
 	}
 
-	writePrefixes := []string{"create_", "update_", "set_", "add_", "put_", "edit_", "modify_", "write_"}
+	writePrefixes := []string{"create_", "update_", "set_", "add_", "put_", "edit_", "modify_", "write_", "request_", "assign_"}
 	for _, p := range writePrefixes {
 		if strings.HasPrefix(lower, p) {
 			return "write"

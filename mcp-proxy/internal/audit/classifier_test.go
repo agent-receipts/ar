@@ -28,6 +28,10 @@ func TestClassifyOperation(t *testing.T) {
 		{"command_exec", "execute"},
 		{"file_write", "write"},
 
+		// Copilot / assignment tools (github-mcp-server).
+		{"request_copilot_review", "write"},
+		{"assign_copilot_to_issue", "write"},
+
 		// Ambiguous: `_read` appears mid-name but name ends with `_mode`,
 		// so this must not match the `_read` suffix.
 		{"repository_read_only_mode", "unknown"},
