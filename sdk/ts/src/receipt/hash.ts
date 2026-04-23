@@ -9,6 +9,16 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 	return proto === Object.prototype || proto === null;
 }
 
+// Returns a best-effort constructor name for a non-plain object, used only in
+// error messages. Reads the prototype's constructor rather than v.constructor
+// so a user-controlled "constructor" key can't leak through. Object.getPrototypeOf
+// is typed as returning `any`, so no type assertion is needed.
+function describeNonPlain(v: object): string {
+	const proto = Object.getPrototypeOf(v);
+	const name: unknown = proto?.constructor?.name;
+	return typeof name === "string" ? name : "object";
+}
+
 /**
  * Serialize a value to canonical JSON per RFC 8785 (JSON Canonicalization Scheme).
  *
@@ -33,7 +43,7 @@ export function canonicalize(value: unknown): string {
 	if (typeof value === "object") {
 		if (!isPlainObject(value)) {
 			throw new Error(
-				`RFC 8785: non-plain objects are not valid JSON: ${(value as { constructor?: { name?: string } }).constructor?.name ?? "object"}`,
+				`RFC 8785: non-plain objects are not valid JSON: ${describeNonPlain(value)}`,
 			);
 		}
 		const keys = Object.keys(value).sort();
