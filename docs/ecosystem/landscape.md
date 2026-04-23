@@ -1,6 +1,6 @@
 # Agent Security Tooling Landscape — April 2026
 
-An overview of the agent security, policy enforcement, and governance space as of mid-April 2026. Compiled to inform the Agent Receipts pivot decision.
+An overview of the agent security, policy enforcement, and governance space as of mid-April 2026.
 
 ---
 
@@ -29,7 +29,7 @@ These are the tools most relevant to an individual builder or small team enterin
 | **Language** | Python (primary), TS, .NET, Rust, Go SDKs | Go | Python | Go + system-level | Node.js | Rust |
 | **License** | MIT | Apache 2.0 | AGPL-3.0 (commercial available) | Source-available (commercial) | MIT | MIT |
 | **Stars** | New (days old) | 29 | ~50+ | ~100+ | ~30 | ~20 |
-| **Approach** | Application middleware | Egress proxy + MCP proxy | MCP stdio proxy + SDK library | Kernel enforcement (Landlock, FUSE, ptrace, seccomp) | MCP stdio proxy | Claude Code pretooluse hook |
+| **Approach** | Application middleware | Egress proxy + MCP proxy | MCP stdio proxy + SDK library | Kernel enforcement (Landlock, FUSE, ptrace, seccomp) | MCP stdio proxy | Claude Code pre-tool-use hook |
 | **MCP proxy** | No (framework adapters) | Yes (stdio) | Yes (stdio) | No (syscall-level) | Yes (stdio) | No (hook-based) |
 | **HTTP/egress proxy** | No | Yes (7-layer scanner) | No | Yes (network proxy) | No | No |
 | **Shell/command control** | No | No | No | Yes (shell shim, ptrace) | No | No |
@@ -113,28 +113,6 @@ Areas that remain underserved despite the crowded landscape:
 | **Browser automation governance** | Intercepting Puppeteer/Playwright/CDP actions with policy enforcement | Nobody (GitHub Copilot firewall explicitly doesn't cover this) |
 | **Policy portability standard** | A way to express agent policies that works across tools | Microsoft AGT supports 3 languages but no cross-tool standard exists |
 | **Agent identity federation** | Verifying agent identity across organizational boundaries | Microsoft AGT (SPIFFE/SVID) is closest; still early |
-
----
-
-## Implications for Agent Receipts Pivot
-
-### What's validated
-- The cryptographic primitives (Ed25519, SHA-256, DIDs) are now industry consensus — Agent Receipts picked correctly
-- The audit trail problem is real and widely acknowledged
-- The "security team says yes" workflow is the actual blocker for enterprise adoption
-
-### What's changed
-- The MCP proxy/firewall space is saturated (6+ serious implementations)
-- Microsoft AGT covers policy + identity + compliance with 5 language SDKs under MIT license
-- Canyon Road is building the deep kernel enforcement + commercial control plane
-- Building another standalone agent security tool requires a genuinely differentiated angle
-
-### Options to consider
-1. **Contribute to an existing project** — Microsoft AGT (Go SDK, policy engine) or Pipelock (Go, Apache 2.0, similar architecture to Beacon)
-2. **Build the reporting/compliance layer** — the gap between raw audit logs and CISO-ready artifacts is real and underserved
-3. **Build the cross-channel correlation layer** — the "unified event schema" problem nobody has solved in open source
-4. **Focus on the employer-specific problem** — build internal tooling that consumes these projects rather than competing with them
-5. **Specialize in W3C VC envelope** — Agent Receipts' unique primitive; could be contributed upstream to AGT or similar
 
 ---
 
