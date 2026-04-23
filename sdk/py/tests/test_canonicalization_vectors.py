@@ -1,7 +1,11 @@
 """Cross-SDK canonicalization test vectors (ADR-0009).
 
-Runs every vector in cross-sdk-tests/canonicalization_vectors.json against
-the Python SDK's canonicaliser and hash_receipt function.
+Runs all canonicalization vectors in
+cross-sdk-tests/canonicalization_vectors.json against the Python SDK's
+canonicaliser, and runs receipt-hash checks only for vectors with a concrete
+``receipt`` field and a resolvable ``expectedHash``. Vectors using
+``receiptsFrom`` references (e.g. signature-preservation invariants) and
+those marked ``COMPUTE_AT_COMMIT_TIME`` are not executed by this harness.
 """
 
 from __future__ import annotations
