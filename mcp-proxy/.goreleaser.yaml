@@ -53,6 +53,11 @@ brews:
       name: agent-receipts-bot
       email: bot@agentreceipts.ai
     commit_msg_template: "chore(mcp-proxy): bump to v{{ .Version }}"
+    # Open a PR instead of pushing directly so `brew audit` (required
+    # status check on the tap's main branch) runs before the formula
+    # becomes visible to users.
+    pull_request:
+      enabled: true
     install: |
       bin.install "mcp-proxy"
     test: |
