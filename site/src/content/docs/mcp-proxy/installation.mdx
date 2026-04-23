@@ -5,15 +5,23 @@ description: Install and run the MCP Proxy.
 
 ## Install
 
+### Homebrew (macOS, Linux)
+
+```bash
+brew install agent-receipts/tap/mcp-proxy
+```
+
+### Prebuilt binaries
+
+Download a tarball for your platform (darwin/linux, amd64/arm64) from the [releases page](https://github.com/agent-receipts/ar/releases?q=mcp-proxy) and move `mcp-proxy` onto your `$PATH`.
+
+### From source
+
 ```bash
 go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
 ```
 
-## Requirements
-
-- Go 1.26+
-
-No CGO or external C libraries required -- the proxy uses pure Go SQLite.
+Requires Go 1.26+. No CGO or external C libraries — the proxy uses pure Go SQLite.
 
 ## Verify installation
 
@@ -21,15 +29,29 @@ No CGO or external C libraries required -- the proxy uses pure Go SQLite.
 mcp-proxy -version
 ```
 
-## Basic usage
-
-Wrap any MCP server by passing its command as arguments:
+If `mcp-proxy` isn't found after `go install` (bash/zsh say `command not found`; fish says `Unknown command`), the Go bin directory isn't on your `$PATH`. `go install` writes binaries to `$GOBIN` when it's set, otherwise to `$(go env GOPATH)/bin` (usually `~/go/bin`). Add whichever applies to your shell profile:
 
 ```bash
-mcp-proxy node /path/to/mcp-server.js
+# bash / zsh
+export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
-The proxy intercepts stdin/stdout, logs every tool call, and forwards messages transparently. By default it generates an ephemeral Ed25519 key pair for signing receipts.
+```fish
+# fish
+fish_add_path (go env GOPATH)/bin
+```
+
+## Basic usage
+
+Wrap any MCP server by passing its command as arguments. For a quick smoke test, use the official filesystem MCP server (requires Node.js/`npx` — if you don't have it, substitute any MCP server command you already have):
+
+```bash
+mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
+```
+
+The proxy intercepts stdin/stdout, logs every tool call, and forwards messages transparently. By default it generates an ephemeral Ed25519 key pair for signing receipts. Press `Ctrl-C` to stop.
+
+For wiring the proxy into an actual client, jump to [Claude Code](/mcp-proxy/claude-code/), [Claude Desktop](/mcp-proxy/claude-desktop/), or [Codex](/mcp-proxy/codex/).
 
 ## Persistent signing key
 
@@ -41,7 +63,7 @@ openssl genpkey -algorithm Ed25519 -out private.pem
 openssl pkey -in private.pem -pubout -out public.pem
 
 # Run with persistent key
-mcp-proxy -key private.pem node /path/to/mcp-server.js
+mcp-proxy -key private.pem npx -y @modelcontextprotocol/server-filesystem ~/Documents
 ```
 
 ## Next steps

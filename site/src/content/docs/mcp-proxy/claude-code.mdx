@@ -10,6 +10,13 @@ Claude Code is a CLI-based agent that connects to MCP servers for tools like Git
 - [mcp-proxy installed](/mcp-proxy/installation/)
 - A signing key pair generated (see below)
 - Claude Code installed (`npm install -g @anthropic-ai/claude-code`)
+- The MCP server you want to audit. The examples below wrap GitHub's official MCP server:
+
+  ```bash
+  brew install github-mcp-server
+  ```
+
+  This puts a `github-mcp-server` binary on your `$PATH`. Verify with `which github-mcp-server`.
 
 ## Generate a signing key
 
@@ -24,24 +31,26 @@ Use absolute paths everywhere — Claude Code launches MCP servers with a clean 
 
 ## Register the proxy with Claude Code
 
-Use `claude mcp add-json` to register a proxied server. The example below wraps `mcp-server-github`:
+Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. The heredoc lets your shell resolve the proxy, key, and server paths at paste time — no manual substitution required (replace only `YOUR_TOKEN`):
 
 ```bash
-claude mcp add-json github-audited --scope user '{
-  "command": "/Users/YOU/go/bin/mcp-proxy",
+claude mcp add-json github-audited --scope user "$(cat <<JSON
+{
+  "command": "$(which mcp-proxy)",
   "args": [
     "-name", "github",
-    "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-    "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
+    "-key", "$HOME/.agent-receipts/github-proxy.pem",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
-    "/opt/homebrew/bin/mcp-server-github"
+    "$(which github-mcp-server)", "stdio"
   ],
   "env": {
     "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
   }
-}'
+}
+JSON
+)"
 ```
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
@@ -56,7 +65,15 @@ claude mcp list
 
 ## Project-scoped setup via .mcp.json
 
-For a shared team configuration, add a `.mcp.json` file at the project root. This is committed to version control — do not put tokens directly in it. Reference environment variables instead:
+For a shared team configuration, add a `.mcp.json` file at the project root. This is committed to version control — do not put tokens directly in it. Reference environment variables instead.
+
+Since JSON files can't shell-expand, print the absolute paths you need first and paste them into the template below:
+
+```bash
+echo "command: $(which mcp-proxy)"
+echo "key:     $HOME/.agent-receipts/github-proxy.pem"
+echo "server:  $(which github-mcp-server)"
+```
 
 ```json
 {
@@ -66,11 +83,10 @@ For a shared team configuration, add a `.mcp.json` file at the project root. Thi
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-        "-receipt-db", "/Users/YOU/.agent-receipts/receipts.db",
         "-issuer-name", "Claude Code",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
-        "/opt/homebrew/bin/mcp-server-github"
+        "/opt/homebrew/bin/github-mcp-server", "stdio"
       ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
@@ -87,13 +103,12 @@ Each developer sets `GITHUB_PERSONAL_ACCESS_TOKEN` in their shell environment. T
 After making tool calls through Claude Code, inspect the receipt store from your terminal:
 
 ```bash
-# List all receipts
-mcp-proxy list -receipt-db ~/.agent-receipts/receipts.db
+# List all receipts (uses the default ~/.agent-receipts/receipts.db)
+mcp-proxy list
 
 # Verify chain integrity
 mcp-proxy verify \
   -key ~/.agent-receipts/github-proxy-pub.pem \
-  -receipt-db ~/.agent-receipts/receipts.db \
   <chain-id>
 ```
 

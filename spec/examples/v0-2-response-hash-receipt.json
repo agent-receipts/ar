@@ -15,7 +15,7 @@
       "name": "Example Corp"
     }
   },
-  "validFrom": "2026-04-22T09:15:00Z",
+  "issuanceDate": "2026-04-22T09:15:00Z",
   "credentialSubject": {
     "principal": {
       "id": "did:user:alice"

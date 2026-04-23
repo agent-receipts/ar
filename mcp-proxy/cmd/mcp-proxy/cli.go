@@ -13,6 +13,10 @@ import (
 )
 
 func openReceiptStore(path string) *store.Store {
+	if err := ensureDBDir(path); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating receipt store directory: %v\n", err)
+		os.Exit(1)
+	}
 	s, err := store.Open(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening receipt store: %v\n", err)
@@ -23,7 +27,7 @@ func openReceiptStore(path string) *store.Store {
 
 func cmdList(args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	db := fs.String("receipt-db", "receipts.db", "Receipt store path")
+	db := fs.String("receipt-db", defaultDBPath("receipts.db"), "Receipt store path")
 	chainID := fs.String("chain", "", "Filter by chain ID")
 	riskLevel := fs.String("risk", "", "Filter by risk level")
 	actionType := fs.String("action", "", "Filter by action type")
@@ -83,7 +87,7 @@ func cmdList(args []string) {
 
 func cmdInspect(args []string) {
 	fs := flag.NewFlagSet("inspect", flag.ExitOnError)
-	db := fs.String("receipt-db", "receipts.db", "Receipt store path")
+	db := fs.String("receipt-db", defaultDBPath("receipts.db"), "Receipt store path")
 	pubKeyPath := fs.String("key", "", "Public key (PEM file) for signature verification")
 	fs.Parse(args)
 
@@ -138,7 +142,7 @@ func cmdInspect(args []string) {
 
 func cmdVerify(args []string) {
 	fs := flag.NewFlagSet("verify", flag.ExitOnError)
-	db := fs.String("receipt-db", "receipts.db", "Receipt store path")
+	db := fs.String("receipt-db", defaultDBPath("receipts.db"), "Receipt store path")
 	pubKeyPath := fs.String("key", "", "Public key (PEM file) — required")
 	fs.Parse(args)
 
@@ -188,7 +192,7 @@ func cmdVerify(args []string) {
 
 func cmdExport(args []string) {
 	fs := flag.NewFlagSet("export", flag.ExitOnError)
-	db := fs.String("receipt-db", "receipts.db", "Receipt store path")
+	db := fs.String("receipt-db", defaultDBPath("receipts.db"), "Receipt store path")
 	fs.Parse(args)
 
 	if fs.NArg() < 1 {
@@ -220,7 +224,7 @@ func cmdExport(args []string) {
 
 func cmdStats(args []string) {
 	fs := flag.NewFlagSet("stats", flag.ExitOnError)
-	db := fs.String("receipt-db", "receipts.db", "Receipt store path")
+	db := fs.String("receipt-db", defaultDBPath("receipts.db"), "Receipt store path")
 	asJSON := fs.Bool("json", false, "Output as JSON")
 	fs.Parse(args)
 
@@ -263,6 +267,10 @@ func cmdStats(args []string) {
 }
 
 func openAuditStore(path string) *audit.Store {
+	if err := ensureDBDir(path); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating audit store directory: %v\n", err)
+		os.Exit(1)
+	}
 	s, err := audit.Open(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening audit store: %v\n", err)
@@ -273,7 +281,7 @@ func openAuditStore(path string) *audit.Store {
 
 func cmdTiming(args []string) {
 	fs := flag.NewFlagSet("timing", flag.ExitOnError)
-	db := fs.String("db", "audit.db", "Audit database path")
+	db := fs.String("db", defaultDBPath("audit.db"), "Audit database path")
 	session := fs.String("session", "", "Filter by session ID")
 	asJSON := fs.Bool("json", false, "Output as JSON")
 	limit := fs.Int("limit", 20, "Max tools to show")

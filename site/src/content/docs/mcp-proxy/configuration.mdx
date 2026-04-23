@@ -7,8 +7,8 @@ description: CLI flags, policy rules, redaction, and encryption options for the 
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-db` | `audit.db` | SQLite audit database path |
-| `-receipt-db` | `receipts.db` | SQLite receipt store path |
+| `-db` | `$HOME/.agent-receipts/audit.db` | SQLite audit database path. Parent directory is created on first run (mode 0700 on Unix). |
+| `-receipt-db` | `$HOME/.agent-receipts/receipts.db` | SQLite receipt store path. Parent directory is created on first run (mode 0700 on Unix). |
 | `-key` | (ephemeral) | Ed25519 private key PEM file for signing receipts |
 | `-taxonomy` | (none) | Taxonomy mappings JSON file for action classification |
 | `-rules` | (built-in defaults) | Policy rules YAML file |
@@ -195,7 +195,7 @@ mcp-proxy -name github -http 127.0.0.1:8080 ... /path/to/server
 mcp-proxy -name github -http 127.0.0.1:8081 ... /path/to/server
 ```
 
-Each instance can also use separate `-db` and `-receipt-db` paths if you want isolated audit trails, or share the same databases if you want a unified log.
+Each instance can also use separate `-db` and `-receipt-db` paths if you want isolated audit trails, or share the same databases if you want a unified log. By default both point at `$HOME/.agent-receipts/`, so all clients share one audit log unless you override them.
 
 :::note
 The approval HTTP server is only needed when policy rules use the `pause` action. If you don't use approval workflows, the random-port default has no observable effect.

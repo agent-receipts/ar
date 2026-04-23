@@ -1,6 +1,6 @@
 {
-  "$comment": "Cross-SDK canonicalisation test vectors for ADR-0009. Each vector under canonicalization_vectors asserts that SDK.canonicalize(input) produces canonical byte-for-byte. Each vector under receipt_hash_vectors asserts that SDK.hashReceipt(receipt) produces expectedHash; these vectors exercise the Rule 2 null-normalisation in addition to the raw canonicaliser. All strings are UTF-8.",
-  "schemaVersion": "0.2.1-draft",
+  "$comment": "Cross-SDK canonicalisation test vectors for ADR-0009. Each vector under canonicalization_vectors asserts that SDK.canonicalize(input) produces canonical byte-for-byte. Each vector under receipt_hash_vectors asserts that SDK.hashReceipt(receipt) produces expectedHash; these vectors exercise the Rule 2 null-normalisation in addition to the raw canonicaliser. NOTE: the `receipt` field on some vectors intentionally carries schema-INVALID caller input (e.g. optional fields set to null) in order to exercise the SDK's pre-serialization normalisation sweep; such vectors are marked `preNormalizationInput: true`. They are not conformant receipts and must never be emitted as-is. All strings are UTF-8.",
+  "schemaVersion": "0.2.1",
   "adr": "docs/adr/0009-canonicalization-and-schema-consistency.md",
 
   "canonicalization_vectors": [
@@ -63,8 +63,8 @@
     {
       "name": "number_negative_zero",
       "rule": "rule4_numbers",
-      "description": "-0 must serialise as 0 per RFC 8785. Language note: JSON parsers typically return -0 for the literal -0; SDKs that parse this vector's canonical-field-free input form must preserve the sign to test the rule. Implementations should construct the number explicitly rather than relying on JSON round-trip.",
-      "input": -0,
+      "description": "-0 must serialise as 0 per RFC 8785. This vector uses JSON -0.0 (rather than -0) so standard decoders preserve IEEE 754 negative zero without requiring harness special-casing: Python json.loads, JavaScript JSON.parse, and Go json.Unmarshal into float64/interface{} all round-trip -0.0 as a float with a negative sign bit.",
+      "input": -0.0,
       "canonical": "0"
     },
     {
@@ -213,18 +213,18 @@
     {
       "name": "parameters_hash_ascii",
       "rule": "rule4_parameters_hash",
-      "description": "mcp-proxy's parameters_hash must use RFC 8785 (#118). ASCII-only baseline: SHA-256 of the canonical bytes equals a known value. This vector catches Go's json.Marshal shortcut even for ASCII, because json.Marshal sorts keys alphabetically which happens to match for ASCII — the divergence appears in SDK output with non-ASCII keys. SDKs compute canonical bytes of `input` and assert `expectedHash` = sha256(canonical).",
+      "description": "mcp-proxy's parameters_hash must use RFC 8785 (#118). ASCII-only baseline: SHA-256 of the canonical bytes equals a known value. Note: ASCII cannot distinguish a conformant RFC 8785 canonicaliser from Go's `json.Marshal` shortcut — both sort ASCII keys identically. This vector only asserts parity with the known canonical bytes; the `parameters_hash_supplementary_vs_bmp` vector is what actually catches the Go bug. SDKs compute canonical bytes of `input` and assert `expectedHash` = sha256(canonical).",
       "input": { "b": 2, "a": 1 },
       "canonical": "{\"a\":1,\"b\":2}",
       "expectedHash": "sha256:43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
     },
     {
-      "name": "parameters_hash_non_ascii",
+      "name": "parameters_hash_supplementary_vs_bmp",
       "rule": "rule4_parameters_hash",
-      "description": "Non-ASCII keys in a parameters map. Verifies hashing of canonical bytes for non-ASCII BMP property names. Note: this vector does not by itself distinguish Go's json.Marshal shortcut (#118) from RFC 8785 — for these specific keys, ÿ (U+00FF) and Ā (U+0100), UTF-8 byte order and UTF-16 code-unit order both place ÿ before Ā. A vector exercising supplementary-plane keys (where UTF-16 surrogate pairs invert the order vs UTF-8 bytes) is needed to fully cover that divergence.",
-      "input": { "\u0100": 2, "\u00ff": 1 },
-      "canonical": "{\"\u00ff\":1,\"\u0100\":2}",
-      "expectedHash": "sha256:ee1cd34f799a67b79d3a981b2f4a79ff7050af6787ae9861d5a7a40ef951f3a8"
+      "description": "Supplementary-plane key (🎉, U+1F389) vs BMP key (U+E000). This pair genuinely diverges between UTF-8 byte sort and UTF-16 code-unit sort — it is the vector that catches Go's `json.Marshal` shortcut (#118). UTF-16 code-unit sort: 🎉's first code unit is 0xD83C < 0xE000, so 🎉 sorts first (RFC 8785 — correct). UTF-8 byte sort: 🎉 = F0 9F 8E 89 vs U+E000 = EE 80 80 — EE < F0, so U+E000 would sort first (Go's default — wrong). The canonical bytes and hash below commit to the RFC 8785 order.",
+      "input": { "\ue000": 1, "\ud83c\udf89": 2 },
+      "canonical": "{\"\ud83c\udf89\":2,\"\ue000\":1}",
+      "expectedHash": "sha256:772daaff8804fe0809691758cfc856914d39056ead9a8934756d84be94ddc55f"
     }
   ],
 
@@ -264,7 +264,8 @@
     {
       "name": "receipt_optional_null_becomes_absent",
       "rule": "rule2_null_optional_absent",
-      "description": "Caller supplies outcome.error = null (optional field). Post-sweep canonicaliser MUST normalise this to absent before hashing. The canonical bytes MUST be identical to receipt_all_optional_absent. Pre-sweep Python does this (exclude_none); pre-sweep TS would include the null, producing a different hash — this vector catches that regression.",
+      "preNormalizationInput": true,
+      "description": "INTENTIONALLY SCHEMA-INVALID caller input. The receipt below sets optional fields (action.trusted_timestamp, outcome.error) to null, which the tightened 0.2.1 schema forbids. It is never emitted on the wire — it only exists to exercise the SDK's pre-serialization normalisation sweep. The post-sweep canonicaliser MUST normalise null-valued optional fields to absent before hashing; the resulting canonical bytes MUST be identical to receipt_all_optional_absent. Pre-sweep Python does this (exclude_none); pre-sweep TS would include the null, producing a different hash — this vector catches that regression.",
       "receipt": {
         "@context": [
           "https://www.w3.org/ns/credentials/v2",
@@ -470,10 +471,10 @@
 
   "notes_for_implementers": [
     "All strings in this file are UTF-8. JSON unicode escapes (\\uXXXX) are equivalent to their literal characters after parsing — SDK test harnesses should parse the file with any standard JSON parser and compare bytes post-parse.",
-    "Fields marked expectedHash: 'COMPUTE_AT_COMMIT_TIME' must be populated by whichever SDK lands first, cross-verified by the other two before merge. The commit that populates these values is the moment the canonical form is frozen.",
     "Fields marked expectedHash: 'SAME_AS_receipt_all_optional_absent' assert equality with the baseline vector; the test harness does not need a literal value, only the invariant.",
     "Fields marked mustContainSubstring assert a substring appears in the canonical output — useful when the full canonical is verbose but one specific byte sequence is the thing being tested (e.g., that Go does not HTML-escape < and >).",
+    "Vectors marked preNormalizationInput: true carry schema-invalid caller input on purpose — they test the SDK's pre-serialization null→absent sweep. Do NOT attempt to schema-validate these `receipt` payloads; canonicalise and hash them and assert the invariant.",
     "The number vectors rely on language-native IEEE 754 double-precision arithmetic. Each SDK should construct the test value from its numeric literal exactly as written in the input field; some JSON parsers may not round-trip -0 through JSON.parse, so implementations should hard-code -0 when the vector name is number_negative_zero rather than parsing it from this file.",
-    "Vectors use schemaVersion 0.2.1-draft until ADR-0009 is accepted and the schema is bumped; at that point, the legacy 0.2.0 vectors stay as-is (signature-preservation proof) and new vectors get schemaVersion 0.2.1."
+    "Legacy 0.2.0 vectors in cross-sdk-tests/v020_vectors.json stay as-is (signature-preservation proof); new vectors added in this file use schemaVersion 0.2.1."
   ]
 }
