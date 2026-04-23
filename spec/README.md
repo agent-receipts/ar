@@ -96,7 +96,7 @@ The canonical definitions live in [`spec/taxonomy/action-types.json`](spec/taxon
   "type": ["VerifiableCredential", "AgentReceipt"],
   "version": "0.1.0",
   "issuer": { "id": "did:agent:claude-instance-abc123", "type": "AIAgent" },
-  "validFrom": "2026-03-31T14:30:00Z",
+  "issuanceDate": "2026-03-31T14:30:00Z",
   "credentialSubject": {
     "principal": { "id": "did:user:alice", "type": "HumanPrincipal" },
     "action": {

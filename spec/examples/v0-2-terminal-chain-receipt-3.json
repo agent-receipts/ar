@@ -11,7 +11,7 @@
     "type": "AIAgent",
     "name": "File Manager"
   },
-  "validFrom": "2026-04-22T10:02:00Z",
+  "issuanceDate": "2026-04-22T10:02:00Z",
   "credentialSubject": {
     "principal": {
       "id": "did:user:bob"
