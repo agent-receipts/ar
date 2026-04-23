@@ -151,33 +151,42 @@ Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored wit
 
 ## Troubleshooting
 
-### `-32002: approval timeout or rejected` on specific tools
+### `-32002: approval timeout or rejected`
 
-**Symptom:** a particular subset of tools fails with JSON-RPC error `-32002`, while the rest of the same server works. Common triggers are tools whose names contain `auth`/`token`/`secret`/`key`/`credential`/`password`, tools named `*config*` or `*setting*` combined with writes, or SQL execution tools called with mutation strings that omit `WHERE`. Ordinary GitHub writes like `create_pull_request` and `push_files` are unaffected.
+**Two different things produce this error code.** Distinguish them before reaching for a fix, because they need different remedies and only one of them involves the proxy:
 
-**Cause:** the default policy contains `pause_high_risk` (`min_risk_score: 50`). The scorer adds +30 for sensitive keywords, +30 for SQL mutations without `WHERE`, +20 for `config`/`setting`, and a 20–40 base by operation type — so those tools cross the 50 threshold and get paused. If nothing is POSTing `/api/tool-calls/{id}/approve`, every paused call sits until `-approval-timeout` elapses (default 60 s) and is then auto-denied with `-32002`. Everything below the threshold flows through normally, which is why the failure looks tool-specific.
+1. **Client-side denial** — the MCP client (e.g. Claude Code) rejected the tool use before it reached the proxy. The call never hits the audit DB.
+2. **Proxy approval timeout** — the call reached the proxy, matched a `pause` rule, and timed out because no approver POSTed a decision. The call appears in the audit DB with `policy_action = 'pause'` and `approved_by` NULL.
 
-**Diagnose:**
+**Diagnose — which one is it?**
 
 ```bash
-# Is -http set? (Random port means approvers can't find the endpoint reliably.)
-ps aux | grep mcp-proxy | grep -v grep
-
-# What proportion of calls are being paused?
+# Did the failing call reach the proxy at all?
+# Substitute the tool name you saw fail.
 sqlite3 ~/.agent-receipts/audit.db \
-  "SELECT policy_action, COUNT(*) FROM tool_calls GROUP BY policy_action;"
-
-# Recent pauses and their approval status.
-sqlite3 ~/.agent-receipts/audit.db \
-  "SELECT tool_name, policy_action, approved_by, created_at
+  "SELECT tool_name, policy_action, risk_score, approved_by, created_at
    FROM tool_calls
-   WHERE policy_action = 'pause'
-   ORDER BY id DESC LIMIT 20;"
+   WHERE tool_name = 'create_pull_request'
+     AND created_at > datetime('now', '-1 hour')
+   ORDER BY id DESC LIMIT 10;"
 ```
 
-A `pause` row with `approved_by` NULL is a call that timed out waiting for a decision.
+- **No rows at all** → client-side denial. The proxy never saw it. See [ar#157](https://github.com/agent-receipts/ar/issues/157) for the ongoing work to make these visible.
+- **Rows with `policy_action = 'pass'`** → the proxy forwarded it; the `-32002` came from somewhere downstream (the MCP server, the remote API). Check the proxy's stderr log and the server's own logs.
+- **Rows with `policy_action = 'pause'` and `approved_by` NULL** → proxy approval timeout. Continue below.
 
-**Fix:** pin a port with `-http 127.0.0.1:8081` in your MCP client config and run an approver against it — see [Approval Server](/mcp-proxy/approval-ui/). Or, if you don't want human review at all, load a custom `-rules` YAML without any `pause` or `block` rules.
+**If it's a proxy approval timeout:**
+
+```bash
+# Confirm -http is pinned so your approver can reach the endpoint.
+ps aux | grep mcp-proxy | grep -v grep
+
+# Check overall breakdown.
+sqlite3 ~/.agent-receipts/audit.db \
+  "SELECT policy_action, COUNT(*) FROM tool_calls GROUP BY policy_action;"
+```
+
+The remedy is to run an approver, or to relax the policy. See [Approval Server](/mcp-proxy/approval-ui/) for both paths. Common tools that *do* cross the default threshold of 50: names containing `auth`/`token`/`secret`/`key`/`credential`/`password`, `*config*`/`*setting*` tools combined with writes, SQL mutations without `WHERE`. Ordinary GitHub writes like `create_pull_request` (risk 20) and `merge_pull_request` (risk 10) don't pause under the default scorer — if those are failing, you're in path #1, not #2.
 
 ### 404 at `http://127.0.0.1:8081/`
 

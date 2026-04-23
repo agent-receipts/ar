@@ -7,13 +7,10 @@ The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP clien
 
 **Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy)
 
-:::caution[Approval server is required when the policy pauses calls]
-The built-in policy contains a `pause` rule (`pause_high_risk`, `min_risk_score: 50`). Tool calls that score at or above 50 — things like `update_auth_config`, `create_api_key`, `delete_credential`, and SQL mutations without a `WHERE` clause — are held until an approver POSTs a decision to the proxy's HTTP endpoint. Without an approver, any such call fails with `-32002: approval timeout or rejected` after the approval timeout, while lower-scoring calls (ordinary reads and writes like `create_pull_request`, `push_files`, `create_branch`) still pass — so a failure can look tool-specific.
+:::note[The default policy can pause — plan for it if your server exposes sensitive tools]
+The built-in policy contains a `pause_high_risk` rule (`min_risk_score: 50`). Most tools don't reach it: ordinary GitHub writes like `create_pull_request` (risk 20) and `merge_pull_request` (risk 10) pass straight through. But calls scoring ≥50 — tool names containing `auth`/`token`/`secret`/`key`/`credential`/`password`, `*config*`/`*setting*` writes, SQL mutations without a `WHERE` clause — are held until something POSTs an approve/deny decision. With no approver, any such call fails with `-32002: approval timeout or rejected` after the approval timeout.
 
-Most GitHub MCP tools don't reach 50 under the default scorer, so many deployments never trigger a pause in practice. But any time the policy *can* pause a call, you should plan for it. Either:
-
-1. Pin `-http 127.0.0.1:8081` (or any free port) in your MCP client config and run an approver against it — see [Approval Server](/mcp-proxy/approval-ui/); **or**
-2. Load a custom `-rules` YAML that contains no `pause` or `block` rules (removing human-in-the-loop enforcement).
+If your MCP server exposes tools that can hit the threshold, either pin `-http 127.0.0.1:8081` and run an approver (see [Approval Server](/mcp-proxy/approval-ui/)), or load a custom `-rules` YAML with no `pause`/`block` rules. Seeing `-32002` on tools that *shouldn't* pause (like `create_pull_request`) is usually client-side denial, not the proxy — see [troubleshooting](/mcp-proxy/configuration/#-32002-approval-timeout-or-rejected).
 :::
 
 ## Features

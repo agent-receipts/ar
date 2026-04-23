@@ -5,8 +5,8 @@ description: How to route Claude Code MCP servers through the Agent Receipts pro
 
 Claude Code is a CLI-based agent that connects to MCP servers for tools like GitHub, databases, and file systems. The Agent Receipts proxy wraps any MCP server transparently — Claude Code doesn't know or care that the proxy is there.
 
-:::caution[Approval server needed if the policy pauses]
-With the default policy, calls scoring ≥50 (auth/token/secret/key/credential tools, SQL mutations without `WHERE`) are paused until approved. The configs below pin `-http 127.0.0.1:8081` so an approver has a stable URL. Skip the approver and any paused call fails with `-32002: approval timeout or rejected` after the approval timeout, while lower-scoring writes (`create_pull_request`, `push_files`, `create_branch`) still succeed — making the failure look tool-specific. See [Approval Server](/mcp-proxy/approval-ui/).
+:::note[Approval server — when you need it]
+The default policy pauses calls scoring ≥50 (auth/token/secret/key/credential tools, SQL mutations without `WHERE`). Most GitHub tools are well below that — `create_pull_request` scores 20, `merge_pull_request` scores 10 — so you won't see pauses unless your server exposes sensitive tools. The configs below pin `-http 127.0.0.1:8081` so an approver has a stable URL when you do need one. If you're seeing `-32002` on tools that *shouldn't* pause, suspect client-side denial first — see [troubleshooting](/mcp-proxy/configuration/#-32002-approval-timeout-or-rejected).
 :::
 
 ## Prerequisites

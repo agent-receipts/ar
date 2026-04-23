@@ -5,8 +5,8 @@ description: How to route Claude Desktop MCP servers through the Agent Receipts 
 
 Claude Desktop connects to MCP servers via `claude_desktop_config.json`. The Agent Receipts proxy wraps any MCP server transparently — Claude Desktop doesn't know or care that the proxy is there.
 
-:::caution[Approval server needed if the policy pauses]
-With the default policy, calls scoring ≥50 (auth/token/secret/key/credential tools, SQL mutations without `WHERE`) are paused until approved. The config below pins `-http 127.0.0.1:8080` so an approver has a stable URL. Skip the approver and any paused call fails with `-32002: approval timeout or rejected` after the approval timeout, while lower-scoring writes (`create_pull_request`, `push_files`) still succeed — making the failure look tool-specific. See [Approval Server](/mcp-proxy/approval-ui/).
+:::note[Approval server — when you need it]
+The default policy pauses calls scoring ≥50 (auth/token/secret/key/credential tools, SQL mutations without `WHERE`). Most GitHub tools are well below that — `create_pull_request` scores 20 — so you won't see pauses unless your server exposes sensitive tools. The config below pins `-http 127.0.0.1:8080` so an approver has a stable URL when you do need one. See [Approval Server](/mcp-proxy/approval-ui/).
 :::
 
 ## Prerequisites

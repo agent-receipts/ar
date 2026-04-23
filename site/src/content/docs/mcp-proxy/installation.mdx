@@ -53,15 +53,17 @@ The proxy intercepts stdin/stdout, logs every tool call, and forwards messages t
 
 For wiring the proxy into an actual client, jump to [Claude Code](/mcp-proxy/claude-code/), [Claude Desktop](/mcp-proxy/claude-desktop/), or [Codex](/mcp-proxy/codex/).
 
-## Approval server (plan for this with the default policy)
+## Approval server (when the policy pauses)
 
-The default policy contains a `pause` rule (`pause_high_risk`, `min_risk_score: 50`). Tool calls scoring ≥50 — tools whose names contain `auth`/`token`/`secret`/`key`/`credential`/`password`, write/delete operations on them, SQL mutation strings without a `WHERE` clause, and similar — are held until an approver POSTs a decision. **Leave this unconfigured and any paused call will fail with `-32002: approval timeout or rejected`** after `-approval-timeout` elapses. Lower-risk calls (ordinary reads and writes like `create_pull_request`, `push_files`, `create_branch`) pass through regardless, which makes failures look tool-specific rather than policy-driven.
+The default policy contains `pause_high_risk` (`min_risk_score: 50`). Most GitHub MCP tools don't reach the threshold — `create_pull_request` scores 20, `merge_pull_request` scores 10, reads score 0 — so many deployments never trigger a pause. Calls that *do* pause are typically tools with names containing `auth`/`token`/`secret`/`key`/`credential`/`password`, `*config*`/`*setting*` tools combined with writes, or SQL mutation strings without a `WHERE` clause.
 
-Most GitHub MCP tools score below 50, so many deployments never actually trigger a pause. That's a reason to be deliberate, not a reason to ignore the setup: the threshold is 50, the default rule has no tool pattern, and a single new tool that matches a sensitive-keyword rule is enough to start blocking.
+Plan for it if your MCP server exposes any of those. A paused call with no approver listening fails with `-32002: approval timeout or rejected` after `-approval-timeout` elapses, while every other call continues to pass through.
 
 **If you want approvals:** pin a port with `-http 127.0.0.1:8081` and run an approver against it. The dedicated [Approval Server](/mcp-proxy/approval-ui/) page documents the real HTTP routes (`POST /api/tool-calls/{id}/approve` and `/deny` — there is no index page at `/`) and shows a minimal shell approver.
 
-**If you don't want approvals at all:** load a custom `-rules` YAML that contains no `pause` or `block` rules — see [opting out](/mcp-proxy/approval-ui/#opting-out-of-approval). Leaving the default policy active without an approver means any call that *does* hit the threshold dies silently.
+**If you don't want approvals at all:** load a custom `-rules` YAML with no `pause` or `block` rules — see [opting out](/mcp-proxy/approval-ui/#opting-out-of-approval).
+
+**Seeing `-32002` on a tool that shouldn't pause?** It's most likely client-side denial by the MCP client (e.g. Claude Code), not the proxy. See the [`-32002` troubleshooting entry](/mcp-proxy/configuration/#-32002-approval-timeout-or-rejected) for how to distinguish the two sources.
 
 ## Persistent signing key
 
