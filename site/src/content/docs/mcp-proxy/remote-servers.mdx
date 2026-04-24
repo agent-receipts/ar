@@ -96,12 +96,12 @@ The list of bundled taxonomies lives at [`mcp-proxy/configs/`](https://github.co
 
 `mcp-remote` listens on `127.0.0.1` for the local end of the OAuth callback, and the proxy itself binds an approval port. If you run multiple audited remote servers alongside local ones, give each its own approval port:
 
-| Server          | `-http` |
-| --------------- | ------- |
-| GitHub          | `8080`  |
-| Codex / Linear  | `8081`  |
-| Atlassian       | `8082`  |
-| Slack           | `8083`  |
+| Server          | `-http`            |
+| --------------- | ------------------ |
+| GitHub          | `127.0.0.1:8080`   |
+| Codex / Linear  | `127.0.0.1:8081`   |
+| Atlassian       | `127.0.0.1:8082`   |
+| Slack           | `127.0.0.1:8083`   |
 
 This keeps an external approval UI able to route by port. See [Approval Server](/mcp-proxy/approval-ui/) for the wider workflow.
 

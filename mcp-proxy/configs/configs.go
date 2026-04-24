@@ -20,8 +20,9 @@ import (
 var taxonomyFiles embed.FS
 
 // BundledTaxonomies returns the deduplicated set of mappings embedded in the
-// binary, sorted by source filename then by tool_name for deterministic order.
-// The first mapping wins on duplicate tool_name across files.
+// binary. Files are processed in sorted source filename order, and mappings
+// within each file are returned in their JSON order. The first mapping wins
+// on duplicate tool_name across files.
 func BundledTaxonomies() ([]taxonomy.TaxonomyMapping, error) {
 	entries, err := taxonomyFiles.ReadDir(".")
 	if err != nil {
