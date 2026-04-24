@@ -191,7 +191,9 @@ func TestRunFollowLoopHonoursFilters(t *testing.T) {
 		out := w.waitForWrite(t, 2*time.Second)
 		if strings.Contains(out, chainA) {
 			cancel()
-			<-done
+			if err := <-done; err != nil {
+				t.Fatalf("follow loop returned error: %v", err)
+			}
 			final := w.String()
 			if strings.Contains(final, "chain-b") {
 				t.Fatalf("chain-b should have been filtered out: %q", final)
@@ -200,6 +202,8 @@ func TestRunFollowLoopHonoursFilters(t *testing.T) {
 		}
 	}
 	cancel()
-	<-done
+	if err := <-done; err != nil {
+		t.Fatalf("follow loop returned error: %v", err)
+	}
 	t.Fatalf("chain-a receipt never appeared in follow output: %q", w.String())
 }
