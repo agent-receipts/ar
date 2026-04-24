@@ -1,0 +1,30 @@
+{
+  "mappings": [
+    {"tool_name": "atlassianUserInfo", "action_type": "data.api.read"},
+    {"tool_name": "getAccessibleAtlassianResources", "action_type": "data.api.read"},
+    {"tool_name": "lookupJiraAccountId", "action_type": "data.api.read"},
+
+    {"tool_name": "getVisibleJiraProjects", "action_type": "data.api.read"},
+    {"tool_name": "getJiraProjectIssueTypesMetadata", "action_type": "data.api.read"},
+    {"tool_name": "getJiraIssue", "action_type": "data.api.read"},
+    {"tool_name": "getTransitionsForJiraIssue", "action_type": "data.api.read"},
+    {"tool_name": "searchJiraIssuesUsingJql", "action_type": "data.api.read"},
+    {"tool_name": "createJiraIssue", "action_type": "data.api.write"},
+    {"tool_name": "editJiraIssue", "action_type": "data.api.write"},
+    {"tool_name": "transitionJiraIssue", "action_type": "data.api.write"},
+    {"tool_name": "addCommentToJiraIssue", "action_type": "data.api.write"},
+
+    {"tool_name": "getConfluenceSpaces", "action_type": "data.api.read"},
+    {"tool_name": "getPagesInConfluenceSpace", "action_type": "data.api.read"},
+    {"tool_name": "getConfluencePage", "action_type": "data.api.read"},
+    {"tool_name": "getConfluencePageAncestors", "action_type": "data.api.read"},
+    {"tool_name": "getConfluencePageDescendants", "action_type": "data.api.read"},
+    {"tool_name": "getConfluencePageFooterComments", "action_type": "data.api.read"},
+    {"tool_name": "getConfluencePageInlineComments", "action_type": "data.api.read"},
+    {"tool_name": "searchConfluenceUsingCql", "action_type": "data.api.read"},
+    {"tool_name": "createConfluencePage", "action_type": "data.api.write"},
+    {"tool_name": "updateConfluencePage", "action_type": "data.api.write"},
+    {"tool_name": "createConfluenceFooterComment", "action_type": "data.api.write"},
+    {"tool_name": "createConfluenceInlineComment", "action_type": "data.api.write"}
+  ]
+}

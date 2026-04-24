@@ -76,6 +76,7 @@ export default defineConfig({
             { label: "Overview", slug: "mcp-proxy/overview" },
             { label: "Installation", slug: "mcp-proxy/installation" },
             { label: "Configuration", slug: "mcp-proxy/configuration" },
+            { label: "Remote MCP Servers", slug: "mcp-proxy/remote-servers" },
             { label: "Approval Server", slug: "mcp-proxy/approval-ui" },
             { label: "Claude Desktop", slug: "mcp-proxy/claude-desktop" },
             { label: "Claude Code", slug: "mcp-proxy/claude-code" },

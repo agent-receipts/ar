@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agent-receipts/ar/mcp-proxy/configs"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/proxy"
@@ -79,21 +80,22 @@ func main() {
 
 func serve() {
 	var (
-		dbPath       = flag.String("db", defaultDBPath("audit.db"), "SQLite audit database path")
-		receiptDB    = flag.String("receipt-db", defaultDBPath("receipts.db"), "SQLite receipt store path")
-		keyPath      = flag.String("key", "", "Ed25519 private key (PEM file)")
-		taxonomyPath = flag.String("taxonomy", "", "Taxonomy mappings (JSON file)")
-		rulesPath    = flag.String("rules", "", "Policy rules (YAML file)")
-		serverName   = flag.String("name", "", "Server name for audit trail")
-		issuerDID    = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
-		issuerName   = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
-		issuerModel  = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
-		operatorID   = flag.String("operator-id", "", "Operator DID (organisation running the agent)")
-		operatorName = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
-		principalDID = flag.String("principal", "did:user:unknown", "Principal DID")
-		chainID      = flag.String("chain", "", "Chain ID (auto-generated if empty)")
-		httpAddr     = flag.String("http", "127.0.0.1:0", "HTTP address for approval endpoints (default: random port; pass \"none\" to disable the approver)")
-		approvalWait = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
+		dbPath          = flag.String("db", defaultDBPath("audit.db"), "SQLite audit database path")
+		receiptDB       = flag.String("receipt-db", defaultDBPath("receipts.db"), "SQLite receipt store path")
+		keyPath         = flag.String("key", "", "Ed25519 private key (PEM file)")
+		taxonomyPath    = flag.String("taxonomy", "", "Taxonomy mappings (JSON file). Merged with bundled taxonomies; user mappings win on conflict.")
+		bundledTaxonomy = flag.Bool("bundled-taxonomies", true, "Include bundled taxonomies (e.g. GitHub, Atlassian). Set to false to use only -taxonomy.")
+		rulesPath       = flag.String("rules", "", "Policy rules (YAML file)")
+		serverName      = flag.String("name", "", "Server name for audit trail")
+		issuerDID       = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
+		issuerName      = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
+		issuerModel     = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
+		operatorID      = flag.String("operator-id", "", "Operator DID (organisation running the agent)")
+		operatorName    = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
+		principalDID    = flag.String("principal", "did:user:unknown", "Principal DID")
+		chainID         = flag.String("chain", "", "Chain ID (auto-generated if empty)")
+		httpAddr        = flag.String("http", "127.0.0.1:0", "HTTP address for approval endpoints (default: random port; pass \"none\" to disable the approver)")
+		approvalWait    = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
@@ -167,13 +169,22 @@ func serve() {
 		fmt.Fprintln(os.Stderr, kp.PublicKey)
 	}
 
-	// Load taxonomy mappings.
+	// Load taxonomy mappings. User-provided -taxonomy entries are placed
+	// first so they win on tool_name conflict — ClassifyToolCall iterates
+	// in order and stops on first match.
 	var mappings []taxonomy.TaxonomyMapping
 	if *taxonomyPath != "" {
 		mappings, err = taxonomy.LoadTaxonomyConfig(*taxonomyPath)
 		if err != nil {
 			log.Fatalf("mcp-proxy: load taxonomy: %v", err)
 		}
+	}
+	if *bundledTaxonomy {
+		bundled, err := configs.BundledTaxonomies()
+		if err != nil {
+			log.Fatalf("mcp-proxy: load bundled taxonomies: %v", err)
+		}
+		mappings = append(mappings, bundled...)
 	}
 
 	// Load policy rules.
