@@ -10,7 +10,8 @@ description: CLI flags, policy rules, redaction, and encryption options for the 
 | `-db` | `$HOME/.agent-receipts/audit.db` | SQLite audit database path. Parent directory is created on first run (mode 0700 on Unix). |
 | `-receipt-db` | `$HOME/.agent-receipts/receipts.db` | SQLite receipt store path. Parent directory is created on first run (mode 0700 on Unix). |
 | `-key` | (ephemeral) | Ed25519 private key PEM file for signing receipts |
-| `-taxonomy` | (none) | Taxonomy mappings JSON file for action classification |
+| `-taxonomy` | (none) | Taxonomy mappings JSON file for action classification. Merged with bundled taxonomies; user mappings win on conflict. |
+| `-bundled-taxonomies` | `true` | Include bundled taxonomies (e.g. GitHub, Atlassian) embedded in the binary. Set to `false` to use only `-taxonomy`. |
 | `-rules` | (built-in defaults) | Policy rules YAML file |
 | `-name` | (inferred from command) | Server name for the audit trail |
 | `-issuer` | `did:agent:mcp-proxy` | Issuer DID for receipts |
@@ -98,7 +99,7 @@ MCP tool names are automatically stripped of their `mcp__<server>__` prefix befo
 
 ## Taxonomy mappings
 
-For more precise classification than prefix-based inference, provide a `-taxonomy` JSON file mapping tool names to action types:
+For more precise classification than prefix-based inference, provide a `-taxonomy` JSON file mapping tool names to action types. Bundled taxonomies (see below) are loaded automatically; the `-taxonomy` file is merged on top and wins on tool-name conflicts.
 
 ```json
 {
@@ -112,7 +113,7 @@ For more precise classification than prefix-based inference, provide a `-taxonom
 
 Available action types include `filesystem.file.*`, `system.*`, and `data.api.*` (read, write, delete). See the [taxonomy spec](https://github.com/agent-receipts/ar/blob/main/spec/spec/taxonomy/action-types.json) for the full list.
 
-A bundled [`configs/github_taxonomy.json`](https://github.com/agent-receipts/ar/blob/main/mcp-proxy/configs/github_taxonomy.json) provides mappings for GitHub MCP server tools.
+The proxy ships with bundled mappings — currently [`github_taxonomy.json`](https://github.com/agent-receipts/ar/blob/main/mcp-proxy/configs/github_taxonomy.json) and [`atlassian_taxonomy.json`](https://github.com/agent-receipts/ar/blob/main/mcp-proxy/configs/atlassian_taxonomy.json) — embedded into the binary. They are loaded automatically; no `-taxonomy` flag is needed for those servers. A user-supplied `-taxonomy` is merged on top and wins on tool-name conflicts. Pass `-bundled-taxonomies=false` to disable the embedded set.
 
 ## Approval workflow
 

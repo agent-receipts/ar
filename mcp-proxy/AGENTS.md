@@ -19,7 +19,7 @@ internal/
   proxy/           # STDIO proxy, JSON-RPC parsing
   audit/           # SQLite audit store, classifier, risk scorer, redaction, encryption, intent tracker
   policy/          # YAML policy engine (pass/flag/pause/block)
-configs/           # Default policy rules
+configs/           # Default policy rules + bundled taxonomies (embedded into the binary via go:embed)
 ```
 
 ## Architecture

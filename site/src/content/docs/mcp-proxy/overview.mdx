@@ -17,7 +17,7 @@ If your MCP server exposes tools that can cross 50, either pin `-http 127.0.0.1:
 
 - **Risk scoring** -- scores every tool call 0-100 based on operation type, sensitive keywords, and patterns
 - **Operation classification** -- classifies calls as read, write, delete, or execute by tool name
-- **Action taxonomy** -- classifies tool calls using configurable taxonomy mappings, with a bundled config for GitHub MCP server tools
+- **Action taxonomy** -- classifies tool calls using configurable taxonomy mappings; GitHub and Atlassian MCP servers are covered by bundled taxonomies out of the box
 - **MCP prefix stripping** -- automatically strips `mcp__<server>__` prefixes so receipts and classification use clean tool names
 - **Policy enforcement** -- YAML rules engine with four actions: pass, flag, pause (approval required), and block
 - **Approval workflows** -- HTTP endpoints for async approval of paused operations
@@ -85,7 +85,6 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
-        "-taxonomy", "/Users/YOU/.agent-receipts/github_taxonomy.json",
         "/opt/homebrew/bin/github-mcp-server", "stdio"
       ],
       "env": {
@@ -114,7 +113,6 @@ claude mcp add-json github-audited --scope user '{
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
-    "-taxonomy", "/Users/YOU/.agent-receipts/github_taxonomy.json",
     "/opt/homebrew/bin/github-mcp-server", "stdio"
   ],
   "env": {
