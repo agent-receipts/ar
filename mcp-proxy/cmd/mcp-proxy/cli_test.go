@@ -37,8 +37,52 @@ func storeFollowReceipt(t *testing.T, s *store.Store, kp receipt.KeyPair, seq in
 	return h
 }
 
+// notifyWriter is an io.Writer that both captures output into a buffer and
+// posts a signal on each Write. Tests block on notify instead of sleeping +
+// polling so they stay reliable under slow / loaded runners.
+type notifyWriter struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	notify chan struct{}
+}
+
+func newNotifyWriter() *notifyWriter {
+	// Buffered so writes never block when the reader is between selects.
+	return &notifyWriter{notify: make(chan struct{}, 16)}
+}
+
+func (n *notifyWriter) Write(p []byte) (int, error) {
+	n.mu.Lock()
+	nn, err := n.buf.Write(p)
+	n.mu.Unlock()
+	select {
+	case n.notify <- struct{}{}:
+	default:
+	}
+	return nn, err
+}
+
+func (n *notifyWriter) String() string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.buf.String()
+}
+
+// waitForWrite blocks until at least one Write has happened since the last
+// call (or the deadline passes). Returns the current buffer contents.
+func (n *notifyWriter) waitForWrite(t *testing.T, timeout time.Duration) string {
+	t.Helper()
+	select {
+	case <-n.notify:
+		return n.String()
+	case <-time.After(timeout):
+		t.Fatalf("timed out after %s waiting for write; buffer=%q", timeout, n.String())
+		return ""
+	}
+}
+
 // TestRunFollowLoopStreamsNewRows is the acceptance-criteria test from #216:
-// start follow, insert a row, see it in output.
+// start follow, insert a row, block until the write lands, assert content.
 func TestRunFollowLoopStreamsNewRows(t *testing.T) {
 	s, err := store.Open(":memory:")
 	if err != nil {
@@ -51,48 +95,36 @@ func TestRunFollowLoopStreamsNewRows(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Start watermark on an empty store (rowid 0).
 	startRowID, err := s.MaxRowID()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var buf bytes.Buffer
-	var mu sync.Mutex
+	w := newNotifyWriter()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	done := make(chan error, 1)
 	go func() {
-		// Wrap buf behind a mutex so the test goroutine can read it safely
-		// while the loop writes.
-		done <- runFollowLoop(ctx, s, startRowID, store.Query{}, 20*time.Millisecond, false, &lockedWriter{w: &buf, mu: &mu})
+		done <- runFollowLoop(ctx, s, startRowID, store.Query{}, 10*time.Millisecond, false, w)
 	}()
 
-	// Give the loop a moment to enter its first tick, then insert.
-	time.Sleep(50 * time.Millisecond)
+	// Insert is safe any time — an empty store yields no rows on early
+	// ticks, so the watermark never advances past 0 until real rows land.
 	storeFollowReceipt(t, s, kp, 1, "chain-follow", nil)
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		out := buf.String()
-		mu.Unlock()
-		if strings.Contains(out, "filesystem.file.read") {
-			cancel()
-			if err := <-done; err != nil {
-				t.Fatalf("follow loop returned error: %v", err)
-			}
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+	out := w.waitForWrite(t, 2*time.Second)
+	if !strings.Contains(out, "filesystem.file.read") {
+		// Rare: the first write might be from something else. Wait once more.
+		out = w.waitForWrite(t, 2*time.Second)
+	}
+	if !strings.Contains(out, "filesystem.file.read") {
+		t.Fatalf("inserted receipt never appeared in follow output: %q", out)
 	}
 	cancel()
-	<-done
-	mu.Lock()
-	out := buf.String()
-	mu.Unlock()
-	t.Fatalf("inserted receipt never appeared in follow output: %q", out)
+	if err := <-done; err != nil {
+		t.Fatalf("follow loop returned error: %v", err)
+	}
 }
 
 // TestRunFollowLoopExitsOnContextCancel verifies Ctrl-C-style cancellation
@@ -138,53 +170,36 @@ func TestRunFollowLoopHonoursFilters(t *testing.T) {
 	chainA := "chain-a"
 	q := store.Query{ChainID: &chainA}
 
-	var buf bytes.Buffer
-	var mu sync.Mutex
+	w := newNotifyWriter()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runFollowLoop(ctx, s, 0, q, 20*time.Millisecond, true, &lockedWriter{w: &buf, mu: &mu})
+		done <- runFollowLoop(ctx, s, 0, q, 10*time.Millisecond, true, w)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-	storeFollowReceipt(t, s, kp, 1, "chain-b", nil) // filtered out
-	storeFollowReceipt(t, s, kp, 1, chainA, nil)    // should appear
+	// chain-b is inserted first and must be filtered out; chain-a is
+	// inserted second and must stream.
+	storeFollowReceipt(t, s, kp, 1, "chain-b", nil)
+	storeFollowReceipt(t, s, kp, 1, chainA, nil)
 
+	// Wait until chain-a shows up (it may take a couple of write events
+	// if chain-b somehow slipped through — which would then fail the check).
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		mu.Lock()
-		out := buf.String()
-		mu.Unlock()
+		out := w.waitForWrite(t, 2*time.Second)
 		if strings.Contains(out, chainA) {
 			cancel()
 			<-done
-			mu.Lock()
-			final := buf.String()
-			mu.Unlock()
-			// chain-b must be absent — it was inserted first but doesn't match the filter.
+			final := w.String()
 			if strings.Contains(final, "chain-b") {
 				t.Fatalf("chain-b should have been filtered out: %q", final)
 			}
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 	cancel()
 	<-done
-	t.Fatal("chain-a receipt never appeared in follow output")
-}
-
-// lockedWriter serializes Write calls so the test goroutine can safely
-// snapshot output while the follow loop is writing.
-type lockedWriter struct {
-	w  *bytes.Buffer
-	mu *sync.Mutex
-}
-
-func (lw *lockedWriter) Write(p []byte) (int, error) {
-	lw.mu.Lock()
-	defer lw.mu.Unlock()
-	return lw.w.Write(p)
+	t.Fatalf("chain-a receipt never appeared in follow output: %q", w.String())
 }

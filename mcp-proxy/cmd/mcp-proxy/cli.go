@@ -79,14 +79,19 @@ func cmdList(args []string) {
 		os.Exit(1)
 	}
 
+	// In follow mode the streamed rows are chronological (oldest → newest)
+	// via rowid ASC. Flip the initial batch so the overall output reads in
+	// one consistent direction and feels tail-like.
+	if *follow {
+		reverseReceipts(receipts)
+	}
+
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		if *follow {
 			// NDJSON — stream-compatible with the follow loop's output.
-			// QueryReceipts returned newest-first for display parity, but
-			// flip it here so the stream is chronological.
-			for i := len(receipts) - 1; i >= 0; i-- {
-				if err := enc.Encode(receipts[i]); err != nil {
+			for _, r := range receipts {
+				if err := enc.Encode(r); err != nil {
 					fmt.Fprintf(os.Stderr, "Error encoding receipt: %v\n", err)
 					os.Exit(1)
 				}
@@ -156,6 +161,15 @@ func runFollowLoop(ctx context.Context, s *store.Store, lastRowID int64, q store
 				writeReceiptRows(w, newRows)
 			}
 		}
+	}
+}
+
+// reverseReceipts reverses s in place. Used in follow mode so the initial
+// newest-first batch is flipped to chronological order, matching the
+// subsequent streamed rows.
+func reverseReceipts(s []receipt.AgentReceipt) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
 	}
 }
 
