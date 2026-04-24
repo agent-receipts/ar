@@ -275,12 +275,18 @@ func TestMaxRowIDEmpty(t *testing.T) {
 
 func TestMaxRowIDAfterInsert(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var prevHash *string
 	for i := 1; i <= 3; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h, err := receipt.HashReceipt(r)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := s.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}
@@ -298,12 +304,18 @@ func TestMaxRowIDAfterInsert(t *testing.T) {
 
 func TestQueryAfterRowIDReturnsOnlyNewRows(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var prevHash *string
 	for i := 1; i <= 2; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h, err := receipt.HashReceipt(r)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := s.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}
@@ -318,7 +330,10 @@ func TestQueryAfterRowIDReturnsOnlyNewRows(t *testing.T) {
 	// Insert two more after the watermark.
 	for i := 3; i <= 4; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h, err := receipt.HashReceipt(r)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := s.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}
@@ -351,12 +366,18 @@ func TestQueryAfterRowIDReturnsOnlyNewRows(t *testing.T) {
 
 func TestQueryReceiptsWithWatermarkReturnsConsistentPair(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var prevHash *string
 	for i := 1; i <= 3; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h, err := receipt.HashReceipt(r)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := s.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}
@@ -377,7 +398,10 @@ func TestQueryReceiptsWithWatermarkReturnsConsistentPair(t *testing.T) {
 	// Insert another row and confirm the watermark from above makes
 	// QueryAfterRowID return only the new row.
 	r := makeSignedReceipt(t, kp, 4, "chain-1", prevHash)
-	h, _ := receipt.HashReceipt(r)
+	h, err := receipt.HashReceipt(r)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Insert(r, h); err != nil {
 		t.Fatal(err)
 	}
@@ -392,12 +416,18 @@ func TestQueryReceiptsWithWatermarkReturnsConsistentPair(t *testing.T) {
 
 func TestQueryAfterRowIDAppliesFilters(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Insert into two different chains.
 	for i, chain := range []string{"chain-a", "chain-b"} {
 		r := makeSignedReceipt(t, kp, i+1, chain, nil)
-		h, _ := receipt.HashReceipt(r)
+		h, err := receipt.HashReceipt(r)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := s.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}

@@ -47,6 +47,11 @@ func cmdList(args []string) {
 	interval := fs.Duration("interval", 500*time.Millisecond, "Poll interval for --follow mode")
 	fs.Parse(args)
 
+	if *follow && *interval <= 0 {
+		fmt.Fprintf(os.Stderr, "Error: --interval must be positive, got %s\n", *interval)
+		os.Exit(2)
+	}
+
 	s := openReceiptStore(*db)
 	defer s.Close()
 
@@ -98,7 +103,10 @@ func cmdList(args []string) {
 			}
 		} else {
 			enc.SetIndent("", "  ")
-			enc.Encode(receipts)
+			if err := enc.Encode(receipts); err != nil {
+				fmt.Fprintf(os.Stderr, "Error encoding receipts: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	} else {
 		fmt.Printf(listRowFmt, "ID", "ACTION", "RISK", "STATUS", "ISSUER", "OPERATOR", "TIMESTAMP")
@@ -132,7 +140,7 @@ func cmdList(args []string) {
 // writes them to w. Exits cleanly when ctx is canceled (e.g. Ctrl-C).
 func runFollowLoop(ctx context.Context, s *store.Store, lastRowID int64, q store.Query, interval time.Duration, asJSON bool, w io.Writer) error {
 	if interval <= 0 {
-		interval = 500 * time.Millisecond
+		return fmt.Errorf("run follow loop: interval must be positive, got %s", interval)
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
