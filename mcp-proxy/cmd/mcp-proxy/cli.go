@@ -217,7 +217,7 @@ func writeReceiptRows(w io.Writer, receipts []receipt.AgentReceipt) {
 			server = subj.Action.Target.System
 		}
 		fmt.Fprintf(w, listRowFmt,
-			truncate(r.ID, 22),
+			truncate(r.ID, 23),
 			truncate(server, 14),
 			truncate(subj.Action.ToolName, 30),
 			truncate(subj.Action.Type, 22),

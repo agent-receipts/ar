@@ -125,7 +125,7 @@ This keeps an external approval UI able to route by port. See [Approval Server](
 **Fix:** run the full proxy command directly in a terminal first, complete the browser OAuth, then Ctrl+C and reconnect via `/mcp`:
 
 ```bash
-/Users/YOU/go/bin/mcp-proxy -name atlassian -key ~/.agent-receipts/atlassian-proxy.pem \
+$HOME/go/bin/mcp-proxy -name atlassian -key ~/.agent-receipts/atlassian-proxy.pem \
   -http 127.0.0.1:8082 \
   npx --registry https://registry.npmjs.org -y mcp-remote https://mcp.atlassian.com/v1/mcp
 ```
