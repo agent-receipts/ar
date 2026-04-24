@@ -27,6 +27,8 @@ mcp-proxy list -action read_file          # filter by action type
 mcp-proxy list -chain <chain-id>          # filter by chain
 mcp-proxy list -limit 100                 # limit results
 mcp-proxy list -json                      # JSON output
+mcp-proxy list -f                         # tail-like: stream new receipts live
+mcp-proxy list --follow --interval 1s     # custom poll interval
 ```
 
 | Flag | Description |
@@ -35,7 +37,9 @@ mcp-proxy list -json                      # JSON output
 | `-action` | Filter by action type |
 | `-chain` | Filter by chain ID |
 | `-limit` | Maximum number of receipts to return (default: `50`) |
-| `-json` | Output as JSON |
+| `-json` | Output as JSON (NDJSON — one object per line — in `--follow` mode) |
+| `-follow`, `-f` | After the initial listing, keep polling and stream new receipts as they are inserted (`tail -f`-style). Exit with `Ctrl-C`. |
+| `-interval` | Poll interval in `--follow` mode (default: `500ms`) |
 | `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
 
 ### Example output

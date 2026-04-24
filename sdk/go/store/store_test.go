@@ -262,6 +262,119 @@ func TestQueryReceiptsCombinedFilters(t *testing.T) {
 	}
 }
 
+func TestMaxRowIDEmpty(t *testing.T) {
+	s := setupStore(t)
+	max, err := s.MaxRowID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if max != 0 {
+		t.Errorf("expected 0 for empty store, got %d", max)
+	}
+}
+
+func TestMaxRowIDAfterInsert(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	var prevHash *string
+	for i := 1; i <= 3; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
+		h, _ := receipt.HashReceipt(r)
+		if err := s.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+
+	max, err := s.MaxRowID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if max != 3 {
+		t.Errorf("expected rowid 3 after 3 inserts, got %d", max)
+	}
+}
+
+func TestQueryAfterRowIDReturnsOnlyNewRows(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	var prevHash *string
+	for i := 1; i <= 2; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
+		h, _ := receipt.HashReceipt(r)
+		if err := s.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+
+	watermark, err := s.MaxRowID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert two more after the watermark.
+	for i := 3; i <= 4; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
+		h, _ := receipt.HashReceipt(r)
+		if err := s.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+
+	results, newMax, err := s.QueryAfterRowID(Query{}, watermark)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 new rows, got %d", len(results))
+	}
+	if newMax != 4 {
+		t.Errorf("expected newMax rowid 4, got %d", newMax)
+	}
+	// Second call with the advanced watermark should return nothing and
+	// leave the watermark unchanged.
+	results, same, err := s.QueryAfterRowID(Query{}, newMax)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 rows after advancing watermark, got %d", len(results))
+	}
+	if same != newMax {
+		t.Errorf("expected watermark to stay at %d, got %d", newMax, same)
+	}
+}
+
+func TestQueryAfterRowIDAppliesFilters(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	// Insert into two different chains.
+	for i, chain := range []string{"chain-a", "chain-b"} {
+		r := makeSignedReceipt(t, kp, i+1, chain, nil)
+		h, _ := receipt.HashReceipt(r)
+		if err := s.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	chainA := "chain-a"
+	results, _, err := s.QueryAfterRowID(Query{ChainID: &chainA}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for chain-a filter, got %d", len(results))
+	}
+	if results[0].CredentialSubject.Chain.ChainID != chainA {
+		t.Errorf("wrong chain: %s", results[0].CredentialSubject.Chain.ChainID)
+	}
+}
+
 func TestCloseMultipleTimes(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {

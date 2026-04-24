@@ -264,6 +264,91 @@ func (s *Store) QueryReceipts(q Query) ([]receipt.AgentReceipt, error) {
 	return scanReceipts(rows)
 }
 
+// MaxRowID returns the largest SQLite rowid currently in the receipts table.
+// Returns 0 when the table is empty. Intended as the watermark for follow-mode
+// streaming — callers pass it to QueryAfterRowID to fetch rows inserted later.
+func (s *Store) MaxRowID() (int64, error) {
+	var max int64
+	if err := s.db.QueryRow("SELECT COALESCE(MAX(rowid), 0) FROM receipts").Scan(&max); err != nil {
+		return 0, err
+	}
+	return max, nil
+}
+
+// QueryAfterRowID returns receipts with rowid > afterRowID that match the
+// non-ordering filters in q, ordered ascending by rowid. The returned int64
+// is the largest rowid in the result set, or afterRowID when no rows match —
+// callers feed it back in to poll for subsequent inserts.
+//
+// NewestFirst is ignored (follow-mode rows are always chronological). Limit
+// defaults to 10000 like QueryReceipts but is typically set much lower when
+// polling.
+func (s *Store) QueryAfterRowID(q Query, afterRowID int64) ([]receipt.AgentReceipt, int64, error) {
+	conds := []string{"rowid > ?"}
+	args := []any{afterRowID}
+
+	if q.ChainID != nil {
+		conds = append(conds, "chain_id = ?")
+		args = append(args, *q.ChainID)
+	}
+	if q.ActionType != nil {
+		conds = append(conds, "action_type = ?")
+		args = append(args, *q.ActionType)
+	}
+	if q.RiskLevel != nil {
+		conds = append(conds, "risk_level = ?")
+		args = append(args, string(*q.RiskLevel))
+	}
+	if q.Status != nil {
+		conds = append(conds, "status = ?")
+		args = append(args, string(*q.Status))
+	}
+	if q.After != nil {
+		conds = append(conds, "timestamp >= ?")
+		args = append(args, *q.After)
+	}
+	if q.Before != nil {
+		conds = append(conds, "timestamp <= ?")
+		args = append(args, *q.Before)
+	}
+
+	limit := 10000
+	if q.Limit != nil {
+		limit = *q.Limit
+	}
+	args = append(args, limit)
+
+	query := fmt.Sprintf(
+		"SELECT rowid, receipt_json FROM receipts WHERE %s ORDER BY rowid ASC LIMIT ?",
+		strings.Join(conds, " AND "),
+	)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, afterRowID, err
+	}
+	defer rows.Close()
+
+	var receipts []receipt.AgentReceipt
+	maxRowID := afterRowID
+	for rows.Next() {
+		var rowid int64
+		var rJSON string
+		if err := rows.Scan(&rowid, &rJSON); err != nil {
+			return nil, maxRowID, err
+		}
+		var r receipt.AgentReceipt
+		if err := json.Unmarshal([]byte(rJSON), &r); err != nil {
+			return nil, maxRowID, fmt.Errorf("corrupt receipt in store: %w", err)
+		}
+		receipts = append(receipts, r)
+		if rowid > maxRowID {
+			maxRowID = rowid
+		}
+	}
+	return receipts, maxRowID, rows.Err()
+}
+
 // Stats returns aggregate statistics for the store.
 func (s *Store) Stats() (Stats, error) {
 	var st Stats

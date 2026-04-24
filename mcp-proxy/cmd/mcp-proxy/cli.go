@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
@@ -14,6 +18,8 @@ import (
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
+
+const listRowFmt = "%-40s %-22s %-6s %-8s %-14s %-22s %s\n"
 
 func openReceiptStore(path string) *store.Store {
 	if err := ensureDBDir(path); err != nil {
@@ -36,6 +42,9 @@ func cmdList(args []string) {
 	actionType := fs.String("action", "", "Filter by action type")
 	asJSON := fs.Bool("json", false, "Output as JSON")
 	limit := fs.Int("limit", 50, "Max results")
+	follow := fs.Bool("follow", false, "Stream new rows as they are inserted (tail -f)")
+	fs.BoolVar(follow, "f", false, "Alias for -follow")
+	interval := fs.Duration("interval", 500*time.Millisecond, "Poll interval for --follow mode")
 	fs.Parse(args)
 
 	s := openReceiptStore(*db)
@@ -63,19 +72,87 @@ func cmdList(args []string) {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		enc.Encode(receipts)
+	} else {
+		fmt.Printf(listRowFmt, "ID", "ACTION", "RISK", "STATUS", "ISSUER", "OPERATOR", "TIMESTAMP")
+		fmt.Println("---")
+		writeReceiptRows(os.Stdout, receipts)
+		if !*follow {
+			fmt.Printf("\n%d receipts\n", len(receipts))
+		}
+	}
+
+	if !*follow {
 		return
 	}
 
-	const rowFmt = "%-40s %-22s %-6s %-8s %-14s %-22s %s\n"
-	fmt.Printf(rowFmt, "ID", "ACTION", "RISK", "STATUS", "ISSUER", "OPERATOR", "TIMESTAMP")
-	fmt.Println("---")
+	startRowID, err := s.MaxRowID()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading watermark: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Follow mode strips NewestFirst/Limit: we want all new rows in insertion
+	// order as they arrive.
+	followQ := q
+	followQ.NewestFirst = false
+	followQ.Limit = nil
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := runFollowLoop(ctx, s, startRowID, followQ, *interval, *asJSON, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "Error in follow loop: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// runFollowLoop polls the store on every tick for rows past lastRowID and
+// writes them to w. Exits cleanly when ctx is canceled (e.g. Ctrl-C).
+func runFollowLoop(ctx context.Context, s *store.Store, lastRowID int64, q store.Query, interval time.Duration, asJSON bool, w io.Writer) error {
+	if interval <= 0 {
+		interval = 500 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			newRows, maxRowID, err := s.QueryAfterRowID(q, lastRowID)
+			if err != nil {
+				return err
+			}
+			lastRowID = maxRowID
+			if len(newRows) == 0 {
+				continue
+			}
+			if asJSON {
+				enc := json.NewEncoder(w)
+				for _, r := range newRows {
+					if err := enc.Encode(r); err != nil {
+						return err
+					}
+				}
+			} else {
+				writeReceiptRows(w, newRows)
+			}
+			if f, ok := w.(interface{ Sync() error }); ok {
+				_ = f.Sync()
+			}
+		}
+	}
+}
+
+func writeReceiptRows(w io.Writer, receipts []receipt.AgentReceipt) {
 	for _, r := range receipts {
 		subj := r.CredentialSubject
 		operator := ""
 		if r.Issuer.Operator != nil {
 			operator = r.Issuer.Operator.ID
 		}
-		fmt.Printf(rowFmt,
+		fmt.Fprintf(w, listRowFmt,
 			truncate(r.ID, 40),
 			truncate(subj.Action.Type, 22),
 			subj.Action.RiskLevel,
@@ -85,7 +162,6 @@ func cmdList(args []string) {
 			subj.Action.Timestamp,
 		)
 	}
-	fmt.Printf("\n%d receipts\n", len(receipts))
 }
 
 func cmdInspect(args []string) {
