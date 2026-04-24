@@ -37,6 +37,74 @@ func storeFollowReceipt(t *testing.T, s *store.Store, kp receipt.KeyPair, seq in
 	return h
 }
 
+// TestWriteReceiptRows checks that writeReceiptRows renders SERVER, TOOL, and
+// ACTION columns correctly, including the Target==nil legacy case.
+func TestWriteReceiptRows(t *testing.T) {
+	cases := []struct {
+		name     string
+		action   receipt.Action
+		wantCols []string
+		wantNot  []string
+	}{
+		{
+			name: "with server and tool",
+			action: receipt.Action{
+				Type:      "data.api.write",
+				RiskLevel: receipt.RiskMedium,
+				ToolName:  "create_pull_request",
+				Target:    &receipt.ActionTarget{System: "github"},
+			},
+			wantCols: []string{"github", "create_pull_request", "data.api.write", "medium"},
+		},
+		{
+			name: "nil target (legacy receipt)",
+			action: receipt.Action{
+				Type:      "filesystem.file.read",
+				RiskLevel: receipt.RiskLow,
+				ToolName:  "read",
+				Target:    nil,
+			},
+			wantCols: []string{"read", "filesystem.file.read", "low"},
+		},
+		{
+			name: "long tool name truncated",
+			action: receipt.Action{
+				Type:      "data.api.read",
+				RiskLevel: receipt.RiskLow,
+				ToolName:  "searchJiraIssuesUsingJqlAndSomeExtraTextThatExceedsThirtyChars",
+				Target:    &receipt.ActionTarget{System: "atlassian"},
+			},
+			wantCols: []string{"atlassian", "data.api.read"},
+			wantNot:  []string{"searchJiraIssuesUsingJqlAndSomeExtraTextThatExceedsThirtyChars"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := receipt.AgentReceipt{
+				ID: "urn:receipt:test-id",
+				CredentialSubject: receipt.CredentialSubject{
+					Action:  tc.action,
+					Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+				},
+			}
+			var buf bytes.Buffer
+			writeReceiptRows(&buf, []receipt.AgentReceipt{r})
+			out := buf.String()
+			for _, want := range tc.wantCols {
+				if !strings.Contains(out, want) {
+					t.Errorf("expected %q in output; got: %q", want, out)
+				}
+			}
+			for _, notWant := range tc.wantNot {
+				if strings.Contains(out, notWant) {
+					t.Errorf("expected %q to be absent (truncated) in output; got: %q", notWant, out)
+				}
+			}
+		})
+	}
+}
+
 // notifyWriter is an io.Writer that both captures output into a buffer and
 // posts a signal on each Write. Tests block on notify instead of sleeping +
 // polling so they stay reliable under slow / loaded runners.

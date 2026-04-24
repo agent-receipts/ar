@@ -19,7 +19,7 @@ import (
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
-const listRowFmt = "%-40s %-22s %-6s %-8s %-14s %-22s %s\n"
+const listRowFmt = "%-22s %-14s %-30s %-22s %-8s %-8s %s\n"
 
 func openReceiptStore(path string) *store.Store {
 	if err := ensureDBDir(path); err != nil {
@@ -120,7 +120,7 @@ func cmdList(args []string) {
 			}
 		}
 	} else {
-		fmt.Printf(listRowFmt, "ID", "ACTION", "RISK", "STATUS", "ISSUER", "OPERATOR", "TIMESTAMP")
+		fmt.Printf(listRowFmt, "ID", "SERVER", "TOOL", "ACTION", "RISK", "STATUS", "TIMESTAMP")
 		fmt.Println("---")
 		writeReceiptRows(os.Stdout, receipts)
 		if !*follow {
@@ -212,17 +212,17 @@ func reverseReceipts(s []receipt.AgentReceipt) {
 func writeReceiptRows(w io.Writer, receipts []receipt.AgentReceipt) {
 	for _, r := range receipts {
 		subj := r.CredentialSubject
-		operator := ""
-		if r.Issuer.Operator != nil {
-			operator = r.Issuer.Operator.ID
+		server := ""
+		if subj.Action.Target != nil {
+			server = subj.Action.Target.System
 		}
 		fmt.Fprintf(w, listRowFmt,
-			truncate(r.ID, 40),
+			truncate(r.ID, 23),
+			truncate(server, 14),
+			truncate(subj.Action.ToolName, 30),
 			truncate(subj.Action.Type, 22),
 			subj.Action.RiskLevel,
 			subj.Outcome.Status,
-			truncate(r.Issuer.Name, 14),
-			truncate(operator, 22),
 			subj.Action.Timestamp,
 		)
 	}

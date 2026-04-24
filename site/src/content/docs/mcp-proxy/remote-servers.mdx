@@ -42,6 +42,10 @@ openssl pkey -in ~/.agent-receipts/atlassian-proxy.pem -pubout \
   -out ~/.agent-receipts/atlassian-proxy-pub.pem
 ```
 
+:::tip[Reuse an existing key]
+One signing key works for all servers. If you already have a key from a previous setup (e.g. `github-proxy.pem`), you can reuse it here — just point `-key` at that file instead.
+:::
+
 ## Worked example: Atlassian (Jira + Confluence)
 
 Add an entry to your MCP client config that runs `mcp-proxy` wrapping `npx mcp-remote <url>`. For Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
@@ -58,7 +62,7 @@ Add an entry to your MCP client config that runs `mcp-proxy` wrapping `npx mcp-r
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
-        "npx", "-y", "mcp-remote",
+        "npx", "--registry", "https://registry.npmjs.org", "-y", "mcp-remote",
         "https://mcp.atlassian.com/v1/mcp"
       ]
     }
@@ -73,16 +77,21 @@ claude mcp add-json atlassian-audited --scope user '{
   "command": "/Users/YOU/go/bin/mcp-proxy",
   "args": [
     "-name", "atlassian",
-    "-key", "/Users/YOU/.agent-receipts/atlassian-proxy.pem",
+    "-key", "'"$HOME"'/.agent-receipts/atlassian-proxy.pem",
     "-http", "127.0.0.1:8082",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
-    "npx", "-y", "mcp-remote",
+    "npx", "--registry", "https://registry.npmjs.org", "-y", "mcp-remote",
     "https://mcp.atlassian.com/v1/mcp"
   ]
 }'
 ```
+
+:::note[Path tips]
+- **Key path:** `$HOME` expands in the shell so you don't need to hard-code `/Users/you`. The snippet above uses single-quote escaping (`'"$HOME"'`) so the variable expands before the JSON is passed to `claude mcp add-json`.
+- **Binary path:** Claude Desktop doesn't inherit your shell `PATH`, so GUI-launched instances may fail to find `mcp-proxy` if it's in `~/go/bin`. Use the full path — run `which mcp-proxy` to find it.
+:::
 
 The first time the server is invoked, `mcp-remote` opens a browser tab to complete the OAuth flow with Atlassian. Subsequent runs reuse the cached token (managed by `mcp-remote`, not the proxy).
 
@@ -109,4 +118,19 @@ This keeps an external approval UI able to route by port. See [Approval Server](
 
 - **OAuth is invisible to the proxy.** `mcp-remote` owns the credential. The proxy can't include token identity in receipts and can't log auth refreshes. Tracked in [#227](https://github.com/agent-receipts/ar/issues/227).
 - **Naming collision.** There are several unrelated tools called `mcp-proxy` in the ecosystem — make sure your `command` path points at the Agent Receipts binary (the one you installed via `go install` or downloaded from this project).
-- **First-run OAuth.** Some MCP clients launch the server eagerly; the OAuth flow needs an interactive browser session, so the very first invocation may require running the proxy command manually in a terminal once before the client can use it.
+
+:::caution[First-run OAuth — do this before connecting via your MCP client]
+`mcp-remote` needs an interactive browser session to complete the initial OAuth flow. Claude Code or Claude Desktop will show the server as `failed` until this is done.
+
+**Fix:** run the full proxy command directly in a terminal first, complete the browser OAuth, then Ctrl+C and reconnect via `/mcp`:
+
+```bash
+$HOME/go/bin/mcp-proxy -name atlassian -key ~/.agent-receipts/atlassian-proxy.pem \
+  -http 127.0.0.1:8082 \
+  npx --registry https://registry.npmjs.org -y mcp-remote https://mcp.atlassian.com/v1/mcp
+```
+
+Subsequent launches reuse the cached token managed by `mcp-remote`.
+:::
+
+- **Corporate npm registry.** If your npm is configured to use a private registry (e.g. AWS CodeArtifact), `npx mcp-remote` will fail with a `404 Not Found` error that looks like a missing package. The fix — already in the examples above — is to pass `--registry https://registry.npmjs.org` explicitly to `npx`.
