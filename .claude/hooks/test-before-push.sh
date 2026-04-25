@@ -6,6 +6,18 @@
 
 set -euo pipefail
 
+# Only run for `git push` commands. The hook config `if` filter
+# isn't being honoured by the harness in this environment, so we
+# re-check here from the tool_input payload on stdin.
+HOOK_INPUT="$(cat || true)"
+if [ -n "$HOOK_INPUT" ]; then
+  CMD=$(printf '%s' "$HOOK_INPUT" | python3 -c 'import json,sys;d=json.loads(sys.stdin.read() or "{}");print((d.get("tool_input") or {}).get("command",""))' 2>/dev/null || true)
+  case "$CMD" in
+    "git push"|"git push "*) ;;
+    *) exit 0 ;;
+  esac
+fi
+
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 FAILED=0
 

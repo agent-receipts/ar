@@ -98,6 +98,7 @@ Multiple projects have independently converged on the same cryptographic and pro
 | **W3C Verifiable Credentials** | Agent Receipts (unique in this space) |
 | **OWASP Agentic AI Top 10** | Microsoft AGT, Pipelock, mcp-firewall (ressl) |
 | **YAML policy config** | All projects |
+| **Hook-based emission** | Claude Code (full tool-surface coverage), Codex CLI (partial — no WebSearch, partial shell); Agent Receipts adopts both via `claude_code_hook` and `codex_hook` channels (ADRs in progress) |
 
 ---
 
@@ -116,4 +117,4 @@ Areas that remain underserved despite the crowded landscape:
 
 ---
 
-*Last updated: April 16, 2026*
+*Last updated: April 25, 2026*
