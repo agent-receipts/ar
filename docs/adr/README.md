@@ -22,6 +22,8 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0006](0006-yaml-for-policy-rules.md) | YAML for Policy Rule Configuration (mcp-proxy) | Accepted |
 | [ADR-0007](0007-did-method-strategy.md) | DID Method Strategy | Proposed |
 | [ADR-0008](0008-response-hashing-and-chain-completeness.md) | Response Hashing and Chain Completeness | Accepted |
+| [ADR-0009](0009-canonicalization-and-schema-consistency.md) | Canonicalisation Profile and VC Field Name Commitment | Accepted |
+| [ADR-0010](0010-daemon-process-separation.md) | Daemon Process Separation for Signing and Storage | Proposed |
 
 ## References
 
