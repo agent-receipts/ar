@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type {
 	AgentReceipt,
 	OutcomeStatus,
@@ -165,7 +165,11 @@ export class ReceiptStore {
 	 */
 	query(filters: ReceiptQuery): AgentReceipt[] {
 		const conditions: string[] = [];
-		const params: string[] = [];
+		// node:sqlite binds each value using its runtime JS type (string → TEXT,
+		// number → INTEGER). SQLite's LIMIT requires INTEGER; binding it as
+		// TEXT silently returns zero rows. Typed as SQLInputValue[] so string
+		// filter values and the numeric limit each bind as their native type.
+		const params: SQLInputValue[] = [];
 
 		if (filters.chainId !== undefined) {
 			conditions.push("chain_id = ?");
@@ -196,7 +200,7 @@ export class ReceiptStore {
 			conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
 		const limit = filters.limit ?? DEFAULT_QUERY_LIMIT;
-		params.push(String(limit));
+		params.push(limit);
 
 		const rows = this.db
 			.prepare(
