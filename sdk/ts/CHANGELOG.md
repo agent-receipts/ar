@@ -20,10 +20,12 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
   **Safety invariant.** Receipts are signed and durable — any value placed in
   `parameters_preview` is permanent and visible to anyone who can read the
-  receipt. Callers MUST restrict keys to an explicit allowlist (see the
-  taxonomy `preview_fields` config) and MUST NOT populate this field from
-  raw tool arguments. Treat it the same way you would treat a log line that
-  ships to long-term storage: never include secrets, credentials, tokens,
-  PII, or any field whose value you have not deliberately classified as
-  safe to retain. The SDK does not auto-populate or validate this field;
-  enforcement is the operator's responsibility.
+  receipt. Callers MUST restrict keys to an explicit operator-managed allowlist
+  and MUST NOT populate this field from raw tool arguments. The SDK does not
+  auto-populate or validate this field; enforcement lives outside the SDK
+  today (typically at the proxy/operator layer). Taxonomy-level allowlist
+  support is tracked in
+  [#258](https://github.com/agent-receipts/ar/issues/258).
+  Treat it the same way you would treat a log line that ships to long-term
+  storage: never include secrets, credentials, tokens, PII, or any field
+  whose value you have not deliberately classified as safe to retain.
