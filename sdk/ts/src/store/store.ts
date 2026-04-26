@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type {
 	AgentReceipt,
 	OutcomeStatus,
@@ -165,12 +165,11 @@ export class ReceiptStore {
 	 */
 	query(filters: ReceiptQuery): AgentReceipt[] {
 		const conditions: string[] = [];
-		// Use unknown[] so string filter values and the numeric limit are all
-		// passed with their native JS types. Node's built-in SQLite binds each
-		// value using its runtime type (text vs integer), and SQLite's LIMIT
-		// clause requires an integer — passing it as a string causes it to be
-		// bound as TEXT which results in zero rows on some Node versions.
-		const params: unknown[] = [];
+		// node:sqlite binds each value using its runtime JS type (string → TEXT,
+		// number → INTEGER). SQLite's LIMIT requires INTEGER; binding it as
+		// TEXT silently returns zero rows. Typed as SQLInputValue[] so string
+		// filter values and the numeric limit each bind as their native type.
+		const params: SQLInputValue[] = [];
 
 		if (filters.chainId !== undefined) {
 			conditions.push("chain_id = ?");
@@ -200,7 +199,6 @@ export class ReceiptStore {
 		const where =
 			conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-		// Pass limit as a number, not a string, so it binds as INTEGER.
 		const limit = filters.limit ?? DEFAULT_QUERY_LIMIT;
 		params.push(limit);
 
@@ -208,7 +206,7 @@ export class ReceiptStore {
 			.prepare(
 				`SELECT receipt_json FROM receipts ${where} ORDER BY timestamp ASC LIMIT ?`,
 			)
-			.all(...(params as Parameters<typeof this.db.prepare>)) as unknown as ReceiptRow[];
+			.all(...params) as unknown as ReceiptRow[];
 
 		return rows.map((r) => parseReceiptJson(r.receipt_json, "query"));
 	}

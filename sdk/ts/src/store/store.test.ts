@@ -160,6 +160,28 @@ describe("ReceiptStore", () => {
 			const results = store.query({});
 			expect(results).toHaveLength(3);
 		});
+
+		// Regression: node:sqlite binds JS values by their runtime type, and
+		// SQLite's LIMIT requires INTEGER. If `limit` is bound as TEXT (e.g.
+		// via String(limit)) it returns zero rows on some Node versions.
+		// See https://github.com/agent-receipts/ar/pull/249.
+		it("returns rows when limit exceeds row count (LIMIT bound as INTEGER)", () => {
+			const results = store.query({ limit: 20 });
+			expect(results).toHaveLength(3);
+		});
+
+		it("returns rows when limit is combined with filters", () => {
+			const results = store.query({
+				status: "success",
+				limit: 20,
+			});
+			expect(results).toHaveLength(2);
+		});
+
+		it("uses default limit when none provided and returns all rows", () => {
+			const results = store.query({});
+			expect(results).toHaveLength(3);
+		});
 	});
 
 	describe("tool_name", () => {
