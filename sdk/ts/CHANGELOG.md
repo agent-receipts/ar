@@ -15,6 +15,15 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 - `parameters_preview?: Record<string, string>` field on the `Action` interface.
   An operator-controlled, additive map of field name → stringified value that
-  sits alongside the existing `parameters_hash`. Only fields explicitly listed
-  in the taxonomy `preview_fields` config should ever be included; the hash
-  still covers the full parameter set.
+  sits alongside the existing `parameters_hash`. The hash continues to cover
+  the full parameter set; the preview exists for human/auditor display only.
+
+  **Safety invariant.** Receipts are signed and durable — any value placed in
+  `parameters_preview` is permanent and visible to anyone who can read the
+  receipt. Callers MUST restrict keys to an explicit allowlist (see the
+  taxonomy `preview_fields` config) and MUST NOT populate this field from
+  raw tool arguments. Treat it the same way you would treat a log line that
+  ships to long-term storage: never include secrets, credentials, tokens,
+  PII, or any field whose value you have not deliberately classified as
+  safe to retain. The SDK does not auto-populate or validate this field;
+  enforcement is the operator's responsibility.

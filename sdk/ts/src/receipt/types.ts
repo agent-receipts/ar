@@ -63,6 +63,13 @@ export interface Action {
 	risk_level: RiskLevel;
 	target?: ActionTarget;
 	parameters_hash?: string;
+	/**
+	 * Operator-controlled, additive preview of parameter values for audit display.
+	 * SAFETY: callers MUST restrict keys to an explicit allowlist (see the
+	 * taxonomy `preview_fields` config). Never populate from raw arguments —
+	 * receipts are signed and durable, and any value placed here is permanent.
+	 * `parameters_hash` remains the cryptographic commitment to the full payload.
+	 */
 	parameters_preview?: Record<string, string>;
 	timestamp: string;
 	trusted_timestamp?: string;
