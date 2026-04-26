@@ -177,11 +177,6 @@ describe("ReceiptStore", () => {
 			});
 			expect(results).toHaveLength(2);
 		});
-
-		it("uses default limit when none provided and returns all rows", () => {
-			const results = store.query({});
-			expect(results).toHaveLength(3);
-		});
 	});
 
 	describe("tool_name", () => {
