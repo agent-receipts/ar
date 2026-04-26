@@ -36,7 +36,7 @@
 	},
 	"scripts": {
 		"sync-version": "node scripts/sync-version.mjs",
-		"postinstall": "pnpm run sync-version",
+		"prepare": "pnpm run sync-version",
 		"prebuild": "pnpm run sync-version",
 		"pretest": "pnpm run sync-version",
 		"pretypecheck": "pnpm run sync-version",
