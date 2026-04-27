@@ -107,10 +107,13 @@ Options:
 
 With `"high"` enabled, a `system.command.execute` receipt includes:
 
-```json
-"parameters_hash": "sha256:9c84a8c9...",
-"parameters_preview": {
-  "command": "echo \"Testing agent-receipts plugin fix\""
+```jsonc
+{
+  // ...other receipt fields
+  "parameters_hash": "sha256:9c84a8c9...",
+  "parameters_preview": {
+    "command": "echo \"Testing agent-receipts plugin fix\""
+  }
 }
 ```
 
