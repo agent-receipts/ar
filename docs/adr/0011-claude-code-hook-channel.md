@@ -28,16 +28,18 @@ Define `claude_code_hook` as a new `channel` value in the ADR-0010 emitter schem
 
 ### Channel value and event mapping
 
-The emitter sets `channel: "claude_code_hook"`. Hook events map to ADR-0010 receipt fields as follows:
+The emitter sets `channel: "claude_code_hook"`. Hook events map to emitter→daemon IPC fields as follows:
 
-| Hook event        | Emits receipt? | ADR-0010 fields populated                                                                 |
+| Hook event        | Emits receipt? | Emitter→daemon IPC fields populated                                                       |
 |-------------------|----------------|-------------------------------------------------------------------------------------------|
 | `SessionStart`    | No (state only) | Captures `session_id` for the lifetime of the session; no per-call receipt.              |
 | `UserPromptSubmit`| Optional (off by default) | If enabled: `tool: { name: "user_prompt" }`, `input: { prompt }`, `decision: "allowed"`. |
-| `PreToolUse`      | Yes            | `tool: { name, server? }`, `input` (raw tool args), `decision` (`allowed` if the hook returns permit; `denied` if the hook returns block; `pending` for async or undecided cases). `output`/`error` empty. |
-| `PostToolUse`     | Yes            | Same `tool` and `input` as the matching PreToolUse, plus `output` or `error` from the tool result. `decision` reflects the executed outcome. |
+| `PreToolUse`      | Yes            | `tool: { name, server? }`, `tool_use_id` (per-invocation identifier from the hook payload), `input` (raw tool args), `decision` (`allowed` if the hook returns permit; `denied` if the hook returns block; `pending` for async or undecided cases). `output`/`error` empty. |
+| `PostToolUse`     | Yes            | Same `tool`, `tool_use_id`, and `input` as the matching PreToolUse, plus `output` or `error` from the tool result. `decision` reflects the executed outcome. |
 
-Pre/Post pairs MUST share `session_id` and tool identity so the daemon (and verifiers) can correlate them; the pairing itself is the daemon's job, not the emitter's. For MCP tools surfaced through Claude Code, `tool.server` is populated from the hook payload's MCP server name so the receipt shape matches what `mcp_proxy` produces for the same call. (Cross-channel duplication is expected and intentional under ADR-0010's single-chain model — both receipts land in the chain with the same `session_id`, distinguished by `channel` and by the daemon-attested `peer`.)
+The fields above describe the **emitter→daemon IPC payload**, not the persisted receipt. Raw hook payloads (`input`, `output`, `error`, and any optional `prompt`) are transient IPC input only. The daemon canonicalizes (RFC 8785 per ADR-0002), hashes (`parameters_hash` and `response_hash` per ADR-0008), and applies redaction policy before persisting or signing. `UserPromptSubmit`, when enabled, is governed by the daemon's prompt-redaction policy; the full prompt MUST NOT be persisted in plaintext.
+
+Pre/Post pairs MUST share `session_id`, `tool_use_id`, and tool identity so the daemon (and verifiers) can correlate them deterministically. `session_id` plus tool identity alone is insufficient because the same tool may be invoked many times in one session (e.g., repeated `Bash` calls); the per-invocation `tool_use_id` from Claude Code's hook payload is the unambiguous pairing key. The pairing itself is the daemon's job, but the emitter MUST surface `tool_use_id` on both events. For MCP tools surfaced through Claude Code, `tool.server` is populated from the hook payload's MCP server name so the receipt shape matches what `mcp_proxy` produces for the same call. (Cross-channel duplication is expected and intentional under ADR-0010's single-chain model — both receipts land in the chain with the same `session_id`, distinguished by `channel` and by the daemon-attested `peer`.)
 
 ### Session scoping
 
@@ -56,10 +58,12 @@ The emitter MUST persist drop counts to a per-session file in the platform runti
 Files are created `0600`, owned by the invoking user, and contain a single integer count. The emitter's behaviour on each invocation:
 
 1. Connect to the daemon socket non-blocking. If connect fails (daemon not running): exit silently — ADR-0010 already classifies this as the "events drop silently" mode, and a fresh emitter cannot record what it has no channel to record.
-2. Read and unlink the per-session drop file if it exists, capturing the count.
+2. Read the per-session drop file if it exists, capturing the count, but **leave the file in place** until a successful send.
 3. Compose the event with a new `drop_count` field carrying any pre-existing count from step 2.
-4. Send the event. On `EAGAIN`: write/increment the per-session drop file by 1 (plus any count read in step 2 that was not yet sent), then exit.
-5. On successful send: exit. The daemon, on receiving an event with `drop_count > 0`, synthesises an `events_dropped` receipt in the chain exactly as ADR-0010 specifies for the in-memory case.
+4. Send the event. On `EAGAIN`: atomically update the per-session drop file to `previous_count + 1` by writing the new integer to a temp file in the same directory and `rename()`-ing it over the session file, then exit.
+5. On successful send: unlink the per-session drop file if one existed, then exit. The daemon, on receiving an event with `drop_count > 0`, synthesises an `events_dropped` receipt in the chain exactly as ADR-0010 specifies for the in-memory case.
+
+The "leave-until-success" ordering plus the temp-file-and-rename update guarantee that a crash or kill between any two steps cannot lose the count: the file is only removed after the daemon has acknowledged the bundled `drop_count`, and `EAGAIN` updates are atomic with respect to power loss.
 
 This requires extending the ADR-0010 emitter→daemon IPC contract by one optional field: `drop_count` (non-negative integer, default 0, omitted when zero). Existing emitters that hold the counter in memory may set this field instead of relying on a follow-up flush, simplifying their implementation; this is a strict superset of the current contract.
 
