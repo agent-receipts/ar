@@ -3,8 +3,6 @@ title: Installation
 description: Install and configure the OpenClaw plugin for Agent Receipts.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
 The plugin is published to npm as [`@agnt-rcpt/openclaw`](https://www.npmjs.com/package/@agnt-rcpt/openclaw).
 
 ## Install
@@ -37,7 +35,7 @@ installing you must allowlist the two agent-receipts tools in your `openclaw.jso
 Without this, the plugin still loads — hooks fire and receipts are
 generated — but the agent cannot call the query or verify tools itself.
 
-You can also allowlist the entire plugin by ID, or switch to the `"full"` profile:
+You can also allowlist the entire plugin by ID:
 
 ```jsonc
 {
