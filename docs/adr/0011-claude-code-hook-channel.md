@@ -55,7 +55,7 @@ The emitter MUST persist drop counts to a per-session file in the platform runti
 - macOS: `$TMPDIR/agentreceipts/drops/<session_id>` (per-user, tmpwatch-eligible).
 - Windows: `%LOCALAPPDATA%\agentreceipts\drops\<session_id>`.
 
-Files are created `0600`, owned by the invoking user, and contain a single integer count. The emitter's behaviour on each invocation:
+Files are created so that only the invoking user can read or modify them: POSIX mode `0600` on Linux and macOS, and an equivalent user-only ACL on Windows (the security descriptor must grant access to the invoking user SID only — no `Authenticated Users` or `Everyone` ACEs). They are owned by the invoking user and contain a single integer count. The emitter's behaviour on each invocation:
 
 1. Connect to the daemon socket non-blocking. If connect fails (daemon not running): exit silently — ADR-0010 already classifies this as the "events drop silently" mode, and a fresh emitter cannot record what it has no channel to record.
 2. Read the per-session drop file if it exists, capturing the count, but **leave the file in place** until a successful send.
