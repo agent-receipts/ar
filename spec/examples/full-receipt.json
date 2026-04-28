@@ -66,6 +66,6 @@
     "created": "2026-03-31T14:30:01Z",
     "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z4hDJKeC2x8yQBKg7TFvGr9NQRHyJSRcxp1BHoANGvSapfEw2KYRbXcUZ1vABTEwVLmJyAAitRviAoJK7eDsq3sLj"
+    "proofValue": "u4hDJKeC2x8yQBKg7TFvGr9NQRHyJSRcxp1BHoANGvSapfEw2KYRbXcUZ1vABTEwVLmJyAAitRviAoJK7eDsq3sLj"
   }
 }

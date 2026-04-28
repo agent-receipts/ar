@@ -40,6 +40,6 @@
     "created": "2026-03-31T10:00:01Z",
     "verificationMethod": "did:agent:file-manager-agent-001#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z2WjXcKNmNqR8sTuVwXyZaBcDeFgHJkNmNaPqRsTuVwXyZaBcDeFgHJkNmNaPqRsTuVwXyZaBcDeFgHJkNmNa"
+    "proofValue": "u2WjXcKNmNqR8sTuVwXyZaBcDeFgHJkNmNaPqRsTuVwXyZaBcDeFgHJkNmNaPqRsTuVwXyZaBcDeFgHJkNmNa"
   }
 }

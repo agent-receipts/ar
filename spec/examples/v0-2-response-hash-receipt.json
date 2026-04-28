@@ -45,6 +45,6 @@
     "created": "2026-04-22T09:15:01Z",
     "verificationMethod": "did:agent:data-agent-instance-001#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z5aBcDeFgHJkMnPqRsTuVwXyZaBcDeFgHJkMnPqRsTuVwXyZaBcDeFgHJkMnPqRsTuVwXyZaBcDeFgHJkMnPq"
+    "proofValue": "u5aBcDeFgHJkMnPqRsTuVwXyZaBcDeFgHJkMnPqRsTuVwXyZaBcDeFgHJkMnPqRsTuVwXyZaBcDeFgHJkMnPq"
   }
 }

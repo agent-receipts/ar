@@ -34,6 +34,6 @@
     "created": "2026-03-31T14:31:01Z",
     "verificationMethod": "did:agent:example-agent-instance-001#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z3MvGcVxzRYMCEBHsRuzVoweEL1GEjVnmRpkuFxPDXBigSxABTEwVLmJyAAitRviAoJK7eDsq3sLjg6KYRbXcUZ1v"
+    "proofValue": "u3MvGcVxzRYMCEBHsRuzVoweEL1GEjVnmRpkuFxPDXBigSxABTEwVLmJyAAitRviAoJK7eDsq3sLjg6KYRbXcUZ1v"
   }
 }
