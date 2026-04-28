@@ -261,11 +261,7 @@ func serve() {
 	if !approverDisabled && *httpAddr != "" {
 		ln, err := net.Listen("tcp", *httpAddr)
 		if err != nil {
-			// Actionable error: name the address and offer both remediation paths.
-			fmt.Fprintf(os.Stderr,
-				"mcp-proxy: cannot bind approval listener on %s: %v\n"+
-					"  Fix: use -http 127.0.0.1:0 for a random free port, or -http=none to disable the listener.\n",
-				*httpAddr, err)
+			fmt.Fprint(os.Stderr, formatBindFailure(*httpAddr, err))
 			os.Exit(1)
 		}
 		approvalURL = "http://" + ln.Addr().String()
@@ -707,15 +703,29 @@ func approvalRejectionResponse(toolName, ruleName string, riskScore int, approva
 	return code, buildApprovalDeniedMessage(toolName, ruleName, riskScore, approvalID, status, timeout)
 }
 
-// emitStartupBanner prints a one-line policy/approver summary on stderr. When
-// pause rules exist without a reachable approver AND the operator didn't opt
-// out via -http=none, the line is marked WARN so misconfiguration is caught
-// before the first failing tool call.
+// formatBindFailure builds the actionable error printed when -http binds to a
+// busy address. Extracted so the test asserts against the real string the
+// operator sees rather than re-implementing the format.
+func formatBindFailure(addr string, err error) string {
+	return fmt.Sprintf(
+		"mcp-proxy: cannot bind approval listener on %s: %v\n"+
+			"  Fix: use -http 127.0.0.1:0 for a random free port, or -http=none to disable the listener.\n",
+		addr, err)
+}
+
+// emitStartupBanner prints a one-line policy/approver summary on stderr plus a
+// machine-readable JSON companion line. The banner always prints; what varies
+// by configuration is the level (INFO vs WARN) and the trailing suffix:
 //
-// httpExplicit distinguishes "default none" (operator didn't set -http at all)
-// from "explicit none" (operator passed -http=none). The two cases produce
-// different messages: default-none emits a soft info line describing opt-in,
-// explicit-none is silent.
+//   - Approver wired (approvalURL set): INFO, no suffix.
+//   - Default off (approverDisabled, httpExplicit=false) with pause rules:
+//     INFO with " — approver off by default; pass -http <addr> to enable".
+//   - Explicit -http=none (approverDisabled, httpExplicit=true): INFO, no
+//     suffix — operator made an informed choice, no nudge needed.
+//   - No approver and not explicitly disabled with pause rules loaded
+//     (approverDisabled=false, approvalURL=""): WARN, suffix flags the
+//     misconfiguration. Should be unreachable in normal operation since the
+//     default value of -http is "none".
 //
 // "require approval" is reserved for pause rules; block rules are enforced
 // without user interaction and are reported separately.

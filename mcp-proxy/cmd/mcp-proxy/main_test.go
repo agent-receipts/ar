@@ -179,7 +179,9 @@ func TestStartupBannerDefaultNone(t *testing.T) {
 }
 
 // TestStartupBannerExplicitNone: operator passed -http=none explicitly.
-// Should be completely silent (no suffix, no WARN, no hint).
+// The banner line and JSON companion still print; what's suppressed is the
+// trailing opt-in suffix and the WARN level — the operator made an informed
+// choice and doesn't need a nudge.
 func TestStartupBannerExplicitNone(t *testing.T) {
 	summary := policy.NewEngine(policy.DefaultRules()).Describe()
 	// approverDisabled=true, httpExplicit=true
@@ -193,6 +195,9 @@ func TestStartupBannerExplicitNone(t *testing.T) {
 	}
 	if !strings.Contains(out, "approver: disabled") {
 		t.Errorf("expected 'approver: disabled' for explicit -http=none, got: %s", out)
+	}
+	if !strings.Contains(out, `"event":"policy_banner"`) {
+		t.Errorf("expected machine-readable companion line to still print, got: %s", out)
 	}
 }
 
@@ -225,18 +230,6 @@ func TestStartupBannerNoPauseRulesNoWarn(t *testing.T) {
 
 	if strings.Contains(out, "WARN") {
 		t.Errorf("did not expect WARN for flag-only ruleset, got: %s", out)
-	}
-}
-
-func TestStartupBannerNoWarnWhenApproverExplicitlyDisabled(t *testing.T) {
-	summary := policy.NewEngine(policy.DefaultRules()).Describe()
-	out := captureStderr(t, func() { emitStartupBanner(summary, "", true, true) })
-
-	if strings.Contains(out, "WARN") {
-		t.Errorf("did not expect WARN when approver explicitly disabled, got: %s", out)
-	}
-	if !strings.Contains(out, "approver: disabled") {
-		t.Errorf("expected 'approver: disabled' in banner, got: %s", out)
 	}
 }
 
@@ -285,12 +278,13 @@ func TestStartupBannerInfoWhenApproverSet(t *testing.T) {
 }
 
 // TestBindFailureDiagnostic verifies that the actionable error message on a
-// busy port names the address and suggests both remediation options.
-// This test exercises the message format; the os.Exit(1) is not exercised here
-// (that's integration-level). We construct the message the same way main.go
-// does and assert it contains the required substrings.
+// busy port names the address and suggests both remediation options. It calls
+// the same formatBindFailure helper main.go uses, so the test fails if the
+// real output regresses (rather than asserting against a re-implemented copy).
+// The os.Exit(1) is not exercised here — that's integration-level.
 func TestBindFailureDiagnostic(t *testing.T) {
-	// Grab a real busy port by binding it ourselves.
+	// Reproduce a real bind failure so the err string in the message matches
+	// what an operator would actually see.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("could not bind listener for test setup: %v", err)
@@ -298,18 +292,16 @@ func TestBindFailureDiagnostic(t *testing.T) {
 	defer ln.Close()
 	busyAddr := ln.Addr().String()
 
-	// Attempt to bind the same address — this must fail.
 	_, bindErr := net.Listen("tcp", busyAddr)
 	if bindErr == nil {
 		t.Skip("could not reproduce busy-port condition on this platform")
 	}
 
-	// Build the message the same way main.go does.
-	msg := "mcp-proxy: cannot bind approval listener on " + busyAddr + ": " + bindErr.Error() + "\n" +
-		"  Fix: use -http 127.0.0.1:0 for a random free port, or -http=none to disable the listener.\n"
+	msg := formatBindFailure(busyAddr, bindErr)
 
 	for _, want := range []string{
 		busyAddr,
+		bindErr.Error(),
 		"Fix:",
 		"-http 127.0.0.1:0",
 		"-http=none",
