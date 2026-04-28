@@ -21,7 +21,7 @@ description: CLI flags, policy rules, redaction, and encryption options for the 
 | `-operator-name` | (none) | Operator name, e.g. `Anthropic` |
 | `-principal` | `did:user:unknown` | Principal DID for receipts |
 | `-chain` | (auto UUID) | Chain ID for receipt chaining |
-| `-http` | `127.0.0.1:0` | HTTP address for the approval endpoint (default: random free port, logged to stderr). Pin a port (e.g. `127.0.0.1:8081`) whenever you're running an external approver that can't parse stderr to discover the URL. See [Approval Server](/mcp-proxy/approval-ui/). |
+| `-http` | `none` | HTTP address for the approval listener. Off by default — no listener starts unless you opt in. Pass `127.0.0.1:0` for a random free port or `127.0.0.1:<port>` to pin a port. See [Approval Server](/mcp-proxy/approval-ui/). |
 | `-approval-timeout` | `1m0s` | Maximum time to wait for HTTP approval before a paused call is auto-denied |
 
 ## Policy rules
@@ -117,13 +117,15 @@ The proxy ships with bundled mappings — currently [`github_taxonomy.json`](htt
 
 ## Approval workflow
 
+Approvals are **off by default** — the HTTP listener does not start unless you pass `-http <addr>`. A pause rule that fires without a listener fails fast with JSON-RPC code `-32003` (`no approver configured…`) so the failure is immediate and obvious rather than a silent 60-second timeout.
+
 The [Approval Server page](/mcp-proxy/approval-ui/) has the full treatment — endpoints, auth, running an approver, opting out. Quick reference:
 
 - Endpoints: `POST /api/tool-calls/{id}/approve` and `POST /api/tool-calls/{id}/deny`, both require `Authorization: Bearer <token>`.
 - The URL and token are printed on stderr at startup, plus a machine-readable JSON line (`{"event":"approval_endpoint",...}`).
 - No `/pending` or index route — hitting `GET /` returns 404.
-- The HTTP server only starts when the policy has at least one `pause` rule. With the built-in defaults, that's always true.
-- Default `-http` is a random port; pin one (`127.0.0.1:8081`) if you're running an external approver that can't parse the stderr discovery event.
+- The HTTP server only starts when you pass `-http <addr>` explicitly. Passing `none` (or omitting `-http`) keeps the listener off.
+- Pin a port (`127.0.0.1:8081`) if you're running an external approver that can't parse the stderr discovery event.
 - On deny or timeout the client receives a JSON-RPC error with `code: -32002` and a `data` object including `status`, `rule_name`, `risk_score`, `approval_id`, and `approval_url`.
 
 ## Data redaction
@@ -195,7 +197,9 @@ The approval server is not a web UI. `GET /` returns 404 by design. The only rou
 
 ### Multiple MCP clients running the proxy simultaneously
 
-Each `mcp-proxy` instance binds its own HTTP server for the approval workflow. Give each instance a distinct port with `-http` so an approver can route to the right one:
+By default, `mcp-proxy` starts no HTTP listener (`-http none`), so multiple concurrent sessions work without any port configuration — they simply don't collide.
+
+If you do opt in to the approval workflow, each instance that passes `-http <addr>` binds its own server. Give each a distinct port so an approver can route to the right one:
 
 ```bash
 # Claude Desktop
@@ -208,6 +212,6 @@ mcp-proxy -name github -http 127.0.0.1:8081 ... /path/to/server
 mcp-proxy -name github -http 127.0.0.1:8082 ... /path/to/server
 ```
 
-The random-port default (`127.0.0.1:0`) avoids collisions but leaves approvers without a stable URL — fine only when the approver parses stderr on startup.
+`127.0.0.1:0` picks a random free port automatically — fine when the approver parses the stderr discovery event at startup.
 
 Each instance can also use separate `-db` and `-receipt-db` paths if you want isolated audit trails, or share the same databases if you want a unified log. By default both point at `$HOME/.agent-receipts/`, so all clients share one audit log unless you override them.

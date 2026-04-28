@@ -5,8 +5,8 @@ description: How to route Claude Desktop MCP servers through the Agent Receipts 
 
 Claude Desktop connects to MCP servers via `claude_desktop_config.json`. The Agent Receipts proxy wraps any MCP server transparently — Claude Desktop doesn't know or care that the proxy is there.
 
-:::note[Approval server — when you need it]
-The default policy pauses calls scoring ≥50. Scores stack a base (write 20, execute 30, delete 40) with modifiers (+30 sensitive keyword, +30 SQL mutation without `WHERE`, +20 `config`/`setting`), so `create_token` (50), `update_auth_config` (70), and `delete_credential` (70) pause, but ordinary GitHub writes like `create_pull_request` (20) do not. The config below pins `-http 127.0.0.1:8080` so an approver has a stable URL when your server does expose tools that cross 50. See [Approval Server](/mcp-proxy/approval-ui/).
+:::note[Approval workflow — opt-in]
+The default policy includes a `pause_high_risk` rule, but the approval listener is **off by default**. Ordinary GitHub writes like `create_pull_request` (20) never pause. Tools that do cross the threshold (e.g. `create_token` = 50, `update_auth_config` = 70) will fail fast with a clear error unless you opt in by passing `-http 127.0.0.1:<port>` — see [Approval Server](/mcp-proxy/approval-ui/).
 :::
 
 ## Prerequisites
@@ -60,7 +60,6 @@ Then substitute the three values into the `mcpServers` block below, and replace 
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-        "-http", "127.0.0.1:8080",
         "/opt/homebrew/bin/github-mcp-server", "stdio"
       ],
       "env": {
@@ -71,7 +70,7 @@ Then substitute the three values into the `mcpServers` block below, and replace 
 }
 ```
 
-`-http 127.0.0.1:8080` pins the approval endpoint to a known port so an approver can target it. If the policy ever pauses a call and no approver responds, the client sees JSON-RPC code `-32002` (message `tool call approval timed out after <duration>…`) — see [Approval Server](/mcp-proxy/approval-ui/). If you also run Claude Code or Codex simultaneously, give each client a distinct port (e.g. `8080`, `8081`, `8082`).
+The approval listener is off by default. If the policy pauses a call (e.g. a high-risk tool your server exposes), it fails immediately with JSON-RPC code `-32003` (`no approver configured`). To enable approvals, add `-http 127.0.0.1:<port>` to `args` and run an approver — see [Approval Server](/mcp-proxy/approval-ui/).
 
 Restart Claude Desktop. The GitHub MCP server now runs behind the proxy — every tool call goes through it transparently.
 

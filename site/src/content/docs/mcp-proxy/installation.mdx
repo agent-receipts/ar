@@ -53,15 +53,15 @@ The proxy intercepts stdin/stdout, logs every tool call, and forwards messages t
 
 For wiring the proxy into an actual client, jump to [Claude Code](/mcp-proxy/claude-code/), [Claude Desktop](/mcp-proxy/claude-desktop/), or [Codex](/mcp-proxy/codex/).
 
-## Approval server (when the policy pauses)
+## Approval server (opt-in)
 
-The default policy contains `pause_high_risk` (`min_risk_score: 50`). Most GitHub MCP tools don't reach the threshold — `create_pull_request` scores 20, `merge_pull_request` scores 10, reads score 0 — so many deployments never trigger a pause. The scorer stacks a base (read 0, write 20, execute 30, delete 40, unknown 10) with modifiers: +30 for sensitive keywords in the tool name (`auth`/`credential`/`password`/`token`/`secret`/`key`), +30 for SQL mutations missing `WHERE`, +20 for `config`/`setting` substrings, +15 for `send_*`/`post_*` prefixes. Combinations that actually cross 50: write + sensitive (e.g. `create_token` = 50, `update_auth_config` = 70), delete + sensitive (e.g. `delete_credential` = 70), delete + config (`delete_config` = 60), execute + sensitive or execute + SQL-no-WHERE (60). Plain writes, plain deletes (40), `update_config` alone (40), and sensitive-keyword *reads* like `get_token` (30) do **not** pause.
+The default policy contains `pause_high_risk` (`min_risk_score: 50`), but the approval listener is **off by default**. A paused call without a listener configured fails immediately with JSON-RPC code `-32003` (`no approver configured…`) — a fast, obvious failure rather than a 60-second timeout.
 
-Plan for it if your MCP server exposes any combinations that cross 50. A paused call with no approver listening fails with JSON-RPC code `-32002` (message `tool call approval timed out after <duration>: tool=… rule=… risk=… approval_id=…`) after `-approval-timeout` elapses, while every other call continues to pass through.
+Most GitHub MCP tools don't reach the threshold — `create_pull_request` scores 20, `merge_pull_request` scores 10, reads score 0. Combinations that actually cross 50: write + sensitive keyword (`create_token` = 50, `update_auth_config` = 70), delete + sensitive (`delete_credential` = 70), delete + config (`delete_config` = 60), execute + SQL-no-WHERE (60). Plain writes, plain deletes (40), `update_config` alone (40), and sensitive-keyword *reads* like `get_token` (30) do **not** pause.
 
-**If you want approvals:** pin a port with `-http 127.0.0.1:8081` and run an approver against it. The dedicated [Approval Server](/mcp-proxy/approval-ui/) page documents the real HTTP routes (`POST /api/tool-calls/{id}/approve` and `/deny` — there is no index page at `/`) and shows a minimal shell approver.
+**If you want human-in-the-loop approvals:** this section is for you. Pass `-http 127.0.0.1:<port>` to start the listener, then run an approver against it. The dedicated [Approval Server](/mcp-proxy/approval-ui/) page documents the HTTP routes (`POST /api/tool-calls/{id}/approve` and `/deny`) and shows a minimal shell approver.
 
-**If you don't want approvals at all:** load a custom `-rules` YAML with no `pause` or `block` rules — see [opting out](/mcp-proxy/approval-ui/#opting-out-of-approval).
+**If you don't want approvals at all:** omit `-http` (the default) and paused calls will fail fast. To prevent pausing entirely, load a custom `-rules` YAML with no `pause` or `block` rules — see [opting out](/mcp-proxy/approval-ui/#opting-out-of-approval).
 
 **Seeing `-32002` on a tool that shouldn't pause?** It's most likely client-side denial by the MCP client (e.g. Claude Code), not the proxy. See the [`-32002` troubleshooting entry](/mcp-proxy/configuration/#-32002-errors-on-tool-calls) for how to distinguish the two sources.
 
@@ -80,6 +80,6 @@ mcp-proxy -key private.pem npx -y @modelcontextprotocol/server-filesystem ~/Docu
 
 ## Next steps
 
-- [Approval Server](/mcp-proxy/approval-ui/) — required reading if the default policy is active
+- [Approval Server](/mcp-proxy/approval-ui/) — opt-in human-in-the-loop approval workflow
 - [Configuration](/mcp-proxy/configuration/) for CLI flags, policy rules, redaction, and encryption
 - [CLI Commands](/reference/cli-commands/) for querying and verifying the audit trail

@@ -124,7 +124,7 @@ rules:
 
 Actions: `pass` (log only), `flag` (log + highlight), `pause` (wait for approval), `block` (reject).
 
-When a tool call is paused, approve or deny via HTTP. The approval URL and bearer token are logged to stderr at startup (the default port is random; pass `-http 127.0.0.1:PORT` to pin). Copy the token from the startup line and export it before running the curls:
+When a tool call is paused, approve or deny via HTTP. **The listener is off by default** — pass `-http 127.0.0.1:PORT` to enable it (without that flag, paused calls fail fast with JSON-RPC code `-32003`). The approval URL and bearer token are logged to stderr at startup. Copy the token from the startup line and export it before running the curls:
 
 ```sh
 export APPROVAL_TOKEN=<token-from-stderr>
