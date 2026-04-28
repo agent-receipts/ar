@@ -27,19 +27,24 @@ The proxy approach gives you more context — it has the full request including 
 
 The plugin registers two hooks with the OpenClaw gateway:
 
-```
-before_tool_call (priority 100)
-  └─ stash { toolName, params, paramsHash, startedAt }
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Agent
+    participant OpenClaw
+    participant Plugin as agent-receipts plugin
+    participant Tool
+    participant DB as SQLite
 
-[tool executes]
-
-after_tool_call
-  └─ classify action type and risk level
-  └─ build receipt (action, outcome, principal, chain position)
-  └─ sign with Ed25519
-  └─ compute receipt hash
-  └─ chain to previous receipt
-  └─ store in SQLite
+    Agent->>OpenClaw: tool call
+    OpenClaw->>Plugin: before_tool_call (priority 100)
+    Note over Plugin: stash { toolName, params,<br/>paramsHash, startedAt }
+    OpenClaw->>Tool: execute
+    Tool-->>OpenClaw: result / error
+    OpenClaw->>Plugin: after_tool_call
+    Note over Plugin: classify action + risk<br/>build receipt<br/>sign Ed25519<br/>hash + chain to previous
+    Plugin->>DB: insert receipt
+    OpenClaw-->>Agent: tool result
 ```
 
 `before_tool_call` runs at priority 100 — earlier than most hooks — to capture timing accurately before the tool call starts. It stashes the parameters hash (SHA-256 of the [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) canonical JSON of the arguments) and the start timestamp.
