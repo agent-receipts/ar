@@ -56,7 +56,7 @@ Every tool call is mapped to an action type and risk level before the receipt is
 |-----------|-------------|------|
 | `exec`, `bash`, `run_command` | `system.command.execute` | high |
 | `read_file`, `read` | `filesystem.file.read` | low |
-| `write_file`, `write` | `filesystem.file.modify` | medium |
+| `write_file`, `write` | `filesystem.file.create` | low |
 | `delete_file` | `filesystem.file.delete` | high |
 | `browser_navigate`, `web_fetch` | `system.browser.navigate` | low |
 | `settings_modify` | `system.settings.modify` | high |
@@ -204,7 +204,7 @@ The first end-to-end trial produced this sequence:
    10  unknown    medium  success  ar_query_receipts  2026-04-26T21:11:01Z
 ```
 
-Rows 8 and 10 are the agent — unprompted — calling `ar_query_receipts` mid-session to inspect its own audit trail. Both calls have receipts. The receipt for the audit query is in the audit trail.
+Rows 8 and 10 are the agent — asked to verify the plugin worked — choosing to do so by calling `ar_query_receipts` against its own audit trail. Both calls have receipts. The receipt for the audit query is in the audit trail.
 
 The `unknown` classification is [openclaw#98](https://github.com/agent-receipts/openclaw/issues/98) — the plugin's own tools aren't in the taxonomy yet. That's a taxonomy gap, not a protocol gap: the receipts exist, they're signed, they're correctly positioned in the chain. The self-verification loop works.
 
