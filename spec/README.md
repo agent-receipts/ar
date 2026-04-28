@@ -122,7 +122,7 @@ The canonical definitions live in [`spec/taxonomy/action-types.json`](spec/taxon
     "created": "2026-03-31T14:30:01Z",
     "verificationMethod": "did:agent:claude-instance-abc123#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z3FXQjecWufY46yKJFGcSxtKzKHQi6VwuADnBJ4viNckGy2s"
+    "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
   }
 }
 ```

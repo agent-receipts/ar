@@ -29,7 +29,7 @@ flowchart TD
   A["Receipt fields\n(proof not yet present)"] --> C["RFC 8785\nJSON Canonicalization"]
   C --> D["Canonical JSON bytes"]
   D --> E["Ed25519 sign\nwith issuer's private key"]
-  E --> F["Base58btc encode\n(z-prefix)"]
+  E --> F["Base64url encode\n(u-prefix, no padding)"]
   F --> G["Attach as\nproof.proofValue"]
   G --> H["Signed Agent Receipt"]
 
