@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright Chromium (for mermaid rendering)
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Build site
         run: pnpm build
 

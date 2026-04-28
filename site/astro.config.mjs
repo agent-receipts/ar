@@ -1,8 +1,16 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import rehypeMermaid from "rehype-mermaid";
 
 export default defineConfig({
   site: "https://agentreceipts.ai",
+  markdown: {
+    syntaxHighlight: {
+      type: "shiki",
+      excludeLangs: ["mermaid"],
+    },
+    rehypePlugins: [[rehypeMermaid, { strategy: "inline-svg" }]],
+  },
   integrations: [
     starlight({
       title: "Agent Receipts",
@@ -105,6 +113,16 @@ export default defineConfig({
           ],
         },
         { label: "Ecosystem", slug: "ecosystem" },
+        {
+          label: "Blog",
+          items: [
+            { label: "All Posts", slug: "blog" },
+            {
+              label: "OpenClaw Plugin: How It Works",
+              slug: "blog/openclaw-plugin-deep-dive",
+            },
+          ],
+        },
       ],
     }),
   ],
