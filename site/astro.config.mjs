@@ -113,6 +113,16 @@ export default defineConfig({
           ],
         },
         { label: "Ecosystem", slug: "ecosystem" },
+        {
+          label: "Blog",
+          items: [
+            { label: "All Posts", slug: "blog" },
+            {
+              label: "OpenClaw Plugin: How It Works",
+              slug: "blog/openclaw-plugin-deep-dive",
+            },
+          ],
+        },
       ],
     }),
   ],
