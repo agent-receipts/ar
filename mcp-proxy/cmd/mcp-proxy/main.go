@@ -94,7 +94,7 @@ func serve() {
 		operatorName    = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
 		principalDID    = flag.String("principal", "did:user:unknown", "Principal DID")
 		chainID         = flag.String("chain", "", "Chain ID (auto-generated if empty)")
-		httpAddr        = flag.String("http", "127.0.0.1:0", "HTTP address for approval endpoints (default: random port; pass \"none\" to disable the approver)")
+		httpAddr        = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
 		approvalWait    = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
 	)
 	flag.Usage = func() {
@@ -105,6 +105,16 @@ func serve() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	// Detect whether -http was explicitly set on the command line.
+	// flag.Visit only visits flags that were actually provided; if -http is
+	// absent the flag retains its default ("none") and httpExplicit stays false.
+	httpExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "http" {
+			httpExplicit = true
+		}
+	})
 
 	args := flag.Args()
 	if len(args) == 0 {
@@ -244,15 +254,19 @@ func serve() {
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
 
-	// Start HTTP server for approvals only when pause rules exist and the
-	// operator hasn't disabled the approver via -http=none. Only the literal
-	// "none" counts as an explicit opt-out; empty -http (e.g. `-http=`) is
-	// treated as not-configured so the banner still warns.
+	// Start HTTP server for approvals only when the operator explicitly opts in
+	// via -http <addr>. "none" is the default — no listener, no port, no
+	// collision between concurrent sessions.
 	approverDisabled := strings.EqualFold(strings.TrimSpace(*httpAddr), "none")
-	if engine.HasPauseRules() && !approverDisabled && *httpAddr != "" {
+	if !approverDisabled && *httpAddr != "" {
 		ln, err := net.Listen("tcp", *httpAddr)
 		if err != nil {
-			log.Fatalf("mcp-proxy: http server: %v", err)
+			// Actionable error: name the address and offer both remediation paths.
+			fmt.Fprintf(os.Stderr,
+				"mcp-proxy: cannot bind approval listener on %s: %v\n"+
+					"  Fix: use -http 127.0.0.1:0 for a random free port, or -http=none to disable the listener.\n",
+				*httpAddr, err)
+			os.Exit(1)
 		}
 		approvalURL = "http://" + ln.Addr().String()
 		// Human-readable line (one copy-pasteable string, no log timestamp prefix).
@@ -275,7 +289,7 @@ func serve() {
 	// debugging. A WARN variant fires when the approver is absent but the
 	// ruleset needs one, which is the #1 silent-failure mode. Explicit
 	// -http=none is NOT treated as misconfiguration.
-	emitStartupBanner(engine.Describe(), approvalURL, approverDisabled)
+	emitStartupBanner(engine.Describe(), approvalURL, approverDisabled, httpExplicit)
 
 	handler := func(direction string, raw []byte, msg *proxy.Message) *proxy.HandlerResult {
 		method := ""
@@ -698,9 +712,14 @@ func approvalRejectionResponse(toolName, ruleName string, riskScore int, approva
 // out via -http=none, the line is marked WARN so misconfiguration is caught
 // before the first failing tool call.
 //
+// httpExplicit distinguishes "default none" (operator didn't set -http at all)
+// from "explicit none" (operator passed -http=none). The two cases produce
+// different messages: default-none emits a soft info line describing opt-in,
+// explicit-none is silent.
+//
 // "require approval" is reserved for pause rules; block rules are enforced
 // without user interaction and are reported separately.
-func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisabled bool) {
+func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisabled bool, httpExplicit bool) {
 	pauseCount := len(summary.PauseRules)
 	blockCount := len(summary.BlockRules)
 
@@ -714,11 +733,21 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 
 	level := "INFO"
 	suffix := ""
-	// Only warn on the accidental case: pause rules loaded, no approver,
+	// Warn only on the accidental case: pause rules loaded, no approver,
 	// and operator didn't explicitly opt out.
-	if approvalURL == "" && !approverDisabled && pauseCount > 0 {
-		level = "WARN"
-		suffix = " — pause rules will fail (set -http=ADDR to enable approver, or -http=none to acknowledge)"
+	// Default "none" (httpExplicit=false) is NOT a misconfiguration — emit a
+	// soft info hint instead. Explicit -http=none stays silent.
+	if approvalURL == "" && pauseCount > 0 {
+		if !approverDisabled {
+			// approverDisabled=false here means neither default-none nor explicit-none;
+			// this branch should not normally be reached, but guard it anyway.
+			level = "WARN"
+			suffix = " — pause rules will fail (set -http=ADDR to enable approver, or -http=none to acknowledge)"
+		} else if !httpExplicit {
+			// Default none: emit a soft info hint, not a WARN.
+			suffix = " — approver off by default; pass -http <addr> to enable"
+		}
+		// Explicit -http=none: no suffix, no WARN.
 	}
 
 	pauseDesc := ""

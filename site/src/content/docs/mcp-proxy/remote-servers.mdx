@@ -58,7 +58,6 @@ Add an entry to your MCP client config that runs `mcp-proxy` wrapping `npx mcp-r
       "args": [
         "-name", "atlassian",
         "-key", "/Users/YOU/.agent-receipts/atlassian-proxy.pem",
-        "-http", "127.0.0.1:8082",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -78,7 +77,6 @@ claude mcp add-json atlassian-audited --scope user '{
   "args": [
     "-name", "atlassian",
     "-key", "'"$HOME"'/.agent-receipts/atlassian-proxy.pem",
-    "-http", "127.0.0.1:8082",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -101,19 +99,6 @@ The proxy ships with bundled mappings for Atlassian's Jira and Confluence tools 
 
 The list of bundled taxonomies lives at [`mcp-proxy/configs/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy/configs) — open a PR to add or correct mappings.
 
-## Port assignment
-
-`mcp-remote` listens on `127.0.0.1` for the local end of the OAuth callback, and the proxy itself binds an approval port. If you run multiple audited remote servers alongside local ones, give each its own approval port:
-
-| Server          | `-http`            |
-| --------------- | ------------------ |
-| GitHub          | `127.0.0.1:8080`   |
-| Codex / Linear  | `127.0.0.1:8081`   |
-| Atlassian       | `127.0.0.1:8082`   |
-| Slack           | `127.0.0.1:8083`   |
-
-This keeps an external approval UI able to route by port. See [Approval Server](/mcp-proxy/approval-ui/) for the wider workflow.
-
 ## Caveats
 
 - **OAuth is invisible to the proxy.** `mcp-remote` owns the credential. The proxy can't include token identity in receipts and can't log auth refreshes. Tracked in [#227](https://github.com/agent-receipts/ar/issues/227).
@@ -126,7 +111,6 @@ This keeps an external approval UI able to route by port. See [Approval Server](
 
 ```bash
 $HOME/go/bin/mcp-proxy -name atlassian -key ~/.agent-receipts/atlassian-proxy.pem \
-  -http 127.0.0.1:8082 \
   npx --registry https://registry.npmjs.org -y mcp-remote https://mcp.atlassian.com/v1/mcp
 ```
 

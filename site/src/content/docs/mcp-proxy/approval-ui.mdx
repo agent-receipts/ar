@@ -3,7 +3,7 @@ title: Approval Server
 description: HTTP endpoints that gate paused tool calls, how to approve or deny them, and how to auto-start an approver.
 ---
 
-When a policy rule pauses a tool call, the proxy blocks forwarding until something POSTs an approve or deny decision to its HTTP endpoint. **If no approver is listening, every paused call fails with JSON-RPC code `-32002` (message `tool call approval timed out after <duration>…`) after the configured `-approval-timeout`.**
+**Approvals are off by default.** To turn them on, pass `-http 127.0.0.1:<port>` to `mcp-proxy`. Without that flag the listener never starts, and any tool call that matches a `pause` rule fails immediately with JSON-RPC code `-32003` (`no approver configured`) instead of waiting for an approver that isn't there. With the listener up, a paused call blocks forwarding until something POSTs an approve or deny decision; if no approver responds within `-approval-timeout` (default 60s), the call fails with code `-32002` (`tool call approval timed out…`).
 
 The built-in defaults include a `pause_high_risk` rule (`min_risk_score: 50`). A call only pauses when its score actually reaches 50. Base by operation: read 0, write 20, execute 30, delete 40, unknown 10. Modifiers: +30 for sensitive keywords in the tool name (`auth`/`credential`/`password`/`token`/`secret`/`key`), +30 for SQL mutations in arguments missing `WHERE`, +20 for `config`/`setting` substrings, +15 for `send_*`/`post_*` prefixes. So `create_token` (write 20 + sensitive 30 = 50), `update_auth_config` (70), `delete_credential` (70), and `exec_sql` with an unparenthesised `DELETE` (60) all pause. But plain `update_config` (40), plain `delete_branch` (40), and sensitive-keyword *reads* like `get_token` (30) stay below the threshold — as do ordinary writes like `create_pull_request` (20) and `push_files` (20).
 
@@ -13,7 +13,7 @@ The HTTP server is **not** a web UI. There is no index page at `/` — requestin
 
 ## When the server runs
 
-The proxy starts the HTTP listener on startup if and only if the loaded policy contains at least one `pause` rule. With the built-in defaults, that condition is always true. You can confirm the server is up by looking for these lines on stderr:
+The proxy starts the HTTP listener on startup if and only if the operator passed `-http <addr>` (anything other than the default `none`). The listener does not depend on what rules are loaded — even with no `pause` rules the listener will still come up if `-http` is set. To run with the listener off, omit the flag or pass `-http=none` explicitly. You can confirm the server is up by looking for these lines on stderr:
 
 ```
 mcp-proxy: approvals at http://127.0.0.1:8081 (token: 5fce4e79...)
@@ -24,7 +24,7 @@ The first line is human-readable; the second is a stable JSON event designed for
 
 ## Pin a predictable port
 
-The default (`-http 127.0.0.1:0`) binds a random free port. That's fine when a co-located approver reads the stderr discovery event, but painful for everything else: launchd units, browser bookmarks, integration tests, anything that wants a hard-coded URL. Pin a port in your MCP client config:
+`-http 127.0.0.1:0` binds a random free port — fine when a co-located approver reads the stderr discovery event, but painful for everything else: launchd units, browser bookmarks, integration tests, anything that wants a hard-coded URL. Pin a port in your MCP client config:
 
 ```json
 {
@@ -97,7 +97,9 @@ On deny or timeout, the MCP client receives a JSON-RPC error (`code: -32002`) wi
 
 ## Opting out of approval
 
-If you don't want to run an approver, the alternative is to edit your policy so it never pauses. Two ways:
+The simplest opt-out is to **not pass `-http`** — the listener won't start, and any call matching a `pause` rule fails fast with code `-32003` (`no approver configured`). That's what happens by default.
+
+If you want paused calls to *succeed* without human review (i.e. treat the rule as a no-op rather than a fail-fast), edit the policy:
 
 **Option 1 — Disable the default rule.** Write a custom `-rules` YAML that omits `pause_high_risk`. Anything the default rule would have paused will now pass (and still be flagged if it matches other rules). This is a policy decision: high-risk writes now go through without human review.
 

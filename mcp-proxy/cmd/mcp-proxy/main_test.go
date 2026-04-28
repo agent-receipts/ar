@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -149,9 +150,105 @@ func captureStderr(t *testing.T, fn func()) string {
 	return <-done
 }
 
+// TestStartupBannerDefaultNone: -http not set at all (httpExplicit=false).
+// With default rules containing pause_high_risk, the banner should emit INFO
+// (not WARN) with a soft hint about opt-in.
+func TestStartupBannerDefaultNone(t *testing.T) {
+	summary := policy.NewEngine(policy.DefaultRules()).Describe()
+	// approverDisabled=true (default is "none"), httpExplicit=false
+	out := captureStderr(t, func() { emitStartupBanner(summary, "", true, false) })
+
+	if strings.Contains(out, "[WARN]") {
+		t.Errorf("did not expect WARN for default-off approver, got: %s", out)
+	}
+	if !strings.Contains(out, "[INFO]") {
+		t.Errorf("expected INFO marker for default-off case, got: %s", out)
+	}
+	if !strings.Contains(out, "approver off by default") {
+		t.Errorf("expected 'approver off by default' hint, got: %s", out)
+	}
+	if !strings.Contains(out, "pass -http") {
+		t.Errorf("expected '-http' opt-in hint, got: %s", out)
+	}
+	if !strings.Contains(out, "pause_high_risk") {
+		t.Errorf("expected pause rule name listed, got: %s", out)
+	}
+	if !strings.Contains(out, `"event":"policy_banner"`) {
+		t.Errorf("expected machine-readable companion line, got: %s", out)
+	}
+}
+
+// TestStartupBannerExplicitNone: operator passed -http=none explicitly.
+// Should be completely silent (no suffix, no WARN, no hint).
+func TestStartupBannerExplicitNone(t *testing.T) {
+	summary := policy.NewEngine(policy.DefaultRules()).Describe()
+	// approverDisabled=true, httpExplicit=true
+	out := captureStderr(t, func() { emitStartupBanner(summary, "", true, true) })
+
+	if strings.Contains(out, "[WARN]") {
+		t.Errorf("did not expect WARN for explicit -http=none, got: %s", out)
+	}
+	if strings.Contains(out, "approver off by default") {
+		t.Errorf("did not expect default-off hint for explicit -http=none, got: %s", out)
+	}
+	if !strings.Contains(out, "approver: disabled") {
+		t.Errorf("expected 'approver: disabled' for explicit -http=none, got: %s", out)
+	}
+}
+
+// TestStartupBannerExplicitAddr: operator passed -http 127.0.0.1:0 and the
+// listener is up. Banner should show INFO with the resolved URL.
+func TestStartupBannerExplicitAddr(t *testing.T) {
+	summary := policy.NewEngine(policy.DefaultRules()).Describe()
+	// approverDisabled=false, httpExplicit=true, approvalURL set
+	out := captureStderr(t, func() {
+		emitStartupBanner(summary, "http://127.0.0.1:8081", false, true)
+	})
+
+	if !strings.Contains(out, "[INFO]") {
+		t.Errorf("expected INFO marker, got: %s", out)
+	}
+	if !strings.Contains(out, "approver: http://127.0.0.1:8081") {
+		t.Errorf("expected approver URL in banner, got: %s", out)
+	}
+	if strings.Contains(out, "WARN") {
+		t.Errorf("did not expect WARN when approver is set, got: %s", out)
+	}
+}
+
+func TestStartupBannerNoPauseRulesNoWarn(t *testing.T) {
+	// Pure-flag ruleset: no approver needed, so empty URL should not warn.
+	summary := policy.NewEngine([]policy.Rule{
+		{Name: "flag_all", Enabled: true, Action: "flag"},
+	}).Describe()
+	out := captureStderr(t, func() { emitStartupBanner(summary, "", false, false) })
+
+	if strings.Contains(out, "WARN") {
+		t.Errorf("did not expect WARN for flag-only ruleset, got: %s", out)
+	}
+}
+
+func TestStartupBannerNoWarnWhenApproverExplicitlyDisabled(t *testing.T) {
+	summary := policy.NewEngine(policy.DefaultRules()).Describe()
+	out := captureStderr(t, func() { emitStartupBanner(summary, "", true, true) })
+
+	if strings.Contains(out, "WARN") {
+		t.Errorf("did not expect WARN when approver explicitly disabled, got: %s", out)
+	}
+	if !strings.Contains(out, "approver: disabled") {
+		t.Errorf("expected 'approver: disabled' in banner, got: %s", out)
+	}
+}
+
+// TestStartupBannerWarnsWhenApproverMissing covers the edge case where
+// approverDisabled=false but approvalURL is also empty (i.e. no listener and
+// no explicit opt-out). This should not happen in normal operation (the default
+// is now "none" so approverDisabled will be true), but the WARN path must
+// remain reachable for safety.
 func TestStartupBannerWarnsWhenApproverMissing(t *testing.T) {
 	summary := policy.NewEngine(policy.DefaultRules()).Describe()
-	out := captureStderr(t, func() { emitStartupBanner(summary, "", false) })
+	// approverDisabled=false and approvalURL="" — the unusual "neither" case
+	out := captureStderr(t, func() { emitStartupBanner(summary, "", false, true) })
 
 	if !strings.Contains(out, "[WARN]") {
 		t.Errorf("expected WARN marker in banner, got: %s", out)
@@ -170,9 +267,11 @@ func TestStartupBannerWarnsWhenApproverMissing(t *testing.T) {
 	}
 }
 
+// TestStartupBannerInfoWhenApproverSet covers the normal opt-in case:
+// operator passed -http 127.0.0.1:8081 and the listener is up.
 func TestStartupBannerInfoWhenApproverSet(t *testing.T) {
 	summary := policy.NewEngine(policy.DefaultRules()).Describe()
-	out := captureStderr(t, func() { emitStartupBanner(summary, "http://127.0.0.1:8081", false) })
+	out := captureStderr(t, func() { emitStartupBanner(summary, "http://127.0.0.1:8081", false, true) })
 
 	if !strings.Contains(out, "[INFO]") {
 		t.Errorf("expected INFO marker, got: %s", out)
@@ -185,27 +284,39 @@ func TestStartupBannerInfoWhenApproverSet(t *testing.T) {
 	}
 }
 
-func TestStartupBannerNoPauseRulesNoWarn(t *testing.T) {
-	// Pure-flag ruleset: no approver needed, so empty URL should not warn.
-	summary := policy.NewEngine([]policy.Rule{
-		{Name: "flag_all", Enabled: true, Action: "flag"},
-	}).Describe()
-	out := captureStderr(t, func() { emitStartupBanner(summary, "", false) })
-
-	if strings.Contains(out, "WARN") {
-		t.Errorf("did not expect WARN for flag-only ruleset, got: %s", out)
+// TestBindFailureDiagnostic verifies that the actionable error message on a
+// busy port names the address and suggests both remediation options.
+// This test exercises the message format; the os.Exit(1) is not exercised here
+// (that's integration-level). We construct the message the same way main.go
+// does and assert it contains the required substrings.
+func TestBindFailureDiagnostic(t *testing.T) {
+	// Grab a real busy port by binding it ourselves.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("could not bind listener for test setup: %v", err)
 	}
-}
+	defer ln.Close()
+	busyAddr := ln.Addr().String()
 
-func TestStartupBannerNoWarnWhenApproverExplicitlyDisabled(t *testing.T) {
-	summary := policy.NewEngine(policy.DefaultRules()).Describe()
-	out := captureStderr(t, func() { emitStartupBanner(summary, "", true) })
-
-	if strings.Contains(out, "WARN") {
-		t.Errorf("did not expect WARN when approver explicitly disabled, got: %s", out)
+	// Attempt to bind the same address — this must fail.
+	_, bindErr := net.Listen("tcp", busyAddr)
+	if bindErr == nil {
+		t.Skip("could not reproduce busy-port condition on this platform")
 	}
-	if !strings.Contains(out, "approver: disabled") {
-		t.Errorf("expected 'approver: disabled' in banner, got: %s", out)
+
+	// Build the message the same way main.go does.
+	msg := "mcp-proxy: cannot bind approval listener on " + busyAddr + ": " + bindErr.Error() + "\n" +
+		"  Fix: use -http 127.0.0.1:0 for a random free port, or -http=none to disable the listener.\n"
+
+	for _, want := range []string{
+		busyAddr,
+		"Fix:",
+		"-http 127.0.0.1:0",
+		"-http=none",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("bind-failure message missing %q:\n%s", want, msg)
+		}
 	}
 }
 

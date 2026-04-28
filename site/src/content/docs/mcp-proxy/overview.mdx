@@ -7,10 +7,10 @@ The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP clien
 
 **Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy)
 
-:::note[The default policy can pause — plan for it if your server exposes sensitive tools]
-The built-in policy contains a `pause_high_risk` rule (`min_risk_score: 50`). Scores stack: base by operation (read 0, write 20, execute 30, delete 40, unknown 10), plus +30 for sensitive keywords in the tool name (`auth`/`credential`/`password`/`token`/`secret`/`key`), +30 for SQL mutations in arguments missing a `WHERE`, +20 for `config`/`setting` substrings, +15 for `send_*`/`post_*` prefixes. What actually crosses 50: `create_token` (write 20 + sensitive 30 = 50), `update_auth_config` (70), `delete_credential` (70), `exec_sql` with `DELETE …` and no WHERE (60). What doesn't: plain writes like `create_pull_request` (20), plain deletes like `delete_branch` (40), or sensitive-keyword reads like `get_token` (30). Calls at ≥50 hold until something POSTs an approve/deny; with no approver they fail with JSON-RPC code `-32002` (message `tool call approval timed out after <duration>…`) once `-approval-timeout` elapses.
+:::note[The default policy includes a `pause_high_risk` rule — approvals are opt-in]
+The built-in policy contains a `pause_high_risk` rule (`min_risk_score: 50`). The approval listener is **off by default**, so a paused call fails fast with a clear error (JSON-RPC code `-32003`, message `no approver configured…`) rather than timing out. To approve high-risk calls interactively instead, see [Approval Server](/mcp-proxy/approval-ui/).
 
-If your MCP server exposes tools that can cross 50, either pin `-http 127.0.0.1:8081` and run an approver (see [Approval Server](/mcp-proxy/approval-ui/)), or load a custom `-rules` YAML with no `pause`/`block` rules. Seeing `-32002` on tools that *shouldn't* pause (like `create_pull_request`) is usually client-side denial, not the proxy — see [troubleshooting](/mcp-proxy/configuration/#-32002-errors-on-tool-calls).
+Scores that cross 50: `create_token` (write 20 + sensitive 30 = 50), `update_auth_config` (70), `delete_credential` (70), `exec_sql` with `DELETE …` and no `WHERE` (60). Scores that don't: plain writes like `create_pull_request` (20), plain deletes like `delete_branch` (40), sensitive-keyword reads like `get_token` (30). Seeing `-32002` on tools that *shouldn't* pause is usually client-side denial — see [troubleshooting](/mcp-proxy/configuration/#-32002-errors-on-tool-calls).
 :::
 
 ## Features
@@ -61,13 +61,12 @@ mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 mcp-proxy \
   -name github \
   -key private.pem \
-  -http 127.0.0.1:8081 \
   -rules rules.yaml \
   -taxonomy taxonomy.json \
   github-mcp-server stdio
 ```
 
-Then run an approver that POSTs to `http://127.0.0.1:8081/api/tool-calls/{id}/approve` as paused calls come in — see [Approval Server](/mcp-proxy/approval-ui/).
+To enable the approval workflow, pass `-http 127.0.0.1:<port>` — see [Approval Server](/mcp-proxy/approval-ui/).
 
 ## Claude Desktop integration
 
@@ -81,7 +80,6 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-        "-http", "127.0.0.1:8080",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -97,8 +95,6 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 > **Note:** `claude_desktop_config.json` is not encrypted. Avoid committing it to version control, and prefer sourcing tokens from your OS keychain or a secret manager where possible.
 
-`-http 127.0.0.1:8080` pins the approval endpoint to a fixed port. If you run Claude Code and Codex alongside Claude Desktop, assign each one a distinct port (e.g. `8080` / `8081` / `8082`) so an approver can route to the right instance.
-
 ## Claude Code integration
 
 Claude Code uses `claude mcp add-json` to register servers. Use `--scope user` to make the proxy available across all projects:
@@ -109,7 +105,6 @@ claude mcp add-json github-audited --scope user '{
   "args": [
     "-name", "github",
     "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
-    "-http", "127.0.0.1:8081",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -130,7 +125,7 @@ claude mcp list
 See the [Claude Code integration guide](/mcp-proxy/claude-code/) for a full walkthrough including project-scoped setup and `.mcp.json` configuration.
 
 :::tip
-Running multiple MCP clients simultaneously? See [Troubleshooting: port conflicts](/mcp-proxy/configuration/#multiple-mcp-clients-running-the-proxy-simultaneously) in the configuration guide.
+Running multiple MCP clients simultaneously with the approval listener enabled? See [Troubleshooting: port conflicts](/mcp-proxy/configuration/#multiple-mcp-clients-running-the-proxy-simultaneously) in the configuration guide.
 :::
 
 ## What receipts look like
