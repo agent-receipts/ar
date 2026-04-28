@@ -161,7 +161,7 @@ The agent (or agent platform) that performed the action and produced the receipt
     "created": "2026-03-31T14:30:01Z",
     "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "u..."
+    "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
   }
 }
 ```
@@ -201,7 +201,7 @@ For lightweight or high-frequency actions, a minimal receipt containing only req
     "created": "2026-03-31T14:31:01Z",
     "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "u..."
+    "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
   }
 }
 ```
