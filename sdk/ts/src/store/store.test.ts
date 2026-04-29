@@ -205,6 +205,57 @@ describe("ReceiptStore", () => {
 			);
 		});
 
+		it("getById: preserves the original error as Error.cause", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:cause-json" });
+			store.insert(receipt, "sha256:cj1");
+			corruptJson("urn:receipt:cause-json", "not-json{{");
+
+			let caught: unknown;
+			try {
+				store.getById("urn:receipt:cause-json");
+			} catch (e) {
+				caught = e;
+			}
+			expect(caught).toBeInstanceOf(Error);
+			expect((caught as Error).cause).toBeInstanceOf(SyntaxError);
+		});
+
+		it("getById: preserves ZodError as Error.cause on schema failure", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:cause-zod" });
+			store.insert(receipt, "sha256:cz1");
+			const corrupt = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			(corrupt.credentialSubject as Record<string, unknown>) = {};
+			corruptJson("urn:receipt:cause-zod", JSON.stringify(corrupt));
+
+			let caught: unknown;
+			try {
+				store.getById("urn:receipt:cause-zod");
+			} catch (e) {
+				caught = e;
+			}
+			expect(caught).toBeInstanceOf(Error);
+			// ZodError extends Error and carries .issues
+			const cause = (caught as Error).cause as
+				| { issues?: unknown[] }
+				| undefined;
+			expect(cause).toBeDefined();
+			expect(Array.isArray(cause?.issues)).toBe(true);
+		});
+
+		it("getById: renders (root) for root-shape failures", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:root-shape" });
+			store.insert(receipt, "sha256:rs1");
+			// Replace the row with a JSON primitive so the schema fails at the root.
+			corruptJson("urn:receipt:root-shape", "42");
+
+			expect(() => store.getById("urn:receipt:root-shape")).toThrowError(
+				/\(root\):/,
+			);
+		});
+
 		it("getById: throws with field path on missing required field", () => {
 			const receipt = makeReceipt({ id: "urn:receipt:corrupt-2" });
 			store.insert(receipt, "sha256:c2");

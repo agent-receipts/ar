@@ -72,16 +72,23 @@ function parseReceiptJson(json: string, context: string): AgentReceipt {
 	try {
 		parsed = JSON.parse(json);
 	} catch (cause) {
-		throw new Error(`Corrupt receipt in store (${context}): ${cause}`);
+		throw new Error(`Corrupt receipt in store (${context}): ${cause}`, {
+			cause,
+		});
 	}
 	try {
 		return agentReceiptSchema.parse(parsed);
 	} catch (cause) {
 		if (cause instanceof ZodError) {
 			const fields = cause.issues
-				.map((i) => `${i.path.join(".")}: ${i.message}`)
+				.map((i) => {
+					const path = i.path.length === 0 ? "(root)" : i.path.join(".");
+					return `${path}: ${i.message}`;
+				})
 				.join("; ");
-			throw new Error(`Corrupt receipt in store (${context}): ${fields}`);
+			throw new Error(`Corrupt receipt in store (${context}): ${fields}`, {
+				cause,
+			});
 		}
 		throw cause;
 	}
