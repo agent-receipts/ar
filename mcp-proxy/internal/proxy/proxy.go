@@ -9,7 +9,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"sync"
+	"time"
 )
 
 // HandlerResult tells the proxy what to do with a message.
@@ -75,23 +77,40 @@ func (p *Proxy) Run() error {
 		return fmt.Errorf("start server: %w", err)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	// exits carries the pipe direction name when each goroutine finishes.
+	// Capacity 2 so neither sender ever blocks.
+	exits := make(chan string, 2)
 
 	// Client → Server
 	go func() {
-		defer wg.Done()
 		defer serverIn.Close()
 		p.pipe(os.Stdin, serverIn, "client_to_server")
+		exits <- "client_to_server"
 	}()
 
 	// Server → Client
 	go func() {
-		defer wg.Done()
 		p.pipe(serverOut, os.Stdout, "server_to_client")
+		exits <- "server_to_client"
 	}()
 
-	wg.Wait()
+	// Wait for the first pipe to finish, then kill the upstream so the
+	// surviving pipe unblocks instead of blocking forever.
+	first := <-exits
+	log.Printf("mcp-proxy: pipe %s exited, shutting down", first)
+	if p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+	}
+
+	// Drain the second exit with a short timeout so we capture the reason
+	// but do not block forever.
+	select {
+	case second := <-exits:
+		log.Printf("mcp-proxy: pipe %s exited", second)
+	case <-time.After(2 * time.Second):
+		log.Printf("mcp-proxy: second pipe did not exit within timeout")
+	}
+
 	return p.cmd.Wait()
 }
 
@@ -121,7 +140,16 @@ func (p *Proxy) pipe(src io.Reader, dst io.Writer, direction string) {
 			msg := ParseMessage(raw)
 
 			if p.handler != nil {
-				if result := p.handler(direction, raw, msg); result != nil && result.Block {
+				var result *HandlerResult
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("mcp-proxy: handler panic (%s): %v\n%s", direction, r, debug.Stack())
+						}
+					}()
+					result = p.handler(direction, raw, msg)
+				}()
+				if result != nil && result.Block {
 					// Send the block response to the client, not to dst.
 					if writeErr := p.writeToClient(result.ClientResponse); writeErr != nil {
 						log.Printf("mcp-proxy: write block response: %v", writeErr)
@@ -145,8 +173,10 @@ func (p *Proxy) pipe(src io.Reader, dst io.Writer, direction string) {
 		}
 
 		if err != nil {
-			if err != io.EOF {
-				log.Printf("mcp-proxy: read error (%s): %v", direction, err)
+			if err == io.EOF {
+				log.Printf("mcp-proxy: pipe %s closed (EOF)", direction)
+			} else {
+				log.Printf("mcp-proxy: pipe %s read error: %v", direction, err)
 			}
 			return
 		}

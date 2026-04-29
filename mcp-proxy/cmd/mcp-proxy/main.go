@@ -672,8 +672,10 @@ func serve() {
 
 	p := proxy.New(command, commandArgs, handler)
 	log.Printf("mcp-proxy: session %s, server %s, chain %s", sessionID, *serverName, *chainID)
-	if err := p.Run(); err != nil {
-		log.Printf("mcp-proxy: %v", err)
+	runErr := p.Run()
+	log.Printf("mcp-proxy: session %s ended", sessionID)
+	if runErr != nil {
+		log.Printf("mcp-proxy: %v", runErr)
 		os.Exit(1)
 	}
 }
