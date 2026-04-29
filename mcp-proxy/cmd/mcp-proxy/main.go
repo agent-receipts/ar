@@ -903,23 +903,6 @@ func ensureDBDir(path string) error {
 	return nil
 }
 
-// checkKeyFilePermissions returns a non-empty warning string if the file at
-// path is readable or writable by users other than the owner (mode & 0o077 != 0).
-// Returns "" on Windows or when the file cannot be stat'd.
-func checkKeyFilePermissions(path string) string {
-	if runtime.GOOS == "windows" {
-		return ""
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return ""
-	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return fmt.Sprintf("key file %q has permissions %04o — run: chmod 600 %q", path, perm, path)
-	}
-	return ""
-}
-
 // checkOpenFilePermissions is like checkKeyFilePermissions but operates on an
 // already-open file descriptor, eliminating the TOCTOU race between stat and
 // read. Returns "" on Windows or when f.Stat() fails.

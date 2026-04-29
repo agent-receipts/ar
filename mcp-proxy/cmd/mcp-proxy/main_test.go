@@ -443,64 +443,6 @@ func writeFileWithPerm(t *testing.T, dir string, perm os.FileMode) string {
 	return path
 }
 
-func TestCheckKeyFilePermissions0600OK(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	path := writeFileWithPerm(t, t.TempDir(), 0o600)
-	if got := checkKeyFilePermissions(path); got != "" {
-		t.Errorf("expected no warning for 0600, got %q", got)
-	}
-}
-
-func TestCheckKeyFilePermissions0400OK(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	path := writeFileWithPerm(t, t.TempDir(), 0o400)
-	if got := checkKeyFilePermissions(path); got != "" {
-		t.Errorf("expected no warning for 0400, got %q", got)
-	}
-}
-
-func TestCheckKeyFilePermissions0644Warns(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	path := writeFileWithPerm(t, t.TempDir(), 0o644)
-	got := checkKeyFilePermissions(path)
-	if got == "" {
-		t.Fatalf("expected warning for 0644, got empty string")
-	}
-	if !strings.Contains(got, path) {
-		t.Errorf("warning should contain path, got %q", got)
-	}
-	if !strings.Contains(got, "chmod 600") {
-		t.Errorf("warning should mention chmod 600, got %q", got)
-	}
-}
-
-func TestCheckKeyFilePermissions0666Warns(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	path := writeFileWithPerm(t, t.TempDir(), 0o666)
-	if got := checkKeyFilePermissions(path); got == "" {
-		t.Errorf("expected warning for 0666, got empty string")
-	}
-}
-
-func TestCheckKeyFilePermissionsNonexistentNoWarning(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	// Non-existent path under a temp dir: stat will fail and the error surfaces at ReadFile.
-	path := filepath.Join(t.TempDir(), "does-not-exist.pem")
-	if got := checkKeyFilePermissions(path); got != "" {
-		t.Errorf("expected no warning for unstat-able path, got %q", got)
-	}
-}
-
 func TestCheckOpenFilePermissions0600OK(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits not enforced on Windows")

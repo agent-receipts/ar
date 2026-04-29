@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -667,32 +668,76 @@ func truncate(s string, max int) string {
 }
 
 // writePrivateKeyFile writes data to path with 0600 permissions. When force is
-// false the call fails if the file already exists. When force is true the
-// existing file is removed first so that O_EXCL creates a fresh inode — this
-// ensures the kernel sets the permissions atomically without a chmod race.
-func writePrivateKeyFile(path string, data []byte, force bool) (retErr error) {
+// false the call fails atomically if the file already exists (O_EXCL). When
+// force is true the key is written to a temp file first then renamed into place
+// so the previous key remains intact if the write fails.
+func writePrivateKeyFile(path string, data []byte, force bool) error {
 	if force {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove existing key file %q: %w", path, err)
+		// Write-then-rename: old key survives intact until the new one is safely on disk.
+		dir := filepath.Dir(path)
+		tmp, err := os.CreateTemp(dir, ".key-*.tmp")
+		if err != nil {
+			return fmt.Errorf("create temp key file in %q: %w", dir, err)
 		}
+		tmpName := tmp.Name()
+		if _, werr := tmp.Write(data); werr != nil {
+			tmp.Close()
+			os.Remove(tmpName)
+			return fmt.Errorf("write temp key file: %w", werr)
+		}
+		if cerr := tmp.Close(); cerr != nil {
+			os.Remove(tmpName)
+			return fmt.Errorf("close temp key file: %w", cerr)
+		}
+		if rerr := os.Rename(tmpName, path); rerr != nil {
+			os.Remove(tmpName)
+			return fmt.Errorf("rename key file to %q: %w", path, rerr)
+		}
+		return nil
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		if !force && os.IsExist(err) {
+		if os.IsExist(err) {
 			return fmt.Errorf("key file %q already exists (use -force to overwrite)", path)
 		}
 		return fmt.Errorf("create key file %q: %w", path, err)
 	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil && retErr == nil {
-			retErr = fmt.Errorf("close key file %q: %w", path, cerr)
+	if _, werr := f.Write(data); werr != nil {
+		f.Close()
+		os.Remove(path)
+		return fmt.Errorf("write key file %q: %w", path, werr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		os.Remove(path)
+		return fmt.Errorf("close key file %q: %w", path, cerr)
+	}
+	return nil
+}
+
+// writePubKeyFile writes data to path with 0644 permissions. When force is false
+// the call fails if the file already exists. When force is true the existing file
+// is removed first so a fresh inode is created with the correct 0644 mode.
+func writePubKeyFile(path string, data []byte, force bool) error {
+	if force {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove existing public key %q: %w", path, err)
 		}
-		if retErr != nil {
-			os.Remove(path) // best-effort: remove partial file on any failure
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("public key file %q already exists (use -force to overwrite)", path)
 		}
-	}()
-	if _, err := f.Write(data); err != nil {
-		return fmt.Errorf("write key file %q: %w", path, err)
+		return fmt.Errorf("create public key file %q: %w", path, err)
+	}
+	if _, werr := f.Write(data); werr != nil {
+		f.Close()
+		os.Remove(path)
+		return fmt.Errorf("write public key file %q: %w", path, werr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		os.Remove(path)
+		return fmt.Errorf("close public key file %q: %w", path, cerr)
 	}
 	return nil
 }
@@ -753,7 +798,7 @@ func cmdInit(args []string) {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: write private key: %v\n", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(resolvedPub, []byte(kp.PublicKey), 0o644); err != nil {
+	if err := writePubKeyFile(resolvedPub, []byte(kp.PublicKey), *force); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: write public key: %v\n", err)
 		os.Exit(1)
 	}
