@@ -111,12 +111,7 @@ export function verifyChain(
 		if (!receipt) continue;
 		const chain = receipt.credentialSubject.chain;
 
-		let signatureValid: boolean;
-		try {
-			signatureValid = verifyReceipt(receipt, publicKey);
-		} catch {
-			signatureValid = false;
-		}
+		const signatureValid = verifyReceipt(receipt, publicKey);
 
 		let hashLinkValid: boolean;
 		if (previous === undefined) {
