@@ -7,7 +7,7 @@ import (
 
 // hashReceipt is overridable in tests so the error-return path of HashReceipt
 // (unreachable in production with the current strictly-typed AgentReceipt) can
-// be exercised. Production code always resolves to receipt.HashReceipt.
+// be exercised. In production, this variable is left pointing at HashReceipt.
 var hashReceipt = HashReceipt
 
 // ReceiptVerification holds the verification result for a single receipt in a chain.
@@ -128,12 +128,13 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		} else {
 			prevHash, err := hashReceipt(receipts[i-1])
 			if err != nil {
+				seqValid := chain.Sequence == receipts[i-1].CredentialSubject.Chain.Sequence+1
 				results = append(results, ReceiptVerification{
 					Index:          i,
 					ReceiptID:      r.ID,
 					SignatureValid: sigValid,
 					HashLinkValid:  false,
-					SequenceValid:  false,
+					SequenceValid:  seqValid,
 				})
 				return ChainVerification{
 					Valid:    false,
