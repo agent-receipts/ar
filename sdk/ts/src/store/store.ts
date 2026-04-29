@@ -75,7 +75,7 @@ function parseReceiptJson(json: string, context: string): AgentReceipt {
 		throw new Error(`Corrupt receipt in store (${context}): ${cause}`);
 	}
 	try {
-		return agentReceiptSchema.parse(parsed) as AgentReceipt;
+		return agentReceiptSchema.parse(parsed);
 	} catch (cause) {
 		if (cause instanceof ZodError) {
 			const fields = cause.issues

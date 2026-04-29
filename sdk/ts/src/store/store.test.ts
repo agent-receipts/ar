@@ -182,11 +182,15 @@ describe("ReceiptStore", () => {
 	describe("corrupt receipt validation", () => {
 		/**
 		 * Helper to directly update the receipt_json for a stored row, bypassing
-		 * the ReceiptStore API. Reaches into the private `db` field so we can
-		 * inject corrupt payloads without needing a file-backed database.
+		 * the ReceiptStore API. Uses @ts-expect-error so a future rename of the
+		 * private db field surfaces here at compile time.
 		 */
+		function rawDb(): DatabaseSync {
+			// @ts-expect-error reaches into the private db field for test injection
+			return store.db;
+		}
 		function corruptJson(id: string, payload: string): void {
-			(store as unknown as { db: DatabaseSync }).db
+			rawDb()
 				.prepare("UPDATE receipts SET receipt_json = ? WHERE id = ?")
 				.run(payload, id);
 		}
@@ -274,6 +278,34 @@ describe("ReceiptStore", () => {
 			expect(() => store.query({})).toThrowError(
 				/Corrupt receipt in store \(query\)/,
 			);
+		});
+
+		// Guards the forward-compat property documented in ADR-0011 and
+		// schema.ts: receipts written by a newer SDK with extra unknown fields
+		// must round-trip through the store unchanged. Stripping those fields
+		// would silently invalidate the RFC 8785 hash on signed receipts.
+		it("preserves unknown extra fields written by a newer SDK", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:forward-compat" });
+			store.insert(receipt, "sha256:fc1");
+
+			const extended = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			extended.future_top_level = "added in a later spec version";
+			const cs = extended.credentialSubject as Record<string, unknown>;
+			const action = cs.action as Record<string, unknown>;
+			action.future_action_field = { nested: 42 };
+			corruptJson("urn:receipt:forward-compat", JSON.stringify(extended));
+
+			const loaded = store.getById("urn:receipt:forward-compat") as Record<
+				string,
+				unknown
+			>;
+			expect(loaded.future_top_level).toBe("added in a later spec version");
+			const loadedAction = (loaded.credentialSubject as Record<string, unknown>)
+				.action as Record<string, unknown>;
+			expect(loadedAction.future_action_field).toEqual({ nested: 42 });
 		});
 	});
 

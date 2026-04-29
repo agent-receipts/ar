@@ -38,10 +38,14 @@ options were evaluated:
 Adopt Zod for runtime validation at the store-load boundary. A Zod schema
 mirroring every interface in `src/receipt/types.ts` is defined in
 `src/receipt/schema.ts` and called inside `parseReceiptJson` after
-`JSON.parse`. Schema objects are not strict (no `.strict()`) so unknown extra
-fields introduced by newer SDK versions do not break older stores. The existing
-`AgentReceipt` interface is kept unchanged; the schema type is structurally
-compatible but separate.
+`JSON.parse`. Every object schema uses `.passthrough()` so unknown extra fields
+written by a newer SDK survive the load — required for forward-compatibility,
+since the default `z.object` strips unknown keys, which would silently
+invalidate the RFC 8785 canonical hash on signed receipts and break signature
+verification on receipts authored by newer SDK versions. The root schema is
+typed as `z.ZodType<AgentReceipt>` so `.parse()` returns `AgentReceipt`
+directly, with no type assertion at the validation boundary. The existing
+`AgentReceipt` interface is kept unchanged.
 
 This is the SDK's first runtime dependency.
 
