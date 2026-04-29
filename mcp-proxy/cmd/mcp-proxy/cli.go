@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -681,13 +682,18 @@ func writePrivateKeyFile(path string, data []byte, force bool) error {
 		}
 		tmpName := tmp.Name()
 		if _, werr := tmp.Write(data); werr != nil {
-			tmp.Close()
+			cerr := tmp.Close()
 			os.Remove(tmpName)
-			return fmt.Errorf("write temp key file: %w", werr)
+			return fmt.Errorf("write temp key file: %w", errors.Join(werr, cerr))
 		}
 		if cerr := tmp.Close(); cerr != nil {
 			os.Remove(tmpName)
 			return fmt.Errorf("close temp key file: %w", cerr)
+		}
+		// Explicit chmod guarantees 0600 regardless of process umask.
+		if chErr := os.Chmod(tmpName, 0o600); chErr != nil {
+			os.Remove(tmpName)
+			return fmt.Errorf("set permissions on key file %q: %w", path, chErr)
 		}
 		if rerr := os.Rename(tmpName, path); rerr != nil {
 			os.Remove(tmpName)
@@ -703,13 +709,18 @@ func writePrivateKeyFile(path string, data []byte, force bool) error {
 		return fmt.Errorf("create key file %q: %w", path, err)
 	}
 	if _, werr := f.Write(data); werr != nil {
-		f.Close()
+		cerr := f.Close()
 		os.Remove(path)
-		return fmt.Errorf("write key file %q: %w", path, werr)
+		return fmt.Errorf("write key file %q: %w", path, errors.Join(werr, cerr))
 	}
 	if cerr := f.Close(); cerr != nil {
 		os.Remove(path)
 		return fmt.Errorf("close key file %q: %w", path, cerr)
+	}
+	// Explicit chmod guarantees 0600 regardless of process umask.
+	if chErr := os.Chmod(path, 0o600); chErr != nil {
+		os.Remove(path)
+		return fmt.Errorf("set permissions on key file %q: %w", path, chErr)
 	}
 	return nil
 }
@@ -731,13 +742,18 @@ func writePubKeyFile(path string, data []byte, force bool) error {
 		return fmt.Errorf("create public key file %q: %w", path, err)
 	}
 	if _, werr := f.Write(data); werr != nil {
-		f.Close()
+		cerr := f.Close()
 		os.Remove(path)
-		return fmt.Errorf("write public key file %q: %w", path, werr)
+		return fmt.Errorf("write public key file %q: %w", path, errors.Join(werr, cerr))
 	}
 	if cerr := f.Close(); cerr != nil {
 		os.Remove(path)
 		return fmt.Errorf("close public key file %q: %w", path, cerr)
+	}
+	// Explicit chmod guarantees 0644 regardless of process umask.
+	if chErr := os.Chmod(path, 0o644); chErr != nil {
+		os.Remove(path)
+		return fmt.Errorf("set permissions on public key file %q: %w", path, chErr)
 	}
 	return nil
 }
