@@ -154,12 +154,13 @@ Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored wit
 
 ## Troubleshooting
 
-### `-32002` errors on tool calls
+### Tool call errors (`-32002` / `-32003`)
 
-**Two different things produce this error code.** Distinguish them before reaching for a fix, because they need different remedies and only one of them involves the proxy:
+**Three different things produce these error codes.** Distinguish them before reaching for a fix, because they need different remedies and only two of them involve the proxy:
 
 1. **Client-side denial** — the MCP client (e.g. Claude Code) rejected the tool use before it reached the proxy. The call never hits the audit DB.
-2. **Proxy approval timeout** — the call reached the proxy, matched a `pause` rule, and timed out because no approver POSTed a decision. The call appears in the audit DB with `policy_action = 'pause'` and `approved_by` NULL.
+2. **Proxy: no approver configured** (`-32003`) — the call reached the proxy, matched a `pause` rule, but the approval HTTP listener is not running (operator did not pass `-http <addr>`). The proxy fails fast rather than waiting out the timeout. The call appears in the audit DB with `policy_action = 'rejected'`, `approved_by` NULL, and `approval_wait_us` near zero. This is the common case when running the default configuration.
+3. **Proxy: approval timeout** (`-32002`) — the call reached the proxy, matched a `pause` rule, an approver listener is wired up (`-http <addr>` was passed), but no approver POSTed a decision before `-approval-timeout` elapsed. The audit DB row signature is the same as case 2 (`policy_action = 'rejected'`, `approved_by` NULL), distinguishable by `approval_wait_us` close to the configured `-approval-timeout` (default 60s = 60000000μs).
 
 **Diagnose — which one is it?**
 
@@ -167,21 +168,32 @@ Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored wit
 # Did the failing call reach the proxy at all?
 # Substitute the tool name you saw fail.
 sqlite3 ~/.agent-receipts/audit.db \
-  "SELECT tool_name, policy_action, risk_score, approved_by, created_at
+  "SELECT tool_name, policy_action, risk_score, approved_by, approval_wait_us, created_at
    FROM tool_calls
    WHERE tool_name = 'create_pull_request'
      AND created_at > datetime('now', '-1 hour')
    ORDER BY id DESC LIMIT 10;"
 ```
 
-- **No rows at all** → client-side denial. The proxy never saw it. See [ar#157](https://github.com/agent-receipts/ar/issues/157) for the ongoing work to make these visible.
-- **Rows with `policy_action = 'pass'`** → the proxy forwarded it; the `-32002` came from somewhere downstream (the MCP server, the remote API). Check the proxy's stderr log and the server's own logs.
-- **Rows with `policy_action = 'pause'` and `approved_by` NULL** → proxy approval timeout. Continue below.
+- **No rows at all** → client-side denial (case 1). The proxy never saw it. See [ar#157](https://github.com/agent-receipts/ar/issues/157) for the ongoing work to make these visible.
+- **Rows with `policy_action = 'pass'`** → the proxy forwarded it; the error came from somewhere downstream (the MCP server, the remote API). Check the proxy's stderr log and the server's own logs.
+- **Rows with `policy_action = 'rejected'` and `approved_by` NULL** → proxy pause rejection (case 2 or 3). The JSON-RPC error code the client received tells them apart: `-32003` means no approver was wired up; `-32002` means an approver was wired but timed out. If you no longer have the error response, the `approval_wait_us` column is a good proxy: near zero is case 2 (no approver, fail-fast), near `-approval-timeout` is case 3 (timeout).
 
-**If it's a proxy approval timeout:**
+**If the error is `-32003` (no approver configured):**
+
+The proxy is pausing high-risk calls but has no approval listener running. Either start an approver by passing `-http <addr>` when launching the proxy, or relax the policy so the tool is not paused. See [Approval Server](/mcp-proxy/approval-ui/) for both paths.
 
 ```bash
-# Confirm -http is pinned so your approver can reach the endpoint.
+# Check which process flags are in effect.
+ps aux | grep mcp-proxy | grep -v grep
+```
+
+**If the error is `-32002` (approval timeout):**
+
+An approver listener is running but no decision arrived in time. Check that your approver can reach the endpoint and that `-approval-timeout` is long enough.
+
+```bash
+# Confirm the -http address and timeout flags.
 ps aux | grep mcp-proxy | grep -v grep
 
 # Check overall breakdown.
@@ -189,7 +201,7 @@ sqlite3 ~/.agent-receipts/audit.db \
   "SELECT policy_action, COUNT(*) FROM tool_calls GROUP BY policy_action;"
 ```
 
-The remedy is to run an approver, or to relax the policy. See [Approval Server](/mcp-proxy/approval-ui/) for both paths. The scorer stacks a base (read 0, write 20, execute 30, delete 40, unknown 10) with modifiers — sensitive keywords in the tool name (+30), SQL mutations without `WHERE` (+30), `config`/`setting` substrings (+20), `send_*`/`post_*` prefixes (+15) — so what actually crosses 50 is combinations: `create_token` (write 20 + sensitive 30 = 50), `update_auth_config` (70), `delete_credential` (70), `delete_config` (60), `exec_sql` with a `DELETE` and no `WHERE` (60). Ordinary writes like `create_pull_request` (20), unknown-prefix calls like `merge_pull_request` (10), plain deletes like `delete_branch` (40), `update_config` with no sensitive keyword (40), and sensitive-keyword *reads* like `get_token` (30) all stay below the threshold — if one of those is failing, you're in path #1, not #2.
+The scorer stacks a base (read 0, write 20, execute 30, delete 40, unknown 10) with modifiers — sensitive keywords in the tool name (+30), SQL mutations without `WHERE` (+30), `config`/`setting` substrings (+20), `send_*`/`post_*` prefixes (+15) — so what actually crosses 50 is combinations: `create_token` (write 20 + sensitive 30 = 50), `update_auth_config` (70), `delete_credential` (70), `delete_config` (60), `exec_sql` with a `DELETE` and no `WHERE` (60). Ordinary writes like `create_pull_request` (20), unknown-prefix calls like `merge_pull_request` (10), plain deletes like `delete_branch` (40), `update_config` with no sensitive keyword (40), and sensitive-keyword *reads* like `get_token` (30) all stay below the threshold — if one of those is failing, you're in path #1, not #2 or #3.
 
 ### 404 at `http://127.0.0.1:8081/`
 
