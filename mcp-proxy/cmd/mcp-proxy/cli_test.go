@@ -326,8 +326,10 @@ func TestWritePrivateKeyFileCreatesWithCorrectPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("permissions = %04o, want 0600", perm)
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("permissions = %04o, want no group/world access", perm)
+	} else if perm&0o600 != 0o600 {
+		t.Errorf("permissions = %04o, want owner read/write", perm)
 	}
 
 	data, err := os.ReadFile(path)
@@ -377,19 +379,24 @@ func TestWritePrivateKeyFileOverwritesWithForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("permissions after force overwrite = %04o, want 0600", perm)
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("permissions after force overwrite = %04o, want no group/world access", perm)
+	} else if perm&0o600 != 0o600 {
+		t.Errorf("permissions after force overwrite = %04o, want owner read/write", perm)
 	}
 
-	data, _ := os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
 	if string(data) != "new" {
 		t.Errorf("content after force = %q, want %q", data, "new")
 	}
 }
 
-func TestWritePrivateKeyFileCreatesParentViaEnsureDBDir(t *testing.T) {
+func TestWritePrivateKeyFileFailsWhenParentDirectoryMissing(t *testing.T) {
 	// cmdInit calls ensureDBDir before writePrivateKeyFile; this test confirms
-	// writePrivateKeyFile itself fails gracefully if the directory is absent.
+	// writePrivateKeyFile itself returns an error if the directory is absent.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "subdir", "key.pem")
 

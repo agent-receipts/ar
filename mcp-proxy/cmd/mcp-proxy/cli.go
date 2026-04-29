@@ -672,22 +672,26 @@ func truncate(s string, max int) string {
 // ensures the kernel sets the permissions atomically without a chmod race.
 func writePrivateKeyFile(path string, data []byte, force bool) (retErr error) {
 	if force {
-		os.Remove(path) // best-effort; ignore error so O_EXCL below handles the fresh-create
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove existing key file %q: %w", path, err)
+		}
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		if !force && os.IsExist(err) {
 			return fmt.Errorf("key file %q already exists (use -force to overwrite)", path)
 		}
-		return err
+		return fmt.Errorf("create key file %q: %w", path, err)
 	}
 	defer func() {
 		if cerr := f.Close(); cerr != nil && retErr == nil {
-			retErr = cerr
+			retErr = fmt.Errorf("close key file %q: %w", path, cerr)
 		}
 	}()
-	_, retErr = f.Write(data)
-	return retErr
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("write key file %q: %w", path, err)
+	}
+	return nil
 }
 
 func cmdInit(args []string) {
@@ -725,12 +729,22 @@ func cmdInit(args []string) {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: create key directory: %v\n", err)
 		os.Exit(1)
 	}
+	if err := ensureDBDir(resolvedPub); err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy: create public key directory: %v\n", err)
+		os.Exit(1)
+	}
 
 	if err := writePrivateKeyFile(*keyPath, []byte(kp.PrivateKey), *force); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: write private key: %v\n", err)
 		os.Exit(1)
 	}
 
+	if !*force {
+		if _, err := os.Stat(resolvedPub); err == nil {
+			fmt.Fprintf(os.Stderr, "mcp-proxy: public key file %q already exists (use -force to overwrite)\n", resolvedPub)
+			os.Exit(1)
+		}
+	}
 	if err := os.WriteFile(resolvedPub, []byte(kp.PublicKey), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: write public key: %v\n", err)
 		os.Exit(1)

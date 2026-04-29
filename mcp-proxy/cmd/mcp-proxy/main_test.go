@@ -494,8 +494,9 @@ func TestCheckKeyFilePermissionsNonexistentNoWarning(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits not enforced on Windows")
 	}
-	// Non-existent path: stat will fail and the error surfaces at ReadFile.
-	if got := checkKeyFilePermissions("/nonexistent/path/key.pem"); got != "" {
+	// Non-existent path under a temp dir: stat will fail and the error surfaces at ReadFile.
+	path := filepath.Join(t.TempDir(), "does-not-exist.pem")
+	if got := checkKeyFilePermissions(path); got != "" {
 		t.Errorf("expected no warning for unstat-able path, got %q", got)
 	}
 }
