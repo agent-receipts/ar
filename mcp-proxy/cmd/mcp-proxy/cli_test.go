@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -306,4 +309,177 @@ func TestRunFollowLoopHonoursFilters(t *testing.T) {
 		t.Fatalf("follow loop returned error: %v", err)
 	}
 	t.Fatalf("chain-a receipt never appeared in follow output: %q", w.String())
+}
+
+func TestWritePrivateKeyFileCreatesWithCorrectPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem")
+
+	if err := writePrivateKeyFile(path, []byte("pem-data"), false); err != nil {
+		t.Fatalf("writePrivateKeyFile: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("permissions = %04o, want no group/world access", perm)
+	} else if perm&0o600 != 0o600 {
+		t.Errorf("permissions = %04o, want owner read/write", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "pem-data" {
+		t.Errorf("content = %q, want %q", data, "pem-data")
+	}
+}
+
+func TestWritePrivateKeyFileFailsIfExistsWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem")
+
+	// Create the file first.
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	err := writePrivateKeyFile(path, []byte("new"), false)
+	if err == nil {
+		t.Fatal("expected error when file exists and force=false, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error should mention 'already exists', got %q", err.Error())
+	}
+}
+
+func TestWritePrivateKeyFileOverwritesWithForce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem")
+
+	// Create an existing file with loose permissions to simulate the bad case.
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if err := writePrivateKeyFile(path, []byte("new"), true); err != nil {
+		t.Fatalf("writePrivateKeyFile with force: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("permissions after force overwrite = %04o, want no group/world access", perm)
+	} else if perm&0o600 != 0o600 {
+		t.Errorf("permissions after force overwrite = %04o, want owner read/write", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "new" {
+		t.Errorf("content after force = %q, want %q", data, "new")
+	}
+}
+
+func TestWritePrivateKeyFileFailsWhenParentDirectoryMissing(t *testing.T) {
+	// cmdInit calls ensureDir before writePrivateKeyFile; this test confirms
+	// writePrivateKeyFile itself returns an error if the directory is absent.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subdir", "key.pem")
+
+	err := writePrivateKeyFile(path, []byte("pem"), false)
+	if err == nil {
+		t.Fatal("expected error when parent directory does not exist")
+	}
+}
+
+func TestWritePubKeyFileCreatesWithCorrectPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem.pub")
+
+	if err := writePubKeyFile(path, []byte("pub-data"), false); err != nil {
+		t.Fatalf("writePubKeyFile: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o444 != 0o444 {
+		t.Errorf("permissions = %04o, want owner+group+world read (0644)", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "pub-data" {
+		t.Errorf("content = %q, want %q", data, "pub-data")
+	}
+}
+
+func TestWritePubKeyFileFailsIfExistsWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem.pub")
+
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	err := writePubKeyFile(path, []byte("new"), false)
+	if err == nil {
+		t.Fatal("expected error when file exists and force=false, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error should mention 'already exists', got %q", err.Error())
+	}
+}
+
+func TestWritePubKeyFileOverwritesWithForce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem.pub")
+
+	// Existing file with restrictive permissions — force should fix them to 0644.
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if err := writePubKeyFile(path, []byte("new"), true); err != nil {
+		t.Fatalf("writePubKeyFile with force: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o444 != 0o444 {
+		t.Errorf("permissions after force overwrite = %04o, want at least 0444", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "new" {
+		t.Errorf("content after force = %q, want %q", data, "new")
+	}
 }

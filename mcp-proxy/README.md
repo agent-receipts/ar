@@ -89,9 +89,40 @@ Add to `claude_desktop_config.json`:
 mcp-proxy -version
 ```
 
+### Persistent signing key
+
+By default, mcp-proxy generates an ephemeral key pair on each startup. To use a
+persistent key whose receipts can be verified offline, generate one with `init`:
+
+```sh
+mcp-proxy init -key ~/.agent-receipts/signing.pem
+# writes ~/.agent-receipts/signing.pem     (0600 — owner read/write only)
+# writes ~/.agent-receipts/signing.pem.pub (0644 — public, shareable)
+```
+
+Pass the key to the proxy:
+
+```sh
+mcp-proxy --key ~/.agent-receipts/signing.pem node /path/to/mcp-server.js
+```
+
+Enable strict permission enforcement to make loose file permissions a fatal error:
+
+```sh
+mcp-proxy --key ~/.agent-receipts/signing.pem --strict-permissions node /path/to/mcp-server.js
+```
+
+If you generated a key with another tool (e.g. `openssl genpkey`), restrict
+access manually before use:
+
+```sh
+chmod 600 private.pem
+```
+
 ### CLI subcommands
 
 ```sh
+mcp-proxy init -key <path>              # Generate a persistent Ed25519 key pair
 mcp-proxy list                          # Latest 50 receipts, newest first
 mcp-proxy list --risk high              # Filter by risk
 mcp-proxy inspect <receipt-id>          # Show receipt details

@@ -430,3 +430,82 @@ func TestDiagnoseConfigUnreachableApproverIsUnhealthy(t *testing.T) {
 		t.Errorf("approver reach = %q, want unreachable", report.ApproverReach)
 	}
 }
+
+func writeFileWithPerm(t *testing.T, dir string, perm os.FileMode) string {
+	t.Helper()
+	path := filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(path, []byte("data"), 0o600); err != nil {
+		t.Fatalf("create test file: %v", err)
+	}
+	if err := os.Chmod(path, perm); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	return path
+}
+
+func TestCheckOpenFilePermissions0600OK(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	path := writeFileWithPerm(t, t.TempDir(), 0o600)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer f.Close()
+	if got := checkOpenFilePermissions(f); got != "" {
+		t.Errorf("expected no warning for 0600, got %q", got)
+	}
+}
+
+func TestCheckOpenFilePermissions0400OK(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	path := writeFileWithPerm(t, t.TempDir(), 0o400)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer f.Close()
+	if got := checkOpenFilePermissions(f); got != "" {
+		t.Errorf("expected no warning for 0400, got %q", got)
+	}
+}
+
+func TestCheckOpenFilePermissions0644Warns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	path := writeFileWithPerm(t, t.TempDir(), 0o644)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer f.Close()
+	got := checkOpenFilePermissions(f)
+	if got == "" {
+		t.Fatalf("expected warning for 0644, got empty string")
+	}
+	if !strings.Contains(got, path) {
+		t.Errorf("warning should contain path, got %q", got)
+	}
+	if !strings.Contains(got, "chmod 600") {
+		t.Errorf("warning should mention chmod 600, got %q", got)
+	}
+}
+
+func TestCheckOpenFilePermissions0666Warns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	path := writeFileWithPerm(t, t.TempDir(), 0o666)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer f.Close()
+	if got := checkOpenFilePermissions(f); got == "" {
+		t.Errorf("expected warning for 0666, got empty string")
+	}
+}
