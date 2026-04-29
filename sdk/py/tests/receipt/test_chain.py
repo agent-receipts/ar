@@ -472,10 +472,12 @@ class TestAdr0008ChainBehaviours:
     def test_hash_failure_in_loop_populates_error(self) -> None:
         """hash_receipt raising on a previous receipt surfaces as a structured error.
 
-        Patch hash_receipt to raise ValueError on the second call (when the
-        loop computes hash_receipt(previous) for receipt[1]).  verify_receipt
-        is unaffected because it does not call hash_receipt — this isolates the
-        try/except at the per-receipt hash-link check in verify_chain.
+        Patch hash_receipt to raise ValueError on every call. The first
+        patched invocation occurs when the loop computes hash_receipt(previous)
+        for receipt[1], which exercises the try/except at the per-receipt
+        hash-link check.  verify_receipt is unaffected because it does not call
+        hash_receipt — this isolates the try/except at the per-receipt
+        hash-link check in verify_chain.
         """
         kp = generate_key_pair()
         chain = _build_chain(2, kp.private_key)
@@ -491,6 +493,41 @@ class TestAdr0008ChainBehaviours:
         assert result.error.startswith("hash compute failed at index 0:")
         assert len(result.receipts) == 2
         assert result.receipts[1].hash_link_valid is False
+
+    def test_hash_failure_in_expected_final_hash_populates_error(self) -> None:
+        """hash_receipt raising on the final receipt surfaces via expected_final_hash.
+
+        Patches hash_receipt to raise only when called on the last receipt's id,
+        so the per-receipt loop succeeds (hash_receipt(previous) is called for
+        earlier indices and returns normally) and the expected_final_hash branch
+        triggers the new try/except.
+        """
+        kp = generate_key_pair()
+        chain = _build_chain(2, kp.private_key)
+        real_final_hash = hash_receipt(chain[-1])
+
+        target_id = chain[-1].id
+        real_hash_receipt = hash_receipt
+
+        def selective_raise(r: object) -> str:
+            if getattr(r, "id", None) == target_id:
+                raise ValueError("injected hash failure on final receipt")
+            return real_hash_receipt(r)  # type: ignore[arg-type]
+
+        with patch(
+            "agent_receipts.receipt.chain.hash_receipt",
+            side_effect=selective_raise,
+        ):
+            result = verify_chain(
+                chain,
+                kp.public_key,
+                expected_final_hash=real_final_hash,
+            )
+
+        assert result.valid is False
+        assert result.broken_at == 1
+        assert result.error.startswith("hash compute failed at index 1:")
+        assert "injected hash failure" in result.error
 
     def test_response_bodies_absent_entry_emits_note(self) -> None:
         """When response_hash is present but receipt id is not in the map, emit note."""
