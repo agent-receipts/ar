@@ -1,4 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { ZodError } from "zod";
+import { agentReceiptSchema } from "../receipt/schema.js";
 import type {
 	AgentReceipt,
 	OutcomeStatus,
@@ -66,10 +68,22 @@ const DEFAULT_QUERY_LIMIT = 10000;
  * Parse a receipt JSON string from the store, with error context.
  */
 function parseReceiptJson(json: string, context: string): AgentReceipt {
+	let parsed: unknown;
 	try {
-		return JSON.parse(json) as AgentReceipt;
+		parsed = JSON.parse(json);
 	} catch (cause) {
 		throw new Error(`Corrupt receipt in store (${context}): ${cause}`);
+	}
+	try {
+		return agentReceiptSchema.parse(parsed) as AgentReceipt;
+	} catch (cause) {
+		if (cause instanceof ZodError) {
+			const fields = cause.issues
+				.map((i) => `${i.path.join(".")}: ${i.message}`)
+				.join("; ");
+			throw new Error(`Corrupt receipt in store (${context}): ${fields}`);
+		}
+		throw cause;
 	}
 }
 

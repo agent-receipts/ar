@@ -179,6 +179,104 @@ describe("ReceiptStore", () => {
 		});
 	});
 
+	describe("corrupt receipt validation", () => {
+		/**
+		 * Helper to directly update the receipt_json for a stored row, bypassing
+		 * the ReceiptStore API. Reaches into the private `db` field so we can
+		 * inject corrupt payloads without needing a file-backed database.
+		 */
+		function corruptJson(id: string, payload: string): void {
+			(store as unknown as { db: DatabaseSync }).db
+				.prepare("UPDATE receipts SET receipt_json = ? WHERE id = ?")
+				.run(payload, id);
+		}
+
+		it("getById: throws on non-JSON garbage", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-1" });
+			store.insert(receipt, "sha256:c1");
+			corruptJson("urn:receipt:corrupt-1", "not-json{{");
+
+			expect(() => store.getById("urn:receipt:corrupt-1")).toThrowError(
+				/Corrupt receipt in store \(id=urn:receipt:corrupt-1\)/,
+			);
+		});
+
+		it("getById: throws with field path on missing required field", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-2" });
+			store.insert(receipt, "sha256:c2");
+			// Remove chain_id from credentialSubject.chain
+			const corrupt = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			const cs = corrupt.credentialSubject as Record<string, unknown>;
+			const chain = cs.chain as Record<string, unknown>;
+			delete chain.chain_id;
+			corruptJson("urn:receipt:corrupt-2", JSON.stringify(corrupt));
+
+			expect(() => store.getById("urn:receipt:corrupt-2")).toThrowError(
+				/credentialSubject\.chain\.chain_id/,
+			);
+		});
+
+		it("getById: throws with field path on invalid enum value", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-3" });
+			store.insert(receipt, "sha256:c3");
+			const corrupt = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			const cs = corrupt.credentialSubject as Record<string, unknown>;
+			const action = cs.action as Record<string, unknown>;
+			action.risk_level = "extreme";
+			corruptJson("urn:receipt:corrupt-3", JSON.stringify(corrupt));
+
+			expect(() => store.getById("urn:receipt:corrupt-3")).toThrowError(
+				/credentialSubject\.action\.risk_level/,
+			);
+		});
+
+		it("getById: throws when chain.terminal is false (spec invariant)", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-4" });
+			store.insert(receipt, "sha256:c4");
+			const corrupt = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			const cs = corrupt.credentialSubject as Record<string, unknown>;
+			const chain = cs.chain as Record<string, unknown>;
+			chain.terminal = false;
+			corruptJson("urn:receipt:corrupt-4", JSON.stringify(corrupt));
+
+			expect(() => store.getById("urn:receipt:corrupt-4")).toThrowError(
+				/Corrupt receipt in store \(id=urn:receipt:corrupt-4\)/,
+			);
+		});
+
+		it("getChain: throws with chain context on corrupt row", () => {
+			const receipt = makeReceipt({
+				id: "urn:receipt:corrupt-chain-1",
+				chainId: "chain_corrupt",
+			});
+			store.insert(receipt, "sha256:cc1");
+			corruptJson("urn:receipt:corrupt-chain-1", "!!!bad json");
+
+			expect(() => store.getChain("chain_corrupt")).toThrowError(
+				/Corrupt receipt in store \(chain=chain_corrupt\)/,
+			);
+		});
+
+		it("query: throws with query context on corrupt row", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-query-1" });
+			store.insert(receipt, "sha256:cq1");
+			corruptJson("urn:receipt:corrupt-query-1", "!!!bad json");
+
+			expect(() => store.query({})).toThrowError(
+				/Corrupt receipt in store \(query\)/,
+			);
+		});
+	});
+
 	describe("tool_name", () => {
 		it("persists tool_name from receipt action", () => {
 			const receipt = makeReceipt({});
