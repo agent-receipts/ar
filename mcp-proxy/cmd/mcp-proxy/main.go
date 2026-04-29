@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -69,6 +70,9 @@ func main() {
 		case "doctor":
 			cmdDoctor(os.Args[2:])
 			return
+		case "init":
+			cmdInit(os.Args[2:])
+			return
 		case "serve":
 			os.Args = append(os.Args[:1], os.Args[2:]...)
 			// Fall through to serve.
@@ -80,27 +84,28 @@ func main() {
 
 func serve() {
 	var (
-		dbPath          = flag.String("db", defaultDBPath("audit.db"), "SQLite audit database path")
-		receiptDB       = flag.String("receipt-db", defaultDBPath("receipts.db"), "SQLite receipt store path")
-		keyPath         = flag.String("key", "", "Ed25519 private key (PEM file)")
-		taxonomyPath    = flag.String("taxonomy", "", "Taxonomy mappings (JSON file). Merged with bundled taxonomies; user mappings win on conflict.")
-		bundledTaxonomy = flag.Bool("bundled-taxonomies", true, "Include bundled taxonomies (e.g. GitHub, Atlassian). Set to false to use only -taxonomy.")
-		rulesPath       = flag.String("rules", "", "Policy rules (YAML file)")
-		serverName      = flag.String("name", "", "Server name for audit trail")
-		issuerDID       = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
-		issuerName      = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
-		issuerModel     = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
-		operatorID      = flag.String("operator-id", "", "Operator DID (organisation running the agent)")
-		operatorName    = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
-		principalDID    = flag.String("principal", "did:user:unknown", "Principal DID")
-		chainID         = flag.String("chain", "", "Chain ID (auto-generated if empty)")
-		httpAddr        = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
-		approvalWait    = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
+		dbPath            = flag.String("db", defaultDBPath("audit.db"), "SQLite audit database path")
+		receiptDB         = flag.String("receipt-db", defaultDBPath("receipts.db"), "SQLite receipt store path")
+		keyPath           = flag.String("key", "", "Ed25519 private key (PEM file)")
+		taxonomyPath      = flag.String("taxonomy", "", "Taxonomy mappings (JSON file). Merged with bundled taxonomies; user mappings win on conflict.")
+		bundledTaxonomy   = flag.Bool("bundled-taxonomies", true, "Include bundled taxonomies (e.g. GitHub, Atlassian). Set to false to use only -taxonomy.")
+		rulesPath         = flag.String("rules", "", "Policy rules (YAML file)")
+		serverName        = flag.String("name", "", "Server name for audit trail")
+		issuerDID         = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
+		issuerName        = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
+		issuerModel       = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
+		operatorID        = flag.String("operator-id", "", "Operator DID (organisation running the agent)")
+		operatorName      = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
+		principalDID      = flag.String("principal", "did:user:unknown", "Principal DID")
+		chainID           = flag.String("chain", "", "Chain ID (auto-generated if empty)")
+		httpAddr          = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
+		approvalWait      = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
+		strictPermissions = flag.Bool("strict-permissions", false, "Fatal error if the private key file has permissions wider than 0600 (group/world-accessible)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
 		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
-		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing, doctor\n\n")
+		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing, doctor, init\n\n")
 		fmt.Fprintf(os.Stderr, "  -version\n\tPrint version and exit\n")
 		flag.PrintDefaults()
 	}
@@ -165,6 +170,12 @@ func serve() {
 	// Load or generate key pair.
 	var kp receipt.KeyPair
 	if *keyPath != "" {
+		if warn := checkKeyFilePermissions(*keyPath); warn != "" {
+			if *strictPermissions {
+				log.Fatalf("mcp-proxy: insecure key permissions: %s", warn)
+			}
+			log.Printf("[WARN] mcp-proxy: %s", warn)
+		}
 		privPEM, err := os.ReadFile(*keyPath)
 		if err != nil {
 			log.Fatalf("mcp-proxy: read key: %v", err)
@@ -879,6 +890,23 @@ func ensureDBDir(path string) error {
 		return fmt.Errorf("create database directory %q: %w", dir, err)
 	}
 	return nil
+}
+
+// checkKeyFilePermissions returns a non-empty warning string if the file at
+// path is readable or writable by users other than the owner (mode & 0o077 != 0).
+// Returns "" on Windows or when the file cannot be stat'd.
+func checkKeyFilePermissions(path string) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Sprintf("key file %q has permissions %04o — run: chmod 600 %q", path, perm, path)
+	}
+	return ""
 }
 
 func generateToken(n int) string {

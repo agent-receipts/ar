@@ -430,3 +430,72 @@ func TestDiagnoseConfigUnreachableApproverIsUnhealthy(t *testing.T) {
 		t.Errorf("approver reach = %q, want unreachable", report.ApproverReach)
 	}
 }
+
+func writeFileWithPerm(t *testing.T, dir string, perm os.FileMode) string {
+	t.Helper()
+	path := filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(path, []byte("data"), 0o600); err != nil {
+		t.Fatalf("create test file: %v", err)
+	}
+	if err := os.Chmod(path, perm); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	return path
+}
+
+func TestCheckKeyFilePermissions0600OK(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	path := writeFileWithPerm(t, t.TempDir(), 0o600)
+	if got := checkKeyFilePermissions(path); got != "" {
+		t.Errorf("expected no warning for 0600, got %q", got)
+	}
+}
+
+func TestCheckKeyFilePermissions0400OK(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	path := writeFileWithPerm(t, t.TempDir(), 0o400)
+	if got := checkKeyFilePermissions(path); got != "" {
+		t.Errorf("expected no warning for 0400, got %q", got)
+	}
+}
+
+func TestCheckKeyFilePermissions0644Warns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	path := writeFileWithPerm(t, t.TempDir(), 0o644)
+	got := checkKeyFilePermissions(path)
+	if got == "" {
+		t.Fatalf("expected warning for 0644, got empty string")
+	}
+	if !strings.Contains(got, path) {
+		t.Errorf("warning should contain path, got %q", got)
+	}
+	if !strings.Contains(got, "chmod 600") {
+		t.Errorf("warning should mention chmod 600, got %q", got)
+	}
+}
+
+func TestCheckKeyFilePermissions0666Warns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	path := writeFileWithPerm(t, t.TempDir(), 0o666)
+	if got := checkKeyFilePermissions(path); got == "" {
+		t.Errorf("expected warning for 0666, got empty string")
+	}
+}
+
+func TestCheckKeyFilePermissionsNonexistentNoWarning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	// Non-existent path: stat will fail and the error surfaces at ReadFile.
+	if got := checkKeyFilePermissions("/nonexistent/path/key.pem"); got != "" {
+		t.Errorf("expected no warning for unstat-able path, got %q", got)
+	}
+}

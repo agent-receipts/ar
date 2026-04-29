@@ -665,3 +665,72 @@ func truncate(s string, max int) string {
 	}
 	return s[:max-3] + "..."
 }
+
+// writePrivateKeyFile writes data to path with 0600 permissions. When force is
+// false the call fails if the file already exists. When force is true the
+// existing file is removed first so that O_EXCL creates a fresh inode — this
+// ensures the kernel sets the permissions atomically without a chmod race.
+func writePrivateKeyFile(path string, data []byte, force bool) error {
+	if force {
+		os.Remove(path) // best-effort; ignore error so O_EXCL below handles the fresh-create
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if !force && os.IsExist(err) {
+			return fmt.Errorf("key file %q already exists (use -force to overwrite)", path)
+		}
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(data)
+	return err
+}
+
+func cmdInit(args []string) {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	keyPath := fs.String("key", "", "Path for the Ed25519 private key PEM file (required)")
+	pubPath := fs.String("pub", "", "Path for the public key PEM file (default: <key>.pub)")
+	force := fs.Bool("force", false, "Overwrite existing key files")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy init -key <path> [-pub <path>] [-force]\n\n")
+		fmt.Fprintf(os.Stderr, "  Generate an Ed25519 signing key pair. The private key is written with\n")
+		fmt.Fprintf(os.Stderr, "  0600 permissions (owner read/write only). Pass -key to mcp-proxy serve\n")
+		fmt.Fprintf(os.Stderr, "  to use it.\n\n")
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+
+	if *keyPath == "" {
+		fmt.Fprintln(os.Stderr, "mcp-proxy init: -key is required")
+		fs.Usage()
+		os.Exit(2)
+	}
+
+	resolvedPub := *pubPath
+	if resolvedPub == "" {
+		resolvedPub = *keyPath + ".pub"
+	}
+
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy: generate key: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := ensureDBDir(*keyPath); err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy: create key directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := writePrivateKeyFile(*keyPath, []byte(kp.PrivateKey), *force); err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy: write private key: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := os.WriteFile(resolvedPub, []byte(kp.PublicKey), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy: write public key: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Fprintf(os.Stderr, "Generated Ed25519 key pair:\n  private: %s\n  public:  %s\n", *keyPath, resolvedPub)
+}
