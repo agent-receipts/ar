@@ -687,6 +687,9 @@ func writePrivateKeyFile(path string, data []byte, force bool) (retErr error) {
 		if cerr := f.Close(); cerr != nil && retErr == nil {
 			retErr = fmt.Errorf("close key file %q: %w", path, cerr)
 		}
+		if retErr != nil {
+			os.Remove(path) // best-effort: remove partial file on any failure
+		}
 	}()
 	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("write key file %q: %w", path, err)
@@ -719,17 +722,29 @@ func cmdInit(args []string) {
 		resolvedPub = *keyPath + ".pub"
 	}
 
+	// Preflight: check for existing files before generating or writing anything.
+	if !*force {
+		if _, err := os.Stat(*keyPath); err == nil {
+			fmt.Fprintf(os.Stderr, "mcp-proxy: key file %q already exists (use -force to overwrite)\n", *keyPath)
+			os.Exit(1)
+		}
+		if _, err := os.Stat(resolvedPub); err == nil {
+			fmt.Fprintf(os.Stderr, "mcp-proxy: public key file %q already exists (use -force to overwrite)\n", resolvedPub)
+			os.Exit(1)
+		}
+	}
+
 	kp, err := receipt.GenerateKeyPair()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: generate key: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := ensureDBDir(*keyPath); err != nil {
+	if err := ensureDir(*keyPath); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: create key directory: %v\n", err)
 		os.Exit(1)
 	}
-	if err := ensureDBDir(resolvedPub); err != nil {
+	if err := ensureDir(resolvedPub); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: create public key directory: %v\n", err)
 		os.Exit(1)
 	}
@@ -737,13 +752,6 @@ func cmdInit(args []string) {
 	if err := writePrivateKeyFile(*keyPath, []byte(kp.PrivateKey), *force); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: write private key: %v\n", err)
 		os.Exit(1)
-	}
-
-	if !*force {
-		if _, err := os.Stat(resolvedPub); err == nil {
-			fmt.Fprintf(os.Stderr, "mcp-proxy: public key file %q already exists (use -force to overwrite)\n", resolvedPub)
-			os.Exit(1)
-		}
 	}
 	if err := os.WriteFile(resolvedPub, []byte(kp.PublicKey), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy: write public key: %v\n", err)

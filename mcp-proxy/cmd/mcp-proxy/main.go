@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -170,13 +171,18 @@ func serve() {
 	// Load or generate key pair.
 	var kp receipt.KeyPair
 	if *keyPath != "" {
-		if warn := checkKeyFilePermissions(*keyPath); warn != "" {
+		f, err := os.Open(*keyPath)
+		if err != nil {
+			log.Fatalf("mcp-proxy: read key: %v", err)
+		}
+		defer f.Close()
+		if warn := checkOpenFilePermissions(f); warn != "" {
 			if *strictPermissions {
 				log.Fatalf("mcp-proxy: insecure key permissions: %s", warn)
 			}
 			log.Printf("[WARN] mcp-proxy: %s", warn)
 		}
-		privPEM, err := os.ReadFile(*keyPath)
+		privPEM, err := io.ReadAll(f)
 		if err != nil {
 			log.Fatalf("mcp-proxy: read key: %v", err)
 		}
@@ -879,15 +885,20 @@ func defaultDBPath(name string) string {
 	return filepath.Join(home, ".agent-receipts", name)
 }
 
-// ensureDBDir creates the parent directory of path with 0o700 permissions.
-// SQLite can create the database file itself but not the directory holding it.
-func ensureDBDir(path string) error {
+// ensureDir creates the parent directory of path at 0o700 permissions.
+func ensureDir(path string) error {
 	dir := filepath.Dir(path)
 	if dir == "" || dir == "." {
 		return nil
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create database directory %q: %w", dir, err)
+	return os.MkdirAll(dir, 0o700)
+}
+
+// ensureDBDir creates the parent directory of path with 0o700 permissions.
+// SQLite can create the database file itself but not the directory holding it.
+func ensureDBDir(path string) error {
+	if err := ensureDir(path); err != nil {
+		return fmt.Errorf("create database directory %q: %w", filepath.Dir(path), err)
 	}
 	return nil
 }
@@ -905,6 +916,23 @@ func checkKeyFilePermissions(path string) string {
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
 		return fmt.Sprintf("key file %q has permissions %04o — run: chmod 600 %q", path, perm, path)
+	}
+	return ""
+}
+
+// checkOpenFilePermissions is like checkKeyFilePermissions but operates on an
+// already-open file descriptor, eliminating the TOCTOU race between stat and
+// read. Returns "" on Windows or when f.Stat() fails.
+func checkOpenFilePermissions(f *os.File) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Sprintf("key file %q has permissions %04o — run: chmod 600 %q", f.Name(), perm, f.Name())
 	}
 	return ""
 }
