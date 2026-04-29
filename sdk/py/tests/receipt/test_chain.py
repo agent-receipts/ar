@@ -1,5 +1,7 @@
 """Tests for chain verification."""
 
+from unittest.mock import patch
+
 from agent_receipts.receipt.chain import verify_chain
 from agent_receipts.receipt.create import (
     ActionInput,
@@ -464,6 +466,31 @@ class TestAdr0008ChainBehaviours:
         )
         assert not result.valid
         assert "response_hash mismatch" in result.error
+
+    # --- hash compute errors ---
+
+    def test_hash_failure_in_loop_populates_error(self) -> None:
+        """hash_receipt raising on a previous receipt surfaces as a structured error.
+
+        Patch hash_receipt to raise ValueError on the second call (when the
+        loop computes hash_receipt(previous) for receipt[1]).  verify_receipt
+        is unaffected because it does not call hash_receipt — this isolates the
+        try/except at the per-receipt hash-link check in verify_chain.
+        """
+        kp = generate_key_pair()
+        chain = _build_chain(2, kp.private_key)
+
+        with patch(
+            "agent_receipts.receipt.chain.hash_receipt",
+            side_effect=ValueError("injected hash failure"),
+        ):
+            result = verify_chain(chain, kp.public_key)
+
+        assert result.valid is False
+        assert result.broken_at == 1
+        assert result.error.startswith("hash compute failed at index 0:")
+        assert len(result.receipts) == 2
+        assert result.receipts[1].hash_link_valid is False
 
     def test_response_bodies_absent_entry_emits_note(self) -> None:
         """When response_hash is present but receipt id is not in the map, emit note."""
