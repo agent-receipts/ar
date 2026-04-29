@@ -159,8 +159,8 @@ Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored wit
 **Three different things produce these error codes.** Distinguish them before reaching for a fix, because they need different remedies and only two of them involve the proxy:
 
 1. **Client-side denial** — the MCP client (e.g. Claude Code) rejected the tool use before it reached the proxy. The call never hits the audit DB.
-2. **Proxy: no approver configured** (`-32003`) — the call reached the proxy, matched a `pause` rule, but the approval HTTP listener is not running (operator did not pass `-http <addr>`). The proxy fails fast rather than waiting out the timeout. The call appears in the audit DB with `policy_action = 'rejected'`, `approved_by` NULL, and `approval_wait_us` near zero. This is the common case when running the default configuration.
-3. **Proxy: approval timeout** (`-32002`) — the call reached the proxy, matched a `pause` rule, an approver listener is wired up (`-http <addr>` was passed), but no approver POSTed a decision before `-approval-timeout` elapsed. The audit DB row signature is the same as case 2 (`policy_action = 'rejected'`, `approved_by` NULL), distinguishable by `approval_wait_us` close to the configured `-approval-timeout` (default 60s = 60000000μs).
+2. **Proxy: no approver configured** (`-32003`) — the call reached the proxy, matched a `pause` rule, but the approval HTTP listener is not running (operator did not pass `-http <addr>`). The proxy fails fast rather than waiting out the timeout. The call appears in the audit DB with `policy_action = 'rejected'`, `approved_by` NULL, and `approval_wait_us` NULL or near zero. This is the common case when running the default configuration. The JSON-RPC error response carries `data.status = "no_approver"`.
+3. **Proxy: approval denied or timed out** (`-32002`) — the call reached the proxy, matched a `pause` rule, and an approver listener was wired up (`-http <addr>` was passed). The approver either explicitly denied the call, or no approver POSTed a decision before `-approval-timeout` elapsed. The audit DB row signature is the same as case 2 (`policy_action = 'rejected'`, `approved_by` NULL). The JSON-RPC error response disambiguates via `data.status`: `"denied"` for an explicit deny, `"timed_out"` for a timeout. A timeout will have `approval_wait_us` close to `-approval-timeout` (default 60s = 60000000μs); a fast deny may have a small `approval_wait_us` indistinguishable from case 2.
 
 **Diagnose — which one is it?**
 
@@ -168,16 +168,16 @@ Key derivation uses Argon2id (t=1, m=64MB, p=4). Encrypted fields are stored wit
 # Did the failing call reach the proxy at all?
 # Substitute the tool name you saw fail.
 sqlite3 ~/.agent-receipts/audit.db \
-  "SELECT tool_name, policy_action, risk_score, approved_by, approval_wait_us, created_at
+  "SELECT tool_name, policy_action, risk_score, approved_by, approval_wait_us, requested_at
    FROM tool_calls
    WHERE tool_name = 'create_pull_request'
-     AND created_at > datetime('now', '-1 hour')
+     AND requested_at > datetime('now', '-1 hour')
    ORDER BY id DESC LIMIT 10;"
 ```
 
 - **No rows at all** → client-side denial (case 1). The proxy never saw it. See [ar#157](https://github.com/agent-receipts/ar/issues/157) for the ongoing work to make these visible.
 - **Rows with `policy_action = 'pass'`** → the proxy forwarded it; the error came from somewhere downstream (the MCP server, the remote API). Check the proxy's stderr log and the server's own logs.
-- **Rows with `policy_action = 'rejected'` and `approved_by` NULL** → proxy pause rejection (case 2 or 3). The JSON-RPC error code the client received tells them apart: `-32003` means no approver was wired up; `-32002` means an approver was wired but timed out. If you no longer have the error response, the `approval_wait_us` column is a good proxy: near zero is case 2 (no approver, fail-fast), near `-approval-timeout` is case 3 (timeout).
+- **Rows with `policy_action = 'rejected'` and `approved_by` NULL** → proxy pause rejection (case 2 or 3). Distinguish via the JSON-RPC error response when you have it: code `-32003` is case 2; code `-32002` is case 3, and its `data.status` field (`"denied"` vs `"timed_out"`) tells you which sub-case. If the error response is gone, `approval_wait_us` only reliably identifies the timeout sub-case (it'll be close to `-approval-timeout`); a small or NULL value can be either case 2 (no approver, fail-fast) or a fast deny under case 3 — they're indistinguishable from the audit DB alone.
 
 **If the error is `-32003` (no approver configured):**
 
@@ -188,9 +188,9 @@ The proxy is pausing high-risk calls but has no approval listener running. Eithe
 ps aux | grep mcp-proxy | grep -v grep
 ```
 
-**If the error is `-32002` (approval timeout):**
+**If the error is `-32002` (approval denied or timed out):**
 
-An approver listener is running but no decision arrived in time. Check that your approver can reach the endpoint and that `-approval-timeout` is long enough.
+An approver listener is running and either denied the call or didn't respond in time. Check `data.status` in the JSON-RPC error: `"denied"` means the approver said no — that's the workflow working as intended, no proxy fix needed. `"timed_out"` means no decision arrived; verify your approver can reach the endpoint and that `-approval-timeout` is long enough.
 
 ```bash
 # Confirm the -http address and timeout flags.
