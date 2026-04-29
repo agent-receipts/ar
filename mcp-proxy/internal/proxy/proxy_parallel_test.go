@@ -91,7 +91,15 @@ func startParallelProxy(t *testing.T, proxyBin, fakeserverBin string, extraEnv [
 	}
 	t.Cleanup(func() {
 		_ = stdinPipe.Close()
-		_ = cmd.Wait()
+		// Subtests may have already waited; only wait again if the process
+		// hasn't been reaped yet, and force-kill if it's still running so
+		// cleanup doesn't hang.
+		if cmd.ProcessState == nil {
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			_ = cmd.Wait()
+		}
 	})
 
 	// Give the proxy a moment to start the child.
