@@ -179,6 +179,187 @@ describe("ReceiptStore", () => {
 		});
 	});
 
+	describe("corrupt receipt validation", () => {
+		/**
+		 * Helper to directly update the receipt_json for a stored row, bypassing
+		 * the ReceiptStore API. Uses @ts-expect-error so a future rename of the
+		 * private db field surfaces here at compile time.
+		 */
+		function rawDb(): DatabaseSync {
+			// @ts-expect-error reaches into the private db field for test injection
+			return store.db;
+		}
+		function corruptJson(id: string, payload: string): void {
+			rawDb()
+				.prepare("UPDATE receipts SET receipt_json = ? WHERE id = ?")
+				.run(payload, id);
+		}
+
+		it("getById: throws on non-JSON garbage", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-1" });
+			store.insert(receipt, "sha256:c1");
+			corruptJson("urn:receipt:corrupt-1", "not-json{{");
+
+			expect(() => store.getById("urn:receipt:corrupt-1")).toThrowError(
+				/Corrupt receipt in store \(id=urn:receipt:corrupt-1\)/,
+			);
+		});
+
+		it("getById: preserves the original error as Error.cause", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:cause-json" });
+			store.insert(receipt, "sha256:cj1");
+			corruptJson("urn:receipt:cause-json", "not-json{{");
+
+			let caught: unknown;
+			try {
+				store.getById("urn:receipt:cause-json");
+			} catch (e) {
+				caught = e;
+			}
+			expect(caught).toBeInstanceOf(Error);
+			expect((caught as Error).cause).toBeInstanceOf(SyntaxError);
+		});
+
+		it("getById: preserves ZodError as Error.cause on schema failure", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:cause-zod" });
+			store.insert(receipt, "sha256:cz1");
+			const corrupt = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			(corrupt.credentialSubject as Record<string, unknown>) = {};
+			corruptJson("urn:receipt:cause-zod", JSON.stringify(corrupt));
+
+			let caught: unknown;
+			try {
+				store.getById("urn:receipt:cause-zod");
+			} catch (e) {
+				caught = e;
+			}
+			expect(caught).toBeInstanceOf(Error);
+			// ZodError extends Error and carries .issues
+			const cause = (caught as Error).cause as
+				| { issues?: unknown[] }
+				| undefined;
+			expect(cause).toBeDefined();
+			expect(Array.isArray(cause?.issues)).toBe(true);
+		});
+
+		it("getById: renders (root) for root-shape failures", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:root-shape" });
+			store.insert(receipt, "sha256:rs1");
+			// Replace the row with a JSON primitive so the schema fails at the root.
+			corruptJson("urn:receipt:root-shape", "42");
+
+			expect(() => store.getById("urn:receipt:root-shape")).toThrowError(
+				/\(root\):/,
+			);
+		});
+
+		it("getById: throws with field path on missing required field", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-2" });
+			store.insert(receipt, "sha256:c2");
+			// Remove chain_id from credentialSubject.chain
+			const corrupt = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			const cs = corrupt.credentialSubject as Record<string, unknown>;
+			const chain = cs.chain as Record<string, unknown>;
+			delete chain.chain_id;
+			corruptJson("urn:receipt:corrupt-2", JSON.stringify(corrupt));
+
+			expect(() => store.getById("urn:receipt:corrupt-2")).toThrowError(
+				/credentialSubject\.chain\.chain_id/,
+			);
+		});
+
+		it("getById: throws with field path on invalid enum value", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-3" });
+			store.insert(receipt, "sha256:c3");
+			const corrupt = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			const cs = corrupt.credentialSubject as Record<string, unknown>;
+			const action = cs.action as Record<string, unknown>;
+			action.risk_level = "extreme";
+			corruptJson("urn:receipt:corrupt-3", JSON.stringify(corrupt));
+
+			expect(() => store.getById("urn:receipt:corrupt-3")).toThrowError(
+				/credentialSubject\.action\.risk_level/,
+			);
+		});
+
+		it("getById: throws when chain.terminal is false (spec invariant)", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-4" });
+			store.insert(receipt, "sha256:c4");
+			const corrupt = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			const cs = corrupt.credentialSubject as Record<string, unknown>;
+			const chain = cs.chain as Record<string, unknown>;
+			chain.terminal = false;
+			corruptJson("urn:receipt:corrupt-4", JSON.stringify(corrupt));
+
+			expect(() => store.getById("urn:receipt:corrupt-4")).toThrowError(
+				/Corrupt receipt in store \(id=urn:receipt:corrupt-4\)/,
+			);
+		});
+
+		it("getChain: throws with chain context on corrupt row", () => {
+			const receipt = makeReceipt({
+				id: "urn:receipt:corrupt-chain-1",
+				chainId: "chain_corrupt",
+			});
+			store.insert(receipt, "sha256:cc1");
+			corruptJson("urn:receipt:corrupt-chain-1", "!!!bad json");
+
+			expect(() => store.getChain("chain_corrupt")).toThrowError(
+				/Corrupt receipt in store \(chain=chain_corrupt\)/,
+			);
+		});
+
+		it("query: throws with query context on corrupt row", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:corrupt-query-1" });
+			store.insert(receipt, "sha256:cq1");
+			corruptJson("urn:receipt:corrupt-query-1", "!!!bad json");
+
+			expect(() => store.query({})).toThrowError(
+				/Corrupt receipt in store \(query\)/,
+			);
+		});
+
+		// Guards the forward-compat property documented in ADR-0011 and
+		// schema.ts: receipts written by a newer SDK with extra unknown fields
+		// must round-trip through the store unchanged. Stripping those fields
+		// would silently invalidate the RFC 8785 hash on signed receipts.
+		it("preserves unknown extra fields written by a newer SDK", () => {
+			const receipt = makeReceipt({ id: "urn:receipt:forward-compat" });
+			store.insert(receipt, "sha256:fc1");
+
+			const extended = JSON.parse(JSON.stringify(receipt)) as Record<
+				string,
+				unknown
+			>;
+			extended.future_top_level = "added in a later spec version";
+			const cs = extended.credentialSubject as Record<string, unknown>;
+			const action = cs.action as Record<string, unknown>;
+			action.future_action_field = { nested: 42 };
+			corruptJson("urn:receipt:forward-compat", JSON.stringify(extended));
+
+			const loaded = store.getById("urn:receipt:forward-compat") as Record<
+				string,
+				unknown
+			>;
+			expect(loaded.future_top_level).toBe("added in a later spec version");
+			const loadedAction = (loaded.credentialSubject as Record<string, unknown>)
+				.action as Record<string, unknown>;
+			expect(loadedAction.future_action_field).toEqual({ nested: 42 });
+		});
+	});
+
 	describe("tool_name", () => {
 		it("persists tool_name from receipt action", () => {
 			const receipt = makeReceipt({});
