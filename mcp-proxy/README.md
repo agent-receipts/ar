@@ -172,6 +172,72 @@ Paused calls auto-deny after 60 seconds (fail-safe).
 
 Set `BEACON_ENCRYPTION_KEY` to enable AES-256-GCM encryption at rest for sensitive audit data.
 
+## Secret redaction
+
+The proxy redacts secrets before writing to the audit database in two passes:
+1. **JSON-key pass** — any value whose JSON key matches a sensitive name (e.g. `password`, `token`, `api_key`) is replaced with `[REDACTED]`.
+2. **Pattern pass** — 12 built-in regular expressions catch common token formats regardless of key name.
+
+Built-in patterns:
+
+| Name | Matches |
+|------|---------|
+| `github-pat-classic` | `ghp_…` GitHub personal access tokens |
+| `github-pat-finegrained` | `github_pat_…` fine-grained PATs |
+| `github-oauth` | `gho_…` OAuth tokens |
+| `github-app-installation` | `ghs_…` GitHub App installation tokens |
+| `github-user-to-server` | `ghu_…` user-to-server tokens |
+| `github-installation-legacy` | `v1.<40+ hex chars>` legacy installation tokens |
+| `openai-anthropic-key` | `sk-…` OpenAI/Anthropic secret keys |
+| `aws-access-key` | `AKIA…` AWS access key IDs |
+| `bearer-token` | `Bearer <token>` HTTP Authorization headers |
+| `slack-token` | `xoxb-/xoxp-/xoxr-/xoxa-/xoxs-` Slack tokens |
+| `pem-private-key` | PEM `-----BEGIN … PRIVATE KEY-----` blocks |
+| `url-param-token` | `?token=…`, `?access_token=…`, `?key=…` etc. (key name preserved) |
+
+### Custom patterns
+
+Add organisation-specific patterns with a YAML file:
+
+```yaml
+# custom_redact.yaml
+patterns:
+  - name: slack-webhook
+    pattern: 'https://hooks\.slack\.com/services/[A-Z0-9/]+'
+  - name: stripe-live
+    pattern: 'sk_live_[A-Za-z0-9]{24,}'
+```
+
+Pass it at startup:
+
+```sh
+mcp-proxy -redact-patterns custom_redact.yaml -- npx -y @modelcontextprotocol/server-filesystem /
+```
+
+An example file is at `configs/example_redact_patterns.yaml`.
+
+### Auditing existing databases
+
+The `audit-secrets` subcommand scans an existing audit database for values that match any built-in or custom pattern — useful after upgrading the proxy or adding new patterns:
+
+```sh
+mcp-proxy audit-secrets -db ~/.agent-receipts/audit.db
+mcp-proxy audit-secrets -db ~/.agent-receipts/audit.db -redact-patterns custom_redact.yaml
+```
+
+If the database is encrypted, set `BEACON_ENCRYPTION_KEY` before running.
+
+**Exit codes:** `0` = no matches found; `1` = one or more matches found; `2` = error.
+
+The scanner runs two passes per row:
+
+1. **Regex pass** — checks the value against all built-in and custom named patterns. Output line: `<table> col=<column> row=<id> pattern=<name>`.
+2. **JSON-key pass** — parses the value as JSON and reports any value stored under a sensitive key (e.g. `password`, `token`, `api_key`) that is non-empty and not already `[REDACTED]`. Catches leaks that do not match any regex pattern. Output line: `<table> col=<column> row=<id> json-key=<path>`.
+
+If decryption fails for a row (invalid ciphertext), it is reported as `<table> col=<column> row=<id> decrypt-error` and counts as a hit — operators must investigate.
+
+If hits are reported, the raw token values are already in the database. Because the audit log is append-only, the recommended action is to **rotate the secret** and consider the old value compromised. You can then drop or redact the affected rows manually if needed.
+
 ## License
 
 Apache 2.0

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -74,6 +75,9 @@ func main() {
 		case "init":
 			cmdInit(os.Args[2:])
 			return
+		case "audit-secrets":
+			cmdAuditSecrets(os.Args[2:])
+			return
 		case "serve":
 			os.Args = append(os.Args[:1], os.Args[2:]...)
 			// Fall through to serve.
@@ -90,8 +94,9 @@ func serve() {
 		keyPath           = flag.String("key", "", "Ed25519 private key (PEM file)")
 		taxonomyPath      = flag.String("taxonomy", "", "Taxonomy mappings (JSON file). Merged with bundled taxonomies; user mappings win on conflict.")
 		bundledTaxonomy   = flag.Bool("bundled-taxonomies", true, "Include bundled taxonomies (e.g. GitHub, Atlassian). Set to false to use only -taxonomy.")
-		rulesPath         = flag.String("rules", "", "Policy rules (YAML file)")
-		serverName        = flag.String("name", "", "Server name for audit trail")
+		rulesPath            = flag.String("rules", "", "Policy rules (YAML file)")
+		redactPatternsPath   = flag.String("redact-patterns", "", "Path to YAML file with custom redaction patterns")
+		serverName           = flag.String("name", "", "Server name for audit trail")
 		issuerDID         = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
 		issuerName        = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
 		issuerModel       = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
@@ -106,7 +111,7 @@ func serve() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
 		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
-		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing, doctor, init\n\n")
+		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing, doctor, init, audit-secrets\n\n")
 		fmt.Fprintf(os.Stderr, "  -version\n\tPrint version and exit\n")
 		flag.PrintDefaults()
 	}
@@ -226,6 +231,19 @@ func serve() {
 	}
 	engine := policy.NewEngine(rules)
 
+	// Build redactor (built-ins + optional custom patterns).
+	var customPatterns []*regexp.Regexp
+	if *redactPatternsPath != "" {
+		np, err := audit.LoadPatterns(*redactPatternsPath)
+		if err != nil {
+			log.Fatalf("mcp-proxy: load redact patterns: %v", err)
+		}
+		for _, p := range np {
+			customPatterns = append(customPatterns, p.Re)
+		}
+	}
+	redactor := audit.NewRedactor(customPatterns)
+
 	// Encryption.
 	var encryptor *audit.Encryptor
 	if key := os.Getenv("BEACON_ENCRYPTION_KEY"); key != "" {
@@ -325,7 +343,7 @@ func serve() {
 			}
 			rawStr = truncated + "...[truncated]"
 		}
-		redactedRaw := audit.Redact(rawStr)
+		redactedRaw := redactor.Redact(rawStr)
 		skipAudit := false
 		if encryptor != nil {
 			enc, encErr := encryptor.Encrypt(redactedRaw)
@@ -364,7 +382,7 @@ func serve() {
 				policyEvalUs := time.Since(evalStart).Microseconds()
 
 				argJSON, _ := json.Marshal(params.Arguments)
-				redactedArgs := audit.Redact(string(argJSON))
+				redactedArgs := redactor.Redact(string(argJSON))
 				if encryptor != nil {
 					enc, encErr := encryptor.Encrypt(redactedArgs)
 					if encErr != nil {
@@ -525,13 +543,13 @@ func serve() {
 					errorStr = string(msg.Error)
 				}
 
-				redactedResult := audit.Redact(resultStr)
+				redactedResult := redactor.Redact(resultStr)
 				// Keep pre-encryption copy for response_hash computation.
 				receiptResponseBody := json.RawMessage(nil)
 				if redactedResult != "" && json.Valid([]byte(redactedResult)) {
 					receiptResponseBody = json.RawMessage(redactedResult)
 				}
-				redactedError := audit.Redact(errorStr)
+				redactedError := redactor.Redact(errorStr)
 				if encryptor != nil {
 					if enc, encErr := encryptor.Encrypt(redactedResult); encErr != nil {
 						log.Printf("mcp-proxy: encrypt result: %v", encErr)

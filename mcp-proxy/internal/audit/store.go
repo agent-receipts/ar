@@ -563,6 +563,66 @@ func floatToInt64(f *float64) *int64 {
 	return &v
 }
 
+// ScanRedactionTargets calls fn for every (table, column, rowID, value) where
+// value is non-empty in messages.raw and tool_calls.{arguments,result,error}.
+// Used by the audit-secrets subcommand to detect unredacted secrets at rest.
+// NULL and empty-string values are skipped. Any error returned by fn stops
+// iteration and is propagated to the caller.
+func (s *Store) ScanRedactionTargets(fn func(table, column string, rowID int64, value string) error) error {
+	// messages.raw
+	rows, err := s.db.Query("SELECT id, raw FROM messages WHERE raw IS NOT NULL AND raw != ''")
+	if err != nil {
+		return fmt.Errorf("scan messages: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			return fmt.Errorf("scan messages row: %w", err)
+		}
+		if err := fn("messages", "raw", id, raw); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scan messages: %w", err)
+	}
+
+	// tool_calls: arguments, result, error (all nullable)
+	tcRows, err := s.db.Query("SELECT id, arguments, result, error FROM tool_calls")
+	if err != nil {
+		return fmt.Errorf("scan tool_calls: %w", err)
+	}
+	defer tcRows.Close()
+	for tcRows.Next() {
+		var id int64
+		var args, result, errCol sql.NullString
+		if err := tcRows.Scan(&id, &args, &result, &errCol); err != nil {
+			return fmt.Errorf("scan tool_calls row: %w", err)
+		}
+		for _, cv := range []struct {
+			col string
+			val sql.NullString
+		}{
+			{"arguments", args},
+			{"result", result},
+			{"error", errCol},
+		} {
+			if cv.val.Valid && cv.val.String != "" {
+				if err := fn("tool_calls", cv.col, id, cv.val.String); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := tcRows.Err(); err != nil {
+		return fmt.Errorf("scan tool_calls: %w", err)
+	}
+
+	return nil
+}
+
 // Close closes the database.
 func (s *Store) Close() error {
 	return s.db.Close()
