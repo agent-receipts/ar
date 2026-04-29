@@ -108,6 +108,28 @@ describe("verifyChain", () => {
 		expect(result.receipts[1]?.hashLinkValid).toBe(false);
 	});
 
+	it("surfaces hashReceipt errors via the error field", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(2, privateKey);
+
+		// Inject a non-finite number into a canonicalized field. RFC 8785 §3.2.2.3
+		// (and hashReceipt -> canonicalize) rejects NaN. chain_id is typed string,
+		// so cast through unknown to bypass at runtime.
+		const first = chain[0];
+		if (first) {
+			(
+				first.credentialSubject.chain as unknown as { chain_id: number }
+			).chain_id = Number.NaN;
+		}
+
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(false);
+		expect(result.brokenAt).toBe(1);
+		expect(result.error).toMatch(/^hash compute failed at index 0:/);
+		expect(result.receipts[1]?.hashLinkValid).toBe(false);
+	});
+
 	it("detects a broken sequence", () => {
 		const { publicKey, privateKey } = generateKeyPair();
 
