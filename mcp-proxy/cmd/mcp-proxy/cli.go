@@ -670,7 +670,7 @@ func truncate(s string, max int) string {
 // false the call fails if the file already exists. When force is true the
 // existing file is removed first so that O_EXCL creates a fresh inode — this
 // ensures the kernel sets the permissions atomically without a chmod race.
-func writePrivateKeyFile(path string, data []byte, force bool) error {
+func writePrivateKeyFile(path string, data []byte, force bool) (retErr error) {
 	if force {
 		os.Remove(path) // best-effort; ignore error so O_EXCL below handles the fresh-create
 	}
@@ -681,9 +681,13 @@ func writePrivateKeyFile(path string, data []byte, force bool) error {
 		}
 		return err
 	}
-	defer f.Close()
-	_, err = f.Write(data)
-	return err
+	defer func() {
+		if cerr := f.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
+	_, retErr = f.Write(data)
+	return retErr
 }
 
 func cmdInit(args []string) {
