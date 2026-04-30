@@ -1,10 +1,49 @@
 #!/usr/bin/env bash
-# Run tests before git push.
-# Detects which components have committed changes relative to the upstream
-# branch and runs their tests.
-# Exit 0: tests passed. Exit 2: tests failed.
+# Run tests before `git push` to catch regressions in changed components.
+#
+# Wired as PreToolUse:Bash in .claude/settings.json. Claude Code's hook
+# `matcher` field is a regex on tool names — there is no built-in way to
+# restrict by command content, so this hook fires on every Bash invocation
+# and filters here. Without that filter, every `ls` / `git status` would
+# re-trigger the full test matrix.
+#
+# Stdin protocol: Claude Code passes a JSON object containing
+# `.tool_input.command`. We parse it, exit 0 immediately for any command
+# that isn't a `git push`, and only fall through to the test runners for
+# real pushes. Robust to missing `jq` (uses sed fallback) and to non-JSON
+# input (treats empty COMMAND as not-a-push, exits 0).
+#
+# Exits:
+#   0  not a `git push`, or all relevant tests passed
+#   2  one or more component test suites failed; do not push
 
 set -euo pipefail
+
+# --- Filter: only run for `git push` -----------------------------------------
+
+extract_command() {
+  local input="${1:-}"
+  [ -z "$input" ] && return 0
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null
+  else
+    printf '%s' "$input" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+  fi
+}
+
+TOOL_INPUT="$(cat 2>/dev/null || true)"
+COMMAND="$(extract_command "$TOOL_INPUT")"
+
+# Match `git push` either at the start of the command or after whitespace.
+# This covers env-var prefixes (`FOO=bar git push`) and shell-list operators
+# (`&& git push`, `; git push`, `|| git push`) since each is followed by a
+# space in normal shell usage. Avoids false positives like `echo "git push"`.
+case "$COMMAND" in
+  "git push"*|*" git push"*) ;;
+  *) exit 0 ;;
+esac
+
+# --- Run tests for changed components ----------------------------------------
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 FAILED=0
