@@ -69,6 +69,7 @@ class Action(BaseModel):
     risk_level: RiskLevel
     target: ActionTarget | None = None
     parameters_hash: str | None = None
+    parameters_disclosure: dict[str, str] | None = None
     timestamp: str
     trusted_timestamp: str | None = None
 
