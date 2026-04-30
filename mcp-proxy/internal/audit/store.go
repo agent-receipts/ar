@@ -288,6 +288,28 @@ func (s *Store) EncryptionSalt() ([]byte, error) {
 	return salt, nil
 }
 
+// EncryptionSaltIfPresent returns the persisted encryption salt, or (nil, false, nil)
+// if no salt has been set. Unlike EncryptionSalt, it never writes to the database.
+// Used by read-only scanners that must not mutate the audit store.
+func (s *Store) EncryptionSaltIfPresent() ([]byte, bool, error) {
+	var encoded string
+	err := s.db.QueryRow("SELECT value FROM metadata WHERE key = 'encryption_salt'").Scan(&encoded)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("query encryption salt: %w", err)
+	}
+	salt, err := hex.DecodeString(encoded)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode encryption salt: %w", err)
+	}
+	if len(salt) != 16 {
+		return nil, false, fmt.Errorf("invalid encryption salt length: got %d, want 16", len(salt))
+	}
+	return salt, true, nil
+}
+
 // ToolTiming holds per-tool aggregate timing data.
 type ToolTiming struct {
 	ToolName      string `json:"tool_name"`
@@ -589,8 +611,15 @@ func (s *Store) ScanRedactionTargets(fn func(table, column string, rowID int64, 
 		return fmt.Errorf("scan messages: %w", err)
 	}
 
-	// tool_calls: arguments, result, error (all nullable)
-	tcRows, err := s.db.Query("SELECT id, arguments, result, error FROM tool_calls")
+	// tool_calls: arguments, result, error (all nullable); skip rows where all
+	// three columns are NULL or empty to avoid loading noise.
+	tcRows, err := s.db.Query(`
+		SELECT id, arguments, result, error
+		FROM tool_calls
+		WHERE (arguments IS NOT NULL AND arguments != '')
+		   OR (result IS NOT NULL AND result != '')
+		   OR (error IS NOT NULL AND error != '')
+	`)
 	if err != nil {
 		return fmt.Errorf("scan tool_calls: %w", err)
 	}

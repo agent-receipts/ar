@@ -166,6 +166,11 @@ func TestRunAuditSecretsDecryptError(t *testing.T) {
 	if err := s.CreateSession("sess-dec", "test-server", "test-command"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
+	// Persist the encryption salt so Fix 3 (EncryptionSaltIfPresent) does not
+	// abort with exit 2 before the scanner reaches the invalid ciphertext row.
+	if _, err := s.EncryptionSalt(); err != nil {
+		t.Fatalf("seed encryption salt: %v", err)
+	}
 	// Seed a row with the enc: prefix but invalid base64/ciphertext.
 	if _, err := s.LogMessage("sess-dec", "client_to_server", "", "tools/call", "enc:not-base64-!!!"); err != nil {
 		t.Fatalf("log message: %v", err)
@@ -182,6 +187,81 @@ func TestRunAuditSecretsDecryptError(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "decrypt-error") {
 		t.Errorf("expected 'decrypt-error' in stdout, got:\n%s", stdout.String())
+	}
+}
+
+// TestRunAuditSecretsEncryptedNoKey asserts that a row with an "enc:" prefix is
+// reported as encrypted-no-key when BEACON_ENCRYPTION_KEY is not set (Fix 2).
+func TestRunAuditSecretsEncryptedNoKey(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "audit.db")
+
+	s, err := audit.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := s.CreateSession("sess-encnokey", "test-server", "test-command"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	// Seed a row that looks like ciphertext (enc: prefix).
+	if _, err := s.LogMessage("sess-encnokey", "client_to_server", "", "tools/call", "enc:somebase64data=="); err != nil {
+		t.Fatalf("log message: %v", err)
+	}
+	s.Close()
+
+	// Ensure no key is set.
+	t.Setenv("BEACON_ENCRYPTION_KEY", "")
+
+	var stdout, stderr strings.Builder
+	code := runAuditSecrets([]string{"-db", dbPath}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit 1 for encrypted-no-key, got %d; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "encrypted-no-key") {
+		t.Errorf("expected 'encrypted-no-key' in stdout, got:\n%s", stdout.String())
+	}
+}
+
+// TestRunAuditSecretsKeyButNoSalt asserts that when BEACON_ENCRYPTION_KEY is set
+// but the DB has no encryption salt, the scanner exits 2 with a descriptive error
+// and does NOT write a salt to the DB (Fix 3).
+func TestRunAuditSecretsKeyButNoSalt(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "audit.db")
+
+	// Open a fresh DB; do NOT call EncryptionSalt() so no salt is persisted.
+	s, err := audit.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := s.CreateSession("sess-nosalt", "test-server", "test-command"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	s.Close()
+
+	t.Setenv("BEACON_ENCRYPTION_KEY", "some-passphrase")
+
+	var stdout, stderr strings.Builder
+	code := runAuditSecrets([]string{"-db", dbPath}, &stdout, &stderr)
+	if code != 2 {
+		t.Errorf("expected exit 2 for key-but-no-salt, got %d; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "encryption salt") {
+		t.Errorf("expected 'encryption salt' in stderr, got:\n%s", stderr.String())
+	}
+
+	// Verify the DB was NOT mutated: no encryption_salt row must exist.
+	s2, err := audit.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	defer s2.Close()
+	_, present, err := s2.EncryptionSaltIfPresent()
+	if err != nil {
+		t.Fatalf("EncryptionSaltIfPresent: %v", err)
+	}
+	if present {
+		t.Error("scanner must not write encryption_salt to DB; salt was found after scan")
 	}
 }
 

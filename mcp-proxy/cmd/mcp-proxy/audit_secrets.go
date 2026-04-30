@@ -33,8 +33,7 @@ func runAuditSecrets(args []string, stdout, stderr io.Writer) int {
 	defer s.Close()
 
 	// Collect all named patterns: built-ins + custom.
-	named := make([]audit.NamedPattern, len(audit.BuiltinPatterns))
-	copy(named, audit.BuiltinPatterns)
+	named := audit.BuiltinPatterns()
 
 	if *customPath != "" {
 		custom, err := audit.LoadPatterns(*customPath)
@@ -48,9 +47,13 @@ func runAuditSecrets(args []string, stdout, stderr io.Writer) int {
 	// Optional decryption: if the DB was encrypted we must decrypt before scanning.
 	var enc *audit.Encryptor
 	if key := os.Getenv("BEACON_ENCRYPTION_KEY"); key != "" {
-		salt, err := s.EncryptionSalt()
+		salt, present, err := s.EncryptionSaltIfPresent()
 		if err != nil {
 			fmt.Fprintf(stderr, "Error reading encryption salt: %v\n", err)
+			return 2
+		}
+		if !present {
+			fmt.Fprintf(stderr, "Error: BEACON_ENCRYPTION_KEY is set but no encryption salt is recorded in the DB (was the DB ever encrypted?)\n")
 			return 2
 		}
 		var encErr error
@@ -63,6 +66,13 @@ func runAuditSecrets(args []string, stdout, stderr io.Writer) int {
 
 	hits := 0
 	scanErr := s.ScanRedactionTargets(func(table, column string, rowID int64, value string) error {
+		// If no key is configured but the row is ciphertext, report it: the
+		// scanner cannot inspect the plaintext, so operators must investigate.
+		if enc == nil && len(value) >= len("enc:") && value[:4] == "enc:" {
+			fmt.Fprintf(stdout, "%s col=%s row=%d encrypted-no-key\n", table, column, rowID)
+			hits++
+			return nil
+		}
 		plaintext, decErr := enc.Decrypt(value)
 		if decErr != nil {
 			// Count as a hit — operators must investigate. Do not include the

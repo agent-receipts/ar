@@ -251,6 +251,30 @@ func TestRedactURLParamCaseInsensitive(t *testing.T) {
 	})
 }
 
+// TestRedactURLParamSkipsAlreadyRedacted verifies that an already-redacted URL
+// parameter is not double-redacted, and that the scanner (BuiltinPatterns) does
+// not flag it as a hit.
+func TestRedactURLParamSkipsAlreadyRedacted(t *testing.T) {
+	input := "?token=[REDACTED]&other=keep"
+
+	// Redactor must leave the placeholder untouched.
+	out := Redact(input)
+	if out != input {
+		t.Errorf("Redact mutated already-redacted placeholder: got %q, want %q", out, input)
+	}
+
+	// Scanner (BuiltinPatterns) must not flag the already-redacted value.
+	patterns := BuiltinPatterns()
+	for _, p := range patterns {
+		if p.Name != "url-param-token" {
+			continue
+		}
+		if p.Re.MatchString(input) {
+			t.Errorf("url-param-token scanner regex incorrectly matches already-redacted input %q", input)
+		}
+	}
+}
+
 func TestScanJSONLeaks(t *testing.T) {
 	t.Run("non-json returns nil", func(t *testing.T) {
 		got := ScanJSONLeaks("not json at all")

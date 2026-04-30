@@ -48,10 +48,10 @@ type NamedPattern struct {
 	Re   *regexp.Regexp
 }
 
-// BuiltinPatterns is the ordered set of named patterns applied by the default
-// Redactor. The list is package-level so the audit-secrets subcommand can
-// iterate it for scanning.
-var BuiltinPatterns = []NamedPattern{
+// builtinPatterns is the ordered set of named patterns applied by the default
+// Redactor. The slice is unexported to prevent callers from mutating it and
+// silently weakening redaction; use BuiltinPatterns() to obtain a safe copy.
+var builtinPatterns = []NamedPattern{
 	{
 		Name: "github-pat-classic",
 		Re:   regexp.MustCompile(`ghp_[A-Za-z0-9]{36,}`),
@@ -97,9 +97,20 @@ var BuiltinPatterns = []NamedPattern{
 		Re:   regexp.MustCompile(`-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----`),
 	},
 	{
+		// Exclude `[` and `]` from the value class so that already-redacted
+		// placeholders like `[REDACTED]` are not re-matched (idempotent scans).
+		// Real OAuth/API tokens never contain unencoded `[` or `]`.
 		Name: "url-param-token",
-		Re:   regexp.MustCompile(`(?i)([?&](?:access_token|token|api[_-]?key|apikey|key|auth)=)[^&\s"'<>]+`),
+		Re:   regexp.MustCompile(`(?i)([?&](?:access_token|token|api[_-]?key|apikey|key|auth)=)[^&\s"'<>\[\]]+`),
 	},
+}
+
+// BuiltinPatterns returns a copy of the built-in named redaction patterns.
+// The returned slice is safe to mutate without affecting the package state.
+func BuiltinPatterns() []NamedPattern {
+	out := make([]NamedPattern, len(builtinPatterns))
+	copy(out, builtinPatterns)
+	return out
 }
 
 // Redactor applies JSON-key redaction and pattern-based redaction. Custom
@@ -130,7 +141,7 @@ func (r *Redactor) Redact(raw string) string {
 	}
 
 	// 2. Built-in patterns.
-	for _, p := range BuiltinPatterns {
+	for _, p := range builtinPatterns {
 		if p.Name == "url-param-token" {
 			// Preserve the key name; replace only the value.
 			raw = p.Re.ReplaceAllString(raw, "${1}[REDACTED]")
