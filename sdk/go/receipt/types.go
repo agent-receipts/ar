@@ -67,14 +67,15 @@ type ActionTarget struct {
 
 // Action describes what the agent did.
 type Action struct {
-	ID               string        `json:"id"`
-	Type             string        `json:"type"`
-	ToolName         string        `json:"tool_name,omitempty"`
-	RiskLevel        RiskLevel     `json:"risk_level"`
-	Target           *ActionTarget `json:"target,omitempty"`
-	ParametersHash   string        `json:"parameters_hash,omitempty"`
-	Timestamp        string        `json:"timestamp"`
-	TrustedTimestamp string        `json:"trusted_timestamp,omitempty"`
+	ID                   string            `json:"id"`
+	Type                 string            `json:"type"`
+	ToolName             string            `json:"tool_name,omitempty"`
+	RiskLevel            RiskLevel         `json:"risk_level"`
+	Target               *ActionTarget     `json:"target,omitempty"`
+	ParametersHash       string            `json:"parameters_hash,omitempty"`
+	ParametersDisclosure map[string]string `json:"parameters_disclosure,omitempty"`
+	Timestamp            string            `json:"timestamp"`
+	TrustedTimestamp     string            `json:"trusted_timestamp,omitempty"`
 }
 
 // Intent captures conversation context behind the action.
