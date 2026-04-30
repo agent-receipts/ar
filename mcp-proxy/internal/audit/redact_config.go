@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -36,6 +37,9 @@ func LoadPatterns(path string) ([]NamedPattern, error) {
 	for i, p := range pf.Patterns {
 		if p.Name == "" {
 			return nil, fmt.Errorf("pattern %d: name is required", i)
+		}
+		if strings.TrimSpace(p.Pattern) == "" {
+			return nil, fmt.Errorf("pattern %q: pattern is required", p.Name)
 		}
 		re, err := regexp.Compile(p.Pattern)
 		if err != nil {

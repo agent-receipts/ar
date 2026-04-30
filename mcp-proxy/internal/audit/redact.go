@@ -106,10 +106,16 @@ var builtinPatterns = []NamedPattern{
 }
 
 // BuiltinPatterns returns a copy of the built-in named redaction patterns.
-// The returned slice is safe to mutate without affecting the package state.
+// The returned slice and its regexps are safe to mutate without affecting
+// the package state — each Re is freshly recompiled from its source.
 func BuiltinPatterns() []NamedPattern {
 	out := make([]NamedPattern, len(builtinPatterns))
-	copy(out, builtinPatterns)
+	for i, p := range builtinPatterns {
+		out[i] = NamedPattern{
+			Name: p.Name,
+			Re:   regexp.MustCompile(p.Re.String()),
+		}
+	}
 	return out
 }
 

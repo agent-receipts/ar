@@ -3,6 +3,7 @@ package audit
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -96,5 +97,45 @@ func TestLoadPatternsEmptyFile(t *testing.T) {
 	}
 	if len(patterns) != 0 {
 		t.Errorf("expected 0 patterns, got %d", len(patterns))
+	}
+}
+
+func TestLoadPatternsEmptyPattern(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "patterns.yaml")
+	if err := os.WriteFile(path, []byte(`
+patterns:
+  - name: empty-pattern
+    pattern: ""
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadPatterns(path)
+	if err == nil {
+		t.Fatal("expected error for empty pattern, got nil")
+	}
+	if !strings.Contains(err.Error(), "pattern is required") {
+		t.Errorf("expected error to mention 'pattern is required', got: %v", err)
+	}
+}
+
+func TestLoadPatternsWhitespacePattern(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "patterns.yaml")
+	if err := os.WriteFile(path, []byte(`
+patterns:
+  - name: whitespace-pattern
+    pattern: "   "
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadPatterns(path)
+	if err == nil {
+		t.Fatal("expected error for whitespace-only pattern, got nil")
+	}
+	if !strings.Contains(err.Error(), "pattern is required") {
+		t.Errorf("expected error to mention 'pattern is required', got: %v", err)
 	}
 }

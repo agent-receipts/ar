@@ -163,13 +163,15 @@ func OpenReadOnly(dbPath string) (*Store, error) {
 			return nil, fmt.Errorf("open database: %w", err)
 		}
 	}
-	// Use a file: URI with mode=ro so SQLite opens the file in
-	// SQLITE_OPEN_READONLY mode. The SQLITE_OPEN_URI flag (set by
-	// modernc.org/sqlite) allows SQLite itself to parse the URI and
-	// honour the mode parameter, enforcing read-only at the driver level.
-	// url.URL{Opaque: dbPath} produces "file:/path?mode=ro" without
-	// percent-encoding the path separators.
-	dsn := (&url.URL{Scheme: "file", Opaque: dbPath, RawQuery: "mode=ro"}).String()
+	// Build a file: URI with mode=ro. Use Path so reserved characters in
+	// dbPath (spaces, ?, #, etc.) are percent-encoded correctly. Keep
+	// :memory: as an Opaque value because Path would prepend a slash.
+	var dsn string
+	if dbPath == ":memory:" {
+		dsn = (&url.URL{Scheme: "file", Opaque: dbPath, RawQuery: "mode=ro"}).String()
+	} else {
+		dsn = (&url.URL{Scheme: "file", Path: filepath.ToSlash(dbPath), RawQuery: "mode=ro"}).String()
+	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)

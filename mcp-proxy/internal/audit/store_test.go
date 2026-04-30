@@ -397,3 +397,21 @@ func TestOpenReadOnlyDoesNotMutate(t *testing.T) {
 		t.Errorf("file mtime changed: before=%v after=%v", mtimeBefore, statAfter.ModTime())
 	}
 }
+
+func TestOpenReadOnlyPathWithSpaces(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "dir with spaces")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "audit.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	s.Close()
+	ro, err := OpenReadOnly(path)
+	if err != nil {
+		t.Fatalf("OpenReadOnly with spaces: %v", err)
+	}
+	ro.Close()
+}
