@@ -40,7 +40,7 @@ OpenClaw agent makes a tool call
     |  - chain to previous receipt (SHA-256 hash link)
     |  - store in SQLite
     v
- Receipt written to ~/.openclaw/agent-receipts/receipts.db
+ Receipt written to SQLite (default: ~/.openclaw/agent-receipts/receipts.db; configurable via `dbPath`)
 ```
 
 The two lifecycle hooks — `before_tool_call` and `after_tool_call` — bookend every call. The `before` hook classifies the action; the `after` hook records the outcome, signs the credential, and persists it.
