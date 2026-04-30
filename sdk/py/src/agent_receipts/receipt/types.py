@@ -69,7 +69,16 @@ class Action(BaseModel):
     risk_level: RiskLevel
     target: ActionTarget | None = None
     parameters_hash: str | None = None
-    parameters_disclosure: dict[str, str] | None = None
+    parameters_disclosure: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Operator-controlled disclosure metadata for intentionally "
+            "revealed parameter values (per ADR-0012). Operators MUST NOT "
+            "include secrets, PII, or other sensitive payload data — "
+            "parameters_hash is the privacy-preserving default. Included "
+            "in the canonical hash when present."
+        ),
+    )
     timestamp: str
     trusted_timestamp: str | None = None
 

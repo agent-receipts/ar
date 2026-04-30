@@ -104,15 +104,19 @@ class TestParametersDisclosure:
         assert baseline_hash != disclosure_hash
 
     def test_omitted_from_canonical_hash_when_none(self) -> None:
-        """When parameters_disclosure is None, hash matches a receipt without it."""
-        r1 = make_receipt()
-        r2 = make_receipt()
-        r2.credentialSubject.action.parameters_disclosure = None
-        assert hash_receipt(r1) == hash_receipt(r2)
+        """Explicit null and omitted parameters_disclosure hash identically."""
+        with_null = make_receipt().model_dump(by_alias=True)
+        with_null["credentialSubject"]["action"]["parameters_disclosure"] = None
+
+        omitted = make_receipt().model_dump(by_alias=True)
+        omitted["credentialSubject"]["action"].pop("parameters_disclosure", None)
+
+        assert hash_receipt(with_null) == hash_receipt(omitted)
 
     def test_canonical_hash_is_deterministic(self) -> None:
+        """Different insertion order produces identical canonical hash."""
         r1 = make_receipt()
         r1.credentialSubject.action.parameters_disclosure = {"a": "1", "b": "2"}
         r2 = make_receipt()
-        r2.credentialSubject.action.parameters_disclosure = {"a": "1", "b": "2"}
+        r2.credentialSubject.action.parameters_disclosure = {"b": "2", "a": "1"}
         assert hash_receipt(r1) == hash_receipt(r2)
