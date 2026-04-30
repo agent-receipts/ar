@@ -37,6 +37,7 @@ class ActionInput(BaseModel):
     risk_level: str
     target: Any = None  # noqa: ANN401
     parameters_hash: str | None = None
+    parameters_disclosure: dict[str, str] | None = None
     trusted_timestamp: str | None = None
 
 
@@ -75,6 +76,8 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         action_data["target"] = input.action.target
     if input.action.parameters_hash is not None:
         action_data["parameters_hash"] = input.action.parameters_hash
+    if input.action.parameters_disclosure is not None:
+        action_data["parameters_disclosure"] = input.action.parameters_disclosure
     if input.action.trusted_timestamp is not None:
         action_data["trusted_timestamp"] = input.action.trusted_timestamp
 
