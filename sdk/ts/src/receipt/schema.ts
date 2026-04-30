@@ -63,7 +63,7 @@ const actionSchema = z
 		risk_level: riskLevelSchema,
 		target: actionTargetSchema.optional(),
 		parameters_hash: z.string().optional(),
-		parameters_preview: z.record(z.string()).optional(),
+		parameters_disclosure: z.record(z.string()).optional(),
 		timestamp: z.string(),
 		trusted_timestamp: z.string().optional(),
 	})

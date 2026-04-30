@@ -112,17 +112,17 @@ describe("createReceipt", () => {
 		expect(action.parameters_hash).toBe("sha256:abc123");
 	});
 
-	it("passes through parameters_preview", () => {
+	it("passes through parameters_disclosure", () => {
 		const input = makeInput({
 			action: {
 				type: "filesystem.file.create",
 				risk_level: "medium",
-				parameters_preview: { path: "/tmp/test.txt", mode: "write" },
+				parameters_disclosure: { path: "/tmp/test.txt", mode: "write" },
 			},
 		});
 		const receipt = createReceipt(input);
 
-		expect(receipt.credentialSubject.action.parameters_preview).toEqual({
+		expect(receipt.credentialSubject.action.parameters_disclosure).toEqual({
 			path: "/tmp/test.txt",
 			mode: "write",
 		});

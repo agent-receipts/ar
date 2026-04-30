@@ -9,6 +9,25 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.6.0] - 2026-04-28
+
+### Changed
+
+- **BREAKING:** Renamed `parameters_preview` → `parameters_disclosure` on the
+  `Action` interface and its Zod schema. Per
+  [ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md),
+  "preview" misdescribed a permanent, signed field — receipts are durable, so
+  any value placed there is a deliberate disclosure rather than a transient
+  preview. The shape is unchanged (`Record<string, string>`); only the field
+  name moved. No deprecation alias is provided: pre-1.0 adoption is low and
+  the rename is intentionally a clean break. Tracking issue:
+  [#283](https://github.com/agent-receipts/ar/issues/283).
+
+  Migration: rename every read/write of `action.parameters_preview` to
+  `action.parameters_disclosure`. Previously written receipts that carry the
+  old key under `.passthrough()` will still load, but new receipts MUST use
+  the new key to round-trip through this SDK's typed surface.
+
 ## [0.5.0] - 2026-04-27
 
 ### Added
