@@ -3,6 +3,8 @@ package audit
 import (
 	"bytes"
 	"encoding/hex"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -325,5 +327,73 @@ func TestTimingStats(t *testing.T) {
 	}
 	if st3.Total != 3 {
 		t.Errorf("session total: want 3, got %d", st3.Total)
+	}
+}
+
+func TestOpenReadOnlyMissingFile(t *testing.T) {
+	_, err := OpenReadOnly(filepath.Join(t.TempDir(), "nonexistent.db"))
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestOpenReadOnlyRejectsWrites(t *testing.T) {
+	// Create a real DB first.
+	path := filepath.Join(t.TempDir(), "audit.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateSession("sess1", "srv", "cmd"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Reopen read-only and verify a write fails.
+	ro, err := OpenReadOnly(path)
+	if err != nil {
+		t.Fatalf("OpenReadOnly: %v", err)
+	}
+	defer ro.Close()
+	if err := ro.CreateSession("sess2", "srv", "cmd"); err == nil {
+		t.Error("expected write to fail on read-only store")
+	}
+}
+
+func TestOpenReadOnlyDoesNotMutate(t *testing.T) {
+	// Create + populate a DB.
+	path := filepath.Join(t.TempDir(), "audit.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateSession("sess1", "srv", "cmd"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	statBefore, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mtimeBefore := statBefore.ModTime()
+
+	// Open read-only and run a scan-like read.
+	ro, err := OpenReadOnly(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ro.ScanRedactionTargets(func(table, column string, rowID int64, value string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	ro.Close()
+
+	statAfter, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !statAfter.ModTime().Equal(mtimeBefore) {
+		t.Errorf("file mtime changed: before=%v after=%v", mtimeBefore, statAfter.ModTime())
 	}
 }

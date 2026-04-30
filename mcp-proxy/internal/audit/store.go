@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -148,6 +149,42 @@ func Open(dbPath string) (*Store, error) {
 		"ALTER TABLE tool_calls ADD COLUMN receipt_sign_us INTEGER",
 	} {
 		db.Exec(col) // Ignore "duplicate column" errors.
+	}
+	return &Store{db: db}, nil
+}
+
+// OpenReadOnly opens an existing audit database in read-only mode.
+// It does not run migrations, set PRAGMAs, or create the file. Used by
+// forensic tooling such as audit-secrets that must not mutate the store.
+// Returns an error if the file does not exist or cannot be opened read-only.
+func OpenReadOnly(dbPath string) (*Store, error) {
+	if dbPath != ":memory:" {
+		if _, err := os.Stat(dbPath); err != nil {
+			return nil, fmt.Errorf("open database: %w", err)
+		}
+	}
+	// Use a file: URI with mode=ro so SQLite opens the file in
+	// SQLITE_OPEN_READONLY mode. The SQLITE_OPEN_URI flag (set by
+	// modernc.org/sqlite) allows SQLite itself to parse the URI and
+	// honour the mode parameter, enforcing read-only at the driver level.
+	// url.URL{Opaque: dbPath} produces "file:/path?mode=ro" without
+	// percent-encoding the path separators.
+	dsn := (&url.URL{Scheme: "file", Opaque: dbPath, RawQuery: "mode=ro"}).String()
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	// Verify the schema exists by probing for the messages table; gives
+	// a clearer error than a query failure later.
+	var name string
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&name)
+	if err != nil {
+		db.Close()
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("audit database has no messages table (was it ever used?)")
+		}
+		return nil, fmt.Errorf("probe schema: %w", err)
 	}
 	return &Store{db: db}, nil
 }

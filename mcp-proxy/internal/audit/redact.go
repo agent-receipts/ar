@@ -144,15 +144,15 @@ func (r *Redactor) Redact(raw string) string {
 	for _, p := range builtinPatterns {
 		if p.Name == "url-param-token" {
 			// Preserve the key name; replace only the value.
-			raw = p.Re.ReplaceAllString(raw, "${1}[REDACTED]")
+			raw = p.Re.ReplaceAllString(raw, "${1}"+redacted)
 		} else {
-			raw = p.Re.ReplaceAllString(raw, "[REDACTED]")
+			raw = p.Re.ReplaceAllString(raw, redacted)
 		}
 	}
 
 	// 3. Custom patterns.
 	for _, re := range r.custom {
-		raw = re.ReplaceAllString(raw, "[REDACTED]")
+		raw = re.ReplaceAllString(raw, redacted)
 	}
 
 	return raw

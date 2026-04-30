@@ -25,7 +25,7 @@ func runAuditSecrets(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	s, err := audit.Open(*db)
+	s, err := audit.OpenReadOnly(*db)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error opening audit store: %v\n", err)
 		return 2
