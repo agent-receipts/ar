@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -152,6 +153,44 @@ func Open(dbPath string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+// OpenReadOnly opens an existing audit database in read-only mode.
+// It does not run migrations, set PRAGMAs, or create the file. Used by
+// forensic tooling such as audit-secrets that must not mutate the store.
+// Returns an error if the file does not exist or cannot be opened read-only.
+func OpenReadOnly(dbPath string) (*Store, error) {
+	if dbPath != ":memory:" {
+		if _, err := os.Stat(dbPath); err != nil {
+			return nil, fmt.Errorf("open database: %w", err)
+		}
+	}
+	// Build a file: URI with mode=ro. Use Path so reserved characters in
+	// dbPath (spaces, ?, #, etc.) are percent-encoded correctly. Keep
+	// :memory: as an Opaque value because Path would prepend a slash.
+	var dsn string
+	if dbPath == ":memory:" {
+		dsn = (&url.URL{Scheme: "file", Opaque: dbPath, RawQuery: "mode=ro"}).String()
+	} else {
+		dsn = (&url.URL{Scheme: "file", Path: filepath.ToSlash(dbPath), RawQuery: "mode=ro"}).String()
+	}
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	// Verify the schema exists by probing for the messages table; gives
+	// a clearer error than a query failure later.
+	var name string
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&name)
+	if err != nil {
+		db.Close()
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("audit database has no messages table (was it ever used?)")
+		}
+		return nil, fmt.Errorf("probe schema: %w", err)
+	}
+	return &Store{db: db}, nil
+}
+
 // CreateSession creates a new audit session.
 func (s *Store) CreateSession(id, serverName, serverCommand string) error {
 	_, err := s.db.Exec(
@@ -286,6 +325,28 @@ func (s *Store) EncryptionSalt() ([]byte, error) {
 		return nil, fmt.Errorf("invalid encryption salt length: got %d, want 16", len(salt))
 	}
 	return salt, nil
+}
+
+// EncryptionSaltIfPresent returns the persisted encryption salt, or (nil, false, nil)
+// if no salt has been set. Unlike EncryptionSalt, it never writes to the database.
+// Used by read-only scanners that must not mutate the audit store.
+func (s *Store) EncryptionSaltIfPresent() ([]byte, bool, error) {
+	var encoded string
+	err := s.db.QueryRow("SELECT value FROM metadata WHERE key = 'encryption_salt'").Scan(&encoded)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("query encryption salt: %w", err)
+	}
+	salt, err := hex.DecodeString(encoded)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode encryption salt: %w", err)
+	}
+	if len(salt) != 16 {
+		return nil, false, fmt.Errorf("invalid encryption salt length: got %d, want 16", len(salt))
+	}
+	return salt, true, nil
 }
 
 // ToolTiming holds per-tool aggregate timing data.
@@ -561,6 +622,73 @@ func floatToInt64(f *float64) *int64 {
 	}
 	v := int64(math.Round(*f))
 	return &v
+}
+
+// ScanRedactionTargets calls fn for every (table, column, rowID, value) where
+// value is non-empty in messages.raw and tool_calls.{arguments,result,error}.
+// Used by the audit-secrets subcommand to detect unredacted secrets at rest.
+// NULL and empty-string values are skipped. Any error returned by fn stops
+// iteration and is propagated to the caller.
+func (s *Store) ScanRedactionTargets(fn func(table, column string, rowID int64, value string) error) error {
+	// messages.raw
+	rows, err := s.db.Query("SELECT id, raw FROM messages WHERE raw IS NOT NULL AND raw != ''")
+	if err != nil {
+		return fmt.Errorf("scan messages: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			return fmt.Errorf("scan messages row: %w", err)
+		}
+		if err := fn("messages", "raw", id, raw); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scan messages: %w", err)
+	}
+
+	// tool_calls: arguments, result, error (all nullable); skip rows where all
+	// three columns are NULL or empty to avoid loading noise.
+	tcRows, err := s.db.Query(`
+		SELECT id, arguments, result, error
+		FROM tool_calls
+		WHERE (arguments IS NOT NULL AND arguments != '')
+		   OR (result IS NOT NULL AND result != '')
+		   OR (error IS NOT NULL AND error != '')
+	`)
+	if err != nil {
+		return fmt.Errorf("scan tool_calls: %w", err)
+	}
+	defer tcRows.Close()
+	for tcRows.Next() {
+		var id int64
+		var args, result, errCol sql.NullString
+		if err := tcRows.Scan(&id, &args, &result, &errCol); err != nil {
+			return fmt.Errorf("scan tool_calls row: %w", err)
+		}
+		for _, cv := range []struct {
+			col string
+			val sql.NullString
+		}{
+			{"arguments", args},
+			{"result", result},
+			{"error", errCol},
+		} {
+			if cv.val.Valid && cv.val.String != "" {
+				if err := fn("tool_calls", cv.col, id, cv.val.String); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := tcRows.Err(); err != nil {
+		return fmt.Errorf("scan tool_calls: %w", err)
+	}
+
+	return nil
 }
 
 // Close closes the database.
