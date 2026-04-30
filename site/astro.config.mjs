@@ -103,6 +103,8 @@ export default defineConfig({
           items: [
             { label: "Overview", slug: "openclaw/overview" },
             { label: "Installation", slug: "openclaw/installation" },
+            { label: "CLI Reference", slug: "openclaw/cli-reference" },
+            { label: "Agent Tools", slug: "openclaw/agent-tools" },
           ],
         },
         {
