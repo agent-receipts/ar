@@ -1,0 +1,181 @@
+---
+title: CLI Reference
+description: Command-line reference for the OpenClaw Agent Receipts plugin — query, verify, and export receipts outside of agent sessions.
+---
+
+The `@agnt-rcpt/openclaw` package ships a CLI for inspecting the receipt database outside of active agent sessions. Use it for post-session audits, automated compliance checks, or integration with external tools via JSON output and jq.
+
+```bash
+npx @agnt-rcpt/openclaw <subcommand> [flags]
+```
+
+## Subcommands
+
+| Subcommand | Purpose |
+|------------|---------|
+| `receipts` | List and filter receipts |
+| `verify`   | Verify the integrity of a receipt chain |
+| `export`   | Export one receipt or a full chain |
+
+---
+
+## `receipts`
+
+Lists receipts from the local database, with optional filters.
+
+```bash
+npx @agnt-rcpt/openclaw receipts [flags]
+```
+
+### Flags
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--risk` | string | Filter by risk level: `low`, `medium`, `high`, `critical` |
+| `--action` | string | Filter by action type (e.g. `system.command.execute`) |
+| `--status` | string | Filter by outcome: `success` or `failure` |
+| `--limit` | number | Maximum number of results to return |
+| `--db` | path | Path to the SQLite database (default: `~/.openclaw/agent-receipts/receipts.db`) |
+| `--json` | flag | Output raw JSON instead of the default tabular display |
+
+### Examples
+
+List all high-risk receipts:
+
+```bash
+npx @agnt-rcpt/openclaw receipts --risk high
+```
+
+List the last 20 receipts in JSON:
+
+```bash
+npx @agnt-rcpt/openclaw receipts --limit 20 --json
+```
+
+Filter by action type and output JSON for downstream processing:
+
+```bash
+npx @agnt-rcpt/openclaw receipts --action system.command.execute --json
+```
+
+Use `jq` to find shell commands that reference `rm`:
+
+```bash
+npx @agnt-rcpt/openclaw receipts --action system.command.execute --json \
+  | jq '.receipts[] | select(.parameters_preview.command | strings | contains("rm"))'
+```
+
+:::note[`parameters_preview` is empty by default]
+The `parameters_preview` field is only populated when `parameterPreview` is enabled in the plugin config. By default, only the parameter hash is stored. See the [Installation](/openclaw/installation/#parameter-preview) page for configuration options.
+:::
+
+---
+
+## `verify`
+
+Verifies the cryptographic integrity of a receipt chain: checks every Ed25519 signature and every SHA-256 hash link between receipts.
+
+```bash
+npx @agnt-rcpt/openclaw verify [flags]
+```
+
+### Flags
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--chain` | string | Chain ID to verify (required unless `--all` is given) |
+| `--all`   | flag   | Verify all chains in the database |
+| `--db`    | path   | Path to the SQLite database |
+
+### Examples
+
+Verify a specific chain:
+
+```bash
+npx @agnt-rcpt/openclaw verify --chain chain_openclaw_main_sid-42
+```
+
+Output when the chain is valid:
+
+```
+Chain "chain_openclaw_main_sid-42" is valid: 12 receipts, all signatures and hash links verified.
+```
+
+Output when tampering is detected:
+
+```
+Chain "chain_openclaw_main_sid-42": BROKEN at position 7
+Tamper detected! The following receipts have issues:
+  [7] urn:receipt:...: invalid signature, hash link
+```
+
+:::caution[Broken chains indicate tampering or corruption]
+A broken chain means one or more receipts have been modified, deleted, or inserted after the fact. The receipt at the reported position — and all receipts after it — cannot be trusted. Investigate before using the chain as evidence.
+:::
+
+Verify every chain in the database:
+
+```bash
+npx @agnt-rcpt/openclaw verify --all
+```
+
+---
+
+## `export`
+
+Exports receipts to a file or stdout, either as individual receipts or as a W3C Verifiable Presentation wrapping a full chain.
+
+```bash
+npx @agnt-rcpt/openclaw export [flags]
+```
+
+### Flags
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--id`     | string | Export a single receipt by ID |
+| `--chain`  | string | Export all receipts in a chain |
+| `--format` | string | Output format: `json` (default) or `vp` (W3C Verifiable Presentation) |
+| `--db`     | path   | Path to the SQLite database |
+
+### `--id` vs `receipts`
+
+`export --id` fetches one receipt by its full URN and returns the complete signed credential object — including `@context`, `proof`, and all metadata fields. The `receipts` subcommand returns a collection view with summary fields only; it is designed for filtering and browsing, not for extracting individual credentials for verification.
+
+### Examples
+
+Export a single receipt as JSON:
+
+```bash
+npx @agnt-rcpt/openclaw export --id urn:receipt:abc123...
+```
+
+Export a full chain as JSON:
+
+```bash
+npx @agnt-rcpt/openclaw export --chain chain_openclaw_main_sid-42
+```
+
+Export a chain as a W3C Verifiable Presentation:
+
+```bash
+npx @agnt-rcpt/openclaw export --chain chain_openclaw_main_sid-42 --format vp
+```
+
+The `vp` format wraps the chain in a standard W3C VP envelope, making it suitable for submission to compliance systems or external verifiers:
+
+```json
+{
+  "@context": ["https://www.w3.org/2018/credentials/v1"],
+  "type": ["VerifiablePresentation"],
+  "verifiableCredential": [
+    { /* receipt 1 */ },
+    { /* receipt 2 */ },
+    { /* … */ }
+  ]
+}
+```
+
+:::tip
+Pipe `export --chain` output to `jq` for custom filtering or transformation before forwarding to external systems.
+:::
