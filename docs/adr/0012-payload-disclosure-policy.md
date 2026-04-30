@@ -8,7 +8,7 @@ Proposed
 
 Receipts today commit to action parameters via `parameters_hash` only. That is the right default — it is privacy-preserving, tamper-evident, and small. But the most common forensic question after an incident is "what did the agent actually send?" and a hash cannot answer it.
 
-The OpenClaw plugin already documents an opt-in `parameterPreview` config that selectively discloses parameters by risk class. The TypeScript SDK exposes the field shape as `parameters_preview` on `Action` ([sdk/ts/src/receipt/types.ts](../../sdk/ts/src/receipt/types.ts)), with a CHANGELOG warning that the value is permanent and signed and "must never be auto-populated from raw arguments". Python and Go SDKs do not have the field. The MCP proxy has no equivalent knob, though it does have opt-in AES-256-GCM encryption of redacted audit fields via `BEACON_ENCRYPTION_KEY` ([mcp-proxy/cmd/mcp-proxy/main.go](../../mcp-proxy/cmd/mcp-proxy/main.go)) — prior art for non-signing key handling.
+The OpenClaw plugin already documents an opt-in `parameterPreview` config that selectively discloses parameters by risk class. The TypeScript SDK exposes the field shape as `parameters_preview` on `Action` ([sdk/ts/src/receipt/types.ts](../../sdk/ts/src/receipt/types.ts)), with a CHANGELOG warning that the value is permanent and signed and that callers MUST NOT populate `parameters_preview` from raw tool arguments. Python and Go SDKs do not have the field. The MCP proxy has no equivalent knob, though it does have opt-in AES-256-GCM encryption of redacted audit fields via `BEACON_ENCRYPTION_KEY` ([mcp-proxy/cmd/mcp-proxy/main.go](../../mcp-proxy/cmd/mcp-proxy/main.go)) — prior art for non-signing key handling.
 
 The result is that the forensic question gets a different answer depending on which channel produced the receipt. We want a uniform, operator-controlled, privacy-preserving-by-default position across every emitter, documented as a deliberate design decision rather than buried in installation config.
 
@@ -24,7 +24,7 @@ The result is that the forensic question gets a different answer depending on wh
 - **SIEM / telemetry fan-out is on the roadmap.** Those sinks must receive enough for trend analysis (counts, rates, action types, risk levels, hashes, timing, decisions) but never raw payloads. The disclosure boundary needs to be expressible as a single key, not as N per-adapter redaction configs.
 - **The daemon (ADR-0010) owns fan-out** when present. The agent process must not own its own audit trail; the same logic must extend to disclosures.
 
-The existing TS-SDK design — `parameters_preview` as a *plaintext signed field* — fails the second and third constraints. The chain commits to plaintext, so the receipt cannot be safely fanned out to a SIEM, and the field cannot be encrypted at rest without breaking signature verification.
+The existing TS-SDK design — `parameters_preview` as a *plaintext signed field* — conflicts with the SIEM / telemetry fan-out and daemon-owned fan-out constraints. Because the chain commits to plaintext, any attempt to selectively encrypt, redact, or omit that field inside the signed receipt body for some downstream sinks would change the signed bytes and break signature verification. Whole-store encryption at rest for a database or file is still possible, but it does not solve the per-sink disclosure problem.
 
 ## Decision
 
@@ -83,7 +83,7 @@ The same architecture serves three personas. No migration is required between th
 | **Private key (decrypt)** | Same machine as public — operator owns both | Held by security lead, not on dev laptops | HSM / KMS, multi-recipient escrow (security + legal + corporate root) |
 | **Storage** | Local SQLite | Local SQLite + optional remote sync | Pluggable: Postgres, S3, OTel exporters |
 | **Fan-out** | None | Optional SIEM / shared dashboard | SIEM, archive, compliance store |
-| **Decrypt UX** | `agent-receipts inspect <id>` reads local private key | Security lead runs same CLI with their key | Forensic responder retrieves private key from KMS, decrypts in IR tooling |
+| **Decrypt UX** | `mcp-proxy inspect <id>` reads local private key | Security lead runs the same `mcp-proxy inspect <id>` workflow with their key | Forensic responder retrieves private key from KMS, decrypts in IR tooling |
 | **Code path** | Identical | Identical | Identical |
 
 ### Storage and fan-out
