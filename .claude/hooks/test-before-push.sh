@@ -25,7 +25,9 @@ extract_command() {
   local input="${1:-}"
   [ -z "$input" ] && return 0
   if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null
+    # `|| true` so `set -e` doesn't kill the script on malformed JSON;
+    # an empty result falls through to "not a git push" and exits 0.
+    printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || true
   else
     printf '%s' "$input" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
   fi
@@ -34,12 +36,14 @@ extract_command() {
 TOOL_INPUT="$(cat 2>/dev/null || true)"
 COMMAND="$(extract_command "$TOOL_INPUT")"
 
-# Match `git push` either at the start of the command or after whitespace.
-# This covers env-var prefixes (`FOO=bar git push`) and shell-list operators
+# Match `git push` only when `push` is the end of the command or followed by
+# whitespace, so `git push --force` matches but `git pushup` does not.
+# Covers env-var prefixes (`FOO=bar git push`) and shell-list operators
 # (`&& git push`, `; git push`, `|| git push`) since each is followed by a
-# space in normal shell usage. Avoids false positives like `echo "git push"`.
+# space in normal shell usage. Avoids false positives like `echo "git push"`
+# (no leading whitespace boundary) and `git pushup` (no trailing boundary).
 case "$COMMAND" in
-  "git push"*|*" git push"*) ;;
+  "git push"|"git push "*|*" git push"|*" git push "*) ;;
   *) exit 0 ;;
 esac
 
