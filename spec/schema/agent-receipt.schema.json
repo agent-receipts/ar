@@ -162,7 +162,7 @@
         "parameters_disclosure": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "description": "Operator-controlled flat map of parameter field name → stringified value. Only fields the operator allowlists via the `parameterDisclosure` config (per ADR-0012) are ever included. The parameters_hash still covers the full parameter set; the disclosure is additive metadata for human/auditor display. The envelope-based encrypted form is reserved for a future schema version per ADR-0012."
+          "description": "Operator-controlled flat map of parameter field name → stringified value. Only fields the operator allowlists via the `parameterDisclosure` config (per ADR-0012) are ever included; operators MUST NOT disclose fields that may contain secrets, PII, or other sensitive payload data — `parameters_hash` is the privacy-preserving default, and this field is additive metadata for human/auditor display only. The envelope-based encrypted form (per ADR-0012 Phase B) is reserved for a future schema version."
         },
         "timestamp": {
           "type": "string",

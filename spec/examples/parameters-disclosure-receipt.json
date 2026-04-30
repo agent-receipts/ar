@@ -28,32 +28,29 @@
     },
     "action": {
       "id": "act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5",
-      "type": "communication.email.send",
+      "type": "system.command.execute",
       "risk_level": "high",
       "target": {
-        "system": "mail.google.com",
-        "resource": "email:compose"
+        "system": "localhost",
+        "resource": "shell:bash"
       },
       "parameters_hash": "sha256:a3f1c2d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1d6",
       "parameters_disclosure": {
-        "to": "team@example.com",
-        "subject": "Q3 report"
+        "command": "echo \"build complete\""
       },
       "timestamp": "2026-04-28T10:00:00Z"
     },
     "intent": {
-      "prompt_preview": "Send the Q3 report to the team",
+      "prompt_preview": "Run the build completion notification command",
       "prompt_preview_truncated": false
     },
     "outcome": {
       "status": "success",
-      "reversible": true,
-      "reversal_method": "gmail:undo_send",
-      "reversal_window_seconds": 30
+      "reversible": false
     },
     "authorization": {
       "scopes": [
-        "email:send"
+        "shell:execute"
       ],
       "granted_at": "2026-04-28T09:30:00Z",
       "expires_at": "2026-04-28T10:30:00Z"
