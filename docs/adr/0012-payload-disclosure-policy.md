@@ -2,13 +2,13 @@
 
 ## Status
 
-Draft
+Proposed
 
 ## Context
 
 Receipts today commit to action parameters via `parameters_hash` only. That is the right default — it is privacy-preserving, tamper-evident, and small. But the most common forensic question after an incident is "what did the agent actually send?" and a hash cannot answer it.
 
-The OpenClaw plugin already documents an opt-in `parameterPreview` config that selectively discloses parameters by risk class. The TypeScript SDK exposes the field shape as `parameters_preview` on `Action` ([sdk/ts/src/receipt/types.ts:59](../../sdk/ts/src/receipt/types.ts)), with a CHANGELOG warning that the value is permanent and signed and "must never be auto-populated from raw arguments". Python and Go SDKs do not have the field. The MCP proxy has no equivalent knob, though it does have opt-in AES-256-GCM encryption of redacted audit fields via `BEACON_ENCRYPTION_KEY` ([mcp-proxy/cmd/mcp-proxy/main.go:204](../../mcp-proxy/cmd/mcp-proxy/main.go)) — prior art for non-signing key handling.
+The OpenClaw plugin already documents an opt-in `parameterPreview` config that selectively discloses parameters by risk class. The TypeScript SDK exposes the field shape as `parameters_preview` on `Action` ([sdk/ts/src/receipt/types.ts](../../sdk/ts/src/receipt/types.ts)), with a CHANGELOG warning that the value is permanent and signed and "must never be auto-populated from raw arguments". Python and Go SDKs do not have the field. The MCP proxy has no equivalent knob, though it does have opt-in AES-256-GCM encryption of redacted audit fields via `BEACON_ENCRYPTION_KEY` ([mcp-proxy/cmd/mcp-proxy/main.go](../../mcp-proxy/cmd/mcp-proxy/main.go)) — prior art for non-signing key handling.
 
 The result is that the forensic question gets a different answer depending on which channel produced the receipt. We want a uniform, operator-controlled, privacy-preserving-by-default position across every emitter, documented as a deliberate design decision rather than buried in installation config.
 
