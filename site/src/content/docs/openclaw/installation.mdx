@@ -117,7 +117,7 @@ With `"high"` enabled, a `system.command.execute` receipt includes:
 }
 ```
 
-The hash always covers the full original parameters regardless of disclosure config. Only the **first** matching field from the taxonomy's `disclosure_fields` list is included in `parameters_disclosure`, and non-string values are JSON-stringified. Disclosed values are stored verbatim — do not list fields that may contain secrets.
+The hash always covers the full original parameters regardless of disclosure config. Only the **first** matching field from the taxonomy's `preview_fields` list is included in `parameters_disclosure`, and non-string values are JSON-stringified. Disclosed values are stored verbatim — do not list fields that may contain secrets.
 
 > The config key was named `parameterPreview` and the receipt field
 > `parameters_preview` before the 0.6.0 SDK release. Per
