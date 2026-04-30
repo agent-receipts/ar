@@ -150,5 +150,56 @@
     ],
     "expectedValid": true,
     "expectedValidWithRequireTerminal": true
+  },
+  "parametersDisclosureReceipt": {
+    "description": "Single 0.2.1 signed receipt with action.parameters_disclosure populated. All three SDKs MUST verify the signature and reproduce expectedReceiptHash byte-for-byte (ADR-0012 Phase A; ADR-0009 canonicalisation).",
+    "receipt": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://agentreceipts.ai/context/v1"
+      ],
+      "id": "urn:receipt:v021-pd-1",
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.2.1",
+      "issuer": {
+        "id": "did:agent:test"
+      },
+      "issuanceDate": "2026-04-22T00:00:00Z",
+      "credentialSubject": {
+        "principal": {
+          "id": "did:user:test"
+        },
+        "action": {
+          "id": "act_v021_pd_1",
+          "type": "filesystem.file.read",
+          "risk_level": "low",
+          "parameters_disclosure": {
+            "command": "echo build",
+            "user": "ci"
+          },
+          "timestamp": "2026-04-22T00:00:00Z"
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "chain": {
+          "sequence": 1,
+          "previous_receipt_hash": null,
+          "chain_id": "chain_pd_test"
+        }
+      },
+      "proof": {
+        "type": "Ed25519Signature2020",
+        "created": "2026-04-22T00:00:00Z",
+        "verificationMethod": "did:agent:test#key-1",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "u9pZz8W-4gWMZlS2p6NqLHQY2Mm7uKg1xNz649yJdyUmbigNAXgBbAnl7b0j0klrPJzpQN-7KwLHI23Xes-7BBw"
+      }
+    },
+    "expectedReceiptHash": "sha256:c8a0e84e7ce000c6aa68df1ce5571872d2c0356a01707100afac0d30fc13560b",
+    "expectedValid": true
   }
 }
