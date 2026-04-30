@@ -24,6 +24,8 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0008](0008-response-hashing-and-chain-completeness.md) | Response Hashing and Chain Completeness | Accepted |
 | [ADR-0009](0009-canonicalization-and-schema-consistency.md) | Canonicalisation Profile and VC Field Name Commitment | Accepted |
 | [ADR-0010](0010-daemon-process-separation.md) | Daemon Process Separation for Signing and Storage | Proposed |
+| [ADR-0011](0011-zod-for-runtime-validation.md) | Zod for runtime schema validation | Accepted |
+| [ADR-0012](0012-payload-disclosure-policy.md) | Payload Disclosure Policy (`parameterDisclosure`) | Proposed |
 
 ## References
 
