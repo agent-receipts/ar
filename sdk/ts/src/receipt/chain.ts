@@ -199,6 +199,7 @@ export function verifyChain(
 				receipts: results,
 				brokenAt,
 				responseHashNote: undefined,
+				error: signatureError,
 			};
 		}
 	}
