@@ -718,13 +718,13 @@ func TestValidInitName(t *testing.T) {
 	}
 
 	invalid := []string{
-		"",                        // empty
-		strings.Repeat("a", 65),  // too long
-		"../evil",                 // path traversal
-		"foo/bar",                 // slash
-		"foo bar",                 // space
-		"foo\x00bar",             // NUL
-		"foo$bar",                 // shell metachar
+		"",                      // empty
+		strings.Repeat("a", 65), // too long
+		"../evil",               // path traversal
+		"foo/bar",               // slash
+		"foo bar",               // space
+		"foo\x00bar",            // NUL
+		"foo$bar",               // shell metachar
 	}
 	for _, n := range invalid {
 		if validInitName(n) {

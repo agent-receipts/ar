@@ -26,6 +26,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0010](0010-daemon-process-separation.md) | Daemon Process Separation for Signing and Storage | Proposed |
 | [ADR-0011](0011-zod-for-runtime-validation.md) | Zod for runtime schema validation | Accepted |
 | [ADR-0012](0012-payload-disclosure-policy.md) | Payload Disclosure Policy (`parameterDisclosure`) | Proposed |
+| [ADR-0013](0013-claude-code-hook-channel.md) | claude_code_hook Emission Channel | Proposed |
 
 ## References
 
