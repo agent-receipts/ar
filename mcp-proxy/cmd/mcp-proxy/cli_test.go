@@ -498,7 +498,7 @@ func TestRunInit_FreshSetup(t *testing.T) {
 	// Key files must exist.
 	keyPath := filepath.Join(dir, "default.pem")
 	pubPath := filepath.Join(dir, "default.pem.pub")
-	dbPath  := filepath.Join(dir, "receipts.db")
+	dbPath := filepath.Join(dir, "receipts.db")
 	for _, p := range []string{keyPath, pubPath, dbPath} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("expected file %q to exist: %v", p, err)
@@ -664,8 +664,8 @@ func TestRunInit_ForceOverwrite(t *testing.T) {
 }
 
 func TestRunInit_AsymmetricKeyState(t *testing.T) {
-	// If only one of the two key files exists, init must warn and skip rather than
-	// erroring or silently overwriting, regardless of which file is present.
+	// If only one of the two key files exists, init must return an error directing
+	// the user to -force rather than silently continuing with a broken keypair.
 	for _, tc := range []struct {
 		name    string
 		prePriv bool
@@ -677,7 +677,6 @@ func TestRunInit_AsymmetricKeyState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 
-			// Pre-create one file.
 			if tc.prePriv {
 				if err := os.WriteFile(filepath.Join(dir, "default.pem"), []byte("old-priv"), 0o600); err != nil {
 					t.Fatalf("setup priv: %v", err)
@@ -691,15 +690,14 @@ func TestRunInit_AsymmetricKeyState(t *testing.T) {
 
 			var errOut, out bytes.Buffer
 			err := runInit(dir, "default", false, false, 7778, "/bin/mcp-proxy", &errOut, &out)
-			if err != nil {
-				t.Fatalf("runInit should not error on asymmetric key state: %v", err)
+			if err == nil {
+				t.Fatal("runInit should error on asymmetric key state (one file missing)")
 			}
-			if !strings.Contains(errOut.String(), "warning") {
-				t.Errorf("expected idempotency warning, got: %q", errOut.String())
+			if !strings.Contains(err.Error(), "incomplete keypair") {
+				t.Errorf("error should mention incomplete keypair, got: %q", err.Error())
 			}
-			// Snippet must still be emitted.
-			if out.Len() == 0 {
-				t.Error("expected config snippet even when key generation skipped")
+			if !strings.Contains(err.Error(), "-force") {
+				t.Errorf("error should mention -force, got: %q", err.Error())
 			}
 		})
 	}

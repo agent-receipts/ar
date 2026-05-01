@@ -82,10 +82,10 @@ mcp-proxy init --name github
 
 Re-running `init` is safe — it warns and skips key generation if the files already exist. Pass `--force` to regenerate.
 
-Then run the proxy with the generated key:
+Then run the proxy with the generated key (substitute your instance name if you used `--name`):
 
 ```bash
-mcp-proxy -key ~/.agent-receipts/github.pem npx -y @modelcontextprotocol/server-filesystem ~/Documents
+mcp-proxy -key ~/.agent-receipts/default.pem npx -y @modelcontextprotocol/server-filesystem ~/Documents
 ```
 
 ## Next steps

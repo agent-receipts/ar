@@ -829,17 +829,24 @@ func runInit(dir, name string, force, noApproval bool, httpPort int, binPath str
 		return fmt.Errorf("create directory %q: %w", dir, err)
 	}
 
-	// Key generation — idempotent: warn and skip when files already exist.
-	_, keyExists := os.Stat(keyPath)
-	_, pubExists := os.Stat(pubPath)
-	if !force && (keyExists == nil || pubExists == nil) {
+	// Key generation — idempotent when the full keypair already exists.
+	_, keyErr := os.Stat(keyPath)
+	_, pubErr := os.Stat(pubPath)
+	keyPresent := keyErr == nil
+	pubPresent := pubErr == nil
+
+	if !force && keyPresent && pubPresent {
+		// Both files exist: warn and skip (safe re-run).
 		fmt.Fprintf(errOut, "warning: key files already exist — skipping key generation (use -force to overwrite)\n")
-		if keyExists == nil {
-			fmt.Fprintf(errOut, "  private key: %s\n", keyPath)
+		fmt.Fprintf(errOut, "  private key: %s\n", keyPath)
+		fmt.Fprintf(errOut, "  public key:  %s\n", pubPath)
+	} else if !force && keyPresent != pubPresent {
+		// Partial keypair: unsafe to continue without -force.
+		presentPath, missingPath := pubPath, keyPath
+		if keyPresent {
+			presentPath, missingPath = keyPath, pubPath
 		}
-		if pubExists == nil {
-			fmt.Fprintf(errOut, "  public key:  %s\n", pubPath)
-		}
+		return fmt.Errorf("incomplete keypair: found %q but missing %q; rerun with -force to overwrite and regenerate", presentPath, missingPath)
 	} else {
 		kp, err := receipt.GenerateKeyPair()
 		if err != nil {
@@ -864,7 +871,8 @@ func runInit(dir, name string, force, noApproval bool, httpPort int, binPath str
 	}
 	fmt.Fprintf(errOut, "Receipt database: %s\n", dbPath)
 
-	// Build config snippet.
+	// Build config snippet. The default policy always contains pause/block rules,
+	// so include -http by default; --no-approval opts out.
 	proxyArgs := []string{"-key", keyPath, "-receipt-db", dbPath}
 	if !noApproval {
 		proxyArgs = append(proxyArgs, "-http", fmt.Sprintf("127.0.0.1:%d", httpPort))
