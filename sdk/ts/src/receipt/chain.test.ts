@@ -4,6 +4,7 @@ import { verifyChain } from "./chain.js";
 import { createReceipt } from "./create.js";
 import * as hashModule from "./hash.js";
 import { canonicalize, hashReceipt, sha256 } from "./hash.js";
+import * as signingModule from "./signing.js";
 import { generateKeyPair, signReceipt } from "./signing.js";
 
 function buildChain(count: number, privateKey: string) {
@@ -129,6 +130,73 @@ describe("verifyChain", () => {
 			expect(result.error).toMatch(/^hash compute failed at index 0:/);
 			expect(result.error).toContain("synthetic canonicalize failure");
 			expect(result.receipts[1]?.hashLinkValid).toBe(false);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("surfaces verifyReceipt errors via the error field", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(2, privateKey);
+		const targetId = chain[0]?.id;
+
+		const original = signingModule.verifyReceipt;
+		const spy = vi
+			.spyOn(signingModule, "verifyReceipt")
+			.mockImplementation((r, key) => {
+				if (r.id === targetId) {
+					throw new Error("synthetic canonicalize failure");
+				}
+				return original(r, key);
+			});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.error).toMatch(/^signature compute failed at index 0:/);
+			expect(result.error).toContain("synthetic canonicalize failure");
+			expect(result.receipts[0]?.signatureValid).toBe(false);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("preserves verifyReceipt error through the receipt-after-terminal early return", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+		const extra = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const extraSigned = signReceipt(extra, privateKey, "did:agent:test#key-1");
+		const chain = [...terminalChain, extraSigned];
+		const targetId = chain[0]?.id;
+
+		const original = signingModule.verifyReceipt;
+		const spy = vi
+			.spyOn(signingModule, "verifyReceipt")
+			.mockImplementation((r, key) => {
+				if (r.id === targetId) {
+					throw new Error("synthetic canonicalize failure");
+				}
+				return original(r, key);
+			});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.error).toMatch(/^signature compute failed at index 0:/);
+			expect(result.error).toContain("synthetic canonicalize failure");
 		} finally {
 			spy.mockRestore();
 		}
