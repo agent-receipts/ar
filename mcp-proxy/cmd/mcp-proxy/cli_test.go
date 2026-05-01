@@ -662,3 +662,69 @@ func TestRunInit_ForceOverwrite(t *testing.T) {
 		t.Errorf("permissions after force = %04o, want no group/world access", perm)
 	}
 }
+
+func TestRunInit_AsymmetricKeyState(t *testing.T) {
+	// If only one of the two key files exists, init must warn and skip rather than
+	// erroring or silently overwriting, regardless of which file is present.
+	for _, tc := range []struct {
+		name    string
+		prePriv bool
+		prePub  bool
+	}{
+		{"only_priv", true, false},
+		{"only_pub", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+
+			// Pre-create one file.
+			if tc.prePriv {
+				if err := os.WriteFile(filepath.Join(dir, "default.pem"), []byte("old-priv"), 0o600); err != nil {
+					t.Fatalf("setup priv: %v", err)
+				}
+			}
+			if tc.prePub {
+				if err := os.WriteFile(filepath.Join(dir, "default.pem.pub"), []byte("old-pub"), 0o644); err != nil {
+					t.Fatalf("setup pub: %v", err)
+				}
+			}
+
+			var errOut, out bytes.Buffer
+			err := runInit(dir, "default", false, false, 7778, "/bin/mcp-proxy", &errOut, &out)
+			if err != nil {
+				t.Fatalf("runInit should not error on asymmetric key state: %v", err)
+			}
+			if !strings.Contains(errOut.String(), "warning") {
+				t.Errorf("expected idempotency warning, got: %q", errOut.String())
+			}
+			// Snippet must still be emitted.
+			if out.Len() == 0 {
+				t.Error("expected config snippet even when key generation skipped")
+			}
+		})
+	}
+}
+
+func TestValidInitName(t *testing.T) {
+	valid := []string{"default", "github", "github-proxy", "my_server", "server.1", "A", strings.Repeat("a", 64)}
+	for _, n := range valid {
+		if !validInitName(n) {
+			t.Errorf("validInitName(%q) = false, want true", n)
+		}
+	}
+
+	invalid := []string{
+		"",                        // empty
+		strings.Repeat("a", 65),  // too long
+		"../evil",                 // path traversal
+		"foo/bar",                 // slash
+		"foo bar",                 // space
+		"foo\x00bar",             // NUL
+		"foo$bar",                 // shell metachar
+	}
+	for _, n := range invalid {
+		if validInitName(n) {
+			t.Errorf("validInitName(%q) = true, want false", n)
+		}
+	}
+}

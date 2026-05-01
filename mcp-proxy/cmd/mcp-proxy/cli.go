@@ -760,10 +760,10 @@ func writePubKeyFile(path string, data []byte, force bool) error {
 
 func cmdInit(args []string) {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	name       := fs.String("name", "default", "Name for this proxy instance (used in filenames and config snippet)")
+	name := fs.String("name", "default", "Name for this proxy instance (used in filenames and config snippet)")
 	noApproval := fs.Bool("no-approval", false, "Omit -http from the config snippet (no approval server)")
-	httpPort   := fs.Int("http-port", 7778, "Approval listener port written into the config snippet")
-	force      := fs.Bool("force", false, "Overwrite existing key files")
+	httpPort := fs.Int("http-port", 7778, "Approval listener port written into the config snippet")
+	force := fs.Bool("force", false, "Overwrite existing key files")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy init [-name <name>] [-force] [-no-approval] [-http-port <port>]\n\n")
 		fmt.Fprintf(os.Stderr, "  One-command setup: creates ~/.agent-receipts/, generates an Ed25519\n")
@@ -774,6 +774,15 @@ func cmdInit(args []string) {
 	}
 	fs.Parse(args)
 
+	if !validInitName(*name) {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: -name %q is invalid: use only letters, digits, hyphens, underscores, and dots (max 64 chars)\n", *name)
+		os.Exit(2)
+	}
+	if *httpPort < 1 || *httpPort > 65535 {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: -http-port %d is out of range (1-65535)\n", *httpPort)
+		os.Exit(2)
+	}
+
 	home, err := userHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy init: resolve home directory: %v\n", err)
@@ -782,6 +791,7 @@ func cmdInit(args []string) {
 
 	binPath, err := os.Executable()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: warning: could not resolve binary path (%v); using %q — replace with an absolute path before saving the snippet\n", err, "mcp-proxy")
 		binPath = "mcp-proxy"
 	}
 
@@ -792,13 +802,28 @@ func cmdInit(args []string) {
 	}
 }
 
+// validInitName reports whether name is safe to use as a key filename component.
+// Allows letters, digits, hyphens, underscores, and dots; max 64 chars.
+// Rejects empty strings and names that would escape the target directory.
+func validInitName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.') {
+			return false
+		}
+	}
+	return true
+}
+
 // runInit performs the guided setup: creates dir, generates a keypair (idempotent),
 // initialises the receipt DB, and writes a config snippet to out. Status messages
 // go to errOut. Accepting dir and binPath as parameters makes the function testable.
 func runInit(dir, name string, force, noApproval bool, httpPort int, binPath string, errOut, out io.Writer) error {
 	keyPath := filepath.Join(dir, name+".pem")
 	pubPath := filepath.Join(dir, name+".pem.pub")
-	dbPath  := filepath.Join(dir, "receipts.db")
+	dbPath := filepath.Join(dir, "receipts.db")
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create directory %q: %w", dir, err)
@@ -834,7 +859,9 @@ func runInit(dir, name string, force, noApproval bool, httpPort int, binPath str
 	if err != nil {
 		return fmt.Errorf("create receipt database: %w", err)
 	}
-	s.Close()
+	if cerr := s.Close(); cerr != nil {
+		return fmt.Errorf("close receipt database: %w", cerr)
+	}
 	fmt.Fprintf(errOut, "Receipt database: %s\n", dbPath)
 
 	// Build config snippet.

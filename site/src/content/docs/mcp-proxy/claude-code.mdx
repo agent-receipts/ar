@@ -5,8 +5,8 @@ description: How to route Claude Code MCP servers through the Agent Receipts pro
 
 Claude Code is a CLI-based agent that connects to MCP servers for tools like GitHub, databases, and file systems. The Agent Receipts proxy wraps any MCP server transparently — Claude Code doesn't know or care that the proxy is there.
 
-:::note[Approval workflow — opt-in]
-The default policy includes a `pause_high_risk` rule, but the approval listener is **off by default**. Ordinary GitHub writes like `create_pull_request` (20) and `merge_pull_request` (10) never pause. Tools that do cross the threshold (e.g. `create_token` = 50, `update_auth_config` = 70) will fail fast with a clear error unless you opt in by passing `-http 127.0.0.1:<port>` — see [Approval Server](/mcp-proxy/approval-ui/). If you're seeing `-32002` on tools that *shouldn't* pause, suspect client-side denial first — see [troubleshooting](/mcp-proxy/configuration/#-32002-errors-on-tool-calls).
+:::note[Approval workflow]
+The default policy includes a `pause_high_risk` rule. When you generate a config with `mcp-proxy init`, the snippet includes `-http 127.0.0.1:7778` so the approval listener starts automatically. If you run the proxy manually without `-http`, the listener is off and paused calls fail fast with `-32003`. Pass `--no-approval` to `mcp-proxy init` to generate a snippet without `-http`. If you're seeing `-32002` on tools that shouldn't pause, suspect client-side denial first — see [troubleshooting](/mcp-proxy/configuration/#-32002-errors-on-tool-calls).
 :::
 
 ## Prerequisites
