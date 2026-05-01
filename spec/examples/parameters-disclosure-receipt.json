@@ -1,0 +1,71 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://agentreceipts.ai/context/v1"
+  ],
+  "id": "urn:receipt:7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "type": [
+    "VerifiableCredential",
+    "AgentReceipt"
+  ],
+  "version": "0.2.1",
+  "issuer": {
+    "id": "did:agent:claude-cowork-instance-abc123",
+    "type": "AIAgent",
+    "name": "Claude Cowork",
+    "operator": {
+      "id": "did:org:anthropic",
+      "name": "Anthropic"
+    },
+    "model": "claude-sonnet-4-6",
+    "session_id": "session_xyz789"
+  },
+  "issuanceDate": "2026-04-28T10:00:00Z",
+  "credentialSubject": {
+    "principal": {
+      "id": "did:user:otto-abc",
+      "type": "HumanPrincipal"
+    },
+    "action": {
+      "id": "act_7f3a1b2c-d4e5-46f7-a8b9-c0d1e2f3a4b5",
+      "type": "system.command.execute",
+      "risk_level": "high",
+      "target": {
+        "system": "localhost",
+        "resource": "shell:bash"
+      },
+      "parameters_hash": "sha256:a3f1c2d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1d6",
+      "parameters_disclosure": {
+        "command": "echo \"build complete\""
+      },
+      "timestamp": "2026-04-28T10:00:00Z"
+    },
+    "intent": {
+      "prompt_preview": "Run the build completion notification command",
+      "prompt_preview_truncated": false
+    },
+    "outcome": {
+      "status": "success",
+      "reversible": false
+    },
+    "authorization": {
+      "scopes": [
+        "shell:execute"
+      ],
+      "granted_at": "2026-04-28T09:30:00Z",
+      "expires_at": "2026-04-28T10:30:00Z"
+    },
+    "chain": {
+      "sequence": 1,
+      "previous_receipt_hash": null,
+      "chain_id": "chain_session_xyz789"
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-04-28T10:00:01Z",
+    "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
+  }
+}

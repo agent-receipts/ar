@@ -1,0 +1,7 @@
+# Example custom redaction patterns for mcp-proxy.
+# Pass to the proxy via: -redact-patterns configs/example_redact_patterns.yaml
+patterns:
+  - name: slack-webhook
+    pattern: 'https://hooks\.slack\.com/services/[A-Z0-9/]+'
+  - name: stripe-live
+    pattern: 'sk_live_[A-Za-z0-9]{24,}'

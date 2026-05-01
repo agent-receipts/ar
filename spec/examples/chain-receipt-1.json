@@ -4,7 +4,10 @@
     "https://agentreceipts.ai/context/v1"
   ],
   "id": "urn:receipt:a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b501",
-  "type": ["VerifiableCredential", "AgentReceipt"],
+  "type": [
+    "VerifiableCredential",
+    "AgentReceipt"
+  ],
   "version": "0.1.0",
   "issuer": {
     "id": "did:agent:file-manager-agent-001",
@@ -40,6 +43,6 @@
     "created": "2026-03-31T10:00:01Z",
     "verificationMethod": "did:agent:file-manager-agent-001#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z2WjXcKNmNqR8sTuVwXyZaBcDeFgHJkNmNaPqRsTuVwXyZaBcDeFgHJkNmNaPqRsTuVwXyZaBcDeFgHJkNmNa"
+    "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
   }
 }

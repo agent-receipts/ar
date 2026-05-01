@@ -54,6 +54,14 @@
       "canonical": "{\"\ud83c\udf89\":2,\"\ue000\":1}"
     },
     {
+      "name": "parameters_disclosure_multikey_sort",
+      "rule": "rule1_key_sort",
+      "description": "Pins the canonical form of an action.parameters_disclosure map (ADR-0012 Phase A) with two keys. The field is a plain string\u2192string map and flows through the same canonicaliser as every other map, so this is a key-sort vector rather than a parameters_disclosure-specific rule. Input has insertion order user\u2192command; canonical output sorts to command\u2192user.",
+      "input": { "user": "ci", "command": "echo build" },
+      "canonical": "{\"command\":\"echo build\",\"user\":\"ci\"}",
+      "expectedHash": "sha256:c998221c9390ec1796069faaf6c8890b70ad6693bb3b01c4d01e7a84edcf5d24"
+    },
+    {
       "name": "number_zero",
       "rule": "rule4_numbers",
       "description": "Positive zero.",
@@ -296,6 +304,40 @@
       "expectedHash": "SAME_AS_receipt_all_optional_absent"
     },
     {
+      "name": "receipt_parameters_disclosure_null_becomes_absent",
+      "rule": "rule2_null_optional_absent",
+      "preNormalizationInput": true,
+      "description": "INTENTIONALLY SCHEMA-INVALID caller input. action.parameters_disclosure is set to null, which the 0.2.1 schema (and ADR-0012 Phase A) forbids. The post-sweep canonicaliser MUST normalise null-valued optional fields to absent before hashing; the resulting canonical bytes MUST be identical to receipt_all_optional_absent. Mirrors receipt_optional_null_becomes_absent for the parameters_disclosure field specifically (regression test for ADR-0012 rollout).",
+      "receipt": {
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          "https://agentreceipts.ai/context/v1"
+        ],
+        "id": "urn:receipt:00000000-0000-0000-0000-000000000001",
+        "type": ["VerifiableCredential", "AgentReceipt"],
+        "version": "0.2.1",
+        "issuer": { "id": "did:agent:test" },
+        "issuanceDate": "2026-04-22T00:00:00Z",
+        "credentialSubject": {
+          "principal": { "id": "did:user:test" },
+          "action": {
+            "id": "act_00000000-0000-0000-0000-000000000001",
+            "type": "filesystem.file.read",
+            "risk_level": "low",
+            "parameters_disclosure": null,
+            "timestamp": "2026-04-22T00:00:00Z"
+          },
+          "outcome": { "status": "success" },
+          "chain": {
+            "sequence": 1,
+            "previous_receipt_hash": null,
+            "chain_id": "chain_test"
+          }
+        }
+      },
+      "expectedHash": "SAME_AS_receipt_all_optional_absent"
+    },
+    {
       "name": "receipt_required_null_preserved",
       "rule": "rule2_null_required_preserved",
       "description": "previous_receipt_hash is required-nullable; when null it MUST appear as \"previous_receipt_hash\":null in the canonical bytes. This vector is identical to receipt_all_optional_absent — included separately to document the required-nullable rule explicitly and pin a regression test against an SDK that accidentally drops it.",
@@ -425,6 +467,7 @@
             "risk_level": "low",
             "target": { "system": "local", "resource": "/tmp/x.txt" },
             "parameters_hash": "sha256:43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777",
+            "parameters_disclosure": { "command": "echo build", "user": "ci" },
             "timestamp": "2026-04-22T00:00:00Z"
           },
           "intent": {
@@ -458,7 +501,7 @@
           }
         }
       },
-      "expectedHash": "sha256:ff630bef13c63602c44c12ae7650305abb7a16cdc3e6db61ad2e620862d1b66a"
+      "expectedHash": "sha256:9e43a72dab99b0104bfdd05cebe473281fdc84153a30841d2ea044ab991c1e29"
     },
     {
       "name": "receipt_signature_preservation_legacy_0_2_0",
@@ -475,6 +518,6 @@
     "Fields marked mustContainSubstring assert a substring appears in the canonical output — useful when the full canonical is verbose but one specific byte sequence is the thing being tested (e.g., that Go does not HTML-escape < and >).",
     "Vectors marked preNormalizationInput: true carry schema-invalid caller input on purpose — they test the SDK's pre-serialization null→absent sweep. Do NOT attempt to schema-validate these `receipt` payloads; canonicalise and hash them and assert the invariant.",
     "The number vectors rely on language-native IEEE 754 double-precision arithmetic. Each SDK should construct the test value from its numeric literal exactly as written in the input field; some JSON parsers may not round-trip -0 through JSON.parse, so implementations should hard-code -0 when the vector name is number_negative_zero rather than parsing it from this file.",
-    "Legacy 0.2.0 vectors in cross-sdk-tests/v020_vectors.json stay as-is (signature-preservation proof); new vectors added in this file use schemaVersion 0.2.1."
+    "The legacy 0.2.0 terminalChain in cross-sdk-tests/v020_vectors.json stays as-is (signature-preservation proof). New vectors added to v020_vectors.json (e.g. parametersDisclosureReceipt) and to this file use schemaVersion 0.2.1."
   ]
 }

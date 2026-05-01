@@ -2,6 +2,8 @@ package receipt
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -106,6 +108,35 @@ func TestVerifyChainDetectsBrokenHashLink(t *testing.T) {
 	// Broken at 2 (hash link) but also signature will fail because we modified the receipt.
 	if result.BrokenAt != 2 {
 		t.Errorf("expected broken at 2, got %d", result.BrokenAt)
+	}
+}
+
+func TestVerifyChainSurfacesHashError(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3)
+
+	targetID := chain[0].ID
+	orig := hashReceipt
+	hashReceipt = func(r AgentReceipt) (string, error) {
+		if r.ID == targetID {
+			return "", errors.New("synthetic canonicalize failure")
+		}
+		return orig(r)
+	}
+	t.Cleanup(func() { hashReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false when HashReceipt errors")
+	}
+	if result.BrokenAt != 1 {
+		t.Errorf("expected BrokenAt=1, got %d", result.BrokenAt)
+	}
+	if !strings.Contains(result.Error, "hash compute failed at index 0") {
+		t.Errorf("expected error to contain 'hash compute failed at index 0', got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, "synthetic canonicalize failure") {
+		t.Errorf("expected error to contain 'synthetic canonicalize failure', got: %s", result.Error)
 	}
 }
 

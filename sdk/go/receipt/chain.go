@@ -5,6 +5,11 @@ import (
 	"strconv"
 )
 
+// hashReceipt is overridable in tests so the error-return path of HashReceipt
+// (unreachable in production with the current strictly-typed AgentReceipt) can
+// be exercised. In production, this variable is left pointing at HashReceipt.
+var hashReceipt = HashReceipt
+
 // ReceiptVerification holds the verification result for a single receipt in a chain.
 type ReceiptVerification struct {
 	Index          int    `json:"index"`
@@ -121,12 +126,25 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		if i == 0 {
 			hashValid = chain.PreviousReceiptHash == nil
 		} else {
-			prevHash, err := HashReceipt(receipts[i-1])
+			prevHash, err := hashReceipt(receipts[i-1])
 			if err != nil {
-				hashValid = false
-			} else {
-				hashValid = chain.PreviousReceiptHash != nil && *chain.PreviousReceiptHash == prevHash
+				seqValid := chain.Sequence == receipts[i-1].CredentialSubject.Chain.Sequence+1
+				results = append(results, ReceiptVerification{
+					Index:          i,
+					ReceiptID:      r.ID,
+					SignatureValid: sigValid,
+					HashLinkValid:  false,
+					SequenceValid:  seqValid,
+				})
+				return ChainVerification{
+					Valid:    false,
+					Length:   len(receipts),
+					Receipts: results,
+					BrokenAt: i,
+					Error:    "hash compute failed at index " + strconv.Itoa(i-1) + ": " + err.Error(),
+				}
 			}
+			hashValid = chain.PreviousReceiptHash != nil && *chain.PreviousReceiptHash == prevHash
 		}
 
 		seqValid := true
@@ -224,10 +242,15 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			cv.BrokenAt = len(receipts) - 1
 			cv.Error = "expected chain length does not match: expected " + strconv.Itoa(*opt.ExpectedLength) + ", got " + strconv.Itoa(len(receipts))
 		} else if opt.ExpectedFinalHash != "" {
-			lastHash, err := HashReceipt(receipts[len(receipts)-1])
-			if err != nil || lastHash != opt.ExpectedFinalHash {
+			last := len(receipts) - 1
+			lastHash, err := hashReceipt(receipts[last])
+			if err != nil {
 				cv.Valid = false
-				cv.BrokenAt = len(receipts) - 1
+				cv.BrokenAt = last
+				cv.Error = "hash compute failed at index " + strconv.Itoa(last) + ": " + err.Error()
+			} else if lastHash != opt.ExpectedFinalHash {
+				cv.Valid = false
+				cv.BrokenAt = last
 				cv.Error = "final receipt hash does not match expected value"
 			}
 		}

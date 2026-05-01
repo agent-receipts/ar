@@ -1,0 +1,238 @@
+---
+title: "OpenClaw Plugin: How It Works"
+description: "Plugin architecture, receipt anatomy, self-verification, and how the OpenClaw integration differs from the MCP Proxy."
+---
+
+The OpenClaw plugin is the second way to generate Agent Receipts — the first being the [MCP Proxy](/mcp-proxy/overview/). Both produce the same W3C Verifiable Credentials with Ed25519 signatures and hash-chained sequences. They differ in where they sit and what context they have access to.
+
+This post covers the plugin's internal mechanics, using real receipts from the first end-to-end trial.
+
+---
+
+## Plugin vs. Proxy: two instrumentation approaches
+
+| | MCP Proxy | OpenClaw Plugin |
+|--|-----------|-----------------|
+| **Where it sits** | Between MCP client and MCP server | Inside OpenClaw, as a plugin |
+| **What it sees** | Full JSON-RPC request/response | Tool call name, parameters, outcome |
+| **Intent field** | Available (full context) | Not available (call boundary only) |
+| **Agent framework** | Any MCP-compatible agent | OpenClaw agents |
+| **Setup** | Wrap your MCP server in the proxy | `openclaw plugins install @agnt-rcpt/openclaw` |
+
+The proxy approach gives you more context — it has the full request including the reasoning context that triggered the call. The plugin approach requires zero changes to your agent or tool implementations. You get receipts for every tool call automatically, across any tool your agent uses, by virtue of OpenClaw's hook system.
+
+---
+
+## The hook pipeline
+
+The plugin registers two hooks with the OpenClaw gateway:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Agent
+    participant OpenClaw
+    participant Plugin as agent-receipts plugin
+    participant Tool
+    participant DB as SQLite
+
+    Agent->>OpenClaw: tool call
+    OpenClaw->>Plugin: before_tool_call (priority 100)
+    Note over Plugin: stash { toolName, params,<br/>paramsHash, startedAt }
+    OpenClaw->>Tool: execute
+    Tool-->>OpenClaw: result / error
+    OpenClaw->>Plugin: after_tool_call
+    Note over Plugin: classify action + risk<br/>build receipt<br/>sign Ed25519<br/>hash + chain to previous
+    Plugin->>DB: insert receipt
+    OpenClaw-->>Agent: tool result
+```
+
+`before_tool_call` runs at priority 100 — earlier than most hooks — to capture timing accurately before the tool call starts. It stashes the parameters hash (SHA-256 of the [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) canonical JSON of the arguments) and the start timestamp.
+
+Receipt creation happens in `after_tool_call`. If receipt creation fails for any reason — signing error, DB write error — the plugin logs a warning and returns cleanly. The agent session continues; the receipt is lost but the tool call is not blocked.
+
+---
+
+## Classification: from tool call to action type
+
+Every tool call is mapped to an action type and risk level before the receipt is built. The taxonomy is open — the full table is in the [Action Taxonomy](/specification/action-taxonomy/) reference. A representative sample:
+
+| Tool name | Action type | Risk |
+|-----------|-------------|------|
+| `exec`, `bash`, `run_command` | `system.command.execute` | high |
+| `read_file`, `read` | `filesystem.file.read` | low |
+| `write_file`, `write` | `filesystem.file.create` | low |
+| `delete_file` | `filesystem.file.delete` | high |
+| `browser_navigate`, `web_fetch` | `system.browser.navigate` | low |
+| `settings_modify` | `system.settings.modify` | high |
+
+Tool names that don't match any taxonomy entry are classified as `unknown` with risk level `medium`. This is intentional — an unrecognised tool call still gets a receipt, it just can't be classified precisely.
+
+:::note[openclaw#98]
+The plugin's own tools (`ar_query_receipts`, `ar_verify_chain`) are not yet in the taxonomy and show as `unknown`. Filed as [openclaw#98](https://github.com/agent-receipts/openclaw/issues/98).
+:::
+
+---
+
+## What a receipt contains
+
+Every receipt is a W3C Verifiable Credential. Here's a full receipt from the v0 trial — the first `system.command.execute` in the session. The principal ID and chain ID below have been anonymized (`123456789` is a placeholder for the real Telegram user ID); everything else, including the signature, is the actual receipt as written to disk.
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://agentreceipts.ai/context/v1"
+  ],
+  "id": "urn:receipt:a7ee4f79-883b-4ef1-8c9b-25011cdd975e",
+  "type": ["VerifiableCredential", "AgentReceipt"],
+  "version": "0.2.0",
+  "issuer": {
+    "id": "did:openclaw:openclaw-agent-receipts"
+  },
+  "issuanceDate": "2026-04-26T21:09:38.311Z",
+  "credentialSubject": {
+    "principal": {
+      "id": "did:session:agent:main:telegram:direct:123456789"
+    },
+    "action": {
+      "type": "system.command.execute",
+      "risk_level": "high",
+      "target": { "system": "openclaw", "resource": "exec" },
+      "parameters_hash": "sha256:ed512c9f8d0ee83b2b398620189396f8845b0082db1cd8e3a6dbf32e23cfd79f",
+      "id": "act_6c3e085e-96f6-47f8-8e48-4f49cfab01bf",
+      "timestamp": "2026-04-26T21:09:27.881Z"
+    },
+    "outcome": { "status": "success", "error": null },
+    "chain": {
+      "sequence": 1,
+      "previous_receipt_hash": null,
+      "chain_id": "chain_openclaw_agent:main:telegram:direct:123456789_52de0419-1d76-4d15-9fb4-ffe5463e5cd2"
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-04-26T21:09:38.313Z",
+    "verificationMethod": "did:openclaw:agent#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "usxX8cHlq_6D9k8fOE1qmraW6L47K_0eorYJgjM5zwdQNpblpQEhEiiBdJvbySEKGGq5QLoD2bRA_zoD_ckLHCg"
+  }
+}
+```
+
+Key fields:
+
+- **`parameters_hash`** — SHA-256 of the RFC 8785 canonical JSON of the tool call arguments. Proves the parameters at signing time without storing them in plaintext.
+- **`chain.sequence`** — position within this chain. Sequence 1 means this is the first receipt; `previous_receipt_hash` is null.
+- **`chain.chain_id`** — encodes the session context: `chain_openclaw_<agent-id>_<session-id>`. Each new session starts a new chain. The same agent across multiple sessions produces multiple chains.
+- **`proof.proofValue`** — Ed25519 signature over the canonical receipt. Verifiable by anyone with the corresponding public key.
+
+The signing key is generated on first run and stored at `~/.openclaw/agent-receipts/keys.json`. Keys are persistent across sessions — receipts from different sessions can all be verified against the same public key.
+
+---
+
+## The chain
+
+Each receipt links to the previous one by hash:
+
+```
+Receipt 1: sequence=1, previous_receipt_hash=null
+Receipt 2: sequence=2, previous_receipt_hash=sha256:<hash of receipt 1>
+Receipt 3: sequence=3, previous_receipt_hash=sha256:<hash of receipt 2>
+```
+
+To tamper with the chain, you'd need to modify a receipt, recompute all subsequent hashes, and re-sign every receipt with the private key. Without the key, the chain is tamper-evident: any modification breaks verification at the point of change, and any gap in sequence numbers is immediately visible.
+
+The `export` command produces the full credential for independent verification:
+
+```bash
+npx @agnt-rcpt/openclaw export --id <receipt-id>
+```
+
+The `receipts` command produces a human-readable summary table for auditing.
+
+---
+
+## parameterPreview: operator-controlled privacy
+
+By default, the plugin stores only the parameters hash. You cannot reconstruct what arguments were passed to `exec`. This is deliberate — agents frequently receive secrets, tokens, or sensitive data in their tool call parameters.
+
+If you need more forensic detail, set `parameterPreview` in `openclaw.json`:
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "openclaw-agent-receipts": {
+        "config": {
+          "parameterPreview": "high"
+        }
+      }
+    }
+  }
+}
+```
+
+With `parameterPreview: "high"`, high-risk and critical actions include a `parameters_preview` field alongside the hash:
+
+```json
+{
+  "action": {
+    "type": "system.command.execute",
+    "risk_level": "high",
+    "parameters_hash": "sha256:9c84a8c9e89a07ff323b0ad52972f148b7f2f5240817f2d9f9892ca514b4522c",
+    "parameters_preview": {
+      "command": "echo \"Testing agent-receipts plugin fix\""
+    }
+  }
+}
+```
+
+The hash is still computed and stored — integrity proof is not traded away for readability.
+
+| Setting | Behaviour |
+|---------|-----------|
+| `false` (default) | Hash only, no plaintext |
+| `"high"` | Plaintext for `high` and `critical` risk actions |
+| `true` | Plaintext for all actions |
+| `["system.command.execute"]` | Plaintext for specific action types |
+
+---
+
+## Self-verification: an agent querying its own audit trail
+
+The first end-to-end trial produced this sequence:
+
+```
+    8  unknown    medium  success  ar_query_receipts  2026-04-26T21:10:40Z
+    9  filesystem.file.read  low  success  read  2026-04-26T21:10:46Z
+   10  unknown    medium  success  ar_query_receipts  2026-04-26T21:11:01Z
+```
+
+Rows 8 and 10 are the agent — asked to verify the plugin worked — choosing to do so by calling `ar_query_receipts` against its own audit trail. Both calls have receipts. The receipt for the audit query is in the audit trail.
+
+The `unknown` classification is [openclaw#98](https://github.com/agent-receipts/openclaw/issues/98) — the plugin's own tools aren't in the taxonomy yet. That's a taxonomy gap, not a protocol gap: the receipts exist, they're signed, they're correctly positioned in the chain. The self-verification loop works.
+
+This matters because it demonstrates receipts as a first-class input to the agent itself, not just an external observer mechanism. An agent can retrieve its own receipts, verify the chain, and act on the results — with that verification attempt recorded in the same trail it's inspecting.
+
+---
+
+## What's absent vs. the MCP Proxy
+
+Two things the plugin cannot provide that the MCP Proxy can:
+
+**Intent field.** The MCP Proxy sits between the client and server and has access to the full JSON-RPC request, including the reasoning context that prompted the call. The plugin intercepts at the tool boundary — it sees the call, not what caused it. The `intent` field in the receipt schema is populated by the proxy, not the plugin.
+
+**Proxy-side argument retention.** The proxy still records `action.parameters_hash` in receipts by default, but it can additionally retain a redacted or encrypted copy of the full arguments in its audit database, depending on configuration. The plugin's privacy-preserving default is hash-only. Even with `parameterPreview: true`, what's stored is a best-effort plaintext representation, not the full canonical arguments object.
+
+The tradeoff: the plugin requires no changes to your agent implementation, no wrapping of your MCP servers, and no proxy process in your stack. You get receipts for every tool call across every tool your agent uses. The depth of each receipt is narrower.
+
+---
+
+## What's next
+
+- **Subagent chain linking** — when an agent fans out into parallel subagents, linking their receipt chains to the parent. ([ar#14](https://github.com/agent-receipts/ar/issues/14))
+- **ClawHub submission** — listing `@agnt-rcpt/openclaw` in the OpenClaw plugin registry. ([openclaw#5](https://github.com/agent-receipts/openclaw/issues/5))
+- **Taxonomy coverage** — adding `ar_query_receipts` and `ar_verify_chain` to the action taxonomy. ([openclaw#98](https://github.com/agent-receipts/openclaw/issues/98))
+
+See [OpenClaw Installation](/openclaw/installation/) to get started.

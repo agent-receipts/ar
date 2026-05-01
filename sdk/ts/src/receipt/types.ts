@@ -63,6 +63,22 @@ export interface Action {
 	risk_level: RiskLevel;
 	target?: ActionTarget;
 	parameters_hash?: string;
+	/**
+	 * Operator-controlled, additive disclosure of parameter values for audit display.
+	 * SAFETY: callers MUST restrict keys to an explicit operator-managed allowlist.
+	 * Never populate from raw arguments — receipts are signed and durable, and any
+	 * value placed here is permanent. The SDK does not auto-populate or validate
+	 * this field; enforcement lives outside the SDK. Taxonomy-level allowlist
+	 * support is tracked in
+	 * {@link https://github.com/agent-receipts/ar/issues/258 | #258}.
+	 * `parameters_hash` remains the cryptographic commitment to the full payload.
+	 *
+	 * Renamed from `parameters_preview` in 0.6.0 per
+	 * {@link https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md | ADR-0012}
+	 * — "preview" misdescribed a permanent, signed field. No deprecation alias
+	 * is provided; pre-1.0 callers must update field names.
+	 */
+	parameters_disclosure?: Record<string, string>;
 	timestamp: string;
 	trusted_timestamp?: string;
 }

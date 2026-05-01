@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -306,4 +309,426 @@ func TestRunFollowLoopHonoursFilters(t *testing.T) {
 		t.Fatalf("follow loop returned error: %v", err)
 	}
 	t.Fatalf("chain-a receipt never appeared in follow output: %q", w.String())
+}
+
+func TestWritePrivateKeyFileCreatesWithCorrectPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem")
+
+	if err := writePrivateKeyFile(path, []byte("pem-data"), false); err != nil {
+		t.Fatalf("writePrivateKeyFile: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("permissions = %04o, want no group/world access", perm)
+	} else if perm&0o600 != 0o600 {
+		t.Errorf("permissions = %04o, want owner read/write", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "pem-data" {
+		t.Errorf("content = %q, want %q", data, "pem-data")
+	}
+}
+
+func TestWritePrivateKeyFileFailsIfExistsWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem")
+
+	// Create the file first.
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	err := writePrivateKeyFile(path, []byte("new"), false)
+	if err == nil {
+		t.Fatal("expected error when file exists and force=false, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error should mention 'already exists', got %q", err.Error())
+	}
+}
+
+func TestWritePrivateKeyFileOverwritesWithForce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem")
+
+	// Create an existing file with loose permissions to simulate the bad case.
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if err := writePrivateKeyFile(path, []byte("new"), true); err != nil {
+		t.Fatalf("writePrivateKeyFile with force: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("permissions after force overwrite = %04o, want no group/world access", perm)
+	} else if perm&0o600 != 0o600 {
+		t.Errorf("permissions after force overwrite = %04o, want owner read/write", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "new" {
+		t.Errorf("content after force = %q, want %q", data, "new")
+	}
+}
+
+func TestWritePrivateKeyFileFailsWhenParentDirectoryMissing(t *testing.T) {
+	// cmdInit calls ensureDir before writePrivateKeyFile; this test confirms
+	// writePrivateKeyFile itself returns an error if the directory is absent.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subdir", "key.pem")
+
+	err := writePrivateKeyFile(path, []byte("pem"), false)
+	if err == nil {
+		t.Fatal("expected error when parent directory does not exist")
+	}
+}
+
+func TestWritePubKeyFileCreatesWithCorrectPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem.pub")
+
+	if err := writePubKeyFile(path, []byte("pub-data"), false); err != nil {
+		t.Fatalf("writePubKeyFile: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o444 != 0o444 {
+		t.Errorf("permissions = %04o, want owner+group+world read (0644)", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "pub-data" {
+		t.Errorf("content = %q, want %q", data, "pub-data")
+	}
+}
+
+func TestWritePubKeyFileFailsIfExistsWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem.pub")
+
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	err := writePubKeyFile(path, []byte("new"), false)
+	if err == nil {
+		t.Fatal("expected error when file exists and force=false, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error should mention 'already exists', got %q", err.Error())
+	}
+}
+
+func TestWritePubKeyFileOverwritesWithForce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem.pub")
+
+	// Existing file with restrictive permissions — force should fix them to 0644.
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if err := writePubKeyFile(path, []byte("new"), true); err != nil {
+		t.Fatalf("writePubKeyFile with force: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o444 != 0o444 {
+		t.Errorf("permissions after force overwrite = %04o, want at least 0444", perm)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "new" {
+		t.Errorf("content after force = %q, want %q", data, "new")
+	}
+}
+
+// runInit tests — use t.TempDir() as dir and a fixed binPath so they are
+// independent of the real home directory and installed binary.
+
+func TestRunInit_FreshSetup(t *testing.T) {
+	dir := t.TempDir()
+	var errOut, out bytes.Buffer
+
+	if err := runInit(dir, "default", false, false, 7778, "/usr/local/bin/mcp-proxy", &errOut, &out); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	// Key files must exist.
+	keyPath := filepath.Join(dir, "default.pem")
+	pubPath := filepath.Join(dir, "default.pem.pub")
+	dbPath := filepath.Join(dir, "receipts.db")
+	for _, p := range []string{keyPath, pubPath, dbPath} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("expected file %q to exist: %v", p, err)
+		}
+	}
+
+	// Config snippet must contain key paths and binary.
+	snippet := out.String()
+	for _, want := range []string{keyPath, dbPath, "/usr/local/bin/mcp-proxy", "127.0.0.1:7778"} {
+		if !strings.Contains(snippet, want) {
+			t.Errorf("snippet missing %q:\n%s", want, snippet)
+		}
+	}
+
+	// Receipt DB must be usable.
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open receipt DB after init: %v", err)
+	}
+	s.Close()
+}
+
+func TestRunInit_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	var errOut, out bytes.Buffer
+
+	if err := runInit(dir, "default", false, false, 7778, "/bin/mcp-proxy", &errOut, &out); err != nil {
+		t.Fatalf("first runInit: %v", err)
+	}
+
+	// Read original key content to confirm it is not overwritten.
+	keyPath := filepath.Join(dir, "default.pem")
+	orig, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read key after first init: %v", err)
+	}
+
+	var errOut2, out2 bytes.Buffer
+	if err := runInit(dir, "default", false, false, 7778, "/bin/mcp-proxy", &errOut2, &out2); err != nil {
+		t.Fatalf("second runInit should not error: %v", err)
+	}
+
+	// Warning must appear.
+	if !strings.Contains(errOut2.String(), "warning") {
+		t.Errorf("expected idempotency warning on second run, got: %q", errOut2.String())
+	}
+
+	// Key must not be overwritten.
+	after, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read key after second init: %v", err)
+	}
+	if !bytes.Equal(orig, after) {
+		t.Error("private key was overwritten on second run without -force")
+	}
+
+	// Snippet must still be emitted on the second run.
+	if out2.Len() == 0 {
+		t.Error("second run produced no config snippet")
+	}
+}
+
+func TestRunInit_NameFlag(t *testing.T) {
+	dir := t.TempDir()
+	var errOut, out bytes.Buffer
+
+	if err := runInit(dir, "github", false, false, 7778, "/bin/mcp-proxy", &errOut, &out); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	keyPath := filepath.Join(dir, "github.pem")
+	pubPath := filepath.Join(dir, "github.pem.pub")
+	for _, p := range []string{keyPath, pubPath} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("expected %q to exist: %v", p, err)
+		}
+	}
+
+	snippet := out.String()
+	if !strings.Contains(snippet, `"github"`) {
+		t.Errorf("snippet should contain instance name \"github\":\n%s", snippet)
+	}
+	if !strings.Contains(snippet, keyPath) {
+		t.Errorf("snippet should contain key path %q:\n%s", keyPath, snippet)
+	}
+}
+
+func TestRunInit_Permissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	var errOut, out bytes.Buffer
+
+	if err := runInit(dir, "default", false, false, 7778, "/bin/mcp-proxy", &errOut, &out); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	keyPath := filepath.Join(dir, "default.pem")
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("stat key: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("private key permissions = %04o, want no group/world access", perm)
+	} else if perm&0o600 != 0o600 {
+		t.Errorf("private key permissions = %04o, want owner read/write (0600)", perm)
+	}
+}
+
+func TestRunInit_NoApproval(t *testing.T) {
+	dir := t.TempDir()
+	var errOut, out bytes.Buffer
+
+	if err := runInit(dir, "default", false, true, 7778, "/bin/mcp-proxy", &errOut, &out); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	snippet := out.String()
+	if strings.Contains(snippet, "-http") {
+		t.Errorf("snippet should not contain -http when noApproval=true:\n%s", snippet)
+	}
+}
+
+func TestRunInit_ForceOverwrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits not enforced on Windows")
+	}
+	dir := t.TempDir()
+	var errOut, out bytes.Buffer
+
+	if err := runInit(dir, "default", false, false, 7778, "/bin/mcp-proxy", &errOut, &out); err != nil {
+		t.Fatalf("first runInit: %v", err)
+	}
+
+	keyPath := filepath.Join(dir, "default.pem")
+	orig, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read original key: %v", err)
+	}
+
+	var errOut2, out2 bytes.Buffer
+	if err := runInit(dir, "default", true, false, 7778, "/bin/mcp-proxy", &errOut2, &out2); err != nil {
+		t.Fatalf("second runInit with force: %v", err)
+	}
+
+	// Warning must NOT appear when force=true.
+	if strings.Contains(errOut2.String(), "warning") {
+		t.Errorf("unexpected warning on force run: %q", errOut2.String())
+	}
+
+	// Key should be regenerated (almost certainly different bytes).
+	after, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read post-force key: %v", err)
+	}
+	if bytes.Equal(orig, after) {
+		t.Error("force overwrite produced identical key — expected new key material")
+	}
+
+	// Permissions must still be 0600.
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("permissions after force = %04o, want no group/world access", perm)
+	}
+}
+
+func TestRunInit_AsymmetricKeyState(t *testing.T) {
+	// If only one of the two key files exists, init must return an error directing
+	// the user to -force rather than silently continuing with a broken keypair.
+	for _, tc := range []struct {
+		name    string
+		prePriv bool
+		prePub  bool
+	}{
+		{"only_priv", true, false},
+		{"only_pub", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+
+			if tc.prePriv {
+				if err := os.WriteFile(filepath.Join(dir, "default.pem"), []byte("old-priv"), 0o600); err != nil {
+					t.Fatalf("setup priv: %v", err)
+				}
+			}
+			if tc.prePub {
+				if err := os.WriteFile(filepath.Join(dir, "default.pem.pub"), []byte("old-pub"), 0o644); err != nil {
+					t.Fatalf("setup pub: %v", err)
+				}
+			}
+
+			var errOut, out bytes.Buffer
+			err := runInit(dir, "default", false, false, 7778, "/bin/mcp-proxy", &errOut, &out)
+			if err == nil {
+				t.Fatal("runInit should error on asymmetric key state (one file missing)")
+			}
+			if !strings.Contains(err.Error(), "incomplete keypair") {
+				t.Errorf("error should mention incomplete keypair, got: %q", err.Error())
+			}
+			if !strings.Contains(err.Error(), "-force") {
+				t.Errorf("error should mention -force, got: %q", err.Error())
+			}
+		})
+	}
+}
+
+func TestValidInitName(t *testing.T) {
+	valid := []string{"default", "github", "github-proxy", "my_server", "server.1", "A", strings.Repeat("a", 64)}
+	for _, n := range valid {
+		if !validInitName(n) {
+			t.Errorf("validInitName(%q) = false, want true", n)
+		}
+	}
+
+	invalid := []string{
+		"",                      // empty
+		strings.Repeat("a", 65), // too long
+		"../evil",               // path traversal
+		"foo/bar",               // slash
+		"foo bar",               // space
+		"foo\x00bar",            // NUL
+		"foo$bar",               // shell metachar
+	}
+	for _, n := range invalid {
+		if validInitName(n) {
+			t.Errorf("validInitName(%q) = true, want false", n)
+		}
+	}
 }

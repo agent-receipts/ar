@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -69,6 +72,12 @@ func main() {
 		case "doctor":
 			cmdDoctor(os.Args[2:])
 			return
+		case "init":
+			cmdInit(os.Args[2:])
+			return
+		case "audit-secrets":
+			cmdAuditSecrets(os.Args[2:])
+			return
 		case "serve":
 			os.Args = append(os.Args[:1], os.Args[2:]...)
 			// Fall through to serve.
@@ -80,31 +89,43 @@ func main() {
 
 func serve() {
 	var (
-		dbPath          = flag.String("db", defaultDBPath("audit.db"), "SQLite audit database path")
-		receiptDB       = flag.String("receipt-db", defaultDBPath("receipts.db"), "SQLite receipt store path")
-		keyPath         = flag.String("key", "", "Ed25519 private key (PEM file)")
-		taxonomyPath    = flag.String("taxonomy", "", "Taxonomy mappings (JSON file). Merged with bundled taxonomies; user mappings win on conflict.")
-		bundledTaxonomy = flag.Bool("bundled-taxonomies", true, "Include bundled taxonomies (e.g. GitHub, Atlassian). Set to false to use only -taxonomy.")
-		rulesPath       = flag.String("rules", "", "Policy rules (YAML file)")
-		serverName      = flag.String("name", "", "Server name for audit trail")
-		issuerDID       = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
-		issuerName      = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
-		issuerModel     = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
-		operatorID      = flag.String("operator-id", "", "Operator DID (organisation running the agent)")
-		operatorName    = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
-		principalDID    = flag.String("principal", "did:user:unknown", "Principal DID")
-		chainID         = flag.String("chain", "", "Chain ID (auto-generated if empty)")
-		httpAddr        = flag.String("http", "127.0.0.1:0", "HTTP address for approval endpoints (default: random port; pass \"none\" to disable the approver)")
-		approvalWait    = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
+		dbPath             = flag.String("db", defaultDBPath("audit.db"), "SQLite audit database path")
+		receiptDB          = flag.String("receipt-db", defaultDBPath("receipts.db"), "SQLite receipt store path")
+		keyPath            = flag.String("key", "", "Ed25519 private key (PEM file)")
+		taxonomyPath       = flag.String("taxonomy", "", "Taxonomy mappings (JSON file). Merged with bundled taxonomies; user mappings win on conflict.")
+		bundledTaxonomy    = flag.Bool("bundled-taxonomies", true, "Include bundled taxonomies (e.g. GitHub, Atlassian). Set to false to use only -taxonomy.")
+		rulesPath          = flag.String("rules", "", "Policy rules (YAML file)")
+		redactPatternsPath = flag.String("redact-patterns", "", "Path to YAML file with custom redaction patterns")
+		serverName         = flag.String("name", "", "Server name for audit trail")
+		issuerDID          = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
+		issuerName         = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
+		issuerModel        = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
+		operatorID         = flag.String("operator-id", "", "Operator DID (organisation running the agent)")
+		operatorName       = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
+		principalDID       = flag.String("principal", "did:user:unknown", "Principal DID")
+		chainID            = flag.String("chain", "", "Chain ID (auto-generated if empty)")
+		httpAddr           = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
+		approvalWait       = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
+		strictPermissions  = flag.Bool("strict-permissions", false, "Fatal error if the private key file has permissions wider than 0600 (group/world-accessible)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
 		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
-		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing, doctor\n\n")
+		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing, doctor, init, audit-secrets\n\n")
 		fmt.Fprintf(os.Stderr, "  -version\n\tPrint version and exit\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	// Detect whether -http was explicitly set on the command line.
+	// flag.Visit only visits flags that were actually provided; if -http is
+	// absent the flag retains its default ("none") and httpExplicit stays false.
+	httpExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "http" {
+			httpExplicit = true
+		}
+	})
 
 	args := flag.Args()
 	if len(args) == 0 {
@@ -155,7 +176,18 @@ func serve() {
 	// Load or generate key pair.
 	var kp receipt.KeyPair
 	if *keyPath != "" {
-		privPEM, err := os.ReadFile(*keyPath)
+		f, err := os.Open(*keyPath)
+		if err != nil {
+			log.Fatalf("mcp-proxy: read key: %v", err)
+		}
+		defer f.Close()
+		if warn := checkOpenFilePermissions(f); warn != "" {
+			if *strictPermissions {
+				log.Fatalf("mcp-proxy: insecure key permissions: %s", warn)
+			}
+			log.Printf("[WARN] mcp-proxy: %s", warn)
+		}
+		privPEM, err := io.ReadAll(f)
 		if err != nil {
 			log.Fatalf("mcp-proxy: read key: %v", err)
 		}
@@ -198,6 +230,19 @@ func serve() {
 		rules = policy.DefaultRules()
 	}
 	engine := policy.NewEngine(rules)
+
+	// Build redactor (built-ins + optional custom patterns).
+	var customPatterns []*regexp.Regexp
+	if *redactPatternsPath != "" {
+		np, err := audit.LoadPatterns(*redactPatternsPath)
+		if err != nil {
+			log.Fatalf("mcp-proxy: load redact patterns: %v", err)
+		}
+		for _, p := range np {
+			customPatterns = append(customPatterns, p.Re)
+		}
+	}
+	redactor := audit.NewRedactor(customPatterns)
 
 	// Encryption.
 	var encryptor *audit.Encryptor
@@ -244,15 +289,15 @@ func serve() {
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
 
-	// Start HTTP server for approvals only when pause rules exist and the
-	// operator hasn't disabled the approver via -http=none. Only the literal
-	// "none" counts as an explicit opt-out; empty -http (e.g. `-http=`) is
-	// treated as not-configured so the banner still warns.
+	// Start HTTP server for approvals only when the operator explicitly opts in
+	// via -http <addr>. "none" is the default — no listener, no port, no
+	// collision between concurrent sessions.
 	approverDisabled := strings.EqualFold(strings.TrimSpace(*httpAddr), "none")
-	if engine.HasPauseRules() && !approverDisabled && *httpAddr != "" {
+	if !approverDisabled && *httpAddr != "" {
 		ln, err := net.Listen("tcp", *httpAddr)
 		if err != nil {
-			log.Fatalf("mcp-proxy: http server: %v", err)
+			fmt.Fprint(os.Stderr, formatBindFailure(*httpAddr, err))
+			os.Exit(1)
 		}
 		approvalURL = "http://" + ln.Addr().String()
 		// Human-readable line (one copy-pasteable string, no log timestamp prefix).
@@ -275,7 +320,7 @@ func serve() {
 	// debugging. A WARN variant fires when the approver is absent but the
 	// ruleset needs one, which is the #1 silent-failure mode. Explicit
 	// -http=none is NOT treated as misconfiguration.
-	emitStartupBanner(engine.Describe(), approvalURL, approverDisabled)
+	emitStartupBanner(engine.Describe(), approvalURL, approverDisabled, httpExplicit)
 
 	handler := func(direction string, raw []byte, msg *proxy.Message) *proxy.HandlerResult {
 		method := ""
@@ -298,7 +343,7 @@ func serve() {
 			}
 			rawStr = truncated + "...[truncated]"
 		}
-		redactedRaw := audit.Redact(rawStr)
+		redactedRaw := redactor.Redact(rawStr)
 		skipAudit := false
 		if encryptor != nil {
 			enc, encErr := encryptor.Encrypt(redactedRaw)
@@ -337,7 +382,7 @@ func serve() {
 				policyEvalUs := time.Since(evalStart).Microseconds()
 
 				argJSON, _ := json.Marshal(params.Arguments)
-				redactedArgs := audit.Redact(string(argJSON))
+				redactedArgs := redactor.Redact(string(argJSON))
 				if encryptor != nil {
 					enc, encErr := encryptor.Encrypt(redactedArgs)
 					if encErr != nil {
@@ -498,13 +543,13 @@ func serve() {
 					errorStr = string(msg.Error)
 				}
 
-				redactedResult := audit.Redact(resultStr)
+				redactedResult := redactor.Redact(resultStr)
 				// Keep pre-encryption copy for response_hash computation.
 				receiptResponseBody := json.RawMessage(nil)
 				if redactedResult != "" && json.Valid([]byte(redactedResult)) {
 					receiptResponseBody = json.RawMessage(redactedResult)
 				}
-				redactedError := audit.Redact(errorStr)
+				redactedError := redactor.Redact(errorStr)
 				if encryptor != nil {
 					if enc, encErr := encryptor.Encrypt(redactedResult); encErr != nil {
 						log.Printf("mcp-proxy: encrypt result: %v", encErr)
@@ -662,8 +707,10 @@ func serve() {
 
 	p := proxy.New(command, commandArgs, handler)
 	log.Printf("mcp-proxy: session %s, server %s, chain %s", sessionID, *serverName, *chainID)
-	if err := p.Run(); err != nil {
-		log.Printf("mcp-proxy: %v", err)
+	runErr := p.Run()
+	log.Printf("mcp-proxy: session %s ended", sessionID)
+	if runErr != nil {
+		log.Printf("mcp-proxy: %v", runErr)
 		os.Exit(1)
 	}
 }
@@ -693,14 +740,33 @@ func approvalRejectionResponse(toolName, ruleName string, riskScore int, approva
 	return code, buildApprovalDeniedMessage(toolName, ruleName, riskScore, approvalID, status, timeout)
 }
 
-// emitStartupBanner prints a one-line policy/approver summary on stderr. When
-// pause rules exist without a reachable approver AND the operator didn't opt
-// out via -http=none, the line is marked WARN so misconfiguration is caught
-// before the first failing tool call.
+// formatBindFailure builds the actionable error printed when -http binds to a
+// busy address. Extracted so the test asserts against the real string the
+// operator sees rather than re-implementing the format.
+func formatBindFailure(addr string, err error) string {
+	return fmt.Sprintf(
+		"mcp-proxy: cannot bind approval listener on %s: %v\n"+
+			"  Fix: use -http 127.0.0.1:0 for a random free port, or -http=none to disable the listener.\n",
+		addr, err)
+}
+
+// emitStartupBanner prints a one-line policy/approver summary on stderr plus a
+// machine-readable JSON companion line. The banner always prints; what varies
+// by configuration is the level (INFO vs WARN) and the trailing suffix:
+//
+//   - Approver wired (approvalURL set): INFO, no suffix.
+//   - Default off (approverDisabled, httpExplicit=false) with pause rules:
+//     INFO with " — approver off by default; pass -http <addr> to enable".
+//   - Explicit -http=none (approverDisabled, httpExplicit=true): INFO, no
+//     suffix — operator made an informed choice, no nudge needed.
+//   - No approver and not explicitly disabled with pause rules loaded
+//     (approverDisabled=false, approvalURL=""): WARN, suffix flags the
+//     misconfiguration. Should be unreachable in normal operation since the
+//     default value of -http is "none".
 //
 // "require approval" is reserved for pause rules; block rules are enforced
 // without user interaction and are reported separately.
-func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisabled bool) {
+func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisabled bool, httpExplicit bool) {
 	pauseCount := len(summary.PauseRules)
 	blockCount := len(summary.BlockRules)
 
@@ -714,11 +780,21 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 
 	level := "INFO"
 	suffix := ""
-	// Only warn on the accidental case: pause rules loaded, no approver,
+	// Warn only on the accidental case: pause rules loaded, no approver,
 	// and operator didn't explicitly opt out.
-	if approvalURL == "" && !approverDisabled && pauseCount > 0 {
-		level = "WARN"
-		suffix = " — pause rules will fail (set -http=ADDR to enable approver, or -http=none to acknowledge)"
+	// Default "none" (httpExplicit=false) is NOT a misconfiguration — emit a
+	// soft info hint instead. Explicit -http=none stays silent.
+	if approvalURL == "" && pauseCount > 0 {
+		if !approverDisabled {
+			// approverDisabled=false here means neither default-none nor explicit-none;
+			// this branch should not normally be reached, but guard it anyway.
+			level = "WARN"
+			suffix = " — pause rules will fail (set -http=ADDR to enable approver, or -http=none to acknowledge)"
+		} else if !httpExplicit {
+			// Default none: emit a soft info hint, not a WARN.
+			suffix = " — approver off by default; pass -http <addr> to enable"
+		}
+		// Explicit -http=none: no suffix, no WARN.
 	}
 
 	pauseDesc := ""
@@ -827,17 +903,39 @@ func defaultDBPath(name string) string {
 	return filepath.Join(home, ".agent-receipts", name)
 }
 
-// ensureDBDir creates the parent directory of path with 0o700 permissions.
-// SQLite can create the database file itself but not the directory holding it.
-func ensureDBDir(path string) error {
+// ensureDir creates the parent directory of path at 0o700 permissions.
+func ensureDir(path string) error {
 	dir := filepath.Dir(path)
 	if dir == "" || dir == "." {
 		return nil
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create database directory %q: %w", dir, err)
+	return os.MkdirAll(dir, 0o700)
+}
+
+// ensureDBDir creates the parent directory of path with 0o700 permissions.
+// SQLite can create the database file itself but not the directory holding it.
+func ensureDBDir(path string) error {
+	if err := ensureDir(path); err != nil {
+		return fmt.Errorf("create database directory %q: %w", filepath.Dir(path), err)
 	}
 	return nil
+}
+
+// checkOpenFilePermissions is like checkKeyFilePermissions but operates on an
+// already-open file descriptor, eliminating the TOCTOU race between stat and
+// read. Returns "" on Windows or when f.Stat() fails.
+func checkOpenFilePermissions(f *os.File) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Sprintf("key file %q has permissions %04o — run: chmod 600 %q", f.Name(), perm, f.Name())
+	}
+	return ""
 }
 
 func generateToken(n int) string {

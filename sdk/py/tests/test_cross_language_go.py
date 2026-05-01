@@ -125,3 +125,17 @@ class TestV020Vectors:
         vectors = _load_v020_vectors()
         receipts = [AgentReceipt(**r) for r in vectors["terminalChain"]["receipts"]]
         assert receipts[-1].credentialSubject.chain.terminal is True
+
+    def test_parameters_disclosure_receipt_verifies(self) -> None:
+        """Go-signed parameters_disclosure receipt verifies (ADR-0012 Phase A)."""
+        vectors = _load_v020_vectors()
+        public_key = vectors["keys"]["publicKey"]
+        receipt = AgentReceipt(**vectors["parametersDisclosureReceipt"]["receipt"])
+        assert verify_receipt(receipt, public_key) is True
+
+    def test_parameters_disclosure_receipt_hash_matches_go(self) -> None:
+        """Python hash_receipt matches the Go-computed expectedReceiptHash."""
+        vectors = _load_v020_vectors()
+        section = vectors["parametersDisclosureReceipt"]
+        receipt = AgentReceipt(**section["receipt"])
+        assert hash_receipt(receipt) == section["expectedReceiptHash"]

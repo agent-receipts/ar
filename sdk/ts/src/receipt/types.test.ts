@@ -78,6 +78,10 @@ describe("receipt types", () => {
 					risk_level: "high",
 					target: { system: "mail.google.com", resource: "email:compose" },
 					parameters_hash: "sha256:abc123",
+					parameters_disclosure: {
+						to: "team@example.com",
+						subject: "Q3 Report",
+					},
 					timestamp: "2026-03-29T14:30:00Z",
 				},
 				intent: {

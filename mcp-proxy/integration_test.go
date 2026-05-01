@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -106,8 +105,11 @@ func TestAuditPipelineToolCall(t *testing.T) {
 		{ToolName: "read_file", ActionType: "filesystem.file.read"},
 	})
 
-	argsJSON, _ := json.Marshal(args)
-	argsHash := receipt.SHA256Hash(string(argsJSON))
+	canonical, err := receipt.Canonicalize(args)
+	if err != nil {
+		t.Fatalf("canonicalize args: %v", err)
+	}
+	argsHash := receipt.SHA256Hash(canonical)
 
 	sequence++
 	unsigned := receipt.Create(receipt.CreateInput{
@@ -233,8 +235,11 @@ func TestToolNameInReceipt(t *testing.T) {
 		}
 	}
 
-	argsJSON, _ := json.Marshal(args)
-	argsHash := receipt.SHA256Hash(string(argsJSON))
+	canonical, err := receipt.Canonicalize(args)
+	if err != nil {
+		t.Fatalf("canonicalize args: %v", err)
+	}
+	argsHash := receipt.SHA256Hash(canonical)
 
 	unsigned := receipt.Create(receipt.CreateInput{
 		Issuer:    receipt.Issuer{ID: "did:agent:test"},
