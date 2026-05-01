@@ -52,7 +52,7 @@ The chain itself must make the blind spot machine-readable so a verifier does no
    | `sandbox` | string | yes | one of `seatbelt` (macOS), `landlock_seccomp` (Linux), `none`. Codex on Windows reports `none`. |
    | `codex_version` | string | yes | the running Codex CLI's reported version, so a verifier can decide whether the `covers`/`excludes` claim is current for the Codex release that emitted the receipt. |
 
-   Example: `{"covers":["Bash","apply_patch","mcp"],"excludes":["WebSearch","unified_exec"],"enforcement":"advisory","sandbox":"seatbelt","codex_version":"0.42.0"}`. RFC 8785 sorts keys alphabetically (per ADR-0009), so field order is irrelevant in canonicalisation; all listed fields are required.
+   Example: `{"covers":["Bash","apply_patch","mcp"],"excludes":["WebSearch","unified_exec"],"enforcement":"advisory","sandbox":"seatbelt","codex_version":"0.42.0"}`. RFC 8785 sorts object member names lexicographically by UTF-16 code units (per ADR-0002), so field order is irrelevant in canonicalisation; all listed fields are required.
 
    The `coverage` block is **emitter-asserted**, not validated against ground truth by the daemon. The daemon attests *who* sent the claim (peer credentials, binary path) and that the claim has not been tampered with after signing, but cannot independently confirm what Codex's hook integration actually does on this host. A buggy or malicious emitter could shrink `excludes` and a verifier acting on the receipt would accept fewer absences as expected. The honesty of the claim is therefore bounded by trust in the specific binary that signed it; an emitter the user did not install is a different binary in the receipts (see Trust model below).
 
