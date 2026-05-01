@@ -91,11 +91,19 @@ def verify_chain(
     results: list[ReceiptVerification] = []
     broken_at = -1
     previous: AgentReceipt | None = None
+    signature_compute_error: str | None = None
 
     for i, receipt in enumerate(receipts):
         chain = receipt.credentialSubject.chain
 
-        signature_valid = verify_receipt(receipt, public_key)
+        try:
+            signature_valid = verify_receipt(receipt, public_key)
+        except (TypeError, ValueError) as exc:
+            signature_valid = False
+            if signature_compute_error is None:
+                signature_compute_error = (
+                    f"signature compute failed at index {i}: {exc}"
+                )
 
         current_sequence = chain.sequence
         if previous is None:
@@ -143,6 +151,19 @@ def verify_chain(
             broken_at = i
 
         previous = receipt
+
+    # Signature-compute exception takes precedence over later structural checks:
+    # if a receipt could not be canonicalised for verification, the chain is
+    # already structurally broken and downstream checks (terminal placement,
+    # response_hash, expected_length, ...) are not meaningful.
+    if signature_compute_error is not None:
+        return ChainVerification(
+            valid=False,
+            length=len(receipts),
+            receipts=results,
+            broken_at=broken_at,
+            error=signature_compute_error,
+        )
 
     # Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
     for i, receipt in enumerate(receipts[:-1]):
