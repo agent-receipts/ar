@@ -61,6 +61,11 @@ type v020VectorFile struct {
 	TerminalChain struct {
 		Receipts []json.RawMessage `json:"receipts"`
 	} `json:"terminalChain"`
+	ParametersDisclosureReceipt struct {
+		Receipt             json.RawMessage `json:"receipt"`
+		ExpectedReceiptHash string          `json:"expectedReceiptHash"`
+		ExpectedValid       bool            `json:"expectedValid"`
+	} `json:"parametersDisclosureReceipt"`
 }
 
 const vectorsPath = "../../../cross-sdk-tests/canonicalization_vectors.json"
@@ -243,5 +248,43 @@ func TestSignaturePreservationLegacy_0_2_0(t *testing.T) {
 		if !valid {
 			t.Errorf("receipt[%d] (%s): signature no longer verifies after canonicaliser sweep", i, signed.ID)
 		}
+	}
+}
+
+// TestParametersDisclosureReceipt verifies the cross-SDK parameters_disclosure
+// receipt vector: the signature must verify and HashReceipt must reproduce
+// expectedReceiptHash byte-for-byte (ADR-0012 Phase A).
+func TestParametersDisclosureReceipt(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(filepath.Dir("."), v020VectorsPath))
+	if err != nil {
+		t.Fatalf("read v020_vectors.json: %v", err)
+	}
+	var vf v020VectorFile
+	if err := json.Unmarshal(data, &vf); err != nil {
+		t.Fatalf("parse v020_vectors.json: %v", err)
+	}
+	if len(vf.ParametersDisclosureReceipt.Receipt) == 0 {
+		t.Fatal("v020_vectors.json: parametersDisclosureReceipt.receipt is empty")
+	}
+
+	var signed AgentReceipt
+	if err := json.Unmarshal(vf.ParametersDisclosureReceipt.Receipt, &signed); err != nil {
+		t.Fatalf("unmarshal parameters_disclosure receipt: %v", err)
+	}
+
+	valid, err := Verify(signed, vf.Keys.PublicKey)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !valid {
+		t.Fatal("parameters_disclosure receipt failed signature verification")
+	}
+
+	gotHash, err := HashReceipt(signed)
+	if err != nil {
+		t.Fatalf("HashReceipt: %v", err)
+	}
+	if gotHash != vf.ParametersDisclosureReceipt.ExpectedReceiptHash {
+		t.Errorf("HashReceipt\n  got:  %s\n  want: %s", gotHash, vf.ParametersDisclosureReceipt.ExpectedReceiptHash)
 	}
 }

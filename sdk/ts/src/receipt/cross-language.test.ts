@@ -40,6 +40,12 @@ interface V020Vectors {
 		expectedValid: boolean;
 		expectedValidWithRequireTerminal: boolean;
 	};
+	parametersDisclosureReceipt: {
+		description: string;
+		receipt: AgentReceipt;
+		expectedReceiptHash: string;
+		expectedValid: boolean;
+	};
 }
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -152,5 +158,19 @@ describe("cross-language: v0.2.0 vectors", () => {
 		const v = loadV020Vectors();
 		const last = v.terminalChain.receipts.at(-1);
 		expect(last?.credentialSubject.chain.terminal).toBe(true);
+	});
+
+	it("Go-signed parameters_disclosure receipt verifies in TypeScript", () => {
+		const v = loadV020Vectors();
+		expect(
+			verifyReceipt(v.parametersDisclosureReceipt.receipt, v.keys.publicKey),
+		).toBe(true);
+	});
+
+	it("parameters_disclosure receipt hash matches Go", () => {
+		const v = loadV020Vectors();
+		expect(hashReceipt(v.parametersDisclosureReceipt.receipt)).toBe(
+			v.parametersDisclosureReceipt.expectedReceiptHash,
+		);
 	});
 });

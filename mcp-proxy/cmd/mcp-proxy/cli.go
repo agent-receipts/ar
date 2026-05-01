@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -664,4 +666,244 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
+}
+
+// writePrivateKeyFile writes data to path with 0600 permissions. When force is
+// false the call fails atomically if the file already exists (O_EXCL). When
+// force is true the key is written to a temp file first then renamed into place
+// so the previous key remains intact if the write fails.
+func writePrivateKeyFile(path string, data []byte, force bool) error {
+	if force {
+		// Write-then-rename: old key survives intact until the new one is safely on disk.
+		dir := filepath.Dir(path)
+		tmp, err := os.CreateTemp(dir, ".key-*.tmp")
+		if err != nil {
+			return fmt.Errorf("create temp key file in %q: %w", dir, err)
+		}
+		tmpName := tmp.Name()
+		if _, werr := tmp.Write(data); werr != nil {
+			cerr := tmp.Close()
+			os.Remove(tmpName)
+			return fmt.Errorf("write temp key file: %w", errors.Join(werr, cerr))
+		}
+		if cerr := tmp.Close(); cerr != nil {
+			os.Remove(tmpName)
+			return fmt.Errorf("close temp key file: %w", cerr)
+		}
+		// Explicit chmod guarantees 0600 regardless of process umask.
+		if chErr := os.Chmod(tmpName, 0o600); chErr != nil {
+			os.Remove(tmpName)
+			return fmt.Errorf("set permissions on key file %q: %w", path, chErr)
+		}
+		if rerr := os.Rename(tmpName, path); rerr != nil {
+			os.Remove(tmpName)
+			return fmt.Errorf("rename key file to %q: %w", path, rerr)
+		}
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("key file %q already exists (use -force to overwrite)", path)
+		}
+		return fmt.Errorf("create key file %q: %w", path, err)
+	}
+	if _, werr := f.Write(data); werr != nil {
+		cerr := f.Close()
+		os.Remove(path)
+		return fmt.Errorf("write key file %q: %w", path, errors.Join(werr, cerr))
+	}
+	if cerr := f.Close(); cerr != nil {
+		os.Remove(path)
+		return fmt.Errorf("close key file %q: %w", path, cerr)
+	}
+	// Explicit chmod guarantees 0600 regardless of process umask.
+	if chErr := os.Chmod(path, 0o600); chErr != nil {
+		os.Remove(path)
+		return fmt.Errorf("set permissions on key file %q: %w", path, chErr)
+	}
+	return nil
+}
+
+// writePubKeyFile writes data to path with 0644 permissions. When force is false
+// the call fails if the file already exists. When force is true the existing file
+// is removed first so a fresh inode is created with the correct 0644 mode.
+func writePubKeyFile(path string, data []byte, force bool) error {
+	if force {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove existing public key %q: %w", path, err)
+		}
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("public key file %q already exists (use -force to overwrite)", path)
+		}
+		return fmt.Errorf("create public key file %q: %w", path, err)
+	}
+	if _, werr := f.Write(data); werr != nil {
+		cerr := f.Close()
+		os.Remove(path)
+		return fmt.Errorf("write public key file %q: %w", path, errors.Join(werr, cerr))
+	}
+	if cerr := f.Close(); cerr != nil {
+		os.Remove(path)
+		return fmt.Errorf("close public key file %q: %w", path, cerr)
+	}
+	// Explicit chmod guarantees 0644 regardless of process umask.
+	if chErr := os.Chmod(path, 0o644); chErr != nil {
+		os.Remove(path)
+		return fmt.Errorf("set permissions on public key file %q: %w", path, chErr)
+	}
+	return nil
+}
+
+func cmdInit(args []string) {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	name := fs.String("name", "default", "Name for this proxy instance (used in filenames and config snippet)")
+	noApproval := fs.Bool("no-approval", false, "Omit -http from the config snippet (no approval server)")
+	httpPort := fs.Int("http-port", 7778, "Approval listener port written into the config snippet")
+	force := fs.Bool("force", false, "Overwrite existing key files")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy init [-name <name>] [-force] [-no-approval] [-http-port <port>]\n\n")
+		fmt.Fprintf(os.Stderr, "  One-command setup: creates ~/.agent-receipts/, generates an Ed25519\n")
+		fmt.Fprintf(os.Stderr, "  signing keypair with correct permissions, initialises the receipt\n")
+		fmt.Fprintf(os.Stderr, "  database, and prints a claude_desktop_config.json snippet to stdout.\n\n")
+		fmt.Fprintf(os.Stderr, "  Safe to re-run: warns and skips key generation if files already exist.\n\n")
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+
+	if !validInitName(*name) {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: -name %q is invalid: use only letters, digits, hyphens, underscores, and dots (max 64 chars)\n", *name)
+		os.Exit(2)
+	}
+	if *httpPort < 1 || *httpPort > 65535 {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: -http-port %d is out of range (1-65535)\n", *httpPort)
+		os.Exit(2)
+	}
+
+	home, err := userHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: resolve home directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	binPath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: warning: could not resolve binary path (%v); using %q — replace with an absolute path before saving the snippet\n", err, "mcp-proxy")
+		binPath = "mcp-proxy"
+	}
+
+	dir := filepath.Join(home, ".agent-receipts")
+	if err := runInit(dir, *name, *force, *noApproval, *httpPort, binPath, os.Stderr, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// validInitName reports whether name is safe to use as a key filename component.
+// Allows letters, digits, hyphens, underscores, and dots; max 64 chars.
+// Rejects empty strings and names that would escape the target directory.
+func validInitName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.') {
+			return false
+		}
+	}
+	return true
+}
+
+// runInit performs the guided setup: creates dir, generates a keypair (idempotent),
+// initialises the receipt DB, and writes a config snippet to out. Status messages
+// go to errOut. Accepting dir and binPath as parameters makes the function testable.
+func runInit(dir, name string, force, noApproval bool, httpPort int, binPath string, errOut, out io.Writer) error {
+	keyPath := filepath.Join(dir, name+".pem")
+	pubPath := filepath.Join(dir, name+".pem.pub")
+	dbPath := filepath.Join(dir, "receipts.db")
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create directory %q: %w", dir, err)
+	}
+	// MkdirAll does not tighten permissions on an existing directory, so chmod
+	// explicitly to ensure private keys are never stored under a world-readable path.
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("set permissions on directory %q: %w", dir, err)
+	}
+
+	// Key generation — idempotent when the full keypair already exists.
+	_, keyErr := os.Stat(keyPath)
+	_, pubErr := os.Stat(pubPath)
+	if keyErr != nil && !os.IsNotExist(keyErr) {
+		return fmt.Errorf("stat private key %q: %w", keyPath, keyErr)
+	}
+	if pubErr != nil && !os.IsNotExist(pubErr) {
+		return fmt.Errorf("stat public key %q: %w", pubPath, pubErr)
+	}
+	keyPresent := keyErr == nil
+	pubPresent := pubErr == nil
+
+	if !force && keyPresent && pubPresent {
+		// Both files exist: warn and skip (safe re-run).
+		fmt.Fprintf(errOut, "warning: key files already exist — skipping key generation (use -force to overwrite)\n")
+		fmt.Fprintf(errOut, "  private key: %s\n", keyPath)
+		fmt.Fprintf(errOut, "  public key:  %s\n", pubPath)
+	} else if !force && keyPresent != pubPresent {
+		// Partial keypair: unsafe to continue without -force.
+		presentPath, missingPath := pubPath, keyPath
+		if keyPresent {
+			presentPath, missingPath = keyPath, pubPath
+		}
+		return fmt.Errorf("incomplete keypair: found %q but missing %q; rerun with -force to overwrite and regenerate", presentPath, missingPath)
+	} else {
+		kp, err := receipt.GenerateKeyPair()
+		if err != nil {
+			return fmt.Errorf("generate key pair: %w", err)
+		}
+		if err := writePrivateKeyFile(keyPath, []byte(kp.PrivateKey), force); err != nil {
+			return fmt.Errorf("write private key: %w", err)
+		}
+		if err := writePubKeyFile(pubPath, []byte(kp.PublicKey), force); err != nil {
+			return fmt.Errorf("write public key: %w", err)
+		}
+		fmt.Fprintf(errOut, "Generated Ed25519 key pair:\n  private: %s\n  public:  %s\n", keyPath, pubPath)
+	}
+
+	// Initialise receipt DB — store.Open uses CREATE TABLE IF NOT EXISTS so this is idempotent.
+	s, err := store.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("create receipt database: %w", err)
+	}
+	if cerr := s.Close(); cerr != nil {
+		return fmt.Errorf("close receipt database: %w", cerr)
+	}
+	fmt.Fprintf(errOut, "Receipt database: %s\n", dbPath)
+
+	// Build config snippet. The default policy always contains pause/block rules,
+	// so include -http by default; --no-approval opts out.
+	proxyArgs := []string{"-key", keyPath, "-receipt-db", dbPath}
+	if !noApproval {
+		proxyArgs = append(proxyArgs, "-http", fmt.Sprintf("127.0.0.1:%d", httpPort))
+	}
+	proxyArgs = append(proxyArgs, "YOUR_MCP_SERVER_COMMAND", "AND_ITS_ARGS")
+
+	snippet := map[string]any{
+		"mcpServers": map[string]any{
+			name: map[string]any{
+				"command": binPath,
+				"args":    proxyArgs,
+			},
+		},
+	}
+	enc, err := json.MarshalIndent(snippet, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config snippet: %w", err)
+	}
+
+	fmt.Fprintf(errOut, "\nAdd to your claude_desktop_config.json (replace the trailing args with your MCP server):\n")
+	fmt.Fprintln(out, string(enc))
+	return nil
 }

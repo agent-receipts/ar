@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeUnsigned } from "../test-utils/receipts.js";
 import { verifyChain } from "./chain.js";
 import { createReceipt } from "./create.js";
+import * as hashModule from "./hash.js";
 import { canonicalize, hashReceipt, sha256 } from "./hash.js";
 import { generateKeyPair, signReceipt } from "./signing.js";
 
@@ -106,6 +107,31 @@ describe("verifyChain", () => {
 		expect(result.valid).toBe(false);
 		expect(result.brokenAt).toBe(1);
 		expect(result.receipts[1]?.hashLinkValid).toBe(false);
+	});
+
+	it("surfaces hashReceipt errors via the error field", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(2, privateKey);
+		const targetId = chain[0]?.id;
+
+		const original = hashModule.hashReceipt;
+		const spy = vi.spyOn(hashModule, "hashReceipt").mockImplementation((r) => {
+			if (r.id === targetId) {
+				throw new Error("synthetic canonicalize failure");
+			}
+			return original(r);
+		});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.brokenAt).toBe(1);
+			expect(result.error).toMatch(/^hash compute failed at index 0:/);
+			expect(result.error).toContain("synthetic canonicalize failure");
+			expect(result.receipts[1]?.hashLinkValid).toBe(false);
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
 	it("detects a broken sequence", () => {

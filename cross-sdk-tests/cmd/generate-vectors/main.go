@@ -46,10 +46,11 @@ type signingSection struct {
 
 // v020Vectors holds ADR-0008 cross-SDK test vectors.
 type v020Vectors struct {
-	Version      string               `json:"version"`
-	Keys         keysSection          `json:"keys"`
-	ResponseHash responseHashSection  `json:"responseHash"`
-	TerminalChain terminalChainSection `json:"terminalChain"`
+	Version                     string                             `json:"version"`
+	Keys                        keysSection                        `json:"keys"`
+	ResponseHash                responseHashSection                `json:"responseHash"`
+	TerminalChain               terminalChainSection               `json:"terminalChain"`
+	ParametersDisclosureReceipt parametersDisclosureReceiptSection `json:"parametersDisclosureReceipt"`
 }
 
 type responseHashSection struct {
@@ -59,9 +60,19 @@ type responseHashSection struct {
 }
 
 type terminalChainSection struct {
-	Receipts                           []json.RawMessage `json:"receipts"`
-	ExpectedValid                      bool              `json:"expectedValid"`
-	ExpectedValidWithRequireTerminal   bool              `json:"expectedValidWithRequireTerminal"`
+	Receipts                         []json.RawMessage `json:"receipts"`
+	ExpectedValid                    bool              `json:"expectedValid"`
+	ExpectedValidWithRequireTerminal bool              `json:"expectedValidWithRequireTerminal"`
+}
+
+// parametersDisclosureReceiptSection holds a single 0.2.1 signed receipt with
+// parameters_disclosure populated. All three SDKs MUST canonicalise, hash, and
+// verify it identically (per ADR-0012 Phase A).
+type parametersDisclosureReceiptSection struct {
+	Description         string          `json:"description"`
+	Receipt             json.RawMessage `json:"receipt"`
+	ExpectedReceiptHash string          `json:"expectedReceiptHash"`
+	ExpectedValid       bool            `json:"expectedValid"`
 }
 
 func main() {
@@ -246,6 +257,18 @@ func generateV020Vectors(keys keysSection) error {
 		receiptJSONs[i] = json.RawMessage(b)
 	}
 
+	// Single-receipt parameters_disclosure vector (ADR-0012 Phase A, schema 0.2.1).
+	// Built standalone (not part of the legacy 0.2.0 chain), signed with the same
+	// shared key, deterministic via fixed timestamps and UUID overrides.
+	pdReceipt, pdHash, err := generateParametersDisclosureReceipt(keys)
+	if err != nil {
+		return fmt.Errorf("generate parameters_disclosure receipt: %w", err)
+	}
+	pdReceiptJSON, err := json.Marshal(pdReceipt)
+	if err != nil {
+		return fmt.Errorf("marshal parameters_disclosure receipt: %w", err)
+	}
+
 	v020 := v020Vectors{
 		Version: "0.2.0",
 		Keys:    keys,
@@ -259,6 +282,12 @@ func generateV020Vectors(keys keysSection) error {
 			ExpectedValid:                    true,
 			ExpectedValidWithRequireTerminal: true,
 		},
+		ParametersDisclosureReceipt: parametersDisclosureReceiptSection{
+			Description:         "Single 0.2.1 signed receipt with action.parameters_disclosure populated. All three SDKs MUST verify the signature and reproduce expectedReceiptHash byte-for-byte (ADR-0012 Phase A; ADR-0009 canonicalisation).",
+			Receipt:             json.RawMessage(pdReceiptJSON),
+			ExpectedReceiptHash: pdHash,
+			ExpectedValid:       true,
+		},
 	}
 
 	out, err := json.MarshalIndent(v020, "", "  ")
@@ -266,4 +295,55 @@ func generateV020Vectors(keys keysSection) error {
 		return fmt.Errorf("marshal v020 vectors: %w", err)
 	}
 	return os.WriteFile("v020_vectors.json", append(out, '\n'), 0644)
+}
+
+// generateParametersDisclosureReceipt builds a deterministic single-receipt
+// vector (schema 0.2.1) with action.parameters_disclosure populated, signs it
+// with the shared private key, and returns the signed receipt and its hash.
+//
+// The receipt deliberately uses a fresh chain (chain_pd_test, sequence 1) so it
+// cannot be confused with the legacy 0.2.0 terminalChain — that chain stays
+// frozen as the signature-preservation oracle.
+func generateParametersDisclosureReceipt(keys keysSection) (receipt.AgentReceipt, string, error) {
+	const fixedTimestamp = "2026-04-22T00:00:00Z"
+
+	r := receipt.Create(receipt.CreateInput{
+		Issuer:    receipt.Issuer{ID: "did:agent:test"},
+		Principal: receipt.Principal{ID: "did:user:test"},
+		Action: receipt.Action{
+			Type:      "filesystem.file.read",
+			RiskLevel: receipt.RiskLow,
+			ParametersDisclosure: map[string]string{
+				"command": "echo build",
+				"user":    "ci",
+			},
+		},
+		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+		Chain:   receipt.Chain{Sequence: 1, PreviousReceiptHash: nil, ChainID: "chain_pd_test"},
+	})
+	r.Version = "0.2.1"
+	r.ID = "urn:receipt:v021-pd-1"
+	r.IssuanceDate = fixedTimestamp
+	r.CredentialSubject.Action.ID = "act_v021_pd_1"
+	r.CredentialSubject.Action.Timestamp = fixedTimestamp
+
+	signed, err := receipt.Sign(r, keys.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("sign: %w", err)
+	}
+	signed.Proof.Created = fixedTimestamp
+
+	valid, err := receipt.Verify(signed, keys.PublicKey)
+	if err != nil {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("verify: %w", err)
+	}
+	if !valid {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("generated parameters_disclosure receipt failed verification")
+	}
+
+	hash, err := receipt.HashReceipt(signed)
+	if err != nil {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("hash: %w", err)
+	}
+	return signed, hash, nil
 }

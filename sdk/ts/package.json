@@ -1,6 +1,6 @@
 {
 	"name": "@agnt-rcpt/sdk-ts",
-	"version": "0.4.0",
+	"version": "0.6.0",
 	"description": "TypeScript SDK for the Agent Receipts protocol",
 	"license": "Apache-2.0",
 	"author": "Otto Jongerius",
@@ -36,6 +36,7 @@
 	},
 	"scripts": {
 		"sync-version": "node scripts/sync-version.mjs",
+		"prepare": "pnpm run sync-version",
 		"prebuild": "pnpm run sync-version",
 		"pretest": "pnpm run sync-version",
 		"pretypecheck": "pnpm run sync-version",
@@ -53,6 +54,9 @@
 		]
 	},
 	"packageManager": "pnpm@10.33.0",
+	"dependencies": {
+		"zod": "^3.25.76"
+	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.9",
 		"@types/node": "^25.5.0",

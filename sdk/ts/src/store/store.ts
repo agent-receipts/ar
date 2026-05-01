@@ -1,4 +1,6 @@
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { ZodError } from "zod";
+import { agentReceiptSchema } from "../receipt/schema.js";
 import type {
 	AgentReceipt,
 	OutcomeStatus,
@@ -66,10 +68,29 @@ const DEFAULT_QUERY_LIMIT = 10000;
  * Parse a receipt JSON string from the store, with error context.
  */
 function parseReceiptJson(json: string, context: string): AgentReceipt {
+	let parsed: unknown;
 	try {
-		return JSON.parse(json) as AgentReceipt;
+		parsed = JSON.parse(json);
 	} catch (cause) {
-		throw new Error(`Corrupt receipt in store (${context}): ${cause}`);
+		throw new Error(`Corrupt receipt in store (${context}): ${cause}`, {
+			cause,
+		});
+	}
+	try {
+		return agentReceiptSchema.parse(parsed);
+	} catch (cause) {
+		if (cause instanceof ZodError) {
+			const fields = cause.issues
+				.map((i) => {
+					const path = i.path.length === 0 ? "(root)" : i.path.join(".");
+					return `${path}: ${i.message}`;
+				})
+				.join("; ");
+			throw new Error(`Corrupt receipt in store (${context}): ${fields}`, {
+				cause,
+			});
+		}
+		throw cause;
 	}
 }
 
@@ -165,7 +186,11 @@ export class ReceiptStore {
 	 */
 	query(filters: ReceiptQuery): AgentReceipt[] {
 		const conditions: string[] = [];
-		const params: string[] = [];
+		// node:sqlite binds each value using its runtime JS type (string → TEXT,
+		// number → INTEGER). SQLite's LIMIT requires INTEGER; binding it as
+		// TEXT silently returns zero rows. Typed as SQLInputValue[] so string
+		// filter values and the numeric limit each bind as their native type.
+		const params: SQLInputValue[] = [];
 
 		if (filters.chainId !== undefined) {
 			conditions.push("chain_id = ?");
@@ -196,7 +221,7 @@ export class ReceiptStore {
 			conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
 		const limit = filters.limit ?? DEFAULT_QUERY_LIMIT;
-		params.push(String(limit));
+		params.push(limit);
 
 		const rows = this.db
 			.prepare(

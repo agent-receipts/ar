@@ -4,7 +4,10 @@
     "https://agentreceipts.ai/context/v1"
   ],
   "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
-  "type": ["VerifiableCredential", "AgentReceipt"],
+  "type": [
+    "VerifiableCredential",
+    "AgentReceipt"
+  ],
   "version": "0.1.0",
   "issuer": {
     "id": "did:agent:claude-cowork-instance-abc123",
@@ -51,7 +54,10 @@
       }
     },
     "authorization": {
-      "scopes": ["email:send", "drive:read"],
+      "scopes": [
+        "email:send",
+        "drive:read"
+      ],
       "granted_at": "2026-03-31T14:00:00Z",
       "expires_at": "2026-03-31T15:00:00Z"
     },
@@ -66,6 +72,6 @@
     "created": "2026-03-31T14:30:01Z",
     "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z4hDJKeC2x8yQBKg7TFvGr9NQRHyJSRcxp1BHoANGvSapfEw2KYRbXcUZ1vABTEwVLmJyAAitRviAoJK7eDsq3sLj"
+    "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
   }
 }

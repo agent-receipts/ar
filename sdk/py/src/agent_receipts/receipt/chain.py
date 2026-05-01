@@ -97,18 +97,36 @@ def verify_chain(
 
         signature_valid = verify_receipt(receipt, public_key)
 
-        if previous is None:
-            hash_link_valid = chain.previous_receipt_hash is None
-        else:
-            previous_hash = hash_receipt(previous)
-            hash_link_valid = chain.previous_receipt_hash == previous_hash
-
         current_sequence = chain.sequence
         if previous is None:
             sequence_valid = current_sequence >= 1
         else:
             prev_sequence = previous.credentialSubject.chain.sequence
             sequence_valid = current_sequence == prev_sequence + 1
+
+        if previous is None:
+            hash_link_valid = chain.previous_receipt_hash is None
+        else:
+            try:
+                previous_hash = hash_receipt(previous)
+            except (TypeError, ValueError) as exc:
+                results.append(
+                    ReceiptVerification(
+                        index=i,
+                        receipt_id=receipt.id,
+                        signature_valid=signature_valid,
+                        hash_link_valid=False,
+                        sequence_valid=sequence_valid,
+                    )
+                )
+                return ChainVerification(
+                    valid=False,
+                    length=len(receipts),
+                    receipts=results,
+                    broken_at=i,
+                    error=f"hash compute failed at index {i - 1}: {exc}",
+                )
+            hash_link_valid = chain.previous_receipt_hash == previous_hash
 
         verification = ReceiptVerification(
             index=i,
@@ -191,10 +209,17 @@ def verify_chain(
         return cv
 
     if expected_final_hash is not None:
-        last_hash = hash_receipt(receipts[-1])
+        last_index = len(receipts) - 1
+        try:
+            last_hash = hash_receipt(receipts[-1])
+        except (TypeError, ValueError) as exc:
+            cv.valid = False
+            cv.broken_at = last_index
+            cv.error = f"hash compute failed at index {last_index}: {exc}"
+            return cv
         if last_hash != expected_final_hash:
             cv.valid = False
-            cv.broken_at = len(receipts) - 1
+            cv.broken_at = last_index
             cv.error = "final receipt hash does not match expected value"
             return cv
 

@@ -1,4 +1,4 @@
-# ADR-0011: claude_code_hook Emission Channel
+# ADR-0013: claude_code_hook Emission Channel
 
 ## Status
 

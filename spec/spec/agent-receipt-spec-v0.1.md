@@ -161,7 +161,7 @@ The agent (or agent platform) that performed the action and produced the receipt
     "created": "2026-03-31T14:30:01Z",
     "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z..."
+    "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
   }
 }
 ```
@@ -201,7 +201,7 @@ For lightweight or high-frequency actions, a minimal receipt containing only req
     "created": "2026-03-31T14:31:01Z",
     "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z..."
+    "proofValue": "ul_wFLgGWlzFaYt2ckT4wZfoeRa7ZqL0tt3y10dgr7FdsVMivs5tc9ZrUYBJ_FKEE4aFApeAzPH6jp57irtgDCw"
   }
 }
 ```
@@ -300,7 +300,7 @@ The `intent` fields link an action to the context that triggered it. Because age
 | `created` | Yes | ISO 8601 datetime when the proof was created. |
 | `verificationMethod` | Yes | DID URL of the signing key (e.g. `did:agent:...#key-1`). |
 | `proofPurpose` | Yes | MUST be `"assertionMethod"`. |
-| `proofValue` | Yes | Multibase-encoded (`z`-prefixed base58btc) Ed25519 signature over the canonical receipt (proof field excluded). |
+| `proofValue` | Yes | Multibase-encoded (`u`-prefixed base64url, no padding) Ed25519 signature over the canonical receipt (proof field excluded). |
 
 ### 4.4 JSON Schema
 
@@ -424,7 +424,7 @@ Risk levels are assigned by action type as defaults. Implementations MAY escalat
 
 ### 7.1 Canonical form
 
-For hashing and signing, receipts MUST be serialized using the JSON Canonicalization Scheme (RFC 8785) with the `proof` field removed before hashing. This canonicalization step is aligned with the use of RFC 8785 in the W3C Verifiable Credentials Data Integrity specification; however, the overall signing procedure defined in this document (see §7.2 and §10.2) is intentionally simplified and is not a full implementation of the W3C Data Integrity algorithm.
+For hashing and signing, receipts MUST be serialized using the JSON Canonicalization Scheme (RFC 8785) with the `proof` field removed before hashing. This canonicalization step is aligned with the use of RFC 8785 in the W3C Verifiable Credentials Data Integrity specification; however, the overall signing procedure defined in this document (see §7.2 and §10) is intentionally simplified and is not a full implementation of the W3C Data Integrity algorithm.
 
 #### 7.1.1 Null and optional field handling
 
@@ -437,7 +437,7 @@ This rule ensures all three SDKs produce byte-identical canonical output for the
 
 ### 7.2 Signing
 
-The issuer MUST sign the canonical receipt (proof field excluded) with its Ed25519 private key. The signature MUST be encoded as a multibase string (`z`-prefixed base58btc) and placed in `proof.proofValue`.
+The issuer MUST sign the canonical receipt (proof field excluded) with its Ed25519 private key. The signature MUST be encoded as a multibase string (`u`-prefixed base64url, no padding) and placed in `proof.proofValue`.
 
 ### 7.3 Chain integrity verification
 
@@ -514,7 +514,7 @@ To verify a single Agent Receipt:
 
 1. **Schema validation.** Validate the receipt against the JSON Schema (§4.4). If validation fails, verification fails with `MALFORMED_RECEIPT`.
 2. **DID resolution.** Resolve the DID URL in `proof.verificationMethod` to obtain the issuer's public key. The resolution mechanism depends on the DID method used (see §9.6). If the DID cannot be resolved, verification fails with `UNRESOLVABLE_DID`.
-3. **Signature verification.** Compute the RFC 8785 canonical serialization (UTF-8 bytes) of the receipt with the `proof` field removed. Verify the Ed25519 signature in `proof.proofValue` (decoded from multibase z-base58btc) directly over these canonical bytes using the resolved public key. If verification fails, the receipt is `INVALID_SIGNATURE`.
+3. **Signature verification.** Compute the RFC 8785 canonical serialization (UTF-8 bytes) of the receipt with the `proof` field removed. Verify the Ed25519 signature in `proof.proofValue` (decoded from multibase `u`-prefixed base64url) directly over these canonical bytes using the resolved public key. If verification fails, the receipt is `INVALID_SIGNATURE`.
 4. **Timestamp validation.** If `action.trusted_timestamp` is present, verify it per §7.7. If the trusted timestamp is invalid, the receipt is `INVALID_TIMESTAMP`. If no trusted timestamp is present, the receipt relies on `issuanceDate` and `action.timestamp` which are issuer-asserted and not independently verifiable.
 5. **Chain context.** If verifying as part of a chain, perform chain integrity checks per §7.3. If verifying a standalone receipt, chain fields indicate the issuer-asserted position in a chain. A verifier MAY perform local consistency checks (e.g., that `sequence` is a positive integer and `previous_receipt_hash` is well-formed), but the receipt's actual chain position cannot be confirmed without at least the preceding receipt.
 6. **Delegation context.** If the receipt includes a `delegation` field, verify per §7.6.
@@ -581,3 +581,5 @@ A receipt that passes steps 1–4 is individually valid. Steps 5–6 provide cha
 7. **Revocation is append-only.** Reversal is recorded by issuing a new receipt, not by mutating the original. The chain is always append-only.
 
 8. **Key lifecycle is out of scope for v0.1.** Agent key generation, secure storage, rotation, and revocation are not specified by this version of the protocol. Implementers SHOULD treat key management as a critical security concern: a compromised agent key allows production of validly-signed but fraudulent receipts that are indistinguishable from legitimate ones. MolTrust (listed in §8) or a dedicated key management specification may address this in future. At minimum, implementations SHOULD document their key generation and storage practices.
+
+9. **base64url for `proofValue`.** The `proofValue` field uses multibase `u`-prefixed base64url (no padding) rather than the W3C Data Integrity default of base58btc (`z`). base64url avoids the need for a base58 library, is natively supported in all target runtimes, and is slightly more compact. This is an intentional deviation from the W3C default.

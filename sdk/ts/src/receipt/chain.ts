@@ -117,7 +117,32 @@ export function verifyChain(
 		if (previous === undefined) {
 			hashLinkValid = chain.previous_receipt_hash === null;
 		} else {
-			const previousHash = hashReceipt(previous);
+			let previousHash: string;
+			try {
+				previousHash = hashReceipt(previous);
+			} catch (e) {
+				const reason = e instanceof Error ? e.message : String(e);
+				const prevSeq = previous.credentialSubject.chain.sequence;
+				const curSeq = chain.sequence;
+				const seqValid =
+					Number.isSafeInteger(curSeq) &&
+					Number.isSafeInteger(prevSeq) &&
+					curSeq === prevSeq + 1;
+				results.push({
+					index: i,
+					receiptId: receipt.id,
+					signatureValid,
+					hashLinkValid: false,
+					sequenceValid: seqValid,
+				});
+				return {
+					valid: false,
+					length: receipts.length,
+					receipts: results,
+					brokenAt: i,
+					error: `hash compute failed at index ${i - 1}: ${reason}`,
+				};
+			}
 			hashLinkValid = chain.previous_receipt_hash === previousHash;
 		}
 
@@ -219,14 +244,31 @@ export function verifyChain(
 
 	if (options?.expectedFinalHash !== undefined) {
 		const lastReceipt = receipts[receipts.length - 1];
-		if (
-			!lastReceipt ||
-			hashReceipt(lastReceipt) !== options.expectedFinalHash
-		) {
+		if (!lastReceipt) {
 			return {
 				...cv,
 				valid: false,
 				brokenAt: receipts.length - 1,
+			};
+		}
+		let lastHash: string;
+		try {
+			lastHash = hashReceipt(lastReceipt);
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			return {
+				...cv,
+				valid: false,
+				brokenAt: receipts.length - 1,
+				error: `hash compute failed at index ${receipts.length - 1}: ${reason}`,
+			};
+		}
+		if (lastHash !== options.expectedFinalHash) {
+			return {
+				...cv,
+				valid: false,
+				brokenAt: receipts.length - 1,
+				error: "final receipt hash does not match expected value",
 			};
 		}
 	}
