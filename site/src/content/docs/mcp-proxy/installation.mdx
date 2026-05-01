@@ -77,7 +77,7 @@ Use `--name` to label a specific proxy instance (the name appears in the config 
 
 ```bash
 mcp-proxy init --name github
-# creates ~/.agent-receipts/github.pem (0600) and github.pem.pub
+# creates ~/.agent-receipts/github.pem (0600) and ~/.agent-receipts/github.pem.pub
 ```
 
 Re-running `init` is safe — it warns and skips key generation if the files already exist. Pass `--force` to regenerate.

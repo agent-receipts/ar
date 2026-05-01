@@ -828,6 +828,11 @@ func runInit(dir, name string, force, noApproval bool, httpPort int, binPath str
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create directory %q: %w", dir, err)
 	}
+	// MkdirAll does not tighten permissions on an existing directory, so chmod
+	// explicitly to ensure private keys are never stored under a world-readable path.
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("set permissions on directory %q: %w", dir, err)
+	}
 
 	// Key generation — idempotent when the full keypair already exists.
 	_, keyErr := os.Stat(keyPath)

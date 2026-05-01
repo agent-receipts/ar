@@ -26,7 +26,7 @@ The default policy includes a `pause_high_risk` rule. When you generate a config
 
 ```bash
 mcp-proxy init --name github-proxy
-# creates ~/.agent-receipts/github-proxy.pem (0600) and github-proxy.pem.pub
+# creates ~/.agent-receipts/github-proxy.pem (0600) and ~/.agent-receipts/github-proxy.pem.pub
 ```
 
 Re-running `init` is safe — it warns and skips if the key already exists. Use absolute paths everywhere — Claude Code launches MCP servers with a clean environment where `~` expansion and `$PATH` may not behave as expected.
