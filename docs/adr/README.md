@@ -27,6 +27,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0011](0011-zod-for-runtime-validation.md) | Zod for runtime schema validation | Accepted |
 | [ADR-0012](0012-payload-disclosure-policy.md) | Payload Disclosure Policy (`parameterDisclosure`) | Proposed |
 | [ADR-0013](0013-claude-code-hook-channel.md) | claude_code_hook Emission Channel | Proposed |
+| [ADR-0014](0014-codex-hook-channel.md) | codex_hook Emission Channel | Proposed |
 
 ## References
 
