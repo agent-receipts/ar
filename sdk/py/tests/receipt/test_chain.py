@@ -529,6 +529,35 @@ class TestAdr0008ChainBehaviours:
         assert result.error.startswith("hash compute failed at index 1:")
         assert "injected hash failure" in result.error
 
+    def test_signature_failure_in_loop_populates_error(self) -> None:
+        """verify_receipt raising surfaces as a structured error.
+
+        Patches verify_receipt to raise ValueError on every call. The
+        try/except mirrors the False-return path: signature_valid is set to
+        False and the loop continues, so every receipt still gets a per-receipt
+        entry. ChainVerification.error captures the first failure (index 0).
+        """
+        kp = generate_key_pair()
+        chain = _build_chain(2, kp.private_key)
+
+        with patch(
+            "agent_receipts.receipt.chain.verify_receipt",
+            side_effect=ValueError("injected verify failure"),
+        ):
+            result = verify_chain(chain, kp.public_key)
+
+        assert result.valid is False
+        assert result.broken_at == 0
+        assert result.error.startswith("signature compute failed at index 0:")
+        assert "injected verify failure" in result.error
+        # Loop continued: both receipts have entries with signature_valid=False,
+        # and non-signature checks (hash_link, sequence) still ran for each.
+        assert len(result.receipts) == 2
+        assert result.receipts[0].signature_valid is False
+        assert result.receipts[1].signature_valid is False
+        assert result.receipts[0].hash_link_valid is True
+        assert result.receipts[1].hash_link_valid is True
+
     def test_response_bodies_absent_entry_emits_note(self) -> None:
         """When response_hash is present but receipt id is not in the map, emit note."""
         unsigned = create_receipt(
