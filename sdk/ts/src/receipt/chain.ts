@@ -105,13 +105,23 @@ export function verifyChain(
 	const results: ReceiptVerification[] = [];
 	let brokenAt = -1;
 	let previous: AgentReceipt | undefined;
+	let signatureError: string | undefined;
 
 	for (let i = 0; i < receipts.length; i++) {
 		const receipt = receipts[i];
 		if (!receipt) continue;
 		const chain = receipt.credentialSubject.chain;
 
-		const signatureValid = verifyReceipt(receipt, publicKey);
+		let signatureValid: boolean;
+		try {
+			signatureValid = verifyReceipt(receipt, publicKey);
+		} catch (e) {
+			signatureValid = false;
+			if (signatureError === undefined) {
+				const reason = e instanceof Error ? e.message : String(e);
+				signatureError = `signature compute failed at index ${i}: ${reason}`;
+			}
+		}
 
 		let hashLinkValid: boolean;
 		if (previous === undefined) {
@@ -199,6 +209,9 @@ export function verifyChain(
 		receipts: results,
 		brokenAt,
 	};
+	if (signatureError !== undefined) {
+		cv.error = signatureError;
+	}
 
 	// Response-hash verification (spec §4.3.2).
 	// When a body is supplied: recompute and fail on mismatch.
