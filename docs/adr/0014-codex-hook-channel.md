@@ -1,4 +1,4 @@
-# ADR-0012: codex_hook Emission Channel
+# ADR-0014: codex_hook Emission Channel
 
 ## Status
 
@@ -17,7 +17,7 @@ Two things make Codex materially different from Claude Code, and they pull the d
    - `apply_patch` tool calls
    - MCP tool calls
 
-   They do **not** fire around `WebSearch`, and they do **not** fire around every shell invocation: the hook integration is wired up for "simple" shell calls only, and `unified_exec` interception is documented as incomplete. A receipt chain built from Codex hooks therefore has known, structural blind spots that are different from the blind spots in a claude_code_hook chain (which has its own; see ADR-0011 once landed).
+   They do **not** fire around `WebSearch`, and they do **not** fire around every shell invocation: the hook integration is wired up for "simple" shell calls only, and `unified_exec` interception is documented as incomplete. A receipt chain built from Codex hooks therefore has known, structural blind spots that are different from the blind spots in a claude_code_hook chain (which has its own; see ADR-0013).
 
 The combination — supplementary-rather-than-primary enforcement, plus a different coverage envelope — means Codex hooks cannot be quietly folded into the existing `claude_code_hook` channel. A verifier that did so would silently widen its trust in the chain: receipts would appear comparable across vendors when in fact each vendor's chain elides a different set of events.
 
@@ -70,7 +70,7 @@ Packaging is intentionally not a plugin bundle. Codex does not have the plugin i
 
 - Covers the Codex user base under the same chain, daemon, and verification story as Claude Code, MCP proxy, and the SDKs — receipts from a developer using both CLIs end up in one chain with monotonic `seq` and shared `session_id` grouping.
 - Reuses ADR-0010's daemon, IPC transport, peer-credential capture, canonicalisation, and signing without modification. No new crypto, no new schema, no new socket. The emitter binary is small precisely because all of that is already solved.
-- Reuses the ADR-0011-style drop-counter mechanism, so the verifier's mental model for hook-style channels is consistent: `events_dropped` receipts mean the same thing whether the gap originated in a Codex hook or a Claude Code hook.
+- Reuses the ADR-0013-style drop-counter mechanism, so the verifier's mental model for hook-style channels is consistent: `events_dropped` receipts mean the same thing whether the gap originated in a Codex hook or a Claude Code hook.
 - Encodes the coverage gap structurally — in the `channel` discriminator and in a signed per-receipt `coverage` block — instead of relying on out-of-band documentation. A verifier that has never read this ADR can still compute the right trust statement.
 - Packaging is light: a binary plus a config snippet rather than a plugin manifest, matching what Codex actually offers.
 
@@ -84,6 +84,6 @@ Packaging is intentionally not a plugin bundle. Codex does not have the plugin i
 ## Related ADRs
 
 - [ADR-0010 (Daemon Process Separation)](./0010-daemon-process-separation.md) — defines the channel field, the daemon, the IPC transport, the peer-credential capture, and the drop-counter / `events_dropped` mechanism this ADR reuses.
-- ADR-0011 (`claude_code_hook` Emission Channel) — peer channel for Claude Code's hooks; this ADR mirrors its channel-extension pattern and deliberately diverges on coverage and packaging where Codex differs.
+- [ADR-0013 (`claude_code_hook` Emission Channel)](./0013-claude-code-hook-channel.md) — peer channel for Claude Code's hooks; this ADR mirrors its channel-extension pattern and deliberately diverges on coverage and packaging where Codex differs.
 - [ADR-0008 (Response Hashing and Chain Completeness)](./0008-response-hashing-and-chain-completeness.md) — chain-completeness reasoning that motivates recording coverage gaps in-chain rather than only in documentation.
 - [ADR-0009 (Canonicalisation Profile and VC Field Name Commitment)](./0009-canonicalization-and-schema-consistency.md) — the `coverage` block is part of the signed event body and is canonicalised under this profile.
