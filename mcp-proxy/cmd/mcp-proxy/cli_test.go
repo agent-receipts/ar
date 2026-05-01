@@ -635,7 +635,10 @@ func TestRunInit_ForceOverwrite(t *testing.T) {
 	}
 
 	keyPath := filepath.Join(dir, "default.pem")
-	orig, _ := os.ReadFile(keyPath)
+	orig, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read original key: %v", err)
+	}
 
 	var errOut2, out2 bytes.Buffer
 	if err := runInit(dir, "default", true, false, 7778, "/bin/mcp-proxy", &errOut2, &out2); err != nil {
@@ -648,7 +651,10 @@ func TestRunInit_ForceOverwrite(t *testing.T) {
 	}
 
 	// Key should be regenerated (almost certainly different bytes).
-	after, _ := os.ReadFile(keyPath)
+	after, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read post-force key: %v", err)
+	}
 	if bytes.Equal(orig, after) {
 		t.Error("force overwrite produced identical key — expected new key material")
 	}

@@ -837,6 +837,12 @@ func runInit(dir, name string, force, noApproval bool, httpPort int, binPath str
 	// Key generation — idempotent when the full keypair already exists.
 	_, keyErr := os.Stat(keyPath)
 	_, pubErr := os.Stat(pubPath)
+	if keyErr != nil && !os.IsNotExist(keyErr) {
+		return fmt.Errorf("stat private key %q: %w", keyPath, keyErr)
+	}
+	if pubErr != nil && !os.IsNotExist(pubErr) {
+		return fmt.Errorf("stat public key %q: %w", pubPath, pubErr)
+	}
 	keyPresent := keyErr == nil
 	pubPresent := pubErr == nil
 
