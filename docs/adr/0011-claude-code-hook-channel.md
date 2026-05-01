@@ -65,7 +65,12 @@ Files are created so that only the invoking user can read or modify them: POSIX 
 
 The "leave-until-success" ordering plus the temp-file-and-rename update guarantee that a crash or kill between any two steps cannot lose the count: the file is only removed after the daemon has acknowledged the bundled `drop_count`, and `EAGAIN` updates are atomic with respect to power loss.
 
-This requires extending the ADR-0010 emitter→daemon IPC contract by one optional field: `drop_count` (non-negative integer, default 0, omitted when zero). Existing emitters that hold the counter in memory may set this field instead of relying on a follow-up flush, simplifying their implementation; this is a strict superset of the current contract.
+### IPC contract additions
+
+This channel introduces two additions to the ADR-0010 emitter→daemon IPC contract — one channel-specific, one cross-channel:
+
+- `tool_use_id: string` — **channel-specific**, required on `PreToolUse` and `PostToolUse` events for `claude_code_hook`. The per-invocation identifier from Claude Code's hook payload (Anthropic's `tool_use_id` / `call_id`). MUST be surfaced unchanged on both events for the same tool call; the daemon uses it together with `session_id` and tool identity to pair Pre/Post deterministically. Other channels are not required to populate this field.
+- `drop_count: non-negative integer` — **cross-channel**, optional, default 0, omitted when zero. Any emitter may set it. Existing emitters that hold the counter in memory may set this field instead of relying on a follow-up flush, simplifying their implementation. This is a strict superset of the current contract.
 
 A residual loss window remains, narrower than but analogous to ADR-0010's: if the runtime directory itself is wiped between hook invocations (reboot, manual cleanup of `$XDG_RUNTIME_DIR`), pending drop counts for that session are lost. This is documented and considered acceptable — runtime-directory wipes already terminate the session in every meaningful sense.
 
