@@ -760,64 +760,104 @@ func writePubKeyFile(path string, data []byte, force bool) error {
 
 func cmdInit(args []string) {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	keyPath := fs.String("key", "", "Path for the Ed25519 private key PEM file (required)")
-	pubPath := fs.String("pub", "", "Path for the public key PEM file (default: <key>.pub)")
-	force := fs.Bool("force", false, "Overwrite existing key files")
+	name       := fs.String("name", "default", "Name for this proxy instance (used in filenames and config snippet)")
+	noApproval := fs.Bool("no-approval", false, "Omit -http from the config snippet (no approval server)")
+	httpPort   := fs.Int("http-port", 7778, "Approval listener port written into the config snippet")
+	force      := fs.Bool("force", false, "Overwrite existing key files")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy init -key <path> [-pub <path>] [-force]\n\n")
-		fmt.Fprintf(os.Stderr, "  Generate an Ed25519 signing key pair. The private key is written with\n")
-		fmt.Fprintf(os.Stderr, "  0600 permissions (owner read/write only). Pass -key to mcp-proxy serve\n")
-		fmt.Fprintf(os.Stderr, "  to use it.\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy init [-name <name>] [-force] [-no-approval] [-http-port <port>]\n\n")
+		fmt.Fprintf(os.Stderr, "  One-command setup: creates ~/.agent-receipts/, generates an Ed25519\n")
+		fmt.Fprintf(os.Stderr, "  signing keypair with correct permissions, initialises the receipt\n")
+		fmt.Fprintf(os.Stderr, "  database, and prints a claude_desktop_config.json snippet to stdout.\n\n")
+		fmt.Fprintf(os.Stderr, "  Safe to re-run: warns and skips key generation if files already exist.\n\n")
 		fs.PrintDefaults()
 	}
 	fs.Parse(args)
 
-	if *keyPath == "" {
-		fmt.Fprintln(os.Stderr, "mcp-proxy init: -key is required")
-		fs.Usage()
-		os.Exit(2)
-	}
-
-	resolvedPub := *pubPath
-	if resolvedPub == "" {
-		resolvedPub = *keyPath + ".pub"
-	}
-
-	// Preflight: check for existing files before generating or writing anything.
-	if !*force {
-		if _, err := os.Stat(*keyPath); err == nil {
-			fmt.Fprintf(os.Stderr, "mcp-proxy: key file %q already exists (use -force to overwrite)\n", *keyPath)
-			os.Exit(1)
-		}
-		if _, err := os.Stat(resolvedPub); err == nil {
-			fmt.Fprintf(os.Stderr, "mcp-proxy: public key file %q already exists (use -force to overwrite)\n", resolvedPub)
-			os.Exit(1)
-		}
-	}
-
-	kp, err := receipt.GenerateKeyPair()
+	home, err := userHomeDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mcp-proxy: generate key: %v\n", err)
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: resolve home directory: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := ensureDir(*keyPath); err != nil {
-		fmt.Fprintf(os.Stderr, "mcp-proxy: create key directory: %v\n", err)
-		os.Exit(1)
-	}
-	if err := ensureDir(resolvedPub); err != nil {
-		fmt.Fprintf(os.Stderr, "mcp-proxy: create public key directory: %v\n", err)
-		os.Exit(1)
+	binPath, err := os.Executable()
+	if err != nil {
+		binPath = "mcp-proxy"
 	}
 
-	if err := writePrivateKeyFile(*keyPath, []byte(kp.PrivateKey), *force); err != nil {
-		fmt.Fprintf(os.Stderr, "mcp-proxy: write private key: %v\n", err)
+	dir := filepath.Join(home, ".agent-receipts")
+	if err := runInit(dir, *name, *force, *noApproval, *httpPort, binPath, os.Stderr, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: %v\n", err)
 		os.Exit(1)
 	}
-	if err := writePubKeyFile(resolvedPub, []byte(kp.PublicKey), *force); err != nil {
-		fmt.Fprintf(os.Stderr, "mcp-proxy: write public key: %v\n", err)
-		os.Exit(1)
+}
+
+// runInit performs the guided setup: creates dir, generates a keypair (idempotent),
+// initialises the receipt DB, and writes a config snippet to out. Status messages
+// go to errOut. Accepting dir and binPath as parameters makes the function testable.
+func runInit(dir, name string, force, noApproval bool, httpPort int, binPath string, errOut, out io.Writer) error {
+	keyPath := filepath.Join(dir, name+".pem")
+	pubPath := filepath.Join(dir, name+".pem.pub")
+	dbPath  := filepath.Join(dir, "receipts.db")
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create directory %q: %w", dir, err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Generated Ed25519 key pair:\n  private: %s\n  public:  %s\n", *keyPath, resolvedPub)
+	// Key generation — idempotent: warn and skip when files already exist.
+	_, keyExists := os.Stat(keyPath)
+	_, pubExists := os.Stat(pubPath)
+	if !force && (keyExists == nil || pubExists == nil) {
+		fmt.Fprintf(errOut, "warning: key files already exist — skipping key generation (use -force to overwrite)\n")
+		if keyExists == nil {
+			fmt.Fprintf(errOut, "  private key: %s\n", keyPath)
+		}
+		if pubExists == nil {
+			fmt.Fprintf(errOut, "  public key:  %s\n", pubPath)
+		}
+	} else {
+		kp, err := receipt.GenerateKeyPair()
+		if err != nil {
+			return fmt.Errorf("generate key pair: %w", err)
+		}
+		if err := writePrivateKeyFile(keyPath, []byte(kp.PrivateKey), force); err != nil {
+			return fmt.Errorf("write private key: %w", err)
+		}
+		if err := writePubKeyFile(pubPath, []byte(kp.PublicKey), force); err != nil {
+			return fmt.Errorf("write public key: %w", err)
+		}
+		fmt.Fprintf(errOut, "Generated Ed25519 key pair:\n  private: %s\n  public:  %s\n", keyPath, pubPath)
+	}
+
+	// Initialise receipt DB — store.Open uses CREATE TABLE IF NOT EXISTS so this is idempotent.
+	s, err := store.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("create receipt database: %w", err)
+	}
+	s.Close()
+	fmt.Fprintf(errOut, "Receipt database: %s\n", dbPath)
+
+	// Build config snippet.
+	proxyArgs := []string{"-key", keyPath, "-receipt-db", dbPath}
+	if !noApproval {
+		proxyArgs = append(proxyArgs, "-http", fmt.Sprintf("127.0.0.1:%d", httpPort))
+	}
+	proxyArgs = append(proxyArgs, "YOUR_MCP_SERVER_COMMAND", "AND_ITS_ARGS")
+
+	snippet := map[string]any{
+		"mcpServers": map[string]any{
+			name: map[string]any{
+				"command": binPath,
+				"args":    proxyArgs,
+			},
+		},
+	}
+	enc, err := json.MarshalIndent(snippet, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config snippet: %w", err)
+	}
+
+	fmt.Fprintf(errOut, "\nAdd to your claude_desktop_config.json (replace the trailing args with your MCP server):\n")
+	fmt.Fprintln(out, string(enc))
+	return nil
 }

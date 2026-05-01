@@ -67,15 +67,25 @@ Most GitHub MCP tools don't reach the threshold — `create_pull_request` scores
 
 ## Persistent signing key
 
-Generate a key pair and use it across sessions:
+`mcp-proxy init` does everything in one step: creates `~/.agent-receipts/`, generates an Ed25519 keypair with correct permissions, initialises the receipt database, and prints a ready-to-paste `claude_desktop_config.json` snippet:
 
 ```bash
-# Generate a key pair (any Ed25519 PEM tool works)
-openssl genpkey -algorithm Ed25519 -out private.pem
-openssl pkey -in private.pem -pubout -out public.pem
+mcp-proxy init
+```
 
-# Run with persistent key
-mcp-proxy -key private.pem npx -y @modelcontextprotocol/server-filesystem ~/Documents
+Use `--name` to label a specific proxy instance (the name appears in the config snippet key and in the key filename):
+
+```bash
+mcp-proxy init --name github
+# creates ~/.agent-receipts/github.pem (0600) and github.pem.pub
+```
+
+Re-running `init` is safe — it warns and skips key generation if the files already exist. Pass `--force` to regenerate.
+
+Then run the proxy with the generated key:
+
+```bash
+mcp-proxy -key ~/.agent-receipts/github.pem npx -y @modelcontextprotocol/server-filesystem ~/Documents
 ```
 
 ## Next steps

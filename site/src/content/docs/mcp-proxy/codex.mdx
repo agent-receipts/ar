@@ -25,13 +25,11 @@ The default policy includes a `pause_high_risk` rule, but the approval listener 
 ## Generate a signing key
 
 ```bash
-mkdir -p ~/.agent-receipts
-openssl genpkey -algorithm Ed25519 -out ~/.agent-receipts/github-proxy.pem
-openssl pkey -in ~/.agent-receipts/github-proxy.pem -pubout \
-  -out ~/.agent-receipts/github-proxy-pub.pem
+mcp-proxy init --name github-proxy
+# creates ~/.agent-receipts/github-proxy.pem (0600) and github-proxy.pem.pub
 ```
 
-Use absolute paths everywhere — Codex launches MCP servers with a clean environment where `~` expansion and `$PATH` may not behave as expected.
+Re-running `init` is safe — it warns and skips if the key already exists. Use absolute paths everywhere — Codex launches MCP servers with a clean environment where `~` expansion and `$PATH` may not behave as expected.
 
 ## Configure via CLI
 
@@ -102,7 +100,7 @@ mcp-proxy list
 
 # Verify chain integrity
 mcp-proxy verify \
-  -key ~/.agent-receipts/github-proxy-pub.pem \
+  -key ~/.agent-receipts/github-proxy.pem.pub \
   <chain-id>
 ```
 

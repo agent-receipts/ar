@@ -24,13 +24,12 @@ The default policy includes a `pause_high_risk` rule, but the approval listener 
 ## Generate a signing key
 
 ```bash
-mkdir -p ~/.agent-receipts
-openssl genpkey -algorithm Ed25519 -out ~/.agent-receipts/github-proxy.pem
-openssl pkey -in ~/.agent-receipts/github-proxy.pem -pubout \
-  -out ~/.agent-receipts/github-proxy-pub.pem
+mcp-proxy init --name github-proxy
+# creates ~/.agent-receipts/github-proxy.pem (0600) and github-proxy.pem.pub
+# prints a claude_desktop_config.json snippet — paste it as a starting point
 ```
 
-Use absolute paths everywhere — Claude Desktop launches MCP servers with a clean environment where `~` expansion and `$PATH` are not available.
+Re-running `init` is safe — it warns and skips if the key already exists. Use absolute paths everywhere — Claude Desktop launches MCP servers with a clean environment where `~` expansion and `$PATH` are not available.
 
 ## Configure claude_desktop_config.json
 
@@ -86,7 +85,7 @@ mcp-proxy list
 
 # Verify chain integrity
 mcp-proxy verify \
-  -key ~/.agent-receipts/github-proxy-pub.pem \
+  -key ~/.agent-receipts/github-proxy.pem.pub \
   <chain-id>
 ```
 

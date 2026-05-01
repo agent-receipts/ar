@@ -36,10 +36,8 @@ Remote MCP Server (e.g. mcp.atlassian.com/v1/mcp)
 ## Generate a signing key
 
 ```bash
-mkdir -p ~/.agent-receipts
-openssl genpkey -algorithm Ed25519 -out ~/.agent-receipts/atlassian-proxy.pem
-openssl pkey -in ~/.agent-receipts/atlassian-proxy.pem -pubout \
-  -out ~/.agent-receipts/atlassian-proxy-pub.pem
+mcp-proxy init --name atlassian-proxy
+# creates ~/.agent-receipts/atlassian-proxy.pem (0600) and atlassian-proxy.pem.pub
 ```
 
 :::tip[Reuse an existing key]
