@@ -32,7 +32,7 @@ The emitter sets `channel: "claude_code_hook"`. Hook events map to emitter→dae
 
 | Hook event        | Emits receipt? | Emitter→daemon IPC fields populated                                                       |
 |-------------------|----------------|-------------------------------------------------------------------------------------------|
-| `SessionStart`    | No (state only) | Captures `session_id` for the lifetime of the session; no per-call receipt.              |
+| `SessionStart`    | No (no-op for emitter) | The per-invocation emitter has no in-process state to retain between hook firings; `session_id` arrives unchanged in every subsequent hook payload. The hook is registered for plugin completeness, and the emitter MAY use this firing to opportunistically prune stale drop files (see drop-counter handling), but otherwise exits immediately. |
 | `UserPromptSubmit`| Optional (off by default) | If enabled: `tool: { name: "user_prompt" }`, `input: { prompt }`, `decision: "allowed"`. |
 | `PreToolUse`      | Yes            | `tool: { name, server? }`, `tool_use_id` (per-invocation identifier from the hook payload), `input` (raw tool args), `decision` (`allowed` if the hook returns permit; `denied` if the hook returns block; `pending` for async or undecided cases). `output`/`error` empty. |
 | `PostToolUse`     | Yes            | Same `tool`, `tool_use_id`, and `input` as the matching PreToolUse, plus `output` or `error` from the tool result. `decision` reflects the executed outcome. |
@@ -58,21 +58,24 @@ The emitter MUST persist drop counts to a per-session file in the platform runti
 Files are created so that only the invoking user can read or modify them: POSIX mode `0600` on Linux and macOS, and an equivalent user-only ACL on Windows (the security descriptor must grant access to the invoking user SID only — no `Authenticated Users` or `Everyone` ACEs). They are owned by the invoking user and contain a single integer count. The emitter's behaviour on each invocation:
 
 1. Connect to the daemon socket non-blocking. If connect fails (daemon not running): exit silently — ADR-0010 already classifies this as the "events drop silently" mode, and a fresh emitter cannot record what it has no channel to record.
-2. Read the per-session drop file if it exists, capturing the count, but **leave the file in place** until a successful send.
-3. Compose the event with a new `drop_count` field carrying any pre-existing count from step 2.
-4. Send the event. On `EAGAIN`: atomically update the per-session drop file to `previous_count + 1` by writing the new integer to a temp file in the same directory and `rename()`-ing it over the session file, then exit.
-5. On successful send: unlink the per-session drop file if one existed, then exit. The daemon, on receiving an event with `drop_count > 0`, synthesises an `events_dropped` receipt in the chain exactly as ADR-0010 specifies for the in-memory case.
+2. Acquire an exclusive advisory lock on a sibling lockfile `<session_id>.lock` in the same directory (`flock(LOCK_EX)` on POSIX, `LockFileEx` on Windows). The lock is held across steps 3–6 to serialise concurrent emitter invocations within the same session — Claude Code can fire `PreToolUse`/`PostToolUse` hooks for parallel tool calls overlappingly. Acquisition uses a short timeout (≤50ms suggested); on timeout, proceed without the lock and accept best-effort drop accounting. The lock guards bookkeeping only and is never required for IPC correctness.
+3. Read the per-session drop file if it exists, capturing the count, but **leave the file in place** until a successful send.
+4. Compose the event with a new `drop_count` field carrying any pre-existing count from step 3.
+5. Send the event. On `EAGAIN`: atomically update the per-session drop file to `previous_count + 1` by writing the new integer to a temp file in the same directory and `rename()`-ing it over the session file, then release the lock and exit.
+6. On successful send: unlink the per-session drop file if one existed, release the lock, and exit. The daemon, on receiving an event with `drop_count > 0`, synthesises an `events_dropped` receipt in the chain exactly as ADR-0010 specifies for the in-memory case.
 
-The "leave-until-success" ordering plus the temp-file-and-rename update guarantee that a crash or kill between any two steps cannot lose the count: the file is only removed after the daemon has acknowledged the bundled `drop_count`, and `EAGAIN` updates are atomic with respect to power loss.
+The "leave-until-success" ordering plus the temp-file-and-rename update guarantee that a crash or kill between any two steps cannot lose the count: the file is only removed after the daemon has acknowledged the bundled `drop_count`, and `EAGAIN` updates are atomic with respect to power loss. The advisory lock prevents concurrent emitters in the same session from both reading count=N, both successfully sending (each carrying `drop_count=N`), and the second emitter unlinking the file that the first had just written `N+1` to. With the local socket sending sub-millisecond, the lock window is tight enough that the 50ms timeout fallback is a true edge case rather than a hot path.
 
 ### IPC contract additions
 
 This channel introduces two additions to the ADR-0010 emitter→daemon IPC contract — one channel-specific, one cross-channel:
 
-- `tool_use_id: string` — **channel-specific**, required on `PreToolUse` and `PostToolUse` events for `claude_code_hook`. The per-invocation identifier from Claude Code's hook payload (Anthropic's `tool_use_id` / `call_id`). MUST be surfaced unchanged on both events for the same tool call; the daemon uses it together with `session_id` and tool identity to pair Pre/Post deterministically. Other channels are not required to populate this field.
+- `tool_use_id: string` — **channel-specific**, required on `PreToolUse` and `PostToolUse` events for `claude_code_hook`. The emitter MUST forward the top-level `tool_use_id` field from Claude Code's hook input payload (see [Claude Code hooks documentation](https://code.claude.com/docs/en/hooks)). Per the documented schema, `tool_use_id` is present on both `PreToolUse` and `PostToolUse` and remains constant across the pair for the same invocation; it is absent on `SessionStart` and `UserPromptSubmit`. The daemon uses it together with `session_id` to pair Pre/Post deterministically. Other channels are not required to populate this field.
 - `drop_count: non-negative integer` — **cross-channel**, optional, default 0, omitted when zero. Any emitter may set it. Existing emitters that hold the counter in memory may set this field instead of relying on a follow-up flush, simplifying their implementation. This is a strict superset of the current contract.
 
 A residual loss window remains, narrower than but analogous to ADR-0010's: if the runtime directory itself is wiped between hook invocations (reboot, manual cleanup of `$XDG_RUNTIME_DIR`), pending drop counts for that session are lost. This is documented and considered acceptable — runtime-directory wipes already terminate the session in every meaningful sense.
+
+A separate concern is *file accumulation*. A session that ends with a dropped event (no successor to flush the count) leaves its drop file behind. Linux clears `$XDG_RUNTIME_DIR` at logout/reboot; macOS reaps stale entries from `$TMPDIR` via the OS's periodic tmp-cleanup; Windows `%LOCALAPPDATA%` has no equivalent automatic sweep. The emitter SHOULD opportunistically prune drop files older than 24 hours from the runtime drops directory — for example, on `SessionStart` firings (where the emitter would otherwise exit immediately) or as a best-effort step early in any invocation. A missed sweep cannot corrupt count integrity (older files belong to unrelated sessions) and only delays reclamation.
 
 ### Packaging
 
