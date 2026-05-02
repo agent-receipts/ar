@@ -1,4 +1,4 @@
-github.com/agent-receipts/ar/sdk/go v0.5.0 h1:N5tvD3t4gqyv3OTUrwDV1LaAS0ObrdjfAygj/A8gm8Y=
-github.com/agent-receipts/ar/sdk/go v0.5.0/go.mod h1:Y8j3xhKAyaJF7LEuo15IWZWAptOA6b489CI3OFbZC6s=
+github.com/agent-receipts/ar/sdk/go v0.6.0 h1:zSpXnUOJFWRBikQmT1brOaEVv68eiFsLQSp+ZPAgHxw=
+github.com/agent-receipts/ar/sdk/go v0.6.0/go.mod h1:Y8j3xhKAyaJF7LEuo15IWZWAptOA6b489CI3OFbZC6s=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
