@@ -3,7 +3,7 @@ title: CLI Commands
 description: Command reference for the MCP Proxy audit CLI.
 ---
 
-The MCP Proxy includes subcommands for querying and verifying the audit trail.
+The MCP Proxy includes subcommands for setup, diagnosis, and querying the audit trail.
 
 > The default `-db` and `-receipt-db` paths shown below resolve via Go's `os.UserHomeDir()`. On Unix and macOS this is `$HOME`; on Windows this uses the OS user home directory, typically `%USERPROFILE%`.
 
@@ -161,3 +161,72 @@ duration_ms            708       2489      16230 (ms)
 Columns with `-` indicate tool calls recorded before timing instrumentation was added. New calls will populate all phase columns automatically.
 
 The data shows that for a GitHub MCP server, upstream API latency dominates (about 716-947ms based on the upstream percentiles shown), while policy evaluation (2-5us) and receipt signing (0.8-2.4ms) add negligible overhead.
+
+## `mcp-proxy doctor`
+
+Diagnose proxy configuration: load and validate the policy rules file, summarise enabled rules by action (`pause`, `block`, `flag`), and optionally probe an approver URL for reachability.
+
+```bash
+mcp-proxy doctor                                    # validate built-in defaults
+mcp-proxy doctor -rules /path/to/rules.yaml         # validate a custom rules file
+mcp-proxy doctor -approver http://127.0.0.1:7778    # probe an approver URL
+mcp-proxy doctor -json                              # JSON output
+```
+
+| Flag | Description |
+|------|-------------|
+| `-rules` | Policy rules YAML to validate (default: built-in) |
+| `-approver` | Approver URL to probe for reachability (default: none) |
+| `-json` | Output as JSON |
+
+**Exit codes:** `0` if the configuration is healthy; `1` if any issues are reported.
+
+## `mcp-proxy init`
+
+One-command setup: creates `~/.agent-receipts/`, generates an Ed25519 signing keypair with correct permissions (private key `0600`, public key `0644`), initialises the receipt database, and prints a `claude_desktop_config.json` snippet to stdout.
+
+Safe to re-run — warns and skips key generation if files already exist (use `-force` to overwrite).
+
+```bash
+mcp-proxy init                              # generate keys for the "default" instance
+mcp-proxy init -name github                 # custom instance name
+mcp-proxy init -no-approval                 # omit -http from the printed snippet
+mcp-proxy init -http-port 9000              # custom approval listener port in snippet
+mcp-proxy init -force                       # overwrite existing key files
+```
+
+| Flag | Description |
+|------|-------------|
+| `-name` | Name for this proxy instance, used in filenames and the config snippet (default: `default`) |
+| `-no-approval` | Omit `-http` from the printed config snippet (no approval server) |
+| `-http-port` | Approval listener port written into the config snippet (default: `7778`) |
+| `-force` | Overwrite existing key files |
+
+## `mcp-proxy audit-secrets`
+
+Scan the audit database for values that match any built-in or custom redaction pattern. Useful after upgrading the proxy, adding new patterns, or as a periodic check that redaction is working as intended.
+
+```bash
+mcp-proxy audit-secrets                                       # scan with built-in patterns
+mcp-proxy audit-secrets -redact-patterns custom.yaml          # also scan custom patterns
+mcp-proxy audit-secrets -db /path/to/audit.db                 # specify audit DB path
+```
+
+| Flag | Description |
+|------|-------------|
+| `-db` | Audit database path (default: `$HOME/.agent-receipts/audit.db`) |
+| `-redact-patterns` | YAML file with additional patterns to scan for |
+
+If the database was encrypted at rest (proxy launched with `BEACON_ENCRYPTION_KEY`), set the same env var before running so the scanner can decrypt. Without the key, encrypted rows are reported as `encrypted-no-key` and counted as hits.
+
+Output format — one line per match:
+
+```
+audit_messages col=raw row=42 pattern=github_token
+audit_messages col=raw row=51 json-key=password
+audit_messages col=raw row=78 decrypt-error
+```
+
+**Exit codes:** `0` if no matches found; `1` if one or more matches found; `2` on error.
+
+If matches are found, the raw token values are already in the database. Because the audit log is append-only, the recommended action is to **rotate the secret** and consider the old value compromised.
