@@ -18,19 +18,26 @@ The Python SDK (`agent-receipts`) provides tools for creating, signing, and veri
 ## Quick example
 
 ```python
-from agent_receipts import create_receipt, sign_receipt
+from agent_receipts import CreateReceiptInput, create_receipt, sign_receipt
 
 receipt = create_receipt(
-    issuer={"id": "did:agent:my-agent"},
-    action={
-        "type": "filesystem.file.read",
-        "risk_level": "low",
-    },
-    principal={"id": "did:user:alice"},
-    outcome={"status": "success"},
+    CreateReceiptInput(
+        issuer={"id": "did:agent:my-agent"},
+        principal={"id": "did:user:alice"},
+        action={
+            "type": "filesystem.file.read",
+            "risk_level": "low",
+        },
+        outcome={"status": "success"},
+        chain={
+            "sequence": 1,
+            "previous_receipt_hash": None,
+            "chain_id": "chain_session-1",
+        },
+    )
 )
 
-signed = sign_receipt(receipt, private_key)
+signed = sign_receipt(receipt, private_key, "did:agent:my-agent#key-1")
 ```
 
 See [Installation](/sdk-py/installation/) to get started.
