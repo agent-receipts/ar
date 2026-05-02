@@ -27,7 +27,7 @@ Agent Receipts are hash-chained into tamper-evident sequences. This page describ
   <line x1="248" y1="41" x2="278" y2="41" stroke="#7c93f5" stroke-width="1" marker-end="url(#sign-arrow)"/>
   <rect x="286" y="24" width="100" height="34" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
   <text x="336" y="38" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Ed25519 sign</text>
-  <text x="336" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">z-base58btc</text>
+  <text x="336" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">u-base64url</text>
   <line x1="386" y1="41" x2="416" y2="41" stroke="#7c93f5" stroke-width="1" marker-end="url(#sign-arrow)"/>
   <rect x="424" y="24" width="166" height="34" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
   <text x="507" y="45" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="10">Signed Receipt</text>
@@ -52,7 +52,7 @@ For hashing and signing, receipts must be serialized using the **JSON Canonicali
 
 ## Signing
 
-The issuer signs the canonical receipt (proof field excluded) with its Ed25519 private key. The signature is encoded as a multibase string (`z`-prefixed base58btc) and placed in `proof.proofValue`.
+The issuer signs the canonical receipt (proof field excluded) with its Ed25519 private key. The signature is encoded as a multibase string (`u`-prefixed base64url, no padding) and placed in `proof.proofValue`.
 
 ## Chain integrity verification
 
