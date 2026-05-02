@@ -81,7 +81,7 @@ An Agent Receipt is a JSON object conforming to W3C VC Data Model 2.0:
     "created": "2026-03-31T14:31:01Z",
     "verificationMethod": "did:agent:my-agent#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z..."
+    "proofValue": "u..."
   }
 }
 ```
@@ -119,7 +119,7 @@ Implementations may escalate but must not downgrade risk levels.
 
 1. Serialize receipt as RFC 8785 canonical JSON with proof field removed
 2. Issuer signs with Ed25519 private key
-3. Signature encoded as z-prefixed base58btc in proof.proofValue
+3. Signature encoded as u-prefixed base64url (no padding) in proof.proofValue
 4. Each receipt's previous_receipt_hash links to SHA-256 of previous receipt's canonical form
 5. Chain verified by checking signatures and hash links in sequence order
 

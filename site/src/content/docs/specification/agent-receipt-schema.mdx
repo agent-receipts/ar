@@ -123,7 +123,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
     "created": "2026-03-31T14:30:01Z",
     "verificationMethod": "did:agent:claude-cowork-instance-abc123#key-1",
     "proofPurpose": "assertionMethod",
-    "proofValue": "z..."
+    "proofValue": "u..."
   }
 }
 ```
@@ -232,7 +232,7 @@ Present when this chain was spawned by delegation from another agent. All fields
 | `created` | Yes | ISO 8601 datetime when the proof was created. |
 | `verificationMethod` | Yes | DID URL of the signing key. |
 | `proofPurpose` | Yes | Must be `"assertionMethod"`. |
-| `proofValue` | Yes | Multibase-encoded (`z`-prefixed base58btc) Ed25519 signature. |
+| `proofValue` | Yes | Multibase-encoded (`u`-prefixed base64url, no padding) Ed25519 signature. |
 
 ## JSON Schema
 

@@ -76,7 +76,7 @@ Before a receipt can be trusted, it needs a cryptographic signature proving the 
   <line x1="246" y1="30" x2="274" y2="30" stroke="#7c93f5" stroke-width="1" marker-end="url(#s-arrow)"/>
   <rect x="282" y="10" width="100" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
   <text x="332" y="27" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Ed25519 sign</text>
-  <text x="332" y="40" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">z-base58btc</text>
+  <text x="332" y="40" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">u-base64url</text>
   <line x1="382" y1="30" x2="410" y2="30" stroke="#7c93f5" stroke-width="1" marker-end="url(#s-arrow)"/>
   <rect x="418" y="10" width="172" height="40" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
   <text x="504" y="34" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="10">Signed Receipt</text>
@@ -86,7 +86,7 @@ Before a receipt can be trusted, it needs a cryptographic signature proving the 
 1. Start with the receipt fields (everything except `proof`)
 2. Serialize to **RFC 8785** canonical JSON — deterministic byte ordering
 3. Sign the canonical bytes with the issuer's **Ed25519** private key
-4. Encode the signature as **z-prefixed base58btc** and attach as `proof.proofValue`
+4. Encode the signature as **u-prefixed base64url** (no padding) and attach as `proof.proofValue`
 
 The same canonical bytes are also SHA-256 hashed to produce the link for the *next* receipt in the chain.
 
