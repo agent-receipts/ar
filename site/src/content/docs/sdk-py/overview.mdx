@@ -18,9 +18,16 @@ The Python SDK (`agent-receipts`) provides tools for creating, signing, and veri
 ## Quick example
 
 ```python
-from agent_receipts import CreateReceiptInput, create_receipt, sign_receipt
+from agent_receipts import (
+    CreateReceiptInput,
+    create_receipt,
+    generate_key_pair,
+    sign_receipt,
+)
 
-receipt = create_receipt(
+keys = generate_key_pair()
+
+unsigned = create_receipt(
     CreateReceiptInput(
         issuer={"id": "did:agent:my-agent"},
         principal={"id": "did:user:alice"},
@@ -37,7 +44,7 @@ receipt = create_receipt(
     )
 )
 
-signed = sign_receipt(receipt, private_key, "did:agent:my-agent#key-1")
+signed = sign_receipt(unsigned, keys.private_key, "did:agent:my-agent#key-1")
 ```
 
 See [Installation](/sdk-py/installation/) to get started.
