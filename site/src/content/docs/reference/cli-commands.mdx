@@ -179,7 +179,7 @@ mcp-proxy doctor -json                              # JSON output
 | `-approver` | Approver URL to probe for reachability (default: none) |
 | `-json` | Output as JSON |
 
-**Exit codes:** `0` if the configuration is healthy; `1` if any issues are reported.
+**Exit codes:** `0` if the configuration is healthy; `1` if any issues are reported; `2` on flag/usage errors.
 
 ## `mcp-proxy init`
 
@@ -202,6 +202,8 @@ mcp-proxy init -force                       # overwrite existing key files
 | `-http-port` | Approval listener port written into the config snippet (default: `7778`) |
 | `-force` | Overwrite existing key files |
 
+**Exit codes:** `0` on success; `1` on setup errors (home directory resolve, key write, DB init); `2` on invalid arguments (out-of-range `-http-port`, invalid `-name`) or flag/usage errors.
+
 ## `mcp-proxy audit-secrets`
 
 Scan the audit database for values that match any built-in or custom redaction pattern. Useful after upgrading the proxy, adding new patterns, or as a periodic check that redaction is working as intended.
@@ -222,10 +224,12 @@ If the database was encrypted at rest (proxy launched with `BEACON_ENCRYPTION_KE
 Output format — one line per match:
 
 ```
-audit_messages col=raw row=42 pattern=github_token
-audit_messages col=raw row=51 json-key=password
-audit_messages col=raw row=78 decrypt-error
+messages col=raw row=42 pattern=github_token
+tool_calls col=arguments row=51 json-key=password
+tool_calls col=result row=78 decrypt-error
 ```
+
+The scanner reads `messages.raw` (full JSON-RPC payloads) and `tool_calls.arguments` / `tool_calls.result` / `tool_calls.error` — the columns where redaction is applied at write time.
 
 **Exit codes:** `0` if no matches found; `1` if one or more matches found; `2` on error.
 
