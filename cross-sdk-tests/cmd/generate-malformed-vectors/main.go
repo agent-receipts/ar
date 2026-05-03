@@ -5,9 +5,11 @@
 // isolation: a regression in one SDK that silently accepts a malformed proof
 // (e.g. wrong multibase prefix) wouldn't fail any cross-SDK check.
 //
-// Each case carries a name, description, and a `mode` discriminator so the
-// per-SDK test driver knows which API to invoke (single-receipt verify vs
-// chain verify).
+// Receipt-level cases live in `receipts[]` and exercise Verify on a single
+// receipt; chain-level cases live in `chains[]` and exercise VerifyChain
+// over an ordered list. The JSON array a case lives in IS the discriminator
+// — there is no per-case `mode` field, and adding one would only duplicate
+// what the surrounding key already says.
 //
 // Usage: go run ./cmd/generate-malformed-vectors
 package main

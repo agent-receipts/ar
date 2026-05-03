@@ -93,6 +93,14 @@ function safeVerify(receipt: AgentReceipt, publicKey: string): boolean {
 	}
 }
 
+function safeVerifyChain(receipts: AgentReceipt[], publicKey: string): boolean {
+	try {
+		return verifyChain(receipts, publicKey).valid === true;
+	} catch {
+		return false;
+	}
+}
+
 function loadV020Vectors(): V020Vectors {
 	const path = resolve(
 		currentDir,
@@ -293,10 +301,7 @@ describe("cross-language: malformed corpus", () => {
 	it("rejects every malformed chain case", () => {
 		const v = loadMalformedVectors();
 		const accepted = v.chains
-			.filter(
-				({ receipts }) =>
-					verifyChain(receipts, v.keys.publicKey).valid === true,
-			)
+			.filter(({ receipts }) => safeVerifyChain(receipts, v.keys.publicKey))
 			.map(({ name }) => name);
 		expect(accepted).toEqual([]);
 	});
