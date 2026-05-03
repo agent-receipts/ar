@@ -58,15 +58,15 @@ Filter by action type and output JSON for downstream processing:
 npx @agnt-rcpt/openclaw receipts --action system.command.execute --json
 ```
 
-Use `jq` to find shell commands that reference `rm`:
+Use `jq` to filter shell commands by risk level:
 
 ```bash
 npx @agnt-rcpt/openclaw receipts --action system.command.execute --json \
-  | jq '.receipts[] | select(.parameters_preview.command | strings | contains("rm"))'
+  | jq '.receipts[] | select(.risk == "high")'
 ```
 
-:::note[`parameters_preview` is empty by default]
-The `parameters_preview` field is only populated when `parameterPreview` is enabled in the plugin config. By default, only the parameter hash is stored. See the [Installation](/openclaw/installation/#parameter-preview) page for configuration options.
+:::note[Filtering on disclosed parameter content]
+The CLI's `--json` projection includes `id`, `action`, `risk`, `target`, `status`, `sequence`, `chain_id`, and `timestamp` — not `parameters_disclosure`. To inspect disclosed parameter content for a specific receipt, use `inspect <id>` for the full receipt body (`parameters_disclosure` is only present when `parameterDisclosure` is enabled in the plugin config — see the [Installation](/openclaw/installation/#parameter-disclosure) page). Extending the `--json` projection to include `parameters_disclosure` is tracked in [#315](https://github.com/agent-receipts/ar/issues/315).
 :::
 
 ---

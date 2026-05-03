@@ -11,7 +11,7 @@ The Agent Receipt Protocol defines a standard format for cryptographically signe
 
 ## Design principles
 
-1. **Privacy-preserving by default.** Parameters are hashed, not stored in plaintext. The human principal controls what is disclosed. Sensitive data never appears in receipts — only hashes and user-controlled previews.
+1. **Privacy-preserving by default.** Parameters are hashed, not stored in plaintext. The operator controls what is disclosed. Sensitive data never appears in receipts — only hashes and operator-controlled disclosures.
 
 2. **Built on existing standards.** W3C Verifiable Credentials Data Model 2.0 for structure. Ed25519 for signing. SHA-256 for hashing. RFC 3161 for trusted timestamps. No novel cryptographic primitives.
 
