@@ -44,9 +44,24 @@ func (f *File) Init() error {
 		return errors.New("keysource/file: VerificationMethodID is required")
 	}
 
-	info, err := os.Stat(f.Path)
+	// Lstat (not Stat) so we observe a symlink at Path itself rather than
+	// following it. A symlink-swap attack pointing at attacker-controlled
+	// content would otherwise have its target's mode reported here. We also
+	// require a regular file: a FIFO would block reads, a device file would
+	// be wrong, and a directory makes no sense. Operators with legitimate
+	// reasons to indirect (e.g. /etc/agentreceipts/signing.key being a
+	// symlink to a Vault-managed file) should resolve the symlink before
+	// pointing AGENTRECEIPTS_KEY at the result, or wait for the
+	// ADR-0015 KMS adapters that don't read the key from disk at all.
+	info, err := os.Lstat(f.Path)
 	if err != nil {
 		return fmt.Errorf("stat key file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf(
+			"keysource/file: refusing to load %s — not a regular file (mode %s); resolve symlinks and avoid FIFO/device/directory paths",
+			f.Path, info.Mode(),
+		)
 	}
 	if f.RequireOwnerOnly && info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf(

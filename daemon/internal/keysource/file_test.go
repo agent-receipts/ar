@@ -110,6 +110,22 @@ func TestFile_SignBeforeInitErrors(t *testing.T) {
 	}
 }
 
+func TestFile_RejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.key")
+	link := filepath.Join(dir, "link.key")
+	if err := os.WriteFile(target, []byte("does not need to be a real key — Init must reject before parsing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	ks := NewFile(link, "did:test#k1")
+	if err := ks.Init(); err == nil {
+		t.Error("expected Init to reject a symlink at the key path")
+	}
+}
+
 func TestFile_TeardownClearsKey(t *testing.T) {
 	path := writeTestKey(t, 0o600)
 	ks := NewFile(path, "did:test#k1")

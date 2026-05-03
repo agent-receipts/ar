@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // MaxFrameSize caps a single emitter frame at 1 MiB. Larger frames are
@@ -77,12 +78,22 @@ func Listen(opts Options) (*Listener, error) {
 	if err := os.MkdirAll(filepath.Dir(opts.Path), 0o750); err != nil {
 		return nil, fmt.Errorf("create socket dir: %w", err)
 	}
-	// Remove a stale socket. ENOENT is fine. If the path exists but is NOT
-	// a Unix socket, refuse — a misconfigured AGENTRECEIPTS_SOCKET pointing
-	// at a regular file or directory must not silently delete it.
+	// If the path exists, it's one of three cases:
+	//   1. A non-socket file/dir — refuse, never silently delete a regular
+	//      file or directory pointed at by a misconfigured socket path.
+	//   2. A live socket with a daemon already accepting on it — refuse,
+	//      removing it would orphan that daemon's pathname (its listener
+	//      keeps running, but no client can find it).
+	//   3. A stale socket (file present, no listener) — safe to remove.
 	if info, err := os.Lstat(opts.Path); err == nil {
 		if info.Mode()&os.ModeSocket == 0 {
 			return nil, fmt.Errorf("socket: refusing to remove non-socket file at %s (mode %s); pick a different AGENTRECEIPTS_SOCKET", opts.Path, info.Mode())
+		}
+		// Probe-connect with a short timeout. A success means another daemon
+		// is live; refuse and let the operator stop it explicitly.
+		if c, derr := net.DialTimeout("unix", opts.Path, 100*time.Millisecond); derr == nil {
+			c.Close()
+			return nil, fmt.Errorf("socket: another daemon is already listening on %s; stop it before starting a second instance", opts.Path)
 		}
 		if err := os.Remove(opts.Path); err != nil {
 			return nil, fmt.Errorf("remove stale socket: %w", err)

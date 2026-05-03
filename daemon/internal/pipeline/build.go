@@ -30,6 +30,15 @@ const SupportedFrameVersion = "1"
 // EmitterFrame is the JSON payload emitters send. Mirrors ADR-0010 §"Schema
 // split". Fields the emitter does not populate are zero/empty; the daemon
 // fills in the authoritative chain/peer/id/ts_recv before signing.
+//
+// Phase 1 limitation: Input and Output are recognised in the schema (so the
+// wire format already matches what Phase 2 emitters will send) but the daemon
+// does not yet hash them into action.parameters_hash / outcome.response_hash.
+// Accepting non-empty Input/Output today would silently drop the payload from
+// the receipt and mislead emitter authors into thinking tool I/O is being
+// committed when it isn't. validateFrame rejects frames that populate them
+// until Phase 2 wires the canonical-hash path through receipt.Create's
+// ResponseBody and an explicit ParametersHash computation.
 type EmitterFrame struct {
 	Version   string          `json:"v"`
 	TsEmit    string          `json:"ts_emit"`
@@ -115,6 +124,14 @@ func validateFrame(f *EmitterFrame) error {
 	}
 	if f.Decision == "" {
 		return fmt.Errorf("missing decision")
+	}
+	// Phase 1 hard-rejects Input/Output rather than silently dropping them —
+	// see EmitterFrame doc comment.
+	if len(f.Input) > 0 {
+		return fmt.Errorf("input not supported in Phase 1 (would be silently dropped); see EmitterFrame doc")
+	}
+	if len(f.Output) > 0 {
+		return fmt.Errorf("output not supported in Phase 1 (would be silently dropped); see EmitterFrame doc")
 	}
 	return nil
 }

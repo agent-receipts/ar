@@ -1,8 +1,13 @@
-//go:build integration
+//go:build integration && (linux || darwin)
 
 // Integration tests that exercise the daemon end-to-end: real Unix socket,
 // real SQLite store, real signing key, and real OS peer-credential capture.
 // Run with `go test -tags=integration ./...`.
+//
+// The build tag also gates on linux || darwin: the daemon's runtime gate
+// rejects other OSes, and the test fixtures use unix-only APIs (os.Getuid,
+// AF_UNIX sockets). Including (linux || darwin) keeps `go test -tags=integration`
+// portable on Windows-builders that may run package-level vet/build.
 package daemon_test
 
 import (

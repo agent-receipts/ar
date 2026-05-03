@@ -218,6 +218,8 @@ func TestProcess_RejectsMalformedFrames(t *testing.T) {
 		{"missing tool.name", `{"v":"1","session_id":"s","channel":"sdk","tool":{},"decision":"allowed"}`},
 		{"missing decision", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"}}`},
 		{"unknown decision", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"maybe"}`},
+		{"input present (Phase 1 forbidden)", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":{"x":1}}`},
+		{"output present (Phase 1 forbidden)", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","output":{"y":2}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
