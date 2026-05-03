@@ -31,7 +31,7 @@ The daemon reads its signing key from a configurable backend rather than a fixed
 
 Backends in scope (adapters land in follow-on issues, not this ADR):
 
-- **File** (default) — current behaviour, `~/.agent-receipts/signing.key` with `0600`. Solo-dev tier.
+- **File** (default) — current behaviour, `~/.agent-receipts/signing.pem` with `0600` (and `signing.pem.pub` `0644`), matching the existing mcp-proxy `init` convention. Solo-dev tier.
 - **PKCS#11** — HSM, smartcard, or TPM via the standard interface.
 - **Cloud KMS** — AWS KMS, GCP KMS, Azure Key Vault. Key never leaves the KMS; daemon submits canonical bytes for signing each receipt.
 
@@ -69,7 +69,7 @@ Signing the rotation event with the outgoing key is the standard cryptographic-r
 The daemon writes a subset of events to an operator-configured external sink. Two event types:
 
 - **`rotation`** — every `key_rotated` receipt is mirrored to the sink immediately after it is appended to the local chain.
-- **`checkpoint`** — at operator-configured intervals (default: hourly), the current `(seq, tip_hash, public_key_fingerprint)` triple is written to the sink. `tip_hash` is the SHA-256 (`u`-prefixed base64url, per ADR-0001) of the canonical bytes of the most recently appended receipt itself — not its `prev_hash`. The checkpoint commits *to* the tip; a verifier comparing the local chain against the most recent anchored checkpoint detects tail truncation as a mismatch on either `seq` or `tip_hash`.
+- **`checkpoint`** — at operator-configured intervals (default: hourly), the current `(issuer.id, seq, tip_hash, public_key_fingerprint)` tuple is written to the sink. `issuer.id` identifies the daemon emitting the checkpoint, so checkpoints from multiple daemons (multi-host or test environments) cannot be conflated. `tip_hash` is the SHA-256 (`u`-prefixed base64url, per ADR-0001) of the canonical bytes of the most recently appended receipt itself — not its `prev_hash`. The checkpoint commits *to* the tip; a verifier comparing the local chain against the most recent anchored checkpoint detects tail truncation as a mismatch on `issuer.id`-scoped `seq` or `tip_hash`.
 
 Transport-agnostic. The sink interface is a single operation:
 
@@ -77,13 +77,20 @@ Transport-agnostic. The sink interface is a single operation:
 Write(event_type, payload bytes) → error
 ```
 
-Adapters land in follow-on issues; representative targets: webhook POST, S3 PUT with object-lock, transparency log append, customer SIEM ingestion endpoint, syslog over TLS.
+`payload bytes` MUST be the same RFC 8785 canonical-JSON serialization the receipt itself uses (per ADR-0002, ADR-0005, and ADR-0009), so any SDK or sink adapter produces byte-identical anchor payloads for the same logical event. This is the same canonicalization rule that makes cross-SDK signature verification work; relaxing it for anchors would dissolve verifier interop with the sink.
+
+**A sink is not just any endpoint.** To qualify as an anchor (rather than mere transport), the sink MUST provide:
+
+- **Append-only retention** — a compromised daemon writing later events cannot rewrite or delete earlier entries. Object-lock on S3, write-only logs, transparency-log Merkle trees, and managed SIEM ingestion all qualify; a plain webhook to an attacker-mutable endpoint does not.
+- **Sink-controlled ordering or timestamps** — the daemon does not get to choose the entry's position or recorded time; the sink does. This is what makes "the daemon does not control the anchor" structurally true.
+
+Adapters land in follow-on issues; representative targets that meet both properties: S3 PUT with object-lock, transparency log append, customer SIEM ingestion endpoint with sequence-stamping, syslog over TLS to an immutable log host. A bare webhook POST without these properties is a transport, not an anchor — operators who want the post-compromise integrity claim must choose a sink that delivers them.
 
 **Failure semantics on sink unavailability — operator-configurable, not architectural.** Three modes:
 
 | Mode | Behaviour | When to choose |
 |---|---|---|
-| `block` | Daemon refuses to accept new emitter events until the sink succeeds. | Maximum integrity, lowest availability. Compliance-driven deployments where a discoverability gap is unacceptable. |
+| `block` | Daemon stops accepting new events when the sink is unavailable. Per ADR-0010, emitters are non-blocking and drop events via the `EAGAIN` mechanism while the daemon refuses; those drops are recorded as `events_dropped` synthetic receipts in the local chain. | Maximum integrity in the sense of *no silent loss* — gaps appear in the chain rather than absent. Lowest availability. Compliance-driven deployments where any discoverability gap MUST be in-chain rather than untracked. |
 | `queue` (default) | Daemon writes the event to the chain and a local outbox; outbox flushes when the sink recovers. Operator alerts on outbox depth. | Balanced default. Tolerates transient sink outages — events in the outbox are tracked locally but **not yet anchored** until the sink acknowledges. Operators alert on outbox depth so prolonged queueing is visible. |
 | `drop` | Daemon writes the event to the chain only, logs the sink failure, continues. | Available even when the sink is permanently down. Operator explicitly accepts a discoverability gap. |
 
