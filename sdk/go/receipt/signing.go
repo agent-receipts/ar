@@ -15,6 +15,12 @@ import (
 // Integrity default base58btc (z).
 const multibaseBase64URL = "u"
 
+// ProofTypeEd25519Signature2020 is the only proof.type the spec accepts.
+// Verifiers MUST reject any other value, even when proofValue happens to be a
+// valid Ed25519 signature, so that consumers cannot be tricked into believing
+// a receipt was signed under a different scheme.
+const ProofTypeEd25519Signature2020 = "Ed25519Signature2020"
+
 // GenerateKeyPair generates an Ed25519 key pair and returns PEM-encoded keys.
 func GenerateKeyPair() (KeyPair, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -67,7 +73,7 @@ func Sign(unsigned UnsignedAgentReceipt, privateKeyPEM string, verificationMetho
 		IssuanceDate:      unsigned.IssuanceDate,
 		CredentialSubject: unsigned.CredentialSubject,
 		Proof: Proof{
-			Type:               "Ed25519Signature2020",
+			Type:               ProofTypeEd25519Signature2020,
 			Created:            now,
 			VerificationMethod: verificationMethod,
 			ProofPurpose:       "assertionMethod",
@@ -78,6 +84,9 @@ func Sign(unsigned UnsignedAgentReceipt, privateKeyPEM string, verificationMetho
 
 // Verify checks the Ed25519 signature on a signed receipt.
 func Verify(r AgentReceipt, publicKeyPEM string) (bool, error) {
+	if r.Proof.Type != ProofTypeEd25519Signature2020 {
+		return false, fmt.Errorf("unsupported proof type %q: only %s is accepted", r.Proof.Type, ProofTypeEd25519Signature2020)
+	}
 	if len(r.Proof.ProofValue) < 2 {
 		return false, errors.New("proof value too short")
 	}

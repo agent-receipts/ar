@@ -65,14 +65,11 @@ func main() {
 		fail("sign sample: %v", err)
 	}
 
-	// NOTE: Mutating proof.type alone (e.g. to RsaSignature2018) is NOT included
-	// here. None of the SDKs currently inspect proof.type — they only validate
-	// the multibase prefix and the Ed25519 signature against the canonical
-	// payload. proof.type lives outside the signed bytes, so the signature stays
-	// valid. That is a separate hardening gap (the verifier should reject any
-	// proof.type other than "Ed25519Signature2020") and should be tracked as its
-	// own task.
 	receiptCases := []receiptCase{
+		mustCase("wrong_proof_type",
+			"proof.type changed from Ed25519Signature2020 to RsaSignature2018; verifiers MUST reject any other proof type (the field lives outside the signed bytes, so the Ed25519 signature still checks — this case guards the explicit type check in verify)",
+			mutateProofType(signedBase, "RsaSignature2018")),
+
 		mustCase("mutated_action_type",
 			"action.type changed after signing — canonical bytes no longer match the signature",
 			mutateActionType(signedBase, "filesystem.file.delete")),
@@ -144,6 +141,12 @@ func signSample(privateKey string) (receipt.AgentReceipt, error) {
 	}
 	signed.Proof.Created = fixedTimestamp
 	return signed, nil
+}
+
+func mutateProofType(base receipt.AgentReceipt, newType string) receipt.AgentReceipt {
+	out := cloneReceipt(base)
+	out.Proof.Type = newType
+	return out
 }
 
 func mutateActionType(base receipt.AgentReceipt, newType string) receipt.AgentReceipt {

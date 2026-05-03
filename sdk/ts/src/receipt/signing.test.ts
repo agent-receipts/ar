@@ -106,6 +106,19 @@ describe("verifyReceipt", () => {
 		expect(verifyReceipt(signed, publicKey)).toBe(false);
 	});
 
+	it("returns false when proof.type is not Ed25519Signature2020", () => {
+		// proof.type lives outside the signed bytes, so the Ed25519 signature
+		// is still mathematically valid. verifyReceipt MUST still reject the
+		// receipt — otherwise an attacker could swap the type to claim a
+		// different scheme.
+		const { publicKey, privateKey } = generateKeyPair();
+		const unsigned = makeUnsignedReceipt();
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+		signed.proof.type = "RsaSignature2018";
+
+		expect(verifyReceipt(signed, publicKey)).toBe(false);
+	});
+
 	it("returns false when verified with a different key", () => {
 		const signer = generateKeyPair();
 		const other = generateKeyPair();

@@ -30,6 +30,12 @@ from agent_receipts.receipt.types import (
 MULTIBASE_BASE64URL = "u"
 """Multibase prefix for base64url (no padding) encoding."""
 
+PROOF_TYPE_ED25519_SIGNATURE_2020 = "Ed25519Signature2020"
+"""The only proof.type the spec accepts. Verifiers MUST reject any other
+value so that consumers cannot be tricked into believing a receipt was
+signed under a different scheme.
+"""
+
 
 @dataclass
 class KeyPair:
@@ -86,7 +92,7 @@ def sign_receipt(
     created = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
     proof = Proof(
-        type="Ed25519Signature2020",
+        type=PROOF_TYPE_ED25519_SIGNATURE_2020,
         created=created,
         verificationMethod=verification_method,
         proofPurpose="assertionMethod",
@@ -101,6 +107,8 @@ def sign_receipt(
 
 def verify_receipt(receipt: AgentReceipt, public_key: str) -> bool:
     """Verify the Ed25519 signature on a signed receipt."""
+    if receipt.proof.type != PROOF_TYPE_ED25519_SIGNATURE_2020:
+        return False
     proof_value = receipt.proof.proofValue
     if len(proof_value) < 2 or not proof_value.startswith(MULTIBASE_BASE64URL):
         return False

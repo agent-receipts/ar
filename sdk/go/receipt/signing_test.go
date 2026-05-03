@@ -107,6 +107,35 @@ func TestSignRejectsGarbagePEM(t *testing.T) {
 	}
 }
 
+func TestVerifyRejectsWrongProofType(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	unsigned := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 1, ChainID: "chain-1"},
+	})
+	signed, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// proof.type lives outside the signed bytes, so swapping it here leaves
+	// the Ed25519 signature mathematically valid. Verify MUST still reject
+	// the receipt — a verifier that ignores proof.type lets attackers swap in
+	// a different scheme name and pass off a forged-but-structurally-valid
+	// receipt.
+	signed.Proof.Type = "RsaSignature2018"
+
+	valid, err := Verify(signed, kp.PublicKey)
+	if err == nil {
+		t.Error("expected error for wrong proof.type")
+	}
+	if valid {
+		t.Error("expected Verify=false for wrong proof.type")
+	}
+}
+
 func TestVerifyRejectsEmptyProofValue(t *testing.T) {
 	kp, _ := GenerateKeyPair()
 	unsigned := Create(CreateInput{
