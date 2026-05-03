@@ -171,6 +171,42 @@ func TestProcess_AdvancesSequenceAndPrevHash(t *testing.T) {
 	}
 }
 
+func TestProcess_RiskLevelFromTaxonomy(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	// The daemon constructs action.type as "<channel>.<server>.<name>" or
+	// "<channel>.<name>". None of those match the built-in taxonomy, so
+	// receipts MUST come out as RiskMedium (UnknownAction's risk) rather
+	// than RiskLow (the previous hardcoded default).
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatal(err)
+	}
+	chainReceipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := chainReceipts[0].CredentialSubject.Action.RiskLevel, receipt.RiskMedium; got != want {
+		t.Errorf("unknown action_type risk = %q, want %q (taxonomy unknown default)", got, want)
+	}
+}
+
+func TestProcess_AcceptsExplicitNullInputOutput(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	// "input": null and "output": null are the documented Phase 1 wire form
+	// (see daemon/README.md). They MUST be accepted as equivalent to absent.
+	payload := []byte(`{"v":"1","ts_emit":"2026-05-03T00:00:00Z","session_id":"s","channel":"sdk","tool":{"name":"noop"},"input":null,"output":null,"decision":"allowed"}`)
+	if err := p.Process(socket.Frame{Payload: payload}); err != nil {
+		t.Fatalf("frame with explicit null input/output should be accepted: %v", err)
+	}
+}
+
 func TestProcess_DaemonControlsAllTimestamps(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)
@@ -220,6 +256,7 @@ func TestProcess_RejectsMalformedFrames(t *testing.T) {
 		{"unknown decision", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"maybe"}`},
 		{"input present (Phase 1 forbidden)", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":{"x":1}}`},
 		{"output present (Phase 1 forbidden)", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","output":{"y":2}}`},
+		{"input as primitive (Phase 1 forbidden)", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":"hello"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -23,6 +23,15 @@ go test ./...                     # unit tests
 go test -tags=integration ./...   # integration tests (real socket, real DB)
 ```
 
+Build from a clone of the monorepo: the repo-root `go.work` wires the in-tree
+`sdk/go` so `go build` from `daemon/` picks up `ReceiptStore.GetChainTail`.
+
+`go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@latest`
+is **not yet supported**: the daemon depends on `sdk/go.GetChainTail`, which
+is not in the latest published `sdk/go` tag (`v0.6.0`). Standalone install
+becomes possible once the next `sdk/go` tag is released and a follow-up bumps
+the require in `daemon/go.mod`.
+
 ## Run
 
 The daemon takes config from flags (preferred) or environment variables. All

@@ -2,6 +2,16 @@ module github.com/agent-receipts/ar/daemon
 
 go 1.26.1
 
+// The pinned sdk/go version (v0.6.0) is the latest published tag at the time
+// this module landed. Phase 1 also introduced ReceiptStore.GetChainTail in
+// sdk/go, which is NOT in v0.6.0 — so standalone `go install` of this daemon
+// is not yet possible. The repo-root go.work resolves the in-tree sdk/go for
+// monorepo builds and CI. The follow-up release of sdk/go (the next semver
+// tag from .github/workflows/publish-go.yml) ships the new symbol, and a
+// small follow-up PR will bump this require accordingly.
+//
+// Tracked with the rest of Phase 2 sequencing in
+// https://github.com/agent-receipts/ar/issues/236.
 require (
 	github.com/agent-receipts/ar/sdk/go v0.6.0
 	golang.org/x/sys v0.43.0

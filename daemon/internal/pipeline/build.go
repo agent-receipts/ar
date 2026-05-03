@@ -4,6 +4,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/agent-receipts/ar/daemon/internal/socket"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
+	"github.com/agent-receipts/ar/sdk/go/taxonomy"
 )
 
 // multibaseBase64URL matches sdk/go/receipt/signing.go: receipts use base64url
@@ -125,15 +127,26 @@ func validateFrame(f *EmitterFrame) error {
 	if f.Decision == "" {
 		return fmt.Errorf("missing decision")
 	}
-	// Phase 1 hard-rejects Input/Output rather than silently dropping them —
-	// see EmitterFrame doc comment.
-	if len(f.Input) > 0 {
+	// Phase 1 hard-rejects non-null Input/Output rather than silently dropping
+	// them — see EmitterFrame doc comment. JSON null is treated as equivalent
+	// to omitted, since "v":"1","input":null is the documented wire form.
+	if hasJSONPayload(f.Input) {
 		return fmt.Errorf("input not supported in Phase 1 (would be silently dropped); see EmitterFrame doc")
 	}
-	if len(f.Output) > 0 {
+	if hasJSONPayload(f.Output) {
 		return fmt.Errorf("output not supported in Phase 1 (would be silently dropped); see EmitterFrame doc")
 	}
 	return nil
+}
+
+// hasJSONPayload reports whether raw is a JSON value other than null.
+// Whitespace and the literal "null" both count as no-payload.
+func hasJSONPayload(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return false
+	}
+	return !bytes.Equal(trimmed, []byte("null"))
 }
 
 func (p *Pipeline) buildAndSign(
@@ -181,6 +194,14 @@ func (p *Pipeline) buildAndSign(
 		disclosure["error"] = f.Error
 	}
 
+	// Risk derives from the taxonomy. Daemon-constructed action types like
+	// "mcp_proxy.github.list_repos" do not match any built-in entry, so
+	// ResolveActionType falls back to UnknownAction (RiskMedium). That's the
+	// safer default than always emitting RiskLow — Phase 2 emitters that
+	// know the taxonomic action type can override it via the action.type
+	// field once the emitter SDKs land.
+	risk := taxonomy.ResolveActionType(actionType).RiskLevel
+
 	unsigned := receipt.Create(receipt.CreateInput{
 		Issuer: receipt.Issuer{
 			ID:        p.IssuerID,
@@ -191,7 +212,7 @@ func (p *Pipeline) buildAndSign(
 		Action: receipt.Action{
 			Type:                 actionType,
 			ToolName:             f.Tool.Name,
-			RiskLevel:            receipt.RiskLow,
+			RiskLevel:            risk,
 			Timestamp:            now,
 			ParametersDisclosure: disclosure,
 		},
