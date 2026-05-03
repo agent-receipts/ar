@@ -66,7 +66,7 @@ npx @agnt-rcpt/openclaw receipts --action system.command.execute --json \
 ```
 
 :::note[Filtering on disclosed parameter content]
-The CLI's `--json` projection includes `id`, `action`, `risk`, `target`, `status`, `sequence`, `chain_id`, and `timestamp` — not `parameters_disclosure`. To inspect disclosed parameter content for a specific receipt, use `inspect <id>` for the full receipt body (`parameters_disclosure` is only present when `parameterDisclosure` is enabled in the plugin config — see the [Installation](/openclaw/installation/#parameter-disclosure) page). Extending the `--json` projection to include `parameters_disclosure` is tracked in [#315](https://github.com/agent-receipts/ar/issues/315).
+The CLI's `--json` projection includes `id`, `action`, `risk`, `target`, `status`, `sequence`, `chain_id`, and `timestamp` — not `parameters_disclosure`. To read disclosed parameter content for a specific receipt, use `export --id <urn>` to fetch the full receipt body (see [`export`](#export) below). `parameters_disclosure` is only present when `parameterDisclosure` is enabled in the plugin config — see the [Installation](/openclaw/installation/#parameter-disclosure) page.
 :::
 
 ---
