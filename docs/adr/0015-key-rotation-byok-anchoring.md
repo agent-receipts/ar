@@ -46,8 +46,9 @@ When the daemon rotates its signing key, a `key_rotated` synthetic receipt is ap
 | Field | Type | Description |
 |---|---|---|
 | `event_type` | string | Constant `"key_rotated"` |
-| `old_key_fingerprint` | string | SHA-256 of the outgoing public key (raw bytes, see "Fingerprint canonical form" below), multibase-encoded `u`-prefixed base64url (per ADR-0001 encoding choice) |
-| `new_key_fingerprint` | string | Same encoding, of the incoming public key |
+| `new_public_key` | string | The *incoming* public key inline. Raw key bytes per the algorithm's canonical encoding (Ed25519: 32 bytes per RFC 8032 §5.1.5), multibase-encoded `u`-prefixed base64url (per ADR-0001 encoding choice). This field is what verifiers consume to validate subsequent receipts; it is bound to the outgoing key by the rotation event's signature (`signed_with: "old"`). |
+| `old_key_fingerprint` | string | SHA-256 of the outgoing public key (raw bytes, see "Fingerprint canonical form" below), multibase-encoded `u`-prefixed base64url. Index field, not a substitute for the outgoing key material — the outgoing key is resolved via the receipt envelope's `proof.verificationMethod` (or, for the very first rotation, the genesis key registered out-of-band). |
+| `new_key_fingerprint` | string | Same encoding, of the incoming public key. Index field for fast chain traversal; redundant with `new_public_key` but cheap to carry and useful for offline lookup. |
 | `old_algorithm` | string | Algorithm tag of the outgoing key (e.g. `"ed25519"`). Used to verify the rotation event's own signature, since `signed_with: "old"`. |
 | `new_algorithm` | string | Algorithm tag of the incoming key (e.g. `"ed25519"`). Used to verify subsequent receipts. In same-algorithm rotations equal to `old_algorithm`; differs only across cross-algorithm migrations (e.g. Ed25519 → ML-DSA per [#32](https://github.com/agent-receipts/ar/issues/32)). |
 | `signed_with` | string | Constant `"old"` — the rotation event itself is signed with the *outgoing* key, anchoring the transition to the key being retired |
@@ -56,11 +57,11 @@ When the daemon rotates its signing key, a `key_rotated` synthetic receipt is ap
 
 The next receipt after a `key_rotated` event is signed with the new key. Verifiers chain through rotations by:
 
-1. Resolving `old_key_fingerprint` via the configured key registry (DID per ADR-0007, file, or KMS reference) to obtain the outgoing public key, then verifying the `key_rotated` event's signature with that public key under `old_algorithm`.
-2. Resolving `new_key_fingerprint` via the same registry to obtain the incoming public key.
+1. Obtaining the outgoing public key from the receipt envelope's `proof.verificationMethod` (DID URL per ADR-0007, or equivalent) and verifying the `key_rotated` event's signature with that public key under `old_algorithm`. (`old_key_fingerprint` is checked against the outgoing key as a sanity index, not used for resolution.)
+2. Reading the incoming public key directly from the rotation event's `new_public_key` field. The outgoing key has just signed this field, so by step 1's verification it is now bound to the previous chain segment — no separate resolution step is required.
 3. Treating subsequent receipts as signed by the incoming public key under `new_algorithm`, until the next `key_rotated` event.
 
-Rotation events SHOULD carry a `proof.verificationMethod` (DID URL or equivalent) that resolves to the outgoing public key, mirroring the receipt envelope. The `old_key_fingerprint` / `new_key_fingerprint` fields exist for fast chain-traversal indexing and for offline verification when DID resolution is unavailable; they are not a substitute for a resolvable verification method when one can be provided.
+The rotation event is therefore a self-contained witness of the key transition: anyone with the chain plus the originating verification method can chain through arbitrary rotations without consulting an external key registry. Fingerprints exist for fast chain-traversal indexing and for cross-checking the inline public key bytes; they are not the resolution path. The genesis (first) signing key still needs to be registered out-of-band — there is no rotation event that introduces it — and that registration is what the very first receipt's `proof.verificationMethod` resolves against.
 
 Signing the rotation event with the outgoing key is the standard cryptographic-rotation idiom but it is also the failure mode if the outgoing key was already compromised at the moment of rotation: a compromised daemon could forge a rotation event that "retires" the legitimate key in favour of an attacker-controlled key. This is why **rotation events MUST be mirrored to the external anchor** (next section) — the anchor is the only construct that prevents an attacker from rewriting the rotation history alongside the receipt history.
 
@@ -70,6 +71,8 @@ The daemon writes a subset of events to an operator-configured external sink. Tw
 
 - **`rotation`** — every `key_rotated` receipt is mirrored to the sink immediately after it is appended to the local chain.
 - **`checkpoint`** — at operator-configured intervals (default: hourly), the current `(issuer.id, seq, tip_hash, public_key_fingerprint)` tuple is written to the sink. `issuer.id` identifies the daemon emitting the checkpoint, so checkpoints from multiple daemons (multi-host or test environments) cannot be conflated. `tip_hash` is the SHA-256 of the canonical bytes of the most recently appended receipt itself — not its `prev_hash` — encoded as `sha256:<hex>` to match the repo's existing chain-hash format (`previous_receipt_hash`, `hashReceipt` helpers, `spec/AGENTS.md`). This means an anchored `tip_hash` can be passed straight to existing `ExpectedFinalHash`-style verifier APIs without re-encoding. The checkpoint commits *to* the tip; a verifier comparing the local chain against the most recent anchored checkpoint detects tail truncation as a mismatch on `issuer.id`-scoped `seq` or `tip_hash`.
+
+  Scope of the truncation guarantee: this mechanism detects tail truncation that occurred *before* the most recent anchored checkpoint. Receipts appended after the most recent checkpoint and then truncated remain invisible until the next checkpoint anchors — they live in the operator-controlled gap between checkpoint cadence (default: hourly) and detection. Operators who need a smaller invisible window shorten the cadence; the trade-off is sink write volume. Rotation events do not have this window because they are anchored individually as `rotation` events (see below), not via checkpoints.
 
 Transport-agnostic. The sink interface is a single operation:
 
@@ -86,15 +89,26 @@ Write(event_type, payload bytes) → error
 
 Adapters land in follow-on issues; representative targets that meet both properties: S3 PUT with object-lock, transparency log append, customer SIEM ingestion endpoint with sequence-stamping, syslog over TLS to an immutable log host. A bare webhook POST without these properties is a transport, not an anchor — operators who want the post-compromise integrity claim must choose a sink that delivers them.
 
-**Failure semantics on sink unavailability — operator-configurable, not architectural.** Three modes:
+**Failure semantics on sink unavailability — operator-configurable, not architectural.** Failure modes are per event type, because the consequence of an unanchored event is asymmetric: a missed checkpoint costs a periodic state snapshot, recoverable on the next cadence; a missed rotation event is a permanent gap in the key history that an attacker can later forge a replacement for. The two event types therefore have different mode menus.
+
+**Rotation events** — modes:
 
 | Mode | Behaviour | When to choose |
 |---|---|---|
 | `block` | Daemon stops accepting new events when the sink is unavailable. Per ADR-0010, emitters are non-blocking and drop events via the `EAGAIN` mechanism while the daemon refuses; those drops are recorded as `events_dropped` synthetic receipts in the local chain. | Maximum integrity in the sense of *no silent loss* — gaps appear in the chain rather than absent. Lowest availability. Compliance-driven deployments where any discoverability gap MUST be in-chain rather than untracked. |
 | `queue` (default) | Daemon writes the event to the chain and a local outbox; outbox flushes when the sink recovers. Operator alerts on outbox depth. | Balanced default. Tolerates transient sink outages — events in the outbox are tracked locally but **not yet anchored** until the sink acknowledges. Operators alert on outbox depth so prolonged queueing is visible. |
-| `drop` | Daemon writes the event to the chain only, logs the sink failure, continues. | Available even when the sink is permanently down. Operator explicitly accepts a discoverability gap. |
 
-Same code path, same event format, three behaviours selected by config.
+`drop` is **not available** for rotation events: an unanchored rotation creates a permanent witness gap that a later daemon compromise can exploit by forging a replacement rotation. The whole point of external anchoring is to make the rotation history something the daemon cannot rewrite alone — `drop` would dissolve that property at exactly the event type where it matters most. Operators whose sink is permanently down and who want to skip rotation anchoring should treat that deployment as opt-out of the post-compromise integrity guarantee, not as opt-in to a third mode.
+
+**Checkpoint events** — modes:
+
+| Mode | Behaviour | When to choose |
+|---|---|---|
+| `block` | Same blocking semantics as for rotation. | Rare in practice; checkpoints are periodic and a blocked daemon is usually too high a cost relative to a missed snapshot. |
+| `queue` (default) | Same outbox semantics as for rotation. | Balanced default. Cadence is recoverable: a missed checkpoint anchors on the next interval after the sink returns. |
+| `drop` | Daemon writes the event to the chain only, logs the sink failure, continues. | Available even when the sink is permanently down. Operator explicitly accepts that the truncation-detection window grows for the duration of the outage and any pre-outage gaps go uncovered. |
+
+Same code path and same event format across both types; the difference is the mode menu.
 
 ### Periodic chain commitments — scope decision
 
@@ -112,7 +126,7 @@ Implementation phasing keeps the integrity claim honest:
 ### Positive
 
 - **Post-compromise integrity becomes a defensible claim.** Conditional on a configured external sink: without anchoring, post-compromise integrity remains aspirational; with anchoring, the chain's history survives daemon-key compromise. The conditional is now load-bearing and explicitly stated.
-- **Algorithm agility falls out of the abstraction.** ADR-0001's Ed25519 commitment narrows from "baked in" to "current default." Post-quantum migration ([#32](https://github.com/agent-receipts/ar/issues/32)) does not require a `KeySource` redesign.
+- **Algorithm agility falls out of the abstraction.** This ADR preserves ADR-0001's Ed25519 commitment unchanged — the `KeySource` interface treats Ed25519 as the only currently-supported algorithm — while leaving room for [#32](https://github.com/agent-receipts/ar/issues/32) (algorithm agility) to add post-quantum schemes later without forcing a `KeySource` redesign. The ADR that actually introduces algorithm agility (#32) will be the one to amend ADR-0001's "sole supported algorithm" claim; this ADR does not narrow ADR-0001 unilaterally.
 - **Enterprise key custody is reachable without re-architecting.** HSM, cloud KMS, multi-recipient escrow all absorb into the adapter pattern. The daemon's interface to keys is the same regardless of where they live.
 - **Tail truncation gets a structural answer.** [#171](https://github.com/agent-receipts/ar/issues/171) moves from "known gap, no roadmap" to "Phase B implementation."
 - **Cross-cuts cleanly with ADR-0012.** ADR-0012's forensic encryption keypair is a separate construct from the signing key; lifecycles are independent. Neither key surface reuses the other, exactly the property ADR-0012 already commits to.
@@ -137,7 +151,7 @@ Implementation phasing keeps the integrity claim honest:
 
 ## Related ADRs
 
-- [ADR-0001 (Ed25519 signing)](./0001-ed25519-for-receipt-signing.md) — current default algorithm; the `KeySource` interface narrows this from "baked in" to "current default."
-- [ADR-0007 (DID method strategy)](./0007-did-method-strategy.md) — public-key resolution path. Rotation events reference fingerprints; verifiers resolve those via the DID method chosen there.
+- [ADR-0001 (Ed25519 signing)](./0001-ed25519-for-receipt-signing.md) — sole supported algorithm; preserved unchanged by this ADR. The `KeySource` interface is algorithm-agnostic so #32 (algorithm agility) can amend ADR-0001 later without a redesign here, but this ADR does not itself amend ADR-0001.
+- [ADR-0007 (DID method strategy)](./0007-did-method-strategy.md) — public-key resolution path for the genesis (first) signing key and for each receipt's `proof.verificationMethod` (the outgoing key at any rotation). The incoming key at a rotation is carried inline in the rotation event, so DID resolution is not on the rotation chain-traversal path itself.
 - [ADR-0010 (daemon process separation)](./0010-daemon-process-separation.md) — substrate this ADR sits on; the daemon is the only thing that holds a `KeySource`.
 - [ADR-0012 (payload disclosure policy)](./0012-payload-disclosure-policy.md) — separate keypair (forensic encryption), separate lifecycle. Informs the "do not reuse keys across purposes" property recorded here.
