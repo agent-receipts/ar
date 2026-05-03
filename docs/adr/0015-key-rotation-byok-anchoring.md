@@ -26,7 +26,7 @@ The daemon reads its signing key from a configurable backend rather than a fixed
 
 - **`Sign(canonical bytes) → (signature bytes, algorithm tag, error)`** — the primitive. Some adapters (file-based) hold the private key in process memory; others (PKCS#11, cloud KMS) keep it remote and submit canonical bytes for signing without ever exposing the key to the daemon process. The algorithm tag accompanies the signature so receipts and rotation events carry an unambiguous verification recipe.
 - **`PublicKey() → (key material, algorithm tag, error)`** — for verifier consumption and for emitting fingerprints into rotation events.
-- **`Rotate() → (old fingerprint, new fingerprint, algorithm tag, transcript bytes, error)`** — produces a new signing key and returns the fingerprints (computed per the canonical-bytes rule below) plus the canonical bytes of the rotation event itself. The *outgoing* key signs the transcript before the new key takes over; if the rotation crosses an algorithm boundary (e.g. Ed25519 → ML-DSA) the algorithm tag refers to the *new* key and the rotation event records both algorithms (see schema below).
+- **`Rotate() → (old fingerprint, new fingerprint, old algorithm, new algorithm, transcript bytes, error)`** — produces a new signing key and returns the fingerprints (computed per the canonical-bytes rule below) plus the canonical bytes of the rotation event itself. The *outgoing* key signs the transcript before the new key takes over. Both algorithm tags are returned so the caller can populate the rotation event's `old_algorithm` and `new_algorithm` schema fields directly; same-algorithm rotations return the same value twice, cross-algorithm rotations (e.g. Ed25519 → ML-DSA) return distinct outgoing and incoming tags.
 - **`Init(config) → error`** and **`Teardown() → error`** — adapter-specific bring-up and shutdown. Init MUST fail loudly at daemon start if the backend is unreachable; the daemon refuses to come up rather than silently fall through to a degraded mode.
 
 Backends in scope (adapters land in follow-on issues, not this ADR):
@@ -41,7 +41,7 @@ The interface is **algorithm-agnostic by design**. ADR-0001 (Ed25519) is the cur
 
 ### Rotation event schema
 
-When the daemon rotates its signing key, a `key_rotated` synthetic receipt is appended to the local chain. Required fields (in addition to the standard chain fields `seq`, `prev_hash`, `ts_recv` supplied by the daemon):
+When the daemon rotates its signing key, a `key_rotated` synthetic receipt is appended to the local chain. Required fields (in addition to the daemon-supplied chain fields `seq`, `prev_hash`, `ts_recv` per [ADR-0010](./0010-daemon-process-separation.md)'s schema-split — these are the daemon-internal names; the verifier-facing AgentReceipt envelope wraps them as `credentialSubject.chain.sequence`, `previous_receipt_hash`, and the receipt's `issuanceDate` at emission):
 
 | Field | Type | Description |
 |---|---|---|
@@ -69,7 +69,7 @@ Signing the rotation event with the outgoing key is the standard cryptographic-r
 The daemon writes a subset of events to an operator-configured external sink. Two event types:
 
 - **`rotation`** — every `key_rotated` receipt is mirrored to the sink immediately after it is appended to the local chain.
-- **`checkpoint`** — at operator-configured intervals (default: hourly), the current `(issuer.id, seq, tip_hash, public_key_fingerprint)` tuple is written to the sink. `issuer.id` identifies the daemon emitting the checkpoint, so checkpoints from multiple daemons (multi-host or test environments) cannot be conflated. `tip_hash` is the SHA-256 (`u`-prefixed base64url, per ADR-0001) of the canonical bytes of the most recently appended receipt itself — not its `prev_hash`. The checkpoint commits *to* the tip; a verifier comparing the local chain against the most recent anchored checkpoint detects tail truncation as a mismatch on `issuer.id`-scoped `seq` or `tip_hash`.
+- **`checkpoint`** — at operator-configured intervals (default: hourly), the current `(issuer.id, seq, tip_hash, public_key_fingerprint)` tuple is written to the sink. `issuer.id` identifies the daemon emitting the checkpoint, so checkpoints from multiple daemons (multi-host or test environments) cannot be conflated. `tip_hash` is the SHA-256 of the canonical bytes of the most recently appended receipt itself — not its `prev_hash` — encoded as `sha256:<hex>` to match the repo's existing chain-hash format (`previous_receipt_hash`, `hashReceipt` helpers, `spec/AGENTS.md`). This means an anchored `tip_hash` can be passed straight to existing `ExpectedFinalHash`-style verifier APIs without re-encoding. The checkpoint commits *to* the tip; a verifier comparing the local chain against the most recent anchored checkpoint detects tail truncation as a mismatch on `issuer.id`-scoped `seq` or `tip_hash`.
 
 Transport-agnostic. The sink interface is a single operation:
 
