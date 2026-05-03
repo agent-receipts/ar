@@ -65,8 +65,8 @@ npx @agnt-rcpt/openclaw receipts --action system.command.execute --json \
   | jq '.receipts[] | select(.parameters_disclosure.command | strings | contains("rm"))'
 ```
 
-:::note[`parameters_disclosure` is empty by default]
-The `parameters_disclosure` field is only populated when `parameterDisclosure` is enabled in the plugin config. By default, only the parameter hash is stored. See the [Installation](/openclaw/installation/#parameter-disclosure) page for configuration options.
+:::note[`parameters_disclosure` is omitted by default]
+The `parameters_disclosure` field is only included when `parameterDisclosure` is enabled in the plugin config. By default, only the parameter hash is stored. See the [Installation](/openclaw/installation/#parameter-disclosure) page for configuration options.
 :::
 
 ---
