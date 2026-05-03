@@ -24,6 +24,12 @@ func loadSchema(t *testing.T) *jsonschema.Schema {
 	}
 	c := jsonschema.NewCompiler()
 	c.Draft = jsonschema.Draft2020
+	// santhosh-tekuri/jsonschema treats `format` as annotation-only by
+	// default per JSON Schema spec — without AssertFormat the schema's
+	// "format": "date-time" constraints on issuanceDate / proof.created
+	// are silent, and a regression to a non-RFC3339 timestamp would not
+	// fail validation.
+	c.AssertFormat = true
 	if err := c.AddResource("agent-receipt.schema.json", mustOpen(t, abs)); err != nil {
 		t.Fatalf("add schema resource: %v", err)
 	}
@@ -145,6 +151,23 @@ func TestSpecSchemaRejectsBadReceiptID(t *testing.T) {
 
 	if err := schema.Validate(receipt); err == nil {
 		t.Error("schema accepted invalid receipt id — urn:receipt:<uuid> pattern missing")
+	}
+}
+
+// TestSpecSchemaRejectsNonRFC3339IssuanceDate pins that AssertFormat is
+// wired in — without it, "format": "date-time" is annotation-only and this
+// would silently pass.
+func TestSpecSchemaRejectsNonRFC3339IssuanceDate(t *testing.T) {
+	schema := loadSchema(t)
+	full := decodeJSON(t, filepath.Join("..", "spec", "examples", "minimal-receipt.json"))
+	receipt, ok := full.(map[string]any)
+	if !ok {
+		t.Fatalf("minimal-receipt.json is not an object: %T", full)
+	}
+	receipt["issuanceDate"] = "2026/04/22 00:00:00"
+
+	if err := schema.Validate(receipt); err == nil {
+		t.Error("schema accepted non-RFC3339 issuanceDate — AssertFormat is not enabled")
 	}
 }
 

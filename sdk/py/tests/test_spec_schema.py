@@ -42,7 +42,13 @@ def schema() -> dict:
 @pytest.fixture(scope="module")
 def validator(schema: dict) -> Draft202012Validator:
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema)
+    # Draft202012Validator treats `format` as annotation-only by default per
+    # JSON Schema spec — without FORMAT_CHECKER the schema's
+    # "format": "date-time" constraints on issuanceDate / proof.created are
+    # silent, and a regression to a non-RFC3339 timestamp would not fail.
+    return Draft202012Validator(
+        schema, format_checker=Draft202012Validator.FORMAT_CHECKER
+    )
 
 
 class TestSpecExamples:
@@ -127,5 +133,15 @@ class TestSchemaEnforcement:
     def test_invalid_receipt_id_rejected(self, validator: Draft202012Validator) -> None:
         receipt = self._minimal()
         receipt["id"] = "not-a-urn"
+        with pytest.raises(ValidationError):
+            validator.validate(receipt)
+
+    def test_non_rfc3339_issuance_date_rejected(
+        self, validator: Draft202012Validator
+    ) -> None:
+        # Pins that FORMAT_CHECKER is wired in — without it, "format": "date-time"
+        # is annotation-only and this would silently pass.
+        receipt = self._minimal()
+        receipt["issuanceDate"] = "2026/04/22 00:00:00"
         with pytest.raises(ValidationError):
             validator.validate(receipt)
