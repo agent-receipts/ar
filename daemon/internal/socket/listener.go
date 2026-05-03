@@ -1,0 +1,237 @@
+package socket
+
+import (
+	"context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+)
+
+// MaxFrameSize caps a single emitter frame at 1 MiB. Larger frames are
+// rejected outright so a misbehaving emitter cannot exhaust the daemon's
+// memory by claiming an arbitrary length prefix.
+const MaxFrameSize = 1 << 20
+
+// Frame pairs the JSON payload an emitter sent with the OS-attested peer cred
+// captured at accept time. Handler receives one Frame per emitter message.
+type Frame struct {
+	Payload []byte
+	Peer    PeerCred
+}
+
+// Handler processes a single frame. Implementations MUST be safe for concurrent
+// use (the listener invokes Handler from many connection goroutines). A
+// returned error is logged via the listener's ErrorLog but is otherwise
+// non-fatal — the connection stays open for subsequent frames.
+type Handler func(ctx context.Context, f Frame) error
+
+// Listener wraps a net.UnixListener with peer-cred capture and length-prefix
+// framing. Construct via Listen, drive via Serve, stop via Close.
+type Listener struct {
+	ln       *net.UnixListener
+	path     string
+	handler  Handler
+	errorLog func(format string, args ...any)
+
+	wg     sync.WaitGroup
+	closed chan struct{}
+	once   sync.Once
+}
+
+// Options configure a Listener.
+type Options struct {
+	// Path is the socket path. Required. The parent directory is created with
+	// 0750 if missing. Any pre-existing socket file at Path is removed first
+	// (a stale socket from a previous run is the common case).
+	Path string
+
+	// Handler is called for each received frame. Required.
+	Handler Handler
+
+	// ErrorLog logs non-fatal errors (handler errors, malformed frames). When
+	// nil, errors are silently discarded.
+	ErrorLog func(format string, args ...any)
+}
+
+// Listen binds a SOCK_STREAM Unix-domain listener at opts.Path and returns it
+// ready to Serve. The caller must call Close to release the socket file.
+func Listen(opts Options) (*Listener, error) {
+	if opts.Path == "" {
+		return nil, errors.New("socket: Path is required")
+	}
+	if opts.Handler == nil {
+		return nil, errors.New("socket: Handler is required")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(opts.Path), 0o750); err != nil {
+		return nil, fmt.Errorf("create socket dir: %w", err)
+	}
+	// Remove a stale socket. ENOENT is fine.
+	if err := os.Remove(opts.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("remove stale socket: %w", err)
+	}
+
+	addr := &net.UnixAddr{Name: opts.Path, Net: "unix"}
+	ln, err := net.ListenUnix("unix", addr)
+	if err != nil {
+		return nil, fmt.Errorf("listen %s: %w", opts.Path, err)
+	}
+	// 0660 — connecting processes need write access to the socket file. The
+	// daemon's group governs who may emit; non-group members get EACCES on
+	// connect. (Unprivileged single-user installs typically run with the
+	// user's own group.)
+	if err := os.Chmod(opts.Path, 0o660); err != nil {
+		ln.Close()
+		return nil, fmt.Errorf("chmod socket: %w", err)
+	}
+
+	return &Listener{
+		ln:       ln,
+		path:     opts.Path,
+		handler:  opts.Handler,
+		errorLog: opts.ErrorLog,
+		closed:   make(chan struct{}),
+	}, nil
+}
+
+// Path returns the socket file path.
+func (l *Listener) Path() string { return l.path }
+
+// Serve accepts connections until ctx is cancelled or Close is called. Each
+// accepted connection is handled in its own goroutine; Serve returns nil on
+// graceful shutdown.
+func (l *Listener) Serve(ctx context.Context) error {
+	// Translate ctx cancellation into a listener Close so Accept returns.
+	go func() {
+		select {
+		case <-ctx.Done():
+			l.Close()
+		case <-l.closed:
+		}
+	}()
+
+	for {
+		conn, err := l.ln.AcceptUnix()
+		if err != nil {
+			select {
+			case <-l.closed:
+				l.wg.Wait()
+				return nil
+			default:
+			}
+			if errors.Is(err, net.ErrClosed) {
+				l.wg.Wait()
+				return nil
+			}
+			return fmt.Errorf("accept: %w", err)
+		}
+
+		// Capture peer cred BEFORE reading any frame, so a forking emitter
+		// cannot mislabel itself.
+		peer, err := capturePeer(conn)
+		if err != nil {
+			l.logf("peer-cred capture failed: %v", err)
+			conn.Close()
+			continue
+		}
+
+		l.wg.Add(1)
+		go func() {
+			defer l.wg.Done()
+			defer conn.Close()
+			l.serveConn(ctx, conn, peer)
+		}()
+	}
+}
+
+// Close stops accepting new connections, removes the socket file, and waits
+// for in-flight connection handlers to finish. Idempotent.
+func (l *Listener) Close() error {
+	var closeErr error
+	l.once.Do(func() {
+		close(l.closed)
+		closeErr = l.ln.Close()
+		// AcceptUnix removes the socket file when the listener is created via
+		// ListenUnix, but be defensive in case of process death or chmod races.
+		_ = os.Remove(l.path)
+	})
+	l.wg.Wait()
+	return closeErr
+}
+
+func (l *Listener) serveConn(ctx context.Context, conn *net.UnixConn, peer PeerCred) {
+	for {
+		// Stop reading on shutdown.
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		payload, err := readFrame(conn)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			l.logf("read frame: %v", err)
+			return
+		}
+
+		if err := l.handler(ctx, Frame{Payload: payload, Peer: peer}); err != nil {
+			l.logf("handler error: %v", err)
+		}
+	}
+}
+
+func (l *Listener) logf(format string, args ...any) {
+	if l.errorLog == nil {
+		return
+	}
+	l.errorLog(format, args...)
+}
+
+// readFrame reads one length-prefixed frame from r. Format: 4-byte big-endian
+// payload length followed by that many JSON bytes.
+func readFrame(r io.Reader) ([]byte, error) {
+	var hdr [4]byte
+	if _, err := io.ReadFull(r, hdr[:]); err != nil {
+		return nil, err
+	}
+	n := binary.BigEndian.Uint32(hdr[:])
+	if n == 0 {
+		return nil, fmt.Errorf("zero-length frame")
+	}
+	if n > MaxFrameSize {
+		return nil, fmt.Errorf("frame too large: %d bytes (max %d)", n, MaxFrameSize)
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+	return buf, nil
+}
+
+// WriteFrame writes one length-prefixed frame to w. Exposed so test clients
+// (and Phase 2 emitter SDKs) share the same wire encoding as the daemon.
+func WriteFrame(w io.Writer, payload []byte) error {
+	if len(payload) == 0 {
+		return errors.New("WriteFrame: empty payload")
+	}
+	if len(payload) > MaxFrameSize {
+		return fmt.Errorf("WriteFrame: payload too large: %d bytes (max %d)", len(payload), MaxFrameSize)
+	}
+	var hdr [4]byte
+	binary.BigEndian.PutUint32(hdr[:], uint32(len(payload)))
+	if _, err := w.Write(hdr[:]); err != nil {
+		return err
+	}
+	if _, err := w.Write(payload); err != nil {
+		return err
+	}
+	return nil
+}

@@ -93,6 +93,116 @@ func TestGetChain(t *testing.T) {
 	}
 }
 
+func TestGetChainTail_Empty(t *testing.T) {
+	s := setupStore(t)
+	seq, hash, found, err := s.GetChainTail("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Error("expected found=false for empty chain")
+	}
+	if seq != 0 || hash != "" {
+		t.Errorf("expected zero values, got seq=%d hash=%q", seq, hash)
+	}
+}
+
+func TestGetChainTail_SingleRow(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
+	h, _ := receipt.HashReceipt(r)
+	if err := s.Insert(r, h); err != nil {
+		t.Fatal(err)
+	}
+
+	seq, hash, found, err := s.GetChainTail("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("expected found=true")
+	}
+	if seq != 1 {
+		t.Errorf("expected seq=1, got %d", seq)
+	}
+	if hash != h {
+		t.Errorf("expected hash=%s, got %s", h, hash)
+	}
+}
+
+func TestGetChainTail_HighestSequence(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	// Insert 1..5 in non-monotonic order to confirm the query orders by sequence,
+	// not insertion order.
+	insertOrder := []int{3, 1, 5, 2, 4}
+	hashes := make(map[int]string, len(insertOrder))
+	for _, seq := range insertOrder {
+		r := makeSignedReceipt(t, kp, seq, "chain-1", nil)
+		h, _ := receipt.HashReceipt(r)
+		if err := s.Insert(r, h); err != nil {
+			t.Fatalf("insert seq=%d: %v", seq, err)
+		}
+		hashes[seq] = h
+	}
+
+	seq, hash, found, err := s.GetChainTail("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("expected found=true")
+	}
+	if seq != 5 {
+		t.Errorf("expected seq=5 (highest), got %d", seq)
+	}
+	if hash != hashes[5] {
+		t.Errorf("expected hash for seq=5, got hash for a different row")
+	}
+}
+
+func TestGetChainTail_MultiChainIsolation(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	rA := makeSignedReceipt(t, kp, 7, "chain-A", nil)
+	hA, _ := receipt.HashReceipt(rA)
+	if err := s.Insert(rA, hA); err != nil {
+		t.Fatal(err)
+	}
+	rB := makeSignedReceipt(t, kp, 2, "chain-B", nil)
+	hB, _ := receipt.HashReceipt(rB)
+	if err := s.Insert(rB, hB); err != nil {
+		t.Fatal(err)
+	}
+
+	seqA, hashA, foundA, err := s.GetChainTail("chain-A")
+	if err != nil || !foundA {
+		t.Fatalf("chain-A: err=%v found=%v", err, foundA)
+	}
+	if seqA != 7 || hashA != hA {
+		t.Errorf("chain-A leaked: seq=%d hash=%s", seqA, hashA)
+	}
+
+	seqB, hashB, foundB, err := s.GetChainTail("chain-B")
+	if err != nil || !foundB {
+		t.Fatalf("chain-B: err=%v found=%v", err, foundB)
+	}
+	if seqB != 2 || hashB != hB {
+		t.Errorf("chain-B leaked: seq=%d hash=%s", seqB, hashB)
+	}
+
+	_, _, foundC, err := s.GetChainTail("chain-C")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foundC {
+		t.Error("chain-C should be empty")
+	}
+}
+
 func TestQueryReceipts(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()
