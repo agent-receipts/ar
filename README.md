@@ -135,7 +135,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR guidelines.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) to report vulnerabilities.
+See [SECURITY.md](SECURITY.md) to report vulnerabilities. The [threat model](docs/threat-model.md) documents trust boundaries, in-scope and out-of-scope threats, and the mitigation roadmap.
 
 ## License
 
