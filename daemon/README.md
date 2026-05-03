@@ -56,9 +56,12 @@ agent-receipts-daemon \
 | `--issuer-id` | `AGENTRECEIPTS_ISSUER_ID` | `did:agent-receipts-daemon:local` |
 | `--verification-method` | `AGENTRECEIPTS_VERIFICATION_METHOD` | `did:agent-receipts-daemon:local#k1` |
 
-The signing key file must be mode `0600` and a PKCS#8-encoded Ed25519 private
-key (the format `receipt.GenerateKeyPair()` in `sdk/go` produces). The daemon
-refuses to start with looser permissions or a non-Ed25519 key.
+The signing key file must be a PKCS#8-encoded Ed25519 private key (the format
+`receipt.GenerateKeyPair()` in `sdk/go` produces) with permissions no looser
+than owner-only — the daemon rejects any group or world bit (read, write, or
+execute), so `0600`, `0400`, etc. are accepted; `0640` and `0644` are not.
+The daemon also refuses to start on a non-Ed25519 key, a symlink, or a
+non-regular file at this path.
 
 The socket directory is created with mode `0750` if missing; the socket
 itself is `0660`. Phase 1 unprivileged installs use the per-user defaults

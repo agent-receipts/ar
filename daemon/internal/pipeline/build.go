@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -160,6 +161,13 @@ func (p *Pipeline) buildAndSign(
 	alloc chain.Allocation,
 ) (receipt.AgentReceipt, string, error) {
 	now := p.Now().Format(time.RFC3339)
+
+	// receipt.Chain.Sequence is `int`, which is 32-bit on 32-bit platforms.
+	// Refuse rather than silently overflow into a negative or wrapped value
+	// that would corrupt chain verification downstream.
+	if alloc.Sequence > int64(math.MaxInt) {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("chain sequence %d exceeds int range on this platform (max %d)", alloc.Sequence, math.MaxInt)
+	}
 
 	// validateFrame already restricted f.Decision to the supported set, so the
 	// switch never falls through.

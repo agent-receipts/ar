@@ -160,15 +160,24 @@ func Run(ctx context.Context, cfg Config) error {
 // looser than 0640 (owner rw, group r, world none). Run AFTER store.Open so
 // the freshly-created files exist. SQLite creates DB files using the process
 // umask, which on most systems means world-readable 0644 by default — left
-// alone, that would persist sensitive receipt content. We chmod down to 0640
-// when needed, preserve operator-set tighter modes (e.g. 0600), and fail-fast
-// if for any reason the post-chmod perms are still wider than 0640 (e.g.
-// chmod returns silently on a filesystem that ignores it, or a race wrote a
-// looser mode after we set it).
+// alone, that would persist sensitive receipt content.
+//
+// Behaviour:
+//   - File missing → skip (legitimate for WAL/SHM in non-WAL mode).
+//   - File present but a symlink, FIFO, device, etc. → refuse. A pre-created
+//     symlink at <db>-wal could otherwise redirect chmod to an unexpected
+//     target, and a non-regular file would silently bypass the perm check.
+//   - File present with perms > 0640 → chmod down to 0640 (preserves
+//     operator-set tighter modes such as 0600 untouched).
+//   - File present with perms still > 0640 after chmod (e.g. filesystem
+//     silently ignored chmod, or a race rewrote a looser mode) → refuse.
 func tightenDBFiles(dbPath string) error {
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		path := dbPath + suffix
-		info, err := os.Stat(path)
+		// Lstat (not Stat) so a symlink at <db>-wal etc. is observed AS a
+		// symlink and refused, rather than silently followed and chmod'd at
+		// some unexpected target.
+		info, err := os.Lstat(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
@@ -176,13 +185,13 @@ func tightenDBFiles(dbPath string) error {
 			return fmt.Errorf("stat %s: %w", path, err)
 		}
 		if !info.Mode().IsRegular() {
-			continue
+			return fmt.Errorf("daemon: %s exists but is not a regular file (mode %s); refusing to chmod or use it as a SQLite path", path, info.Mode())
 		}
 		if info.Mode().Perm() > 0o640 {
 			if err := os.Chmod(path, 0o640); err != nil {
 				return fmt.Errorf("chmod %s 0640: %w", path, err)
 			}
-			info, err = os.Stat(path)
+			info, err = os.Lstat(path)
 			if err != nil {
 				return fmt.Errorf("re-stat %s after chmod: %w", path, err)
 			}

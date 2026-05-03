@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +69,24 @@ func TestTightenDBFiles_NoErrorWhenAbsent(t *testing.T) {
 	dir := t.TempDir()
 	if err := tightenDBFiles(filepath.Join(dir, "does-not-exist.db")); err != nil {
 		t.Errorf("absent DB should be a no-op, got: %v", err)
+	}
+}
+
+func TestTightenDBFiles_RefusesSymlink(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "receipts.db")
+	target := filepath.Join(dir, "elsewhere.db")
+	if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, dbPath); err != nil {
+		t.Fatal(err)
+	}
+	err := tightenDBFiles(dbPath)
+	if err == nil {
+		t.Fatal("expected tightenDBFiles to refuse a symlink at the DB path")
+	}
+	if !strings.Contains(err.Error(), "not a regular file") {
+		t.Errorf("error %q should mention non-regular file", err.Error())
 	}
 }
