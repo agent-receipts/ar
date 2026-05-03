@@ -24,9 +24,9 @@ Two primitives, designed together because their interfaces interlock: a `KeySour
 
 The daemon reads its signing key from a configurable backend rather than a fixed filesystem path. Operations the interface MUST support:
 
-- **`Sign(canonical bytes) → signature, error`** — the primitive. Some adapters (file-based) hold the private key in process memory; others (PKCS#11, cloud KMS) keep it remote and submit canonical bytes for signing without ever exposing the key to the daemon process.
-- **`PublicKey() → key material, algorithm tag, error`** — for verifier consumption and for emitting fingerprints into rotation events.
-- **`Rotate() → new public key material, rotation transcript, error`** — produces a new signing key, returns the public-key fingerprints needed to construct the rotation event below. The transcript is the canonical bytes of the rotation event so the *outgoing* key signs it before the new key takes over.
+- **`Sign(canonical bytes) → (signature bytes, algorithm tag, error)`** — the primitive. Some adapters (file-based) hold the private key in process memory; others (PKCS#11, cloud KMS) keep it remote and submit canonical bytes for signing without ever exposing the key to the daemon process. The algorithm tag accompanies the signature so receipts and rotation events carry an unambiguous verification recipe.
+- **`PublicKey() → (key material, algorithm tag, error)`** — for verifier consumption and for emitting fingerprints into rotation events.
+- **`Rotate() → (old fingerprint, new fingerprint, algorithm tag, transcript bytes, error)`** — produces a new signing key and returns the fingerprints (computed per the canonical-bytes rule below) plus the canonical bytes of the rotation event itself. The *outgoing* key signs the transcript before the new key takes over; if the rotation crosses an algorithm boundary (e.g. Ed25519 → ML-DSA) the algorithm tag refers to the *new* key and the rotation event records both algorithms (see schema below).
 - **`Init(config) → error`** and **`Teardown() → error`** — adapter-specific bring-up and shutdown. Init MUST fail loudly at daemon start if the backend is unreachable; the daemon refuses to come up rather than silently fall through to a degraded mode.
 
 Backends in scope (adapters land in follow-on issues, not this ADR):
@@ -46,16 +46,20 @@ When the daemon rotates its signing key, a `key_rotated` synthetic receipt is ap
 | Field | Type | Description |
 |---|---|---|
 | `event_type` | string | Constant `"key_rotated"` |
-| `old_key_fingerprint` | string | SHA-256 of the outgoing public key, multibase-encoded `u`-prefixed base64url (per ADR-0012 encoding choice) |
+| `old_key_fingerprint` | string | SHA-256 of the outgoing public key (raw bytes, see "Fingerprint canonical form" below), multibase-encoded `u`-prefixed base64url (per ADR-0001 encoding choice) |
 | `new_key_fingerprint` | string | Same encoding, of the incoming public key |
 | `algorithm` | string | Tag from the `KeySource` `PublicKey()` call (e.g. `"ed25519"`); reserved for future PQ migration per [#32](https://github.com/agent-receipts/ar/issues/32) |
 | `signed_with` | string | Constant `"old"` — the rotation event itself is signed with the *outgoing* key, anchoring the transition to the key being retired |
 
+**Fingerprint canonical form.** Fingerprints are SHA-256 over the *raw public key bytes* as defined per algorithm (Ed25519: the 32-byte public key per [RFC 8032](https://www.rfc-editor.org/rfc/rfc8032) §5.1.5; future algorithms specify their canonical raw encoding when added). SPKI/PEM wrappers and backend-specific handles (KMS key IDs, PKCS#11 object handles) MUST NOT be hashed — those representations vary across adapters and would produce different fingerprints for the same underlying key.
+
 The next receipt after a `key_rotated` event is signed with the new key. Verifiers chain through rotations by:
 
-1. Verifying the `key_rotated` event's signature against `old_key_fingerprint`.
-2. Treating subsequent receipts as signed by the key matching `new_key_fingerprint`.
-3. Resolving each fingerprint to a public key via the configured key registry (a DID per ADR-0007, a file, or a KMS reference).
+1. Resolving `old_key_fingerprint` via the configured key registry (DID per ADR-0007, file, or KMS reference) to obtain the outgoing public key, then verifying the `key_rotated` event's signature with that public key under the algorithm named in the event.
+2. Resolving `new_key_fingerprint` via the same registry to obtain the incoming public key.
+3. Treating subsequent receipts as signed by the incoming public key, until the next `key_rotated` event.
+
+Rotation events SHOULD carry a `proof.verificationMethod` (DID URL or equivalent) that resolves to the outgoing public key, mirroring the receipt envelope. The `old_key_fingerprint` / `new_key_fingerprint` fields exist for fast chain-traversal indexing and for offline verification when DID resolution is unavailable; they are not a substitute for a resolvable verification method when one can be provided.
 
 Signing the rotation event with the outgoing key is the standard cryptographic-rotation idiom but it is also the failure mode if the outgoing key was already compromised at the moment of rotation: a compromised daemon could forge a rotation event that "retires" the legitimate key in favour of an attacker-controlled key. This is why **rotation events MUST be mirrored to the external anchor** (next section) — the anchor is the only construct that prevents an attacker from rewriting the rotation history alongside the receipt history.
 
@@ -79,7 +83,7 @@ Adapters land in follow-on issues; representative targets: webhook POST, S3 PUT 
 | Mode | Behaviour | When to choose |
 |---|---|---|
 | `block` | Daemon refuses to accept new emitter events until the sink succeeds. | Maximum integrity, lowest availability. Compliance-driven deployments where a discoverability gap is unacceptable. |
-| `queue` (default) | Daemon writes the event to the chain and a local outbox; outbox flushes when the sink recovers. Operator alerts on outbox depth. | Balanced default. Tolerates transient sink outages without losing integrity guarantees once the sink recovers. |
+| `queue` (default) | Daemon writes the event to the chain and a local outbox; outbox flushes when the sink recovers. Operator alerts on outbox depth. | Balanced default. Tolerates transient sink outages — events in the outbox are tracked locally but **not yet anchored** until the sink acknowledges. Operators alert on outbox depth so prolonged queueing is visible. |
 | `drop` | Daemon writes the event to the chain only, logs the sink failure, continues. | Available even when the sink is permanently down. Operator explicitly accepts a discoverability gap. |
 
 Same code path, same event format, three behaviours selected by config.
@@ -109,6 +113,7 @@ Implementation phasing keeps the integrity claim honest:
 
 - **Two-event-type sink surface (rotation + checkpoint).** Mitigated by serving both from the same `Write` interface and the same operator config. Documented as one sink with two event types, not as two systems.
 - **Sink-unavailability mode is an operator choice with no universal default.** `queue` is the proposed default but `block` and `drop` deployments will exist. Documented prominently with deployment-tier guidance.
+- **`queue` mode has a non-zero post-compromise integrity window.** Events in the outbox between local-write and sink-acknowledge are tamper-evident in the chain but not yet anchored externally. A daemon compromised mid-window can rewrite the outbox; sink-acknowledged events are immune. Operators in tightly compliance-bound deployments should choose `block` instead, accepting the availability tradeoff.
 - **Old private keys must be retained for verification of historical chain segments.** Rotation does not free the operator from keeping retired key material reachable to verifiers. (This mirrors ADR-0012's "old forensic private keys retained forever" property.)
 - **Rotation event itself is signed with the outgoing key.** Standard cryptographic-rotation idiom, but documented because operators rotating in response to suspected compromise need to understand they are authenticating the transition with the key they are already retiring. The mitigation is anchoring every rotation event to the external sink, so a compromised daemon cannot forge a backdated rotation that the anchor does not know about.
 - **The `KeySource` interface cannot encode every backend's idiosyncrasies.** KMS rate limits, HSM lockouts, cloud throttling all surface as backend-specific errors with a structured `transient` flag; the daemon's retry/halt policy is uniform across adapters but the operator's alerting must be backend-aware.
