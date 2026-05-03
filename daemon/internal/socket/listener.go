@@ -41,6 +41,12 @@ type Listener struct {
 	wg     sync.WaitGroup
 	closed chan struct{}
 	once   sync.Once
+
+	// Active connections, tracked so Close can break their blocking reads.
+	// Without this, an idle peer connected to the daemon would block shutdown
+	// forever — io.ReadFull on a *net.UnixConn does not observe ctx.Done.
+	connsMu sync.Mutex
+	conns   map[*net.UnixConn]struct{}
 }
 
 // Options configure a Listener.
@@ -87,6 +93,7 @@ func Listen(opts Options) (*Listener, error) {
 	// user's own group.)
 	if err := os.Chmod(opts.Path, 0o660); err != nil {
 		ln.Close()
+		_ = os.Remove(opts.Path)
 		return nil, fmt.Errorf("chmod socket: %w", err)
 	}
 
@@ -96,7 +103,27 @@ func Listen(opts Options) (*Listener, error) {
 		handler:  opts.Handler,
 		errorLog: opts.ErrorLog,
 		closed:   make(chan struct{}),
+		conns:    make(map[*net.UnixConn]struct{}),
 	}, nil
+}
+
+func (l *Listener) trackConn(c *net.UnixConn) bool {
+	l.connsMu.Lock()
+	defer l.connsMu.Unlock()
+	select {
+	case <-l.closed:
+		// Listener already closing; reject the new conn.
+		return false
+	default:
+	}
+	l.conns[c] = struct{}{}
+	return true
+}
+
+func (l *Listener) untrackConn(c *net.UnixConn) {
+	l.connsMu.Lock()
+	delete(l.conns, c)
+	l.connsMu.Unlock()
 }
 
 // Path returns the socket file path.
@@ -140,17 +167,25 @@ func (l *Listener) Serve(ctx context.Context) error {
 			continue
 		}
 
+		// Track the conn so Close() can unblock its read loop on shutdown.
+		// If we lost the race with Close(), drop this conn immediately.
+		if !l.trackConn(conn) {
+			conn.Close()
+			continue
+		}
 		l.wg.Add(1)
 		go func() {
 			defer l.wg.Done()
 			defer conn.Close()
+			defer l.untrackConn(conn)
 			l.serveConn(ctx, conn, peer)
 		}()
 	}
 }
 
-// Close stops accepting new connections, removes the socket file, and waits
-// for in-flight connection handlers to finish. Idempotent.
+// Close stops accepting new connections, closes any in-flight connections to
+// unblock their read loops, removes the socket file, and waits for handlers
+// to finish. Idempotent.
 func (l *Listener) Close() error {
 	var closeErr error
 	l.once.Do(func() {
@@ -159,6 +194,15 @@ func (l *Listener) Close() error {
 		// AcceptUnix removes the socket file when the listener is created via
 		// ListenUnix, but be defensive in case of process death or chmod races.
 		_ = os.Remove(l.path)
+
+		// Break in-flight io.ReadFull calls. Without this, an idle peer
+		// connected to the daemon would block shutdown indefinitely — closing
+		// the listener does not propagate to already-accepted UDS conns.
+		l.connsMu.Lock()
+		for c := range l.conns {
+			_ = c.Close()
+		}
+		l.connsMu.Unlock()
 	})
 	l.wg.Wait()
 	return closeErr
@@ -175,8 +219,16 @@ func (l *Listener) serveConn(ctx context.Context, conn *net.UnixConn, peer PeerC
 
 		payload, err := readFrame(conn)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return
+			}
+			// During shutdown, conn.Close() races the in-flight ReadFull and
+			// surfaces as a generic "use of closed network connection" wrap;
+			// treat it as a clean exit rather than a logged read-frame error.
+			select {
+			case <-l.closed:
+				return
+			default:
 			}
 			l.logf("read frame: %v", err)
 			return

@@ -11,7 +11,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -20,7 +19,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -239,6 +237,68 @@ func TestPeerCredCaptured(t *testing.T) {
 	}
 }
 
+// TestShutdownWithIdleClient confirms the daemon shuts down promptly even
+// when a client is connected and not sending anything. A misbehaving emitter
+// that connects and idles MUST NOT prevent graceful shutdown. The test's
+// connection is intentionally left open across the cancel — the test's own
+// defer would otherwise close it and mask the bug.
+func TestShutdownWithIdleClient(t *testing.T) {
+	dir := t.TempDir()
+	cfg := daemon.Config{
+		SocketPath:           filepath.Join(dir, "events.sock"),
+		DBPath:               filepath.Join(dir, "receipts.db"),
+		KeyPath:              filepath.Join(dir, "signing.key"),
+		ChainID:              "idle",
+		IssuerID:             "did:t",
+		VerificationMethodID: "did:t#k1",
+		Logger:               log.New(io.Discard, "", 0),
+	}
+	writeTestKey(t, cfg.KeyPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- daemon.Run(ctx, cfg) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(cfg.SocketPath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatalf("socket did not appear")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	conn, err := net.Dial("unix", cfg.SocketPath)
+	if err != nil {
+		cancel()
+		t.Fatalf("dial: %v", err)
+	}
+	// Deliberately do NOT close conn. We're proving the daemon can shut down
+	// while an idle peer is still connected.
+
+	// Sleep long enough that the daemon's per-conn goroutine has definitely
+	// entered io.ReadFull before we cancel — otherwise the goroutine would
+	// observe ctx.Done() at the top of its loop and exit early, masking the
+	// bug we're testing for.
+	time.Sleep(100 * time.Millisecond)
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Logf("daemon Run returned: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		conn.Close() // cleanup so the goroutine doesn't outlive the test
+		t.Fatal("daemon did not shut down within 3s with an idle client connected (per-conn readers must observe context cancellation)")
+	}
+	conn.Close()
+}
+
 // TestResumesChainAfterRestart confirms GetChainTail wires through Run: a
 // daemon started against an existing DB picks up the highest-sequence receipt
 // and continues from there, rather than restarting at 1.
@@ -262,7 +322,11 @@ func TestResumesChainAfterRestart(t *testing.T) {
 		}
 	}
 
-	runOnce := func(t *testing.T, frames int) {
+	// runOnce starts the daemon, emits `frames` new receipts, waits for the
+	// chain to reach `expectedTotal` (so the second run cannot finish before
+	// its emits are processed by polling against a stale baseline), then
+	// shuts the daemon down cleanly.
+	runOnce := func(t *testing.T, frames, expectedTotal int) {
 		t.Helper()
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -287,14 +351,12 @@ func TestResumesChainAfterRestart(t *testing.T) {
 				Tool: pipeline.EmitterTool{Name: "noop"}, Decision: "allowed",
 			})
 		}
-		// Give the daemon a moment to drain the in-flight frames before we
-		// shut it down. Open the DB and poll until count is right.
-		_ = waitForReceiptCount(t, dbPath, "resume-chain", frames, 5*time.Second)
+		_ = waitForReceiptCount(t, dbPath, "resume-chain", expectedTotal, 5*time.Second)
 		cancel()
 
 		select {
 		case err := <-done:
-			if err != nil && !errors.Is(err, syscall.EINTR) {
+			if err != nil {
 				t.Logf("Run returned: %v", err)
 			}
 		case <-time.After(3 * time.Second):
@@ -302,9 +364,8 @@ func TestResumesChainAfterRestart(t *testing.T) {
 		}
 	}
 
-	runOnce(t, 3)
+	runOnce(t, 3, 3)
 
-	// Second run: against the same DB, frames should land at seq 4..6.
 	s, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -318,13 +379,8 @@ func TestResumesChainAfterRestart(t *testing.T) {
 		t.Fatalf("after first run, tail seq = %d, want 3", tailSeq)
 	}
 
-	// Wait briefly so any pending socket cleanup completes.
-	time.Sleep(50 * time.Millisecond)
+	runOnce(t, 3, 6)
 
-	runOnce(t, 3) // each call expects frames new receipts; helper polls until count >= frames
-
-	// At this point the helper polled until at least 3 receipts existed, but
-	// the second run produced 3 *additional* ones, so the chain should be 6.
 	receipts := waitForReceiptCount(t, dbPath, "resume-chain", 6, 5*time.Second)
 	for i, r := range receipts {
 		if r.CredentialSubject.Chain.Sequence != i+1 {
