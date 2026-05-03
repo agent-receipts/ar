@@ -62,11 +62,11 @@ Use `jq` to find shell commands that reference `rm`:
 
 ```bash
 npx @agnt-rcpt/openclaw receipts --action system.command.execute --json \
-  | jq '.receipts[] | select(.parameters_preview.command | strings | contains("rm"))'
+  | jq '.receipts[] | select(.parameters_disclosure.command | strings | contains("rm"))'
 ```
 
-:::note[`parameters_preview` is empty by default]
-The `parameters_preview` field is only populated when `parameterPreview` is enabled in the plugin config. By default, only the parameter hash is stored. See the [Installation](/openclaw/installation/#parameter-preview) page for configuration options.
+:::note[`parameters_disclosure` is empty by default]
+The `parameters_disclosure` field is only populated when `parameterDisclosure` is enabled in the plugin config. By default, only the parameter hash is stored. See the [Installation](/openclaw/installation/#parameter-disclosure) page for configuration options.
 :::
 
 ---

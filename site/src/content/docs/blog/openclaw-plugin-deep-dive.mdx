@@ -153,11 +153,11 @@ The `receipts` command produces a human-readable summary table for auditing.
 
 ---
 
-## parameterPreview: operator-controlled privacy
+## parameterDisclosure: operator-controlled privacy
 
 By default, the plugin stores only the parameters hash. You cannot reconstruct what arguments were passed to `exec`. This is deliberate — agents frequently receive secrets, tokens, or sensitive data in their tool call parameters.
 
-If you need more forensic detail, set `parameterPreview` in `openclaw.json`:
+If you need more forensic detail, set `parameterDisclosure` in `openclaw.json`:
 
 ```jsonc
 {
@@ -165,7 +165,7 @@ If you need more forensic detail, set `parameterPreview` in `openclaw.json`:
     "entries": {
       "openclaw-agent-receipts": {
         "config": {
-          "parameterPreview": "high"
+          "parameterDisclosure": "high"
         }
       }
     }
@@ -173,7 +173,7 @@ If you need more forensic detail, set `parameterPreview` in `openclaw.json`:
 }
 ```
 
-With `parameterPreview: "high"`, high-risk and critical actions include a `parameters_preview` field alongside the hash:
+With `parameterDisclosure: "high"`, high-risk and critical actions include a `parameters_disclosure` field alongside the hash:
 
 ```json
 {
@@ -181,7 +181,7 @@ With `parameterPreview: "high"`, high-risk and critical actions include a `param
     "type": "system.command.execute",
     "risk_level": "high",
     "parameters_hash": "sha256:9c84a8c9e89a07ff323b0ad52972f148b7f2f5240817f2d9f9892ca514b4522c",
-    "parameters_preview": {
+    "parameters_disclosure": {
       "command": "echo \"Testing agent-receipts plugin fix\""
     }
   }
@@ -223,7 +223,7 @@ Two things the plugin cannot provide that the MCP Proxy can:
 
 **Intent field.** The MCP Proxy sits between the client and server and has access to the full JSON-RPC request, including the reasoning context that prompted the call. The plugin intercepts at the tool boundary — it sees the call, not what caused it. The `intent` field in the receipt schema is populated by the proxy, not the plugin.
 
-**Proxy-side argument retention.** The proxy still records `action.parameters_hash` in receipts by default, but it can additionally retain a redacted or encrypted copy of the full arguments in its audit database, depending on configuration. The plugin's privacy-preserving default is hash-only. Even with `parameterPreview: true`, what's stored is a best-effort plaintext representation, not the full canonical arguments object.
+**Proxy-side argument retention.** The proxy still records `action.parameters_hash` in receipts by default, but it can additionally retain a redacted or encrypted copy of the full arguments in its audit database, depending on configuration. The plugin's privacy-preserving default is hash-only. Even with `parameterDisclosure: true`, what's stored is a best-effort plaintext representation, not the full canonical arguments object.
 
 The tradeoff: the plugin requires no changes to your agent implementation, no wrapping of your MCP servers, and no proxy process in your stack. You get receipts for every tool call across every tool your agent uses. The depth of each receipt is narrower.
 
