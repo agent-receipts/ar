@@ -2,6 +2,7 @@ package socket
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,9 +54,21 @@ func TestListen_RefusesWhenAnotherDaemonIsLive(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = first.Serve(ctx) }()
-	// Give the first listener a moment to be ready for Accept so the probe
-	// connect succeeds.
-	time.Sleep(20 * time.Millisecond)
+
+	// Poll until a probe connect succeeds, instead of sleeping a fixed amount
+	// (which is flaky on slow CI runners). 2s is generous; in practice the
+	// listener is ready in microseconds on a quiet machine.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if c, derr := net.DialTimeout("unix", path, 100*time.Millisecond); derr == nil {
+			c.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first listener did not become acceptable within 2s")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	second, err := Listen(Options{
 		Path:    path,

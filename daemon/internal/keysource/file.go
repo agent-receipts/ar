@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -44,22 +45,30 @@ func (f *File) Init() error {
 		return errors.New("keysource/file: VerificationMethodID is required")
 	}
 
-	// Lstat (not Stat) so we observe a symlink at Path itself rather than
-	// following it. A symlink-swap attack pointing at attacker-controlled
-	// content would otherwise have its target's mode reported here. We also
-	// require a regular file: a FIFO would block reads, a device file would
-	// be wrong, and a directory makes no sense. Operators with legitimate
-	// reasons to indirect (e.g. /etc/agentreceipts/signing.key being a
-	// symlink to a Vault-managed file) should resolve the symlink before
-	// pointing AGENTRECEIPTS_KEY at the result, or wait for the
-	// ADR-0015 KMS adapters that don't read the key from disk at all.
-	info, err := os.Lstat(f.Path)
+	// Open with O_NOFOLLOW so a symlink AT the key path is rejected outright
+	// (returns ELOOP), then fstat THE OPEN FD so the validation and the read
+	// operate on the same inode. Doing Lstat → ReadFile across two separate
+	// path resolutions would leave a TOCTOU window where an attacker with
+	// write access to the parent directory could swap the file between the
+	// check and the read, tricking the daemon into loading attacker-supplied
+	// key material despite the earlier checks.
+	//
+	// Operators with legitimate reasons to indirect via a symlink should
+	// resolve it before pointing AGENTRECEIPTS_KEY at the result, or wait for
+	// the ADR-0015 KMS adapters that don't read the key from disk at all.
+	fh, err := os.OpenFile(f.Path, os.O_RDONLY|oNoFollow, 0)
 	if err != nil {
-		return fmt.Errorf("stat key file: %w", err)
+		return fmt.Errorf("open key file: %w", err)
+	}
+	defer fh.Close()
+
+	info, err := fh.Stat()
+	if err != nil {
+		return fmt.Errorf("fstat key file: %w", err)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf(
-			"keysource/file: refusing to load %s — not a regular file (mode %s); resolve symlinks and avoid FIFO/device/directory paths",
+			"keysource/file: refusing to load %s — not a regular file (mode %s); avoid FIFO/device/directory paths",
 			f.Path, info.Mode(),
 		)
 	}
@@ -70,7 +79,7 @@ func (f *File) Init() error {
 		)
 	}
 
-	raw, err := os.ReadFile(f.Path)
+	raw, err := io.ReadAll(fh)
 	if err != nil {
 		return fmt.Errorf("read key file: %w", err)
 	}

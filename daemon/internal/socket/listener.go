@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -89,11 +90,22 @@ func Listen(opts Options) (*Listener, error) {
 		if info.Mode()&os.ModeSocket == 0 {
 			return nil, fmt.Errorf("socket: refusing to remove non-socket file at %s (mode %s); pick a different AGENTRECEIPTS_SOCKET", opts.Path, info.Mode())
 		}
-		// Probe-connect with a short timeout. A success means another daemon
-		// is live; refuse and let the operator stop it explicitly.
-		if c, derr := net.DialTimeout("unix", opts.Path, 100*time.Millisecond); derr == nil {
+		// Probe-connect with a short timeout. We must distinguish three
+		// outcomes:
+		//   nil error      → another daemon is live, refuse.
+		//   ECONNREFUSED   → socket file exists but no listener — stale.
+		//   anything else  → indeterminate (permission error, EAGAIN under
+		//                    backlog saturation, EHOSTUNREACH on a fuse
+		//                    mount, plain timeout). Removing on these would
+		//                    risk orphaning a still-running daemon, so refuse
+		//                    and let the operator investigate.
+		c, derr := net.DialTimeout("unix", opts.Path, 100*time.Millisecond)
+		if derr == nil {
 			c.Close()
 			return nil, fmt.Errorf("socket: another daemon is already listening on %s; stop it before starting a second instance", opts.Path)
+		}
+		if !errors.Is(derr, syscall.ECONNREFUSED) {
+			return nil, fmt.Errorf("socket: %s is held by an unreachable peer (%v); refusing to remove the socket file (would orphan a running daemon if it is still live)", opts.Path, derr)
 		}
 		if err := os.Remove(opts.Path); err != nil {
 			return nil, fmt.Errorf("remove stale socket: %w", err)
@@ -211,8 +223,13 @@ func (l *Listener) Close() error {
 	l.once.Do(func() {
 		close(l.closed)
 		closeErr = l.ln.Close()
-		// AcceptUnix removes the socket file when the listener is created via
-		// ListenUnix, but be defensive in case of process death or chmod races.
+		// net.UnixListener.Close unlinks the socket file when the listener was
+		// created via ListenUnix and SetUnlinkOnClose hasn't been overridden
+		// — which matches our usage. We still call os.Remove explicitly as a
+		// belt-and-braces measure for cases where Close cannot remove the
+		// path (the daemon was killed and never reached this code, the path
+		// was replaced underneath us, etc.). The Remove is allowed to fail
+		// silently.
 		_ = os.Remove(l.path)
 
 		// Break in-flight io.ReadFull calls. Without this, an idle peer
