@@ -10,6 +10,12 @@ import (
 	"os"
 )
 
+// MaxKeyFileBytes is the upper bound on the PEM file size File.Init will
+// read. Generous: a PKCS#8-wrapped Ed25519 private key is ~120 bytes and the
+// PEM envelope adds <100 bytes; 16 KiB tolerates wrapped or commented keys
+// while still capping memory pressure on a misconfigured path.
+const MaxKeyFileBytes int64 = 16 * 1024
+
 // File is a KeySource backed by a PEM-encoded Ed25519 private key on disk.
 // Phase 1 uses this exclusively. Future ADR-0015 adapters (PKCS#11, cloud KMS)
 // implement KeySource alongside this type.
@@ -78,8 +84,18 @@ func (f *File) Init() error {
 			f.Path, info.Mode().Perm(),
 		)
 	}
+	// PEM-encoded Ed25519 private keys are well under 1 KiB. Cap the read at
+	// MaxKeyFileBytes so a misconfigured AGENTRECEIPTS_KEY pointing at a huge
+	// file doesn't waste memory at startup. Refuse outright rather than
+	// silently truncating — a truncated key would parse as garbage anyway.
+	if info.Size() > MaxKeyFileBytes {
+		return fmt.Errorf(
+			"keysource/file: refusing to load %s — size %d exceeds MaxKeyFileBytes %d (PEM-encoded Ed25519 keys are ~< 1 KiB)",
+			f.Path, info.Size(), MaxKeyFileBytes,
+		)
+	}
 
-	raw, err := io.ReadAll(fh)
+	raw, err := io.ReadAll(io.LimitReader(fh, MaxKeyFileBytes))
 	if err != nil {
 		return fmt.Errorf("read key file: %w", err)
 	}

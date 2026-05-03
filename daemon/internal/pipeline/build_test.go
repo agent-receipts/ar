@@ -115,8 +115,15 @@ func TestProcess_BuildsSignedReceipt(t *testing.T) {
 	if pd["peer.exe_path"] != "/usr/bin/mcp-proxy" {
 		t.Errorf("peer.exe_path = %q", pd["peer.exe_path"])
 	}
-	if pd["session_id"] != "sess-123" {
-		t.Errorf("session_id = %q", pd["session_id"])
+	// session_id, channel, ts_emit must NOT be in parameters_disclosure —
+	// they live on issuer.session_id / action.type / (dropped) respectively.
+	for _, k := range []string{"session_id", "channel", "ts_emit", "ts_recv", "error"} {
+		if _, ok := pd[k]; ok {
+			t.Errorf("parameters_disclosure unexpectedly contains %q (emitter content must not be mirrored here)", k)
+		}
+	}
+	if r.Issuer.SessionID != "sess-123" {
+		t.Errorf("issuer.session_id = %q, want sess-123", r.Issuer.SessionID)
 	}
 
 	pubPEM, err := ks.PublicKey()

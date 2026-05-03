@@ -124,8 +124,13 @@ func validateFrame(f *EmitterFrame) error {
 	if f.Tool.Name == "" {
 		return fmt.Errorf("missing tool.name")
 	}
-	if f.Decision == "" {
+	switch f.Decision {
+	case "":
 		return fmt.Errorf("missing decision")
+	case "allowed", "denied", "pending":
+		// ok
+	default:
+		return fmt.Errorf("unknown decision %q (want allowed|denied|pending)", f.Decision)
 	}
 	// Phase 1 hard-rejects non-null Input/Output rather than silently dropping
 	// them — see EmitterFrame doc comment. JSON null is treated as equivalent
@@ -156,7 +161,8 @@ func (p *Pipeline) buildAndSign(
 ) (receipt.AgentReceipt, string, error) {
 	now := p.Now().Format(time.RFC3339)
 
-	// Map decision -> outcome.
+	// validateFrame already restricted f.Decision to the supported set, so the
+	// switch never falls through.
 	var status receipt.OutcomeStatus
 	switch f.Decision {
 	case "allowed":
@@ -165,8 +171,6 @@ func (p *Pipeline) buildAndSign(
 		status = receipt.StatusFailure
 	case "pending":
 		status = receipt.StatusPending
-	default:
-		return receipt.AgentReceipt{}, "", fmt.Errorf("unknown decision %q", f.Decision)
 	}
 
 	actionType := f.Channel + "." + f.Tool.Name
@@ -174,24 +178,27 @@ func (p *Pipeline) buildAndSign(
 		actionType = f.Channel + "." + f.Tool.Server + "." + f.Tool.Name
 	}
 
-	// Phase 1 stashes peer attestation in Action.ParametersDisclosure as a
-	// placeholder. ADR-0010 calls for a dedicated `peer` field on the receipt;
-	// adding that requires a spec change (out of scope per AGENTS.md "Never
-	// modify the protocol spec without explicit human approval"). Tracked as a
-	// follow-up for the emitter-refactor phase.
+	// Phase 1 stashes the OS-attested peer cred in Action.ParametersDisclosure
+	// as a placeholder. ADR-0010 calls for a dedicated `peer` field on the
+	// receipt; adding that requires a spec change (out of scope per AGENTS.md
+	// "Never modify the protocol spec without explicit human approval"), so
+	// peer.* keys ride on the existing field until Phase 2.
+	//
+	// NOTE: parameters_disclosure is operator-allowlisted additive metadata in
+	// the spec. Until a top-level peer field exists, this map MUST stay
+	// minimal: only OS-attested fields the daemon vouches for. Emitter-supplied
+	// content (channel, session_id, ts_emit, error) lives elsewhere on the
+	// receipt — channel is folded into action.type, session_id into
+	// issuer.session_id, ts_emit/ts_recv are dropped (only ts_recv would be
+	// authoritative and it's not a disclosure), error into outcome.error —
+	// rather than being mirrored here, where it could accidentally persist
+	// PII pulled from emitter-controlled bytes.
 	disclosure := map[string]string{
-		"peer.platform":  peer.Platform,
-		"peer.pid":       strconv.FormatInt(int64(peer.PID), 10),
-		"peer.uid":       strconv.FormatInt(int64(peer.UID), 10),
-		"peer.gid":       strconv.FormatInt(int64(peer.GID), 10),
-		"peer.exe_path":  peer.ExePath,
-		"channel":        f.Channel,
-		"session_id":     f.SessionID,
-		"ts_emit":        f.TsEmit,
-		"ts_recv":        now,
-	}
-	if f.Error != "" {
-		disclosure["error"] = f.Error
+		"peer.platform": peer.Platform,
+		"peer.pid":      strconv.FormatInt(int64(peer.PID), 10),
+		"peer.uid":      strconv.FormatInt(int64(peer.UID), 10),
+		"peer.gid":      strconv.FormatInt(int64(peer.GID), 10),
+		"peer.exe_path": peer.ExePath,
 	}
 
 	// Risk derives from the taxonomy. Daemon-constructed action types like

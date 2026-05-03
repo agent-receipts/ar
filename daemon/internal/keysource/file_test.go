@@ -126,6 +126,21 @@ func TestFile_RejectsSymlink(t *testing.T) {
 	}
 }
 
+func TestFile_RejectsOversizedKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.key")
+	// MaxKeyFileBytes + 1; content doesn't matter, the size check fires before
+	// PEM decode.
+	huge := make([]byte, MaxKeyFileBytes+1)
+	if err := os.WriteFile(path, huge, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ks := NewFile(path, "did:test#k1")
+	if err := ks.Init(); err == nil {
+		t.Error("expected Init to reject an oversized key file")
+	}
+}
+
 func TestFile_TeardownClearsKey(t *testing.T) {
 	path := writeTestKey(t, 0o600)
 	ks := NewFile(path, "did:test#k1")

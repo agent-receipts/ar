@@ -115,6 +115,15 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	defer st.Close()
 
+	// Receipts may include peer attestation and operator-supplied disclosures;
+	// world-readable is wrong by default. Tighten the DB and its WAL/SHM
+	// siblings to owner+group readable (0640). Refuse to start if the file is
+	// already wider than that — an operator-set 0600 must be respected, but
+	// 0644/0664 typically means an umask leak.
+	if err := tightenDBFiles(cfg.DBPath); err != nil {
+		return err
+	}
+
 	ks := keysource.NewFile(cfg.KeyPath, cfg.VerificationMethodID)
 	if err := ks.Init(); err != nil {
 		return fmt.Errorf("init keysource: %w", err)
@@ -144,6 +153,44 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("serve: %w", err)
 	}
 	cfg.Logger.Printf("agent-receipts-daemon shutdown complete")
+	return nil
+}
+
+// tightenDBFiles ensures the SQLite database and any WAL/SHM siblings are no
+// looser than 0640 (owner rw, group r, world none). Run AFTER store.Open so
+// the freshly-created files exist. SQLite creates DB files using the process
+// umask, which on most systems means world-readable 0644 by default — left
+// alone, that would persist sensitive receipt content. We chmod down to 0640
+// when needed, preserve operator-set tighter modes (e.g. 0600), and fail-fast
+// if for any reason the post-chmod perms are still wider than 0640 (e.g.
+// chmod returns silently on a filesystem that ignores it, or a race wrote a
+// looser mode after we set it).
+func tightenDBFiles(dbPath string) error {
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		path := dbPath + suffix
+		info, err := os.Stat(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("stat %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		if info.Mode().Perm() > 0o640 {
+			if err := os.Chmod(path, 0o640); err != nil {
+				return fmt.Errorf("chmod %s 0640: %w", path, err)
+			}
+			info, err = os.Stat(path)
+			if err != nil {
+				return fmt.Errorf("re-stat %s after chmod: %w", path, err)
+			}
+		}
+		if info.Mode().Perm() > 0o640 {
+			return fmt.Errorf("daemon: receipts DB %s has world-accessible perms %o after chmod attempt; refusing to start", path, info.Mode().Perm())
+		}
+	}
 	return nil
 }
 
