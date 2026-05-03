@@ -56,7 +56,7 @@ A compromised agent process is now a defended threat, not an admitted gap. The a
 
 An attacker who compromises the daemon can drop the most recent N receipts and present a clean prefix. Chain verification alone cannot detect this — the truncated chain is internally consistent.
 
-**Mitigation: external anchor checkpoints (ADR-0015 Phase B).** The daemon writes `(seq, prev_hash, public_key_fingerprint)` triples to an operator-configured external sink at configurable intervals (default: hourly). A verifier comparing the local chain against the most recent anchored checkpoint detects truncation as a `seq` regression. ADR-0015 Phase A ships rotation anchoring; Phase B adds checkpoint anchoring. Tail-truncation defence is **partial until Phase B lands**; tracked at [#171](https://github.com/agent-receipts/ar/issues/171).
+**Mitigation: external anchor checkpoints (ADR-0015 Phase B).** The daemon writes `(seq, tip_hash, public_key_fingerprint)` triples to an operator-configured external sink at configurable intervals (default: hourly). `tip_hash` commits to the most recently appended receipt itself, so a verifier comparing the local chain against the most recent anchored checkpoint detects truncation as a mismatch on either `seq` or `tip_hash`. ADR-0015 Phase A ships rotation anchoring; Phase B adds checkpoint anchoring. Tail-truncation defence is **partial until Phase B lands**; tracked at [#171](https://github.com/agent-receipts/ar/issues/171).
 
 ### Forged rotation history
 
