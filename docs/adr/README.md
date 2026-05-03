@@ -29,6 +29,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0013](0013-claude-code-hook-channel.md) | claude_code_hook Emission Channel | Proposed |
 | [ADR-0014](0014-codex-hook-channel.md) | codex_hook Emission Channel | Proposed |
 | [ADR-0015](0015-key-rotation-byok-anchoring.md) | Key Rotation, BYOK Abstraction, and External Anchoring | Proposed |
+| [ADR-0016](0016-mcp-proxy-audit-encryption.md) | Audit Store Encryption at Rest (mcp-proxy) | Proposed |
 
 ## References
 
