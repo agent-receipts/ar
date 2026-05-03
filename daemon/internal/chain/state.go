@@ -16,7 +16,10 @@ import (
 // State tracks the next-sequence and previous-hash for a single chain id. It
 // is safe for concurrent use; allocators must call Allocate then either Commit
 // (after a successful insert) or Rollback (after a failed insert) to release
-// the lock with the right state.
+// the lock with the right state. The mutex enforces single-allocation-at-a-
+// time; a caller that forgets to Commit/Rollback before reallocating just
+// blocks on the lock until something else releases it (and therefore never
+// corrupts chain state).
 //
 // Phase 1 supports a single chain id per daemon process. Multi-chain support
 // can grow this into a chainID-keyed map without changing callers.
@@ -25,7 +28,6 @@ type State struct {
 	chainID  string
 	nextSeq  int64
 	prevHash *string // nil for the first receipt in a chain
-	pending  bool    // true between Allocate and Commit/Rollback
 }
 
 // New returns a State for chainID with no prior receipts. Use NewFromTail when
@@ -86,13 +88,6 @@ type Allocation struct {
 // pipeline synchronously while holding the allocation.
 func (s *State) Allocate() Allocation {
 	s.mu.Lock()
-	if s.pending {
-		// Programmer error: caller forgot to Commit/Rollback before reallocating.
-		// We still hold the lock from the previous Allocate, so this Lock above
-		// already deadlocked. This branch is unreachable but documents intent.
-		panic("chain.State: Allocate called while a previous allocation was pending")
-	}
-	s.pending = true
 	var prev *string
 	if s.prevHash != nil {
 		v := *s.prevHash
@@ -103,18 +98,13 @@ func (s *State) Allocate() Allocation {
 
 // Commit advances the chain past this allocation. newHash is the hash of the
 // just-inserted receipt and becomes the prev_hash for the next allocation.
-// Calling Commit twice on the same Allocation panics.
 func (a Allocation) Commit(newHash string) {
 	if a.state == nil {
 		panic("chain.Allocation: Commit on zero-value Allocation")
 	}
-	if !a.state.pending {
-		panic("chain.Allocation: Commit without a pending allocation")
-	}
 	a.state.nextSeq = a.Sequence + 1
 	h := newHash
 	a.state.prevHash = &h
-	a.state.pending = false
 	a.state.mu.Unlock()
 }
 
@@ -124,9 +114,5 @@ func (a Allocation) Rollback() {
 	if a.state == nil {
 		panic("chain.Allocation: Rollback on zero-value Allocation")
 	}
-	if !a.state.pending {
-		panic("chain.Allocation: Rollback without a pending allocation")
-	}
-	a.state.pending = false
 	a.state.mu.Unlock()
 }

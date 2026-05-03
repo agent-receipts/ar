@@ -77,9 +77,18 @@ func Listen(opts Options) (*Listener, error) {
 	if err := os.MkdirAll(filepath.Dir(opts.Path), 0o750); err != nil {
 		return nil, fmt.Errorf("create socket dir: %w", err)
 	}
-	// Remove a stale socket. ENOENT is fine.
-	if err := os.Remove(opts.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("remove stale socket: %w", err)
+	// Remove a stale socket. ENOENT is fine. If the path exists but is NOT
+	// a Unix socket, refuse — a misconfigured AGENTRECEIPTS_SOCKET pointing
+	// at a regular file or directory must not silently delete it.
+	if info, err := os.Lstat(opts.Path); err == nil {
+		if info.Mode()&os.ModeSocket == 0 {
+			return nil, fmt.Errorf("socket: refusing to remove non-socket file at %s (mode %s); pick a different AGENTRECEIPTS_SOCKET", opts.Path, info.Mode())
+		}
+		if err := os.Remove(opts.Path); err != nil {
+			return nil, fmt.Errorf("remove stale socket: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("stat socket path: %w", err)
 	}
 
 	addr := &net.UnixAddr{Name: opts.Path, Net: "unix"}
@@ -270,6 +279,10 @@ func readFrame(r io.Reader) ([]byte, error) {
 
 // WriteFrame writes one length-prefixed frame to w. Exposed so test clients
 // (and Phase 2 emitter SDKs) share the same wire encoding as the daemon.
+//
+// io.Writer's contract permits short writes with a nil error. A short write
+// would corrupt framing for the receiver, so writes are looped until all
+// bytes are sent or an error is returned.
 func WriteFrame(w io.Writer, payload []byte) error {
 	if len(payload) == 0 {
 		return errors.New("WriteFrame: empty payload")
@@ -279,11 +292,27 @@ func WriteFrame(w io.Writer, payload []byte) error {
 	}
 	var hdr [4]byte
 	binary.BigEndian.PutUint32(hdr[:], uint32(len(payload)))
-	if _, err := w.Write(hdr[:]); err != nil {
-		return err
+	if err := writeAll(w, hdr[:]); err != nil {
+		return fmt.Errorf("WriteFrame header: %w", err)
 	}
-	if _, err := w.Write(payload); err != nil {
-		return err
+	if err := writeAll(w, payload); err != nil {
+		return fmt.Errorf("WriteFrame body: %w", err)
+	}
+	return nil
+}
+
+func writeAll(w io.Writer, buf []byte) error {
+	for len(buf) > 0 {
+		n, err := w.Write(buf)
+		if n > 0 {
+			buf = buf[n:]
+		}
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
 	}
 	return nil
 }

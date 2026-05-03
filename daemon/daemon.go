@@ -96,6 +96,15 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := validateConfig(&cfg); err != nil {
 		return err
 	}
+	// Phase 1 supports Linux and macOS. The peer-cred capture stub on other
+	// OSes rejects every connection, but starting at all on those platforms
+	// would silently produce a daemon with no useful behaviour. Fail fast
+	// instead. Windows ships in a follow-up issue per #236.
+	switch runtime.GOOS {
+	case "linux", "darwin":
+	default:
+		return fmt.Errorf("agent-receipts-daemon: unsupported platform %q (Phase 1 supports linux and darwin only)", runtime.GOOS)
+	}
 
 	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o750); err != nil {
 		return fmt.Errorf("create db dir: %w", err)

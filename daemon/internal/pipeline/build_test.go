@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/agent-receipts/ar/daemon/internal/chain"
 	"github.com/agent-receipts/ar/daemon/internal/keysource"
@@ -170,6 +171,36 @@ func TestProcess_AdvancesSequenceAndPrevHash(t *testing.T) {
 	}
 }
 
+func TestProcess_DaemonControlsAllTimestamps(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	fixed := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	p.Now = func() time.Time { return fixed }
+
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatal(err)
+	}
+	chainReceipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := chainReceipts[0]
+
+	want := fixed.Format(time.RFC3339)
+	if r.IssuanceDate != want {
+		t.Errorf("issuanceDate = %q, want %q (Now hook should govern all daemon-stamped timestamps)", r.IssuanceDate, want)
+	}
+	if r.CredentialSubject.Action.Timestamp != want {
+		t.Errorf("action.timestamp = %q, want %q", r.CredentialSubject.Action.Timestamp, want)
+	}
+	if r.Proof.Created != want {
+		t.Errorf("proof.created = %q, want %q", r.Proof.Created, want)
+	}
+}
+
 func TestProcess_RejectsMalformedFrames(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)
@@ -182,6 +213,7 @@ func TestProcess_RejectsMalformedFrames(t *testing.T) {
 	}{
 		{"not JSON", `not json`},
 		{"missing v", `{"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
+		{"unsupported v", `{"v":"2","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
 		{"missing session_id", `{"v":"1","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
 		{"missing tool.name", `{"v":"1","session_id":"s","channel":"sdk","tool":{},"decision":"allowed"}`},
 		{"missing decision", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"}}`},

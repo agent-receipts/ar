@@ -50,7 +50,7 @@ func (f *File) Init() error {
 	}
 	if f.RequireOwnerOnly && info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf(
-			"keysource/file: refusing to load %s with permissions %o (group/world readable); chmod 0600",
+			"keysource/file: refusing to load %s with permissions %o (any group/world bits set); chmod 0600",
 			f.Path, info.Mode().Perm(),
 		)
 	}

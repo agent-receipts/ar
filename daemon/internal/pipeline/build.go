@@ -21,6 +21,12 @@ import (
 // (multibase prefix "u") rather than the W3C default base58btc ("z").
 const multibaseBase64URL = "u"
 
+// SupportedFrameVersion is the only emitter-frame schema this daemon accepts.
+// Bumping it requires a migration plan and a daemon-side translator for the
+// old version; until that exists, accepting unknown versions would silently
+// misinterpret future fields.
+const SupportedFrameVersion = "1"
+
 // EmitterFrame is the JSON payload emitters send. Mirrors ADR-0010 §"Schema
 // split". Fields the emitter does not populate are zero/empty; the daemon
 // fills in the authoritative chain/peer/id/ts_recv before signing.
@@ -94,6 +100,9 @@ func (p *Pipeline) Process(f socket.Frame) error {
 func validateFrame(f *EmitterFrame) error {
 	if f.Version == "" {
 		return fmt.Errorf("missing v")
+	}
+	if f.Version != SupportedFrameVersion {
+		return fmt.Errorf("unsupported frame version %q (this daemon accepts %q)", f.Version, SupportedFrameVersion)
 	}
 	if f.SessionID == "" {
 		return fmt.Errorf("missing session_id")
@@ -179,6 +188,10 @@ func (p *Pipeline) buildAndSign(
 			ChainID:             p.State.ChainID(),
 		},
 	})
+	// receipt.Create stamps IssuanceDate from time.Now() internally. Replace it
+	// with our deterministic now so action.timestamp, issuanceDate, and
+	// proof.created all share a single value (and tests can override Now).
+	unsigned.IssuanceDate = now
 
 	canonical, err := receipt.Canonicalize(unsigned)
 	if err != nil {
