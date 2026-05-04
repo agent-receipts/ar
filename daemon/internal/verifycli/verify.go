@@ -12,6 +12,7 @@
 package verifycli
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -48,12 +49,26 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		return fallback
 	}
 
+	// Resolve the public-key default in two steps so the flag declaration
+	// stays readable: --public-key inherits AGENTRECEIPTS_PUBLIC_KEY when set,
+	// otherwise it falls back to <KeyPath>.pub computed from the same KeyPath
+	// the daemon would use, so a verify run with no flags works after the
+	// daemon has run at least once with the same per-user paths.
+	keyPath := envOr("AGENTRECEIPTS_KEY", daemon.DefaultKeyPath())
+	defaultPubKey := envOr("AGENTRECEIPTS_PUBLIC_KEY", daemon.DefaultPublicKeyPath(keyPath))
+
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dbPath := fs.String("db", envOr("AGENTRECEIPTS_DB", daemon.DefaultDBPath()), "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
-	pubKeyPath := fs.String("public-key", envOr("AGENTRECEIPTS_PUBLIC_KEY", daemon.DefaultPublicKeyPath(envOr("AGENTRECEIPTS_KEY", daemon.DefaultKeyPath()))), "PEM-encoded SPKI public key path (env: AGENTRECEIPTS_PUBLIC_KEY)")
+	pubKeyPath := fs.String("public-key", defaultPubKey, "PEM-encoded SPKI public key path (env: AGENTRECEIPTS_PUBLIC_KEY)")
 	chainID := fs.String("chain-id", envOr("AGENTRECEIPTS_CHAIN_ID", "default"), "Chain id to verify (env: AGENTRECEIPTS_CHAIN_ID)")
 	if err := fs.Parse(args); err != nil {
+		// `-h` / `--help` is intentional, not an error — flag.ContinueOnError
+		// surfaces it as flag.ErrHelp after writing the usage message. Exit 0
+		// so scripts that probe `agent-receipts verify -h` don't see a failure.
+		if errors.Is(err, flag.ErrHelp) {
+			return ExitOK
+		}
 		return ExitUsageError
 	}
 	if *dbPath == "" {

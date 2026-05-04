@@ -508,7 +508,8 @@ func TestVerifyCLIWithDaemonStopped(t *testing.T) {
 
 	// Sanity-check the daemon really is gone before running verify; otherwise
 	// a passing test wouldn't actually demonstrate the daemon-down property.
-	if _, err := net.Dial("unix", cfg.SocketPath); err == nil {
+	if conn, err := net.Dial("unix", cfg.SocketPath); err == nil {
+		conn.Close()
 		t.Fatal("socket still accepting connections after cancel — daemon did not stop")
 	}
 

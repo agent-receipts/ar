@@ -166,3 +166,16 @@ func TestRun_BadFlagIsUsageError(t *testing.T) {
 		t.Fatalf("exit = %d, want %d", code, ExitUsageError)
 	}
 }
+
+func TestRun_HelpFlagExitsCleanly(t *testing.T) {
+	code, _, stderr := runOnce(t, []string{"-h"})
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (asking for help is not an error)", code, ExitOK)
+	}
+	// The flag package writes the usage to fs.Output, which we redirected to
+	// stderr. Sanity-check it lists at least one of our flags so a refactor
+	// that drops the auto-generated usage block trips the test.
+	if !strings.Contains(stderr, "--db") && !strings.Contains(stderr, "-db") {
+		t.Errorf("stderr should mention --db; got %q", stderr)
+	}
+}
