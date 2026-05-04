@@ -11,6 +11,13 @@ export interface KeyPair {
 const MULTIBASE_BASE64URL = "u";
 
 /**
+ * The only proof.type the spec accepts. Verifiers MUST reject any other
+ * value so that consumers cannot be tricked into believing a receipt was
+ * signed under a different scheme.
+ */
+const PROOF_TYPE_ED25519_SIGNATURE_2020 = "Ed25519Signature2020";
+
+/**
  * Generate an Ed25519 key pair (PEM-encoded).
  *
  * Note: uses synchronous generation which blocks the event loop.
@@ -58,7 +65,7 @@ export function signReceipt(
 	const signature = sign(null, data, privateKey);
 
 	const proof: Proof = {
-		type: "Ed25519Signature2020",
+		type: PROOF_TYPE_ED25519_SIGNATURE_2020,
 		created: new Date().toISOString(),
 		verificationMethod,
 		proofPurpose: "assertionMethod",
@@ -77,7 +84,11 @@ export function verifyReceipt(
 ): boolean {
 	const { proof, ...unsigned } = receipt;
 
-	const proofValue = proof?.proofValue;
+	if (proof?.type !== PROOF_TYPE_ED25519_SIGNATURE_2020) {
+		return false;
+	}
+
+	const proofValue = proof.proofValue;
 	if (
 		typeof proofValue !== "string" ||
 		proofValue.length < 2 ||

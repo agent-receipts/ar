@@ -79,3 +79,13 @@ class TestVerifyReceipt:
         signed = sign_receipt(unsigned, TEST_PRIVATE_KEY, "did:agent:test#key-1")
         signed.proof.proofValue = ""
         assert verify_receipt(signed, TEST_PUBLIC_KEY) is False
+
+    def test_wrong_proof_type_returns_false(self) -> None:
+        # proof.type lives outside the signed bytes, so the Ed25519 signature
+        # is still mathematically valid here. Verify MUST still reject the
+        # receipt — otherwise an attacker could swap the type to claim a
+        # different scheme.
+        unsigned = make_unsigned(1, None)
+        signed = sign_receipt(unsigned, TEST_PRIVATE_KEY, "did:agent:test#key-1")
+        signed.proof.type = "RsaSignature2018"
+        assert verify_receipt(signed, TEST_PUBLIC_KEY) is False

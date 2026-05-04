@@ -139,3 +139,68 @@ class TestV020Vectors:
         section = vectors["parametersDisclosureReceipt"]
         receipt = AgentReceipt(**section["receipt"])
         assert hash_receipt(receipt) == section["expectedReceiptHash"]
+
+
+MALFORMED_VECTORS = (
+    Path(__file__).parent.parent.parent.parent
+    / "cross-sdk-tests"
+    / "malformed_vectors.json"
+)
+
+
+def _load_malformed_vectors() -> dict:
+    with open(MALFORMED_VECTORS) as f:
+        return json.load(f)
+
+
+def _verify_or_false(receipt_dict: dict, public_key: str) -> bool:
+    """Run verify_receipt, treating any pydantic/verify failure as rejection.
+
+    The malformed corpus intentionally contains shapes that may fail at parse
+    time in some SDKs and at verify time in others — both outcomes count as
+    "the SDK refused to accept this receipt".
+    """
+    try:
+        receipt = AgentReceipt(**receipt_dict)
+    except Exception:  # noqa: BLE001 — any parse failure = rejection
+        return False
+    try:
+        return verify_receipt(receipt, public_key)
+    except Exception:  # noqa: BLE001 — any verify-time error = rejection
+        return False
+
+
+class TestMalformedReceiptsRejected:
+    """Every malformed receipt in the shared corpus must fail verification."""
+
+    def test_corpus_is_present(self) -> None:
+        v = _load_malformed_vectors()
+        assert v["receipts"], "malformed_vectors.json has no receipt cases"
+
+    def test_each_receipt_case_fails(self) -> None:
+        v = _load_malformed_vectors()
+        public_key = v["keys"]["publicKey"]
+        accepted = [
+            case["name"]
+            for case in v["receipts"]
+            if _verify_or_false(case["receipt"], public_key)
+        ]
+        assert not accepted, f"Python accepted malformed cases: {accepted}"
+
+
+class TestMalformedChainsRejected:
+    """Every malformed chain in the shared corpus must fail chain verify."""
+
+    def test_each_chain_case_fails(self) -> None:
+        v = _load_malformed_vectors()
+        public_key = v["keys"]["publicKey"]
+        accepted = []
+        for case in v["chains"]:
+            try:
+                receipts = [AgentReceipt(**r) for r in case["receipts"]]
+            except Exception:  # noqa: BLE001
+                continue  # parse-time rejection counts
+            result = verify_chain(receipts, public_key)
+            if result.valid:
+                accepted.append(case["name"])
+        assert not accepted, f"Python accepted malformed chains: {accepted}"

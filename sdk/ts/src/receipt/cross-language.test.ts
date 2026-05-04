@@ -58,6 +58,49 @@ function loadGoVectors(): TestVectors {
 	return JSON.parse(readFileSync(path, "utf-8"));
 }
 
+function loadPyVectors(): TestVectors {
+	const path = resolve(
+		currentDir,
+		"../../../../cross-sdk-tests/py_vectors.json",
+	);
+	return JSON.parse(readFileSync(path, "utf-8"));
+}
+
+interface MalformedVectors {
+	description: string;
+	keys: { publicKey: string; privateKey: string };
+	receipts: Array<{ name: string; description: string; receipt: AgentReceipt }>;
+	chains: Array<{
+		name: string;
+		description: string;
+		receipts: AgentReceipt[];
+	}>;
+}
+
+function loadMalformedVectors(): MalformedVectors {
+	const path = resolve(
+		currentDir,
+		"../../../../cross-sdk-tests/malformed_vectors.json",
+	);
+	return JSON.parse(readFileSync(path, "utf-8"));
+}
+
+function safeVerify(receipt: AgentReceipt, publicKey: string): boolean {
+	try {
+		return verifyReceipt(receipt, publicKey);
+	} catch {
+		return false;
+	}
+}
+
+function safeVerifyChain(receipts: AgentReceipt[], publicKey: string): boolean {
+	try {
+		return verifyChain(receipts, publicKey).valid === true;
+	} catch {
+		return false;
+	}
+}
+
 function loadV020Vectors(): V020Vectors {
 	const path = resolve(
 		currentDir,
@@ -132,6 +175,72 @@ describe("cross-language: Go SDK", () => {
 	});
 });
 
+describe("cross-language: Python SDK", () => {
+	describe("canonicalization matches Python", () => {
+		it("simple object", () => {
+			const vectors = loadPyVectors();
+			expect(canonicalize(vectors.canonicalization.simpleInput)).toBe(
+				vectors.canonicalization.simpleExpected,
+			);
+		});
+
+		it("unsigned receipt", () => {
+			const vectors = loadPyVectors();
+			expect(canonicalize(vectors.canonicalization.receiptInput)).toBe(
+				vectors.canonicalization.receiptExpected,
+			);
+		});
+	});
+
+	describe("SHA-256 hashing matches Python", () => {
+		it("simple string", () => {
+			const vectors = loadPyVectors();
+			expect(sha256(vectors.hashing.simpleInput)).toBe(
+				vectors.hashing.simpleExpected,
+			);
+		});
+
+		it("receipt hash", () => {
+			const vectors = loadPyVectors();
+			expect(hashReceipt(vectors.signing.signed)).toBe(
+				vectors.hashing.receiptExpected,
+			);
+		});
+	});
+
+	describe("Python-signed receipt verification", () => {
+		it("verifies in TypeScript", () => {
+			const vectors = loadPyVectors();
+			expect(
+				verifyReceipt(vectors.signing.signed, vectors.keys.publicKey),
+			).toBe(true);
+		});
+
+		it("fails with wrong key", () => {
+			const vectors = loadPyVectors();
+			const other = generateKeyPair();
+			expect(verifyReceipt(vectors.signing.signed, other.publicKey)).toBe(
+				false,
+			);
+		});
+
+		it("fails when tampered", () => {
+			const vectors = loadPyVectors();
+			const tampered: AgentReceipt = {
+				...vectors.signing.signed,
+				credentialSubject: {
+					...vectors.signing.signed.credentialSubject,
+					action: {
+						...vectors.signing.signed.credentialSubject.action,
+						type: "filesystem.file.delete",
+					},
+				},
+			};
+			expect(verifyReceipt(tampered, vectors.keys.publicKey)).toBe(false);
+		});
+	});
+});
+
 describe("cross-language: v0.2.0 vectors", () => {
 	it("response_hash canonicalization matches Go", () => {
 		const v = loadV020Vectors();
@@ -172,5 +281,28 @@ describe("cross-language: v0.2.0 vectors", () => {
 		expect(hashReceipt(v.parametersDisclosureReceipt.receipt)).toBe(
 			v.parametersDisclosureReceipt.expectedReceiptHash,
 		);
+	});
+});
+
+describe("cross-language: malformed corpus", () => {
+	it("the corpus contains receipt cases", () => {
+		const v = loadMalformedVectors();
+		expect(v.receipts.length).toBeGreaterThan(0);
+	});
+
+	it("rejects every malformed receipt case", () => {
+		const v = loadMalformedVectors();
+		const accepted = v.receipts
+			.filter(({ receipt }) => safeVerify(receipt, v.keys.publicKey))
+			.map(({ name }) => name);
+		expect(accepted).toEqual([]);
+	});
+
+	it("rejects every malformed chain case", () => {
+		const v = loadMalformedVectors();
+		const accepted = v.chains
+			.filter(({ receipts }) => safeVerifyChain(receipts, v.keys.publicKey))
+			.map(({ name }) => name);
+		expect(accepted).toEqual([]);
 	});
 });
