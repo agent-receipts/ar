@@ -2,7 +2,6 @@ package store
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
@@ -632,10 +631,12 @@ func TestOpenReadOnlyRejectsWrites(t *testing.T) {
 	kp, _ := receipt.GenerateKeyPair()
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
 	h, _ := receipt.HashReceipt(r)
+	// We deliberately don't pin a specific SQLite error string here — the
+	// driver's wording around read-only rejection has shifted between
+	// modernc.org/sqlite versions, and the behaviour we actually care about
+	// is "the write was rejected", regardless of how it's phrased.
 	if err := ro.Insert(r, h); err == nil {
 		t.Fatal("expected Insert against read-only handle to fail, got nil")
-	} else if !strings.Contains(err.Error(), "readonly") {
-		t.Fatalf("expected SQLite readonly error, got: %v", err)
 	}
 }
 

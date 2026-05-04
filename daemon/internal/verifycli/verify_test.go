@@ -167,6 +167,24 @@ func TestRun_BadFlagIsUsageError(t *testing.T) {
 	}
 }
 
+func TestRun_RejectsPositionalArgs(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath := fixtureChain(t, dir, "chain-1", 1)
+
+	code, _, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--chain-id", "chain-1",
+		"chain-1", // typo: chain-id passed positionally as well
+	})
+	if code != ExitUsageError {
+		t.Fatalf("exit = %d, want %d (positional args should be a usage error)", code, ExitUsageError)
+	}
+	if !strings.Contains(stderr, "unexpected positional argument") {
+		t.Errorf("stderr = %q, expected unexpected-positional diagnostic", stderr)
+	}
+}
+
 func TestRun_HelpFlagExitsCleanly(t *testing.T) {
 	code, _, stderr := runOnce(t, []string{"-h"})
 	if code != ExitOK {

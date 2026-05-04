@@ -8,10 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 
 	"github.com/agent-receipts/ar/daemon/internal/chain"
 	"github.com/agent-receipts/ar/daemon/internal/keysource"
@@ -266,7 +269,8 @@ func tightenDBFiles(dbPath string) error {
 //
 // Behaviour:
 //   - File missing → write the current public key with mode 0644.
-//   - File present and identical to the current public key → no-op.
+//   - File present and identical to the current public key → no-op (perms
+//     converged to 0644 if a stricter umask had loosened them).
 //   - File present and differs from the current public key → refuse. A
 //     mismatch means either the private key changed (rotation, restored from
 //     backup) or the published file was tampered with; silently overwriting
@@ -275,6 +279,11 @@ func tightenDBFiles(dbPath string) error {
 //   - File present but a symlink, FIFO, device, etc. → refuse. A pre-created
 //     symlink would otherwise let an attacker with write access to the parent
 //     redirect the chmod / write to an arbitrary target.
+//
+// All file operations use O_NOFOLLOW + an fstat on the open fd, and the
+// fresh-write path uses O_CREATE|O_EXCL, so an attacker who can race-replace
+// the path between the existence check and the write/chmod cannot trick the
+// daemon into writing through or chmod'ing a symlink target.
 func publishPublicKey(ks keysource.KeySource, path string) error {
 	if path == "" {
 		return errors.New("Config.PublicKeyPath is required")
@@ -284,48 +293,97 @@ func publishPublicKey(ks keysource.KeySource, path string) error {
 		return fmt.Errorf("read public key from keysource: %w", err)
 	}
 
-	if info, err := os.Lstat(path); err == nil {
+	// Lstat first so non-regular files (symlinks, FIFOs, devices, dirs)
+	// short-circuit without any open syscall — opening a FIFO RDONLY would
+	// block the daemon at startup waiting for a writer.
+	info, lstatErr := os.Lstat(path)
+	switch {
+	case lstatErr == nil:
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf(
 				"daemon: public-key path %s exists but is not a regular file (mode %s); refusing to overwrite",
 				path, info.Mode(),
 			)
 		}
-		existing, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("read existing public-key file %s: %w", path, err)
-		}
-		if string(existing) == pubPEM {
-			// Already up-to-date. Re-chmod in case the file was created with
-			// a stricter umask but later loosened — converging the bit set is
-			// cheap and aligns with the "publish on every startup" contract.
-			if info.Mode().Perm() != 0o644 {
-				if err := os.Chmod(path, 0o644); err != nil {
-					return fmt.Errorf("chmod %s 0644: %w", path, err)
-				}
-			}
-			return nil
-		}
-		return fmt.Errorf(
-			"daemon: public-key file %s differs from current keysource public key; refusing to overwrite. Remove the file deliberately if the signing key was rotated or restored from backup",
-			path,
-		)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("stat public-key path %s: %w", path, err)
+		return reconcileExistingPublicKey(path, pubPEM)
+
+	case errors.Is(lstatErr, fs.ErrNotExist):
+		// Fall through to the fresh-write path below.
+
+	default:
+		return fmt.Errorf("stat public-key path %s: %w", path, lstatErr)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("create public-key dir: %w", err)
 	}
-	if err := os.WriteFile(path, []byte(pubPEM), 0o644); err != nil {
+	// O_CREATE|O_EXCL + O_NOFOLLOW: refuses to follow a symlink AND refuses
+	// any pre-existing file. An attacker who creates a symlink at path
+	// between the Lstat ENOENT above and this Open will trip O_EXCL (the
+	// symlink dirent exists), so we never write through it — closes the
+	// fresh-write half of the TOCTOU window Copilot flagged on PR #325.
+	fh, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|oNoFollow, 0o644)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return fmt.Errorf("daemon: public-key path %s appeared as a symlink between existence check and create; refusing", path)
+		}
+		return fmt.Errorf("create public-key file %s: %w", path, err)
+	}
+	defer fh.Close()
+	if _, err := fh.Write([]byte(pubPEM)); err != nil {
 		return fmt.Errorf("write public-key file %s: %w", path, err)
 	}
-	// WriteFile honours the process umask, which the daemon tightens to 0027
-	// before this point — so a fresh write would be 0640 instead of the 0644
-	// we want for a public key. Chmod afterwards to land on the intended mode
-	// without reverting the umask (which would loosen WAL/SHM perms).
-	if err := os.Chmod(path, 0o644); err != nil {
+	// fchmod via the open fd, not path-based Chmod, so the mode applies to
+	// the inode we just created — no symlink-target chmod risk even if the
+	// directory entry is replaced after we write.
+	if err := fh.Chmod(0o644); err != nil {
 		return fmt.Errorf("chmod %s 0644: %w", path, err)
+	}
+	return nil
+}
+
+// reconcileExistingPublicKey handles the case where Lstat saw a regular file
+// at path. It opens with O_NOFOLLOW + fstat to confirm we read the same inode
+// Lstat saw (closing the Lstat→Open race), then no-ops, fchmod's, or refuses
+// based on whether the on-disk contents match the current keysource.
+func reconcileExistingPublicKey(path, wantPubPEM string) error {
+	fh, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return fmt.Errorf("daemon: public-key path %s changed to a symlink between check and open; refusing", path)
+		}
+		return fmt.Errorf("open public-key file %s: %w", path, err)
+	}
+	defer fh.Close()
+	info, err := fh.Stat()
+	if err != nil {
+		return fmt.Errorf("fstat public-key file %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf(
+			"daemon: public-key path %s opened as non-regular (mode %s); refusing",
+			path, info.Mode(),
+		)
+	}
+	// 16 KiB cap matches keysource.MaxKeyFileBytes; PEM-encoded SPKI public
+	// keys are ~120 bytes, so anything larger is a misconfiguration we'd
+	// rather refuse loudly than parse defensively.
+	existing, err := io.ReadAll(io.LimitReader(fh, 16*1024))
+	if err != nil {
+		return fmt.Errorf("read existing public-key file %s: %w", path, err)
+	}
+	if string(existing) != wantPubPEM {
+		return fmt.Errorf(
+			"daemon: public-key file %s differs from current keysource public key; refusing to overwrite. Remove the file deliberately if the signing key was rotated or restored from backup",
+			path,
+		)
+	}
+	if info.Mode().Perm() != 0o644 {
+		// fchmod via the open fd: the mode applies to this inode regardless
+		// of any directory-entry swap that happened after Lstat.
+		if err := fh.Chmod(0o644); err != nil {
+			return fmt.Errorf("chmod %s 0644: %w", path, err)
+		}
 	}
 	return nil
 }

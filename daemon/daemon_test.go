@@ -232,6 +232,45 @@ func TestPublishPublicKey_RefusesSymlinkAtPath(t *testing.T) {
 	}
 }
 
+// TestPublishPublicKey_FreshWriteRefusesPreCreatedSymlink is the regression
+// test for the symlink-race Copilot flagged on PR #325: even when Lstat
+// reports the path missing, an attacker who plants a symlink before the
+// create-and-write must not get the daemon to write/chmod the symlink target.
+// The O_CREATE|O_EXCL|O_NOFOLLOW open is what closes the window.
+func TestPublishPublicKey_FreshWriteRefusesPreCreatedSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "attacker-target")
+	if err := os.WriteFile(target, []byte("victim"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "signing.key.pub")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("os.Symlink unavailable: %v", err)
+	}
+
+	err := publishPublicKey(&stubKeySource{pub: "PUBKEY"}, link)
+	if err == nil {
+		t.Fatal("expected refusal when public-key path is a pre-existing symlink")
+	}
+
+	// Whichever code path catches it (Lstat→non-regular or create→ELOOP),
+	// the target file must remain untouched.
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "victim" {
+		t.Errorf("symlink target was overwritten; got %q want %q", got, "victim")
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("symlink target perm changed to %o (want 0600); chmod followed the symlink", perm)
+	}
+}
+
 func TestPublishPublicKey_RequiresPath(t *testing.T) {
 	if err := publishPublicKey(&stubKeySource{pub: "x"}, ""); err == nil {
 		t.Fatal("expected error when PublicKeyPath is empty")

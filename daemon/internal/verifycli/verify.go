@@ -71,6 +71,14 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		}
 		return ExitUsageError
 	}
+	// `verify` takes no positional arguments — chain selection is via
+	// --chain-id. Surface stray args as a usage error so a typo like
+	// `agent-receipts verify --db /path/to.db extra` doesn't silently succeed
+	// and hide a scripting mistake.
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "agent-receipts verify: unexpected positional argument(s): %v (use --chain-id for chain selection)\n", fs.Args())
+		return ExitUsageError
+	}
 	if *dbPath == "" {
 		fmt.Fprintln(stderr, "agent-receipts verify: --db is required (no AGENTRECEIPTS_DB and no home directory)")
 		return ExitUsageError
