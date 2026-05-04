@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
@@ -111,6 +113,48 @@ func Open(dbPath string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate tool_name: %w", err)
 	}
+	return &Store{db: db}, nil
+}
+
+// OpenReadOnly opens the SQLite store at dbPath without any schema or
+// migration writes. It is the entry point for tools that must coexist with
+// a running daemon (the sole writer) — e.g. agent-receipts verify, which is
+// required to work whether the daemon is up or down. The returned *Store
+// supports the read-side query API (GetChain, GetChainTail, VerifyStoredChain,
+// QueryReceipts, …); callers that invoke Insert against a read-only handle
+// will get a SQLite "attempt to write a readonly database" error from the
+// driver.
+//
+// dbPath must be a real filesystem path; ":memory:" is rejected because a
+// fresh in-memory database has no rows to read. The path is resolved to
+// absolute form so the resulting "file:" URI is unambiguous regardless of
+// the caller's working directory.
+func OpenReadOnly(dbPath string) (*Store, error) {
+	if dbPath == "" {
+		return nil, fmt.Errorf("OpenReadOnly: dbPath is required")
+	}
+	if dbPath == ":memory:" {
+		return nil, fmt.Errorf("OpenReadOnly: in-memory databases cannot be opened read-only")
+	}
+	abs, err := filepath.Abs(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve db path: %w", err)
+	}
+	// SQLite URI form: file:<abs>?mode=ro. mode=ro opens the main DB file
+	// read-only without taking the immutable=1 path — that matters because
+	// a daemon crash mid-checkpoint still needs WAL recovery to be possible
+	// when the verify CLI runs. busy_timeout via _pragma keeps brief writer
+	// contention from surfacing as SQLITE_BUSY in the verify path.
+	dsn := "file:" + url.PathEscape(abs) + "?mode=ro&_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open database read-only: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open database read-only: %w", err)
+	}
+	db.SetMaxOpenConns(1)
 	return &Store{db: db}, nil
 }
 

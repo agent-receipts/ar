@@ -32,6 +32,12 @@ type Config struct {
 	// KeyPath is the PEM-encoded Ed25519 private key path. Mode must be 0600.
 	KeyPath string
 
+	// PublicKeyPath is where the daemon publishes the matching SPKI public
+	// key in PEM form, mode 0644, on every startup. Read-side tools
+	// (`agent-receipts verify`) load it without needing access to KeyPath or
+	// the daemon's signing surface. Defaults to KeyPath + ".pub" when empty.
+	PublicKeyPath string
+
 	// ChainID is the chain id all incoming frames are written under. Phase 1
 	// supports one chain per daemon process.
 	ChainID string
@@ -94,6 +100,17 @@ func DefaultKeyPath() string {
 	return ""
 }
 
+// DefaultPublicKeyPath returns the default published public-key path: the
+// same directory as keyPath with the suffix ".pub". Empty when keyPath is
+// empty so cmd/main.go can surface a clearer "Config.KeyPath is required"
+// error from validateConfig instead of a less-helpful PublicKeyPath one.
+func DefaultPublicKeyPath(keyPath string) string {
+	if keyPath == "" {
+		return ""
+	}
+	return keyPath + ".pub"
+}
+
 // Run starts the daemon and blocks until ctx is cancelled. It returns the
 // first fatal error or nil on graceful shutdown.
 func Run(ctx context.Context, cfg Config) error {
@@ -146,6 +163,11 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("init keysource: %w", err)
 	}
 	defer func() { _ = ks.Teardown() }()
+
+	if err := publishPublicKey(ks, cfg.PublicKeyPath); err != nil {
+		return err
+	}
+	cfg.Logger.Printf("published public key to %s", cfg.PublicKeyPath)
 
 	state, err := chain.LoadFromStore(st, cfg.ChainID)
 	if err != nil {
@@ -236,6 +258,78 @@ func tightenDBFiles(dbPath string) error {
 	return nil
 }
 
+// publishPublicKey writes the keysource's PEM-encoded public key to path with
+// mode 0644 so independent verifiers can load it without needing access to
+// the private key path or the daemon's signing surface (this realises the
+// "agent-receipts verify reads DB and public key directly via filesystem"
+// acceptance criterion of issue #236).
+//
+// Behaviour:
+//   - File missing → write the current public key with mode 0644.
+//   - File present and identical to the current public key → no-op.
+//   - File present and differs from the current public key → refuse. A
+//     mismatch means either the private key changed (rotation, restored from
+//     backup) or the published file was tampered with; silently overwriting
+//     would invalidate verifiers' trust in receipts they already accepted.
+//     Operator must remove the stale file deliberately.
+//   - File present but a symlink, FIFO, device, etc. → refuse. A pre-created
+//     symlink would otherwise let an attacker with write access to the parent
+//     redirect the chmod / write to an arbitrary target.
+func publishPublicKey(ks keysource.KeySource, path string) error {
+	if path == "" {
+		return errors.New("Config.PublicKeyPath is required")
+	}
+	pubPEM, err := ks.PublicKey()
+	if err != nil {
+		return fmt.Errorf("read public key from keysource: %w", err)
+	}
+
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf(
+				"daemon: public-key path %s exists but is not a regular file (mode %s); refusing to overwrite",
+				path, info.Mode(),
+			)
+		}
+		existing, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read existing public-key file %s: %w", path, err)
+		}
+		if string(existing) == pubPEM {
+			// Already up-to-date. Re-chmod in case the file was created with
+			// a stricter umask but later loosened — converging the bit set is
+			// cheap and aligns with the "publish on every startup" contract.
+			if info.Mode().Perm() != 0o644 {
+				if err := os.Chmod(path, 0o644); err != nil {
+					return fmt.Errorf("chmod %s 0644: %w", path, err)
+				}
+			}
+			return nil
+		}
+		return fmt.Errorf(
+			"daemon: public-key file %s differs from current keysource public key; refusing to overwrite. Remove the file deliberately if the signing key was rotated or restored from backup",
+			path,
+		)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat public-key path %s: %w", path, err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("create public-key dir: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(pubPEM), 0o644); err != nil {
+		return fmt.Errorf("write public-key file %s: %w", path, err)
+	}
+	// WriteFile honours the process umask, which the daemon tightens to 0027
+	// before this point — so a fresh write would be 0640 instead of the 0644
+	// we want for a public key. Chmod afterwards to land on the intended mode
+	// without reverting the umask (which would loosen WAL/SHM perms).
+	if err := os.Chmod(path, 0o644); err != nil {
+		return fmt.Errorf("chmod %s 0644: %w", path, err)
+	}
+	return nil
+}
+
 func validateConfig(cfg *Config) error {
 	if cfg.SocketPath == "" {
 		return errors.New("Config.SocketPath is required")
@@ -245,6 +339,9 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.KeyPath == "" {
 		return errors.New("Config.KeyPath is required")
+	}
+	if cfg.PublicKeyPath == "" {
+		cfg.PublicKeyPath = DefaultPublicKeyPath(cfg.KeyPath)
 	}
 	if cfg.ChainID == "" {
 		return errors.New("Config.ChainID is required")

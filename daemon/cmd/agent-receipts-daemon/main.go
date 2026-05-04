@@ -17,10 +17,12 @@ import (
 )
 
 func main() {
+	keyPath := envOrDefault("AGENTRECEIPTS_KEY", daemon.DefaultKeyPath())
 	cfg := daemon.Config{
 		SocketPath:           envOrDefault("AGENTRECEIPTS_SOCKET", daemon.DefaultSocketPath()),
 		DBPath:               envOrDefault("AGENTRECEIPTS_DB", daemon.DefaultDBPath()),
-		KeyPath:              envOrDefault("AGENTRECEIPTS_KEY", daemon.DefaultKeyPath()),
+		KeyPath:              keyPath,
+		PublicKeyPath:        envOrDefault("AGENTRECEIPTS_PUBLIC_KEY", daemon.DefaultPublicKeyPath(keyPath)),
 		ChainID:              envOrDefault("AGENTRECEIPTS_CHAIN_ID", "default"),
 		IssuerID:             envOrDefault("AGENTRECEIPTS_ISSUER_ID", "did:agent-receipts-daemon:local"),
 		VerificationMethodID: envOrDefault("AGENTRECEIPTS_VERIFICATION_METHOD", "did:agent-receipts-daemon:local#k1"),
@@ -29,6 +31,7 @@ func main() {
 	flag.StringVar(&cfg.SocketPath, "socket", cfg.SocketPath, "Unix-domain socket path (env: AGENTRECEIPTS_SOCKET)")
 	flag.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	flag.StringVar(&cfg.KeyPath, "key", cfg.KeyPath, "Ed25519 PEM private key path, mode 0600 (env: AGENTRECEIPTS_KEY)")
+	flag.StringVar(&cfg.PublicKeyPath, "public-key", cfg.PublicKeyPath, "Path to publish the SPKI public key as PEM, mode 0644 (env: AGENTRECEIPTS_PUBLIC_KEY)")
 	flag.StringVar(&cfg.ChainID, "chain-id", cfg.ChainID, "Chain id to write under (env: AGENTRECEIPTS_CHAIN_ID)")
 	flag.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	flag.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
