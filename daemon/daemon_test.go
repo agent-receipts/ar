@@ -8,9 +8,6 @@ import (
 )
 
 func TestTightenDBFiles_TightensFresh0644(t *testing.T) {
-	// SQLite creates DBs with umask-default 0644 on most systems. tightenDBFiles
-	// must NOT refuse this case (we'd reject every fresh daemon startup) —
-	// instead it should chmod down to 0640.
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "receipts.db")
 	if err := os.WriteFile(dbPath, []byte("x"), 0o644); err != nil {
@@ -62,6 +59,31 @@ func TestTightenDBFiles_PreservesTighter(t *testing.T) {
 	// 0600 must NOT be widened to 0640.
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Errorf("perm = %o, want 0600 (operator's tighter choice must be preserved)", got)
+	}
+}
+
+// TestTightenDBFiles_Tightens0604 is the regression test for the bitmask bug:
+// 0604 (rw----r--) is world-readable but numerically less than 0640, so a
+// `Perm() > 0640` comparison would let it through unchanged. The bitmask
+// check must catch it.
+func TestTightenDBFiles_Tightens0604(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "receipts.db")
+	if err := os.WriteFile(dbPath, []byte("x"), 0o604); err != nil {
+		t.Fatal(err)
+	}
+	if err := tightenDBFiles(dbPath); err != nil {
+		t.Fatalf("tightenDBFiles should chmod 0604 -> 0640, not refuse: %v", err)
+	}
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got&0o007 != 0 {
+		t.Errorf("after tighten, perm = %o, world bits should be cleared", got)
+	}
+	if got := info.Mode().Perm(); looserThanAllowed(got) {
+		t.Errorf("after tighten, perm = %o is still looser than %o", got, allowedDBPerm)
 	}
 }
 

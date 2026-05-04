@@ -139,6 +139,12 @@ func Listen(opts Options) (*Listener, error) {
 	}, nil
 }
 
+// trackConn registers c so Close can break its read loop, and atomically
+// claims a slot on the WaitGroup. Both happen under connsMu so the closed
+// check, the conns map insert, and the wg.Add together race-free against
+// Close (which holds the same mutex while it observes l.closed and iterates
+// conns). Without that atomicity the race detector legitimately flags
+// wg.Add(1) racing wg.Wait at counter == 0.
 func (l *Listener) trackConn(c *net.UnixConn) bool {
 	l.connsMu.Lock()
 	defer l.connsMu.Unlock()
@@ -149,6 +155,7 @@ func (l *Listener) trackConn(c *net.UnixConn) bool {
 	default:
 	}
 	l.conns[c] = struct{}{}
+	l.wg.Add(1)
 	return true
 }
 
@@ -200,12 +207,12 @@ func (l *Listener) Serve(ctx context.Context) error {
 		}
 
 		// Track the conn so Close() can unblock its read loop on shutdown.
-		// If we lost the race with Close(), drop this conn immediately.
+		// trackConn also claims the WaitGroup slot atomically with the closed
+		// check; if we lost the race with Close(), drop this conn.
 		if !l.trackConn(conn) {
 			conn.Close()
 			continue
 		}
-		l.wg.Add(1)
 		go func() {
 			defer l.wg.Done()
 			defer conn.Close()
@@ -221,6 +228,13 @@ func (l *Listener) Serve(ctx context.Context) error {
 func (l *Listener) Close() error {
 	var closeErr error
 	l.once.Do(func() {
+		// Hold connsMu across the whole shutdown signal so trackConn's closed
+		// check, the wg.Add it does, and our snapshot of l.conns are linearised:
+		// any Accept-loop goroutine that's about to register a fresh conn either
+		// finishes BEFORE we enter this critical section (in which case we close
+		// it explicitly below and wg.Wait will see it through) or AFTER we exit
+		// (in which case its trackConn observes l.closed and rejects).
+		l.connsMu.Lock()
 		close(l.closed)
 		closeErr = l.ln.Close()
 		// net.UnixListener.Close unlinks the socket file when the listener was
@@ -235,7 +249,6 @@ func (l *Listener) Close() error {
 		// Break in-flight io.ReadFull calls. Without this, an idle peer
 		// connected to the daemon would block shutdown indefinitely — closing
 		// the listener does not propagate to already-accepted UDS conns.
-		l.connsMu.Lock()
 		for c := range l.conns {
 			_ = c.Close()
 		}
@@ -305,8 +318,13 @@ func readFrame(r io.Reader) ([]byte, error) {
 	return buf, nil
 }
 
-// WriteFrame writes one length-prefixed frame to w. Exposed so test clients
-// (and Phase 2 emitter SDKs) share the same wire encoding as the daemon.
+// WriteFrame writes one length-prefixed frame to w. Exposed so the daemon's
+// own integration tests (which dial the listener as if they were emitters)
+// don't reimplement the wire encoding. This package is daemon-internal, so
+// Phase 2 emitter SDKs in other modules cannot import it directly — they
+// reimplement the same encoding (4-byte big-endian length prefix, MaxFrameSize
+// cap), which is documented in daemon/README.md so the wire form stays
+// canonical across implementations.
 //
 // io.Writer's contract permits short writes with a nil error. A short write
 // would corrupt framing for the receiver, so writes are looped until all

@@ -47,10 +47,17 @@ type Config struct {
 	Logger *log.Logger
 }
 
-// DefaultSocketPath returns the per-OS default socket path for unprivileged
-// installs. Phase 1 resolves Q1 of issue #236: macOS uses $TMPDIR, Linux uses
-// $XDG_RUNTIME_DIR with a fallback. System installs override this via
-// AGENTRECEIPTS_SOCKET (typically /run/agentreceipts/events.sock).
+// DefaultSocketPath returns the per-OS default socket path. Phase 1 resolves
+// Q1 of issue #236:
+//   - macOS: $TMPDIR/agentreceipts/events.sock — per-user, unprivileged.
+//   - Linux with $XDG_RUNTIME_DIR set: $XDG_RUNTIME_DIR/agentreceipts/
+//     events.sock — per-user, unprivileged.
+//   - Linux fallback (no $XDG_RUNTIME_DIR): /run/agentreceipts/events.sock —
+//     this is the system-install path and requires privileged directory
+//     creation/write. Unprivileged users on systems without
+//     $XDG_RUNTIME_DIR should set AGENTRECEIPTS_SOCKET explicitly.
+//   - Other platforms: empty string (the daemon refuses to start outside
+//     Linux/macOS, see Run).
 func DefaultSocketPath() string {
 	switch runtime.GOOS {
 	case "darwin":
@@ -93,17 +100,18 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Logger == nil {
 		cfg.Logger = log.Default()
 	}
-	if err := validateConfig(&cfg); err != nil {
-		return err
-	}
-	// Phase 1 supports Linux and macOS. The peer-cred capture stub on other
-	// OSes rejects every connection, but starting at all on those platforms
-	// would silently produce a daemon with no useful behaviour. Fail fast
-	// instead. Windows ships in a follow-up issue per #236.
+	// Phase 1 supports Linux and macOS. Check this BEFORE validateConfig so an
+	// unsupported-platform run gets a clear error, rather than the misleading
+	// "Config.SocketPath is required" that DefaultSocketPath's empty return
+	// would otherwise produce on those platforms. Windows ships in a follow-up
+	// issue per #236.
 	switch runtime.GOOS {
 	case "linux", "darwin":
 	default:
 		return fmt.Errorf("agent-receipts-daemon: unsupported platform %q (Phase 1 supports linux and darwin only)", runtime.GOOS)
+	}
+	if err := validateConfig(&cfg); err != nil {
+		return err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o750); err != nil {
@@ -156,6 +164,21 @@ func Run(ctx context.Context, cfg Config) error {
 	return nil
 }
 
+// allowedDBPerm is the maximum permission set the daemon will allow on the
+// receipt DB and its WAL/SHM siblings: 0640 (owner rw, group r, world none).
+// "Looser than allowedDBPerm" means any bit set outside that mask, so we use a
+// bitmask check instead of a numeric `>` comparison — modes like 0604
+// (rw----r--, world-readable) are numerically less than 0640 but still leak
+// receipts to other users on the host. Bitmask catches all such cases.
+const allowedDBPerm os.FileMode = 0o640
+
+// looserThanAllowed reports whether mode has any permission bit set outside
+// the allowedDBPerm mask. mode is the Perm()-only portion (file-type bits
+// already stripped).
+func looserThanAllowed(mode os.FileMode) bool {
+	return mode&^allowedDBPerm != 0
+}
+
 // tightenDBFiles ensures the SQLite database and any WAL/SHM siblings are no
 // looser than 0640 (owner rw, group r, world none). Run AFTER store.Open so
 // the freshly-created files exist. SQLite creates DB files using the process
@@ -167,10 +190,11 @@ func Run(ctx context.Context, cfg Config) error {
 //   - File present but a symlink, FIFO, device, etc. → refuse. A pre-created
 //     symlink at <db>-wal could otherwise redirect chmod to an unexpected
 //     target, and a non-regular file would silently bypass the perm check.
-//   - File present with perms > 0640 → chmod down to 0640 (preserves
-//     operator-set tighter modes such as 0600 untouched).
-//   - File present with perms still > 0640 after chmod (e.g. filesystem
-//     silently ignored chmod, or a race rewrote a looser mode) → refuse.
+//   - File present with any bit looser than 0640 → chmod down to 0640
+//     (preserves operator-set tighter modes such as 0600 untouched).
+//   - File present with perms still looser than 0640 after chmod (e.g.
+//     filesystem silently ignored chmod, or a race rewrote a looser mode)
+//     → refuse.
 func tightenDBFiles(dbPath string) error {
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		path := dbPath + suffix
@@ -187,17 +211,17 @@ func tightenDBFiles(dbPath string) error {
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("daemon: %s exists but is not a regular file (mode %s); refusing to chmod or use it as a SQLite path", path, info.Mode())
 		}
-		if info.Mode().Perm() > 0o640 {
-			if err := os.Chmod(path, 0o640); err != nil {
-				return fmt.Errorf("chmod %s 0640: %w", path, err)
+		if looserThanAllowed(info.Mode().Perm()) {
+			if err := os.Chmod(path, allowedDBPerm); err != nil {
+				return fmt.Errorf("chmod %s %o: %w", path, allowedDBPerm, err)
 			}
 			info, err = os.Lstat(path)
 			if err != nil {
 				return fmt.Errorf("re-stat %s after chmod: %w", path, err)
 			}
 		}
-		if info.Mode().Perm() > 0o640 {
-			return fmt.Errorf("daemon: receipts DB %s has perms %o after chmod attempt (looser than 0640); refusing to start", path, info.Mode().Perm())
+		if looserThanAllowed(info.Mode().Perm()) {
+			return fmt.Errorf("daemon: receipts DB %s has perms %o after chmod attempt (looser than %o); refusing to start", path, info.Mode().Perm(), allowedDBPerm)
 		}
 	}
 	return nil
