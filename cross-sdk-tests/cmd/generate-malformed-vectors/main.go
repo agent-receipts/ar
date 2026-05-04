@@ -101,7 +101,8 @@ func main() {
 
 	out := malformedVectors{
 		Description: "Shared corpus of receipts and chains that every SDK MUST reject. " +
-			"Generated from go_vectors.json's signed receipt by mutating one field at a time. " +
+			"The base receipt is signed in-process by signSample() (not loaded from go_vectors.json), " +
+			"then each named case mutates one field of that base. " +
 			"All cases use the same Ed25519 keypair as the other cross-SDK vectors.",
 		Keys:     ts.Keys,
 		Receipts: receiptCases,

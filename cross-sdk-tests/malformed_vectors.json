@@ -1,5 +1,5 @@
 {
-  "description": "Shared corpus of receipts and chains that every SDK MUST reject. Generated from go_vectors.json's signed receipt by mutating one field at a time. All cases use the same Ed25519 keypair as the other cross-SDK vectors.",
+  "description": "Shared corpus of receipts and chains that every SDK MUST reject. The base receipt is signed in-process by signSample() (not loaded from go_vectors.json), then each named case mutates one field of that base. All cases use the same Ed25519 keypair as the other cross-SDK vectors.",
   "keys": {
     "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZMzh2Qtdx/p40WlXhD+gKmaTDv3rLGm6TeY7TsJUKSQ=\n-----END PUBLIC KEY-----\n",
     "privateKey": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIJqomA2cjqhLUYPhkMJyg4+A7hU8GiZtVzkN0Yz6jJPF\n-----END PRIVATE KEY-----\n"
