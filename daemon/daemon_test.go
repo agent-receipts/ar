@@ -80,7 +80,10 @@ func TestTightenDBFiles_RefusesSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, dbPath); err != nil {
-		t.Fatal(err)
+		// Some environments (Windows without Developer Mode, restricted
+		// containers) cannot create symlinks. Skip there — the symlink
+		// rejection path can't be exercised without one.
+		t.Skipf("os.Symlink unavailable in this environment: %v", err)
 	}
 	err := tightenDBFiles(dbPath)
 	if err == nil {

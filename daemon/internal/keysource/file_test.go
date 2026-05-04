@@ -118,7 +118,10 @@ func TestFile_RejectsSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
+		// Some environments (Windows without Developer Mode, restricted
+		// containers) cannot create symlinks. The test would be a false
+		// negative there, so skip rather than fail.
+		t.Skipf("os.Symlink unavailable in this environment: %v", err)
 	}
 	ks := NewFile(link, "did:test#k1")
 	if err := ks.Init(); err == nil {

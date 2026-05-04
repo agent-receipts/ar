@@ -116,10 +116,10 @@ func Run(ctx context.Context, cfg Config) error {
 	defer st.Close()
 
 	// Receipts may include peer attestation and operator-supplied disclosures;
-	// world-readable is wrong by default. Tighten the DB and its WAL/SHM
-	// siblings to owner+group readable (0640). Refuse to start if the file is
-	// already wider than that — an operator-set 0600 must be respected, but
-	// 0644/0664 typically means an umask leak.
+	// world-readable is wrong by default. tightenDBFiles chmods the DB and any
+	// WAL/SHM siblings down to 0640 when they're looser, preserves operator-set
+	// tighter modes (e.g. 0600), and only refuses to start when the post-chmod
+	// perms are still wider than 0640 — see its doc comment for details.
 	if err := tightenDBFiles(cfg.DBPath); err != nil {
 		return err
 	}
@@ -197,7 +197,7 @@ func tightenDBFiles(dbPath string) error {
 			}
 		}
 		if info.Mode().Perm() > 0o640 {
-			return fmt.Errorf("daemon: receipts DB %s has world-accessible perms %o after chmod attempt; refusing to start", path, info.Mode().Perm())
+			return fmt.Errorf("daemon: receipts DB %s has perms %o after chmod attempt (looser than 0640); refusing to start", path, info.Mode().Perm())
 		}
 	}
 	return nil

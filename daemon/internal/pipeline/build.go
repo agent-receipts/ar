@@ -194,13 +194,15 @@ func (p *Pipeline) buildAndSign(
 	//
 	// NOTE: parameters_disclosure is operator-allowlisted additive metadata in
 	// the spec. Until a top-level peer field exists, this map MUST stay
-	// minimal: only OS-attested fields the daemon vouches for. Emitter-supplied
-	// content (channel, session_id, ts_emit, error) lives elsewhere on the
-	// receipt — channel is folded into action.type, session_id into
-	// issuer.session_id, ts_emit/ts_recv are dropped (only ts_recv would be
-	// authoritative and it's not a disclosure), error into outcome.error —
-	// rather than being mirrored here, where it could accidentally persist
-	// PII pulled from emitter-controlled bytes.
+	// minimal: only OS-attested fields the daemon vouches for. Emitter-
+	// supplied content (channel, session_id, ts_emit, error) lives elsewhere
+	// on the receipt — channel is folded into action.type, session_id into
+	// issuer.session_id, error into outcome.error. The emitter-asserted
+	// ts_emit is dropped (it is untrusted self-report and would not add audit
+	// value); the daemon's authoritative receive-time is the `now` value
+	// already stamped into action.timestamp, issuanceDate, and proof.created.
+	// Mirroring any of these into parameters_disclosure could accidentally
+	// persist PII pulled from emitter-controlled bytes, so we don't.
 	disclosure := map[string]string{
 		"peer.platform": peer.Platform,
 		"peer.pid":      strconv.FormatInt(int64(peer.PID), 10),
