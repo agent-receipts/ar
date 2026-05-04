@@ -329,7 +329,18 @@ func publishPublicKey(ks keysource.KeySource, path string) error {
 		}
 		return fmt.Errorf("create public-key file %s: %w", path, err)
 	}
-	defer fh.Close()
+	// Writable handle: a deferred Close() that ignores the error can mask a
+	// Close-time write failure (NFS commit failure, disk-full, quota
+	// exceeded) and silently lose the public key bytes we just wrote. Track
+	// closed state so the deferred best-effort Close on early-error paths
+	// doesn't double-close, and surface a clean Close() error to the caller
+	// on the success path.
+	closed := false
+	defer func() {
+		if !closed {
+			_ = fh.Close()
+		}
+	}()
 	if _, err := fh.Write([]byte(pubPEM)); err != nil {
 		return fmt.Errorf("write public-key file %s: %w", path, err)
 	}
@@ -338,6 +349,10 @@ func publishPublicKey(ks keysource.KeySource, path string) error {
 	// directory entry is replaced after we write.
 	if err := fh.Chmod(0o644); err != nil {
 		return fmt.Errorf("chmod %s 0644: %w", path, err)
+	}
+	closed = true
+	if err := fh.Close(); err != nil {
+		return fmt.Errorf("close public-key file %s: %w", path, err)
 	}
 	return nil
 }
