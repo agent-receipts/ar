@@ -1,0 +1,84 @@
+package socket
+
+import (
+	"context"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestListen_RefusesNonSocketPreexistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.sock")
+
+	// Create a regular file at the socket path. A misconfigured
+	// AGENTRECEIPTS_SOCKET pointing here must not silently delete it.
+	if err := os.WriteFile(path, []byte("not a socket"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := Listen(Options{
+		Path:    path,
+		Handler: func(_ context.Context, _ Frame) error { return nil },
+	})
+	if err == nil {
+		ln.Close()
+		t.Fatal("expected Listen to refuse a non-socket pre-existing file")
+	}
+	if !strings.Contains(err.Error(), "non-socket") {
+		t.Errorf("error message %q should mention non-socket", err.Error())
+	}
+
+	// File must still be there — refusing implies not deleting.
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("Listen deleted the pre-existing file: %v", err)
+	}
+}
+
+func TestListen_RefusesWhenAnotherDaemonIsLive(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.sock")
+
+	first, err := Listen(Options{
+		Path:    path,
+		Handler: func(_ context.Context, _ Frame) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = first.Serve(ctx) }()
+
+	// Poll until a probe connect succeeds, instead of sleeping a fixed amount
+	// (which is flaky on slow CI runners). 2s is generous; in practice the
+	// listener is ready in microseconds on a quiet machine.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if c, derr := net.DialTimeout("unix", path, 100*time.Millisecond); derr == nil {
+			c.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first listener did not become acceptable within 2s")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	second, err := Listen(Options{
+		Path:    path,
+		Handler: func(_ context.Context, _ Frame) error { return nil },
+	})
+	if err == nil {
+		second.Close()
+		t.Fatal("expected Listen to refuse when another daemon is live on the same socket")
+	}
+	if !strings.Contains(err.Error(), "already listening") {
+		t.Errorf("error %q should mention an active daemon", err.Error())
+	}
+}

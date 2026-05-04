@@ -42,6 +42,7 @@ type ReceiptStore interface {
 	Insert(r receipt.AgentReceipt, receiptHash string) error
 	GetByID(id string) (*receipt.AgentReceipt, error)
 	GetChain(chainID string) ([]receipt.AgentReceipt, error)
+	GetChainTail(chainID string) (sequence int64, receiptHash string, found bool, err error)
 	QueryReceipts(q Query) ([]receipt.AgentReceipt, error)
 	Stats() (Stats, error)
 	VerifyStoredChain(chainID string, publicKeyPEM string) (receipt.ChainVerification, error)
@@ -205,6 +206,24 @@ func (s *Store) GetChain(chainID string) ([]receipt.AgentReceipt, error) {
 	}
 	defer rows.Close()
 	return scanReceipts(rows)
+}
+
+// GetChainTail returns the highest-sequence receipt's sequence and hash for
+// chainID. found is false (with zero values for the other fields and err nil)
+// when the chain is empty. The daemon uses this on startup to resume the
+// in-memory (sequence, prev_hash) it owns as sole writer.
+func (s *Store) GetChainTail(chainID string) (sequence int64, receiptHash string, found bool, err error) {
+	row := s.db.QueryRow(
+		"SELECT sequence, receipt_hash FROM receipts WHERE chain_id = ? ORDER BY sequence DESC LIMIT 1",
+		chainID,
+	)
+	if scanErr := row.Scan(&sequence, &receiptHash); scanErr != nil {
+		if scanErr == sql.ErrNoRows {
+			return 0, "", false, nil
+		}
+		return 0, "", false, fmt.Errorf("get chain tail (chain_id=%s): %w", chainID, scanErr)
+	}
+	return sequence, receiptHash, true, nil
 }
 
 // QueryReceipts retrieves receipts matching the given filters.

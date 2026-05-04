@@ -1,0 +1,296 @@
+// Package pipeline maps an emitter frame plus an OS-attested peer credential
+// into a signed AgentReceipt and persists it to the store. The daemon's hot
+// path runs through here.
+package pipeline
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"math"
+	"strconv"
+	"time"
+
+	"github.com/agent-receipts/ar/daemon/internal/chain"
+	"github.com/agent-receipts/ar/daemon/internal/keysource"
+	"github.com/agent-receipts/ar/daemon/internal/socket"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/store"
+	"github.com/agent-receipts/ar/sdk/go/taxonomy"
+)
+
+// multibaseBase64URL matches sdk/go/receipt/signing.go: receipts use base64url
+// (multibase prefix "u") rather than the W3C default base58btc ("z").
+const multibaseBase64URL = "u"
+
+// SupportedFrameVersion is the only emitter-frame schema this daemon accepts.
+// Bumping it requires a migration plan and a daemon-side translator for the
+// old version; until that exists, accepting unknown versions would silently
+// misinterpret future fields.
+const SupportedFrameVersion = "1"
+
+// EmitterFrame is the JSON payload emitters send. Mirrors ADR-0010 §"Schema
+// split". Fields the emitter does not populate are zero/empty; the daemon
+// fills in the authoritative chain/peer/id/ts_recv before signing.
+//
+// Phase 1 limitation: Input and Output are recognised in the schema (so the
+// wire format already matches what Phase 2 emitters will send) but the daemon
+// does not yet hash them into action.parameters_hash / outcome.response_hash.
+// Accepting non-empty Input/Output today would silently drop the payload from
+// the receipt and mislead emitter authors into thinking tool I/O is being
+// committed when it isn't. validateFrame rejects frames that populate them
+// until Phase 2 wires the canonical-hash path through receipt.Create's
+// ResponseBody and an explicit ParametersHash computation.
+type EmitterFrame struct {
+	Version   string          `json:"v"`
+	TsEmit    string          `json:"ts_emit"`
+	SessionID string          `json:"session_id"`
+	Channel   string          `json:"channel"`
+	Tool      EmitterTool     `json:"tool"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	Output    json.RawMessage `json:"output,omitempty"`
+	Error     string          `json:"error,omitempty"`
+	Decision  string          `json:"decision"`
+}
+
+// EmitterTool identifies the tool the agent invoked.
+type EmitterTool struct {
+	Server string `json:"server,omitempty"`
+	Name   string `json:"name"`
+}
+
+// Pipeline holds the daemon-owned dependencies (chain state, signer, store)
+// shared across all incoming frames.
+type Pipeline struct {
+	State     *chain.State
+	Keys      keysource.KeySource
+	Store     store.ReceiptStore
+	IssuerID  string // e.g. "did:agent-receipts-daemon:<host>"
+	Now       func() time.Time
+}
+
+// New returns a Pipeline. Callers configure IssuerID; Now defaults to
+// time.Now.UTC.
+func New(s *chain.State, ks keysource.KeySource, store store.ReceiptStore, issuerID string) *Pipeline {
+	return &Pipeline{
+		State:    s,
+		Keys:     ks,
+		Store:    store,
+		IssuerID: issuerID,
+		Now:      func() time.Time { return time.Now().UTC() },
+	}
+}
+
+// Process is the daemon's per-frame entrypoint. It parses the frame, allocates
+// the next chain slot, builds and signs the AgentReceipt, persists it via
+// store.Insert, and Commits the chain allocation. Any error before Commit
+// triggers Rollback so the chain state is not advanced past a missing receipt.
+func (p *Pipeline) Process(f socket.Frame) error {
+	var frame EmitterFrame
+	if err := json.Unmarshal(f.Payload, &frame); err != nil {
+		return fmt.Errorf("decode emitter frame: %w", err)
+	}
+	if err := validateFrame(&frame); err != nil {
+		return fmt.Errorf("invalid emitter frame: %w", err)
+	}
+
+	alloc := p.State.Allocate()
+	signed, hash, err := p.buildAndSign(&frame, f.Peer, alloc)
+	if err != nil {
+		alloc.Rollback()
+		return err
+	}
+	if err := p.Store.Insert(signed, hash); err != nil {
+		alloc.Rollback()
+		return fmt.Errorf("insert receipt: %w", err)
+	}
+	alloc.Commit(hash)
+	return nil
+}
+
+func validateFrame(f *EmitterFrame) error {
+	if f.Version == "" {
+		return fmt.Errorf("missing v")
+	}
+	if f.Version != SupportedFrameVersion {
+		return fmt.Errorf("unsupported frame version %q (this daemon accepts %q)", f.Version, SupportedFrameVersion)
+	}
+	if f.SessionID == "" {
+		return fmt.Errorf("missing session_id")
+	}
+	// ts_emit is part of the documented Phase 1 wire schema. The daemon
+	// doesn't trust it for the receipt timestamp (action.timestamp,
+	// issuanceDate, proof.created all come from p.Now()), but requiring a
+	// well-formed value pins the emitter contract — silently accepting
+	// "" or junk text would let a buggy emitter ship without anyone
+	// noticing. RFC3339[Nano] match the format the README documents.
+	if f.TsEmit == "" {
+		return fmt.Errorf("missing ts_emit")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, f.TsEmit); err != nil {
+		// time.RFC3339Nano accepts both RFC3339 and the nanosecond extension.
+		return fmt.Errorf("ts_emit %q is not RFC3339/RFC3339Nano: %w", f.TsEmit, err)
+	}
+	if f.Channel == "" {
+		return fmt.Errorf("missing channel")
+	}
+	if f.Tool.Name == "" {
+		return fmt.Errorf("missing tool.name")
+	}
+	switch f.Decision {
+	case "":
+		return fmt.Errorf("missing decision")
+	case "allowed", "denied", "pending":
+		// ok
+	default:
+		return fmt.Errorf("unknown decision %q (want allowed|denied|pending)", f.Decision)
+	}
+	// Phase 1 hard-rejects non-null Input/Output rather than silently dropping
+	// them — see EmitterFrame doc comment. JSON null is treated as equivalent
+	// to omitted, since "v":"1","input":null is the documented wire form.
+	if hasJSONPayload(f.Input) {
+		return fmt.Errorf("input not supported in Phase 1 (would be silently dropped); see EmitterFrame doc")
+	}
+	if hasJSONPayload(f.Output) {
+		return fmt.Errorf("output not supported in Phase 1 (would be silently dropped); see EmitterFrame doc")
+	}
+	return nil
+}
+
+// hasJSONPayload reports whether raw is a JSON value other than null.
+// Whitespace and the literal "null" both count as no-payload.
+func hasJSONPayload(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return false
+	}
+	return !bytes.Equal(trimmed, []byte("null"))
+}
+
+func (p *Pipeline) buildAndSign(
+	f *EmitterFrame,
+	peer socket.PeerCred,
+	alloc chain.Allocation,
+) (receipt.AgentReceipt, string, error) {
+	now := p.Now().Format(time.RFC3339)
+
+	// receipt.Chain.Sequence is `int`, which is 32-bit on 32-bit platforms.
+	// Refuse rather than silently overflow into a negative or wrapped value
+	// that would corrupt chain verification downstream.
+	if alloc.Sequence > int64(math.MaxInt) {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("chain sequence %d exceeds int range on this platform (max %d)", alloc.Sequence, math.MaxInt)
+	}
+
+	// validateFrame already restricted f.Decision to the supported set, so the
+	// switch never falls through.
+	var status receipt.OutcomeStatus
+	switch f.Decision {
+	case "allowed":
+		status = receipt.StatusSuccess
+	case "denied":
+		status = receipt.StatusFailure
+	case "pending":
+		status = receipt.StatusPending
+	}
+
+	actionType := f.Channel + "." + f.Tool.Name
+	if f.Tool.Server != "" {
+		actionType = f.Channel + "." + f.Tool.Server + "." + f.Tool.Name
+	}
+
+	// Phase 1 stashes the OS-attested peer cred in Action.ParametersDisclosure
+	// as a placeholder. ADR-0010 calls for a dedicated `peer` field on the
+	// receipt; adding that requires a spec change (out of scope per AGENTS.md
+	// "Never modify the protocol spec without explicit human approval"), so
+	// peer.* keys ride on the existing field until Phase 2.
+	//
+	// NOTE: parameters_disclosure is operator-allowlisted additive metadata in
+	// the spec. Until a top-level peer field exists, this map MUST stay
+	// minimal: only OS-attested fields the daemon vouches for. Emitter-
+	// supplied content (channel, session_id, ts_emit, error) lives elsewhere
+	// on the receipt — channel is folded into action.type, session_id into
+	// issuer.session_id, error into outcome.error. The emitter-asserted
+	// ts_emit is dropped (it is untrusted self-report and would not add audit
+	// value); the daemon's authoritative receive-time is the `now` value
+	// already stamped into action.timestamp, issuanceDate, and proof.created.
+	// Mirroring any of these into parameters_disclosure could accidentally
+	// persist PII pulled from emitter-controlled bytes, so we don't.
+	disclosure := map[string]string{
+		"peer.platform": peer.Platform,
+		"peer.pid":      strconv.FormatInt(int64(peer.PID), 10),
+		// uid_t / gid_t are unsigned 32-bit; format as unsigned to avoid wrap.
+		"peer.uid":      strconv.FormatUint(uint64(peer.UID), 10),
+		"peer.gid":      strconv.FormatUint(uint64(peer.GID), 10),
+		"peer.exe_path": peer.ExePath,
+	}
+
+	// Risk derives from the taxonomy. Daemon-constructed action types like
+	// "mcp_proxy.github.list_repos" do not match any built-in entry, so
+	// ResolveActionType falls back to UnknownAction (RiskMedium). That's the
+	// safer default than always emitting RiskLow — Phase 2 emitters that
+	// know the taxonomic action type can override it via the action.type
+	// field once the emitter SDKs land.
+	risk := taxonomy.ResolveActionType(actionType).RiskLevel
+
+	unsigned := receipt.Create(receipt.CreateInput{
+		Issuer: receipt.Issuer{
+			ID:        p.IssuerID,
+			Type:      "AgentReceiptsDaemon",
+			SessionID: f.SessionID,
+		},
+		Principal: receipt.Principal{ID: "did:user:unknown"},
+		Action: receipt.Action{
+			Type:                 actionType,
+			ToolName:             f.Tool.Name,
+			RiskLevel:            risk,
+			Timestamp:            now,
+			ParametersDisclosure: disclosure,
+		},
+		Outcome: receipt.Outcome{
+			Status: status,
+			Error:  f.Error,
+		},
+		Chain: receipt.Chain{
+			Sequence:            int(alloc.Sequence),
+			PreviousReceiptHash: alloc.PrevHash,
+			ChainID:             p.State.ChainID(),
+		},
+	})
+	// receipt.Create stamps IssuanceDate from time.Now() internally. Replace it
+	// with our deterministic now so action.timestamp, issuanceDate, and
+	// proof.created all share a single value (and tests can override Now).
+	unsigned.IssuanceDate = now
+
+	canonical, err := receipt.Canonicalize(unsigned)
+	if err != nil {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("canonicalize: %w", err)
+	}
+	sig, err := p.Keys.Sign([]byte(canonical))
+	if err != nil {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("sign: %w", err)
+	}
+
+	signed := receipt.AgentReceipt{
+		Context:           unsigned.Context,
+		ID:                unsigned.ID,
+		Type:              unsigned.Type,
+		Version:           unsigned.Version,
+		Issuer:            unsigned.Issuer,
+		IssuanceDate:      unsigned.IssuanceDate,
+		CredentialSubject: unsigned.CredentialSubject,
+		Proof: receipt.Proof{
+			Type:               "Ed25519Signature2020",
+			Created:            now,
+			VerificationMethod: p.Keys.VerificationMethod(),
+			ProofPurpose:       "assertionMethod",
+			ProofValue:         multibaseBase64URL + base64.RawURLEncoding.EncodeToString(sig),
+		},
+	}
+
+	hash, err := receipt.HashReceipt(signed)
+	if err != nil {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("hash receipt: %w", err)
+	}
+	return signed, hash, nil
+}

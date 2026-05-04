@@ -2,7 +2,11 @@
 
 ## Status
 
-Proposed
+Accepted (2026-05-03)
+
+## Implementation status
+
+Phase 1 lands the standalone daemon, peer-credential capture, the file-backed `KeySource`, and the `GetChainTail` store primitive. Emitter refactor (mcp-proxy, OpenClaw, three SDKs), packaging (Homebrew / launchd / systemd), and the Windows port follow in subsequent phases tracked under [issue #236](https://github.com/agent-receipts/ar/issues/236).
 
 ## Context
 
