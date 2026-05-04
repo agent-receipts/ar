@@ -19,12 +19,16 @@ type PeerCred struct {
 	// values and fields (user_sid, integrity_level).
 	Platform string
 
-	// PID is the connecting process's process id.
+	// PID is the connecting process's process id. Signed because POSIX pid_t
+	// is signed (and -1 is a valid sentinel).
 	PID int32
 
-	// UID, GID are POSIX credentials. Always populated on linux and darwin.
-	UID int32
-	GID int32
+	// UID, GID are POSIX credentials. uid_t and gid_t are unsigned 32-bit on
+	// every platform we support, so widen-and-format via uint64 to preserve
+	// the full range — narrowing into int32 here would wrap UIDs above
+	// 2^31 to negative values and corrupt the recorded peer.
+	UID uint32
+	GID uint32
 
 	// ExePath is the absolute path to the connecting process's executable,
 	// or "" when the daemon could not resolve it. On Linux this is read from

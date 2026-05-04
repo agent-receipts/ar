@@ -32,6 +32,21 @@ is not in the latest published `sdk/go` tag (`v0.6.0`). Standalone install
 becomes possible once the next `sdk/go` tag is released and a follow-up bumps
 the require in `daemon/go.mod`.
 
+### CI coverage
+
+GitHub Actions workflow path filters in this repo currently target
+`sdk/go/**`, `mcp-proxy/**`, etc. — none cover `daemon/**`. Until a
+maintainer adds a `daemon.yml` workflow (AGENTS.md requires explicit human
+review for any CI change), Phase 1 daemon changes rely on:
+
+- The `mcp-proxy.yml` `sdk/go/**` trigger, which exercises the
+  `GetChainTail` change but not the daemon module itself.
+- Manual local verification per the *Build* section above (vet + tests with
+  and without `-tags=integration`, plus `-race`).
+
+The follow-up tracker in [#236](https://github.com/agent-receipts/ar/issues/236)
+includes "add daemon CI workflow" alongside emitter refactor and packaging.
+
 ## Run
 
 The daemon takes config from flags (preferred) or environment variables. All

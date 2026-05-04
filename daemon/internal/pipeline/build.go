@@ -119,6 +119,19 @@ func validateFrame(f *EmitterFrame) error {
 	if f.SessionID == "" {
 		return fmt.Errorf("missing session_id")
 	}
+	// ts_emit is part of the documented Phase 1 wire schema. The daemon
+	// doesn't trust it for the receipt timestamp (action.timestamp,
+	// issuanceDate, proof.created all come from p.Now()), but requiring a
+	// well-formed value pins the emitter contract — silently accepting
+	// "" or junk text would let a buggy emitter ship without anyone
+	// noticing. RFC3339[Nano] match the format the README documents.
+	if f.TsEmit == "" {
+		return fmt.Errorf("missing ts_emit")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, f.TsEmit); err != nil {
+		// time.RFC3339Nano accepts both RFC3339 and the nanosecond extension.
+		return fmt.Errorf("ts_emit %q is not RFC3339/RFC3339Nano: %w", f.TsEmit, err)
+	}
 	if f.Channel == "" {
 		return fmt.Errorf("missing channel")
 	}
@@ -206,8 +219,9 @@ func (p *Pipeline) buildAndSign(
 	disclosure := map[string]string{
 		"peer.platform": peer.Platform,
 		"peer.pid":      strconv.FormatInt(int64(peer.PID), 10),
-		"peer.uid":      strconv.FormatInt(int64(peer.UID), 10),
-		"peer.gid":      strconv.FormatInt(int64(peer.GID), 10),
+		// uid_t / gid_t are unsigned 32-bit; format as unsigned to avoid wrap.
+		"peer.uid":      strconv.FormatUint(uint64(peer.UID), 10),
+		"peer.gid":      strconv.FormatUint(uint64(peer.GID), 10),
 		"peer.exe_path": peer.ExePath,
 	}
 

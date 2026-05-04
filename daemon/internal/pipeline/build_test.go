@@ -250,20 +250,26 @@ func TestProcess_RejectsMalformedFrames(t *testing.T) {
 	state := chain.New("chain-1")
 	p := New(state, ks, st, "did:agent-receipts-daemon:test")
 
+	// All cases below include ts_emit where it's not the field under test, so
+	// validateFrame doesn't short-circuit on the new ts_emit check before
+	// reaching the field we're actually exercising.
+	const ok = `"ts_emit":"2026-05-04T00:00:00Z"`
 	cases := []struct {
 		name    string
 		payload string
 	}{
 		{"not JSON", `not json`},
-		{"missing v", `{"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
-		{"unsupported v", `{"v":"2","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
-		{"missing session_id", `{"v":"1","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
-		{"missing tool.name", `{"v":"1","session_id":"s","channel":"sdk","tool":{},"decision":"allowed"}`},
-		{"missing decision", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"}}`},
-		{"unknown decision", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"maybe"}`},
-		{"input present (Phase 1 forbidden)", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":{"x":1}}`},
-		{"output present (Phase 1 forbidden)", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","output":{"y":2}}`},
-		{"input as primitive (Phase 1 forbidden)", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":"hello"}`},
+		{"missing v", `{` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
+		{"unsupported v", `{"v":"2",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
+		{"missing session_id", `{"v":"1",` + ok + `,"channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
+		{"missing ts_emit", `{"v":"1","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
+		{"malformed ts_emit", `{"v":"1","ts_emit":"yesterday","session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed"}`},
+		{"missing tool.name", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{},"decision":"allowed"}`},
+		{"missing decision", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"}}`},
+		{"unknown decision", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"maybe"}`},
+		{"input present (Phase 1 forbidden)", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":{"x":1}}`},
+		{"output present (Phase 1 forbidden)", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","output":{"y":2}}`},
+		{"input as primitive (Phase 1 forbidden)", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":"hello"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -114,6 +114,15 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
+	// Apply a restrictive process umask BEFORE opening the SQLite store so any
+	// files SQLite creates (DB itself, and especially the lazily-created WAL
+	// and SHM sidecars on first write) inherit owner+group-only permissions.
+	// tightenDBFiles below remains as belt-and-braces for files that already
+	// exist or for sidecars that get re-created later, but umask catches the
+	// new-file case at the source so we don't have a window where a file is
+	// briefly world-readable between create and chmod.
+	applyRestrictiveUmask()
+
 	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o750); err != nil {
 		return fmt.Errorf("create db dir: %w", err)
 	}

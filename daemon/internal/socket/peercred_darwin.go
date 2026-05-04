@@ -33,9 +33,11 @@ func capturePeer(conn *net.UnixConn) (PeerCred, error) {
 			inner = fmt.Errorf("LOCAL_PEERCRED: %w", err)
 			return
 		}
-		pc.UID = int32(xu.Uid)
+		// xu.Uid is uint32; xu.Groups elements are uint32. PeerCred.UID/GID
+		// are uint32 too — direct assignment, no narrowing.
+		pc.UID = xu.Uid
 		if xu.Ngroups > 0 {
-			pc.GID = int32(xu.Groups[0])
+			pc.GID = xu.Groups[0]
 		}
 
 		pid, err := unix.GetsockoptInt(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEEREPID)

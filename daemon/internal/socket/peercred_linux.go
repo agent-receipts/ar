@@ -30,8 +30,10 @@ func capturePeer(conn *net.UnixConn) (PeerCred, error) {
 			return
 		}
 		pc.PID = ucred.Pid
-		pc.UID = int32(ucred.Uid)
-		pc.GID = int32(ucred.Gid)
+		// ucred.Uid/Gid are uint32; PeerCred.UID/GID are uint32 too. Direct
+		// assignment with no narrowing.
+		pc.UID = ucred.Uid
+		pc.GID = ucred.Gid
 	})
 	if ctlErr != nil {
 		return PeerCred{}, fmt.Errorf("control: %w", ctlErr)
