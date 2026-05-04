@@ -90,25 +90,32 @@ func Listen(opts Options) (*Listener, error) {
 		if info.Mode()&os.ModeSocket == 0 {
 			return nil, fmt.Errorf("socket: refusing to remove non-socket file at %s (mode %s); pick a different AGENTRECEIPTS_SOCKET", opts.Path, info.Mode())
 		}
-		// Probe-connect with a short timeout. We must distinguish three
+		// Probe-connect with a short timeout. We must distinguish four
 		// outcomes:
-		//   nil error      → another daemon is live, refuse.
-		//   ECONNREFUSED   → socket file exists but no listener — stale.
-		//   anything else  → indeterminate (permission error, EAGAIN under
-		//                    backlog saturation, EHOSTUNREACH on a fuse
-		//                    mount, plain timeout). Removing on these would
-		//                    risk orphaning a still-running daemon, so refuse
-		//                    and let the operator investigate.
+		//   nil error               → another daemon is live, refuse.
+		//   ECONNREFUSED            → socket file exists but no listener — stale.
+		//   ENOENT / not-exist      → file disappeared between Lstat and Dial
+		//                             (clean shutdown raced us). Treat as
+		//                             "no socket file" and proceed.
+		//   anything else           → indeterminate (permission error, EAGAIN
+		//                             under backlog saturation, EHOSTUNREACH on
+		//                             a fuse mount, plain timeout). Removing
+		//                             on these would risk orphaning a still-
+		//                             running daemon, so refuse and let the
+		//                             operator investigate.
 		c, derr := net.DialTimeout("unix", opts.Path, 100*time.Millisecond)
 		if derr == nil {
 			c.Close()
 			return nil, fmt.Errorf("socket: another daemon is already listening on %s; stop it before starting a second instance", opts.Path)
 		}
-		if !errors.Is(derr, syscall.ECONNREFUSED) {
+		if errors.Is(derr, os.ErrNotExist) || errors.Is(derr, syscall.ENOENT) {
+			// File vanished between Lstat and Dial; nothing to remove.
+		} else if errors.Is(derr, syscall.ECONNREFUSED) {
+			if err := os.Remove(opts.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("remove stale socket: %w", err)
+			}
+		} else {
 			return nil, fmt.Errorf("socket: %s is held by an unreachable peer (%v); refusing to remove the socket file (would orphan a running daemon if it is still live)", opts.Path, derr)
-		}
-		if err := os.Remove(opts.Path); err != nil {
-			return nil, fmt.Errorf("remove stale socket: %w", err)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("stat socket path: %w", err)

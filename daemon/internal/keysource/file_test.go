@@ -111,6 +111,13 @@ func TestFile_SignBeforeInitErrors(t *testing.T) {
 }
 
 func TestFile_RejectsSymlink(t *testing.T) {
+	// File.Init relies on O_NOFOLLOW to refuse symlinks. On platforms where
+	// oNoFollow is a no-op (file_open_other.go, !unix), Init would happily
+	// follow the symlink and the assertion below would fail. The daemon
+	// refuses to start outside Linux/macOS at runtime anyway, so skip.
+	if oNoFollow == 0 {
+		t.Skip("O_NOFOLLOW is a no-op on this platform; symlink rejection cannot be enforced")
+	}
 	dir := t.TempDir()
 	target := filepath.Join(dir, "real.key")
 	link := filepath.Join(dir, "link.key")
