@@ -35,18 +35,12 @@ the require in `daemon/go.mod`.
 
 ### CI coverage
 
-GitHub Actions workflow path filters in this repo currently target
-`sdk/go/**`, `mcp-proxy/**`, etc. — none cover `daemon/**`. Until a
-maintainer adds a `daemon.yml` workflow (AGENTS.md requires explicit human
-review for any CI change), Phase 1 daemon changes rely on:
-
-- The `mcp-proxy.yml` `sdk/go/**` trigger, which exercises the
-  `GetChainTail` change but not the daemon module itself.
-- Manual local verification per the *Build* section above (vet + tests with
-  and without `-tags=integration`, plus `-race`).
-
-The follow-up tracker in [#236](https://github.com/agent-receipts/ar/issues/236)
-includes "add daemon CI workflow" alongside emitter refactor and packaging.
+`.github/workflows/daemon.yml` runs `go vet`, builds both `cmd/`
+binaries, and runs unit + integration tests with `-race` on every push
+and pull request that touches `daemon/**` or `sdk/go/**` (the latter so
+that `sdk/go` changes which break the daemon are caught in the same PR
+that introduces them, mirroring how `mcp-proxy.yml` triggers on its
+upstream module).
 
 ## Run
 
