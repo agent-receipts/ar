@@ -11,6 +11,7 @@
 package daemon_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/x509"
@@ -23,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +32,7 @@ import (
 	"github.com/agent-receipts/ar/daemon"
 	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/daemon/internal/socket"
+	"github.com/agent-receipts/ar/daemon/internal/verifycli"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
@@ -60,6 +63,7 @@ func startDaemon(t *testing.T) (cfg daemon.Config, pubPEM string, cancel func())
 		SocketPath:           filepath.Join(dir, "events.sock"),
 		DBPath:               filepath.Join(dir, "receipts.db"),
 		KeyPath:              filepath.Join(dir, "signing.key"),
+		PublicKeyPath:        filepath.Join(dir, "signing.key.pub"),
 		ChainID:              "it-chain",
 		IssuerID:             "did:agent-receipts-daemon:integration",
 		VerificationMethodID: "did:agent-receipts-daemon:integration#k1",
@@ -391,5 +395,134 @@ func TestResumesChainAfterRestart(t *testing.T) {
 		if r.CredentialSubject.Chain.Sequence != i+1 {
 			t.Errorf("receipt %d: seq = %d, want %d", i, r.CredentialSubject.Chain.Sequence, i+1)
 		}
+	}
+}
+
+// TestPublishedPublicKeyHasMode0644 confirms the daemon writes the public-key
+// sibling file at the documented mode on every startup. The verify CLI relies
+// on this file being world-readable so a non-daemon-user verifier (operator,
+// CI runner, audit script) can load it without elevated access.
+func TestPublishedPublicKeyHasMode0644(t *testing.T) {
+	cfg, _, _ := startDaemon(t)
+
+	info, err := os.Stat(cfg.PublicKeyPath)
+	if err != nil {
+		t.Fatalf("daemon did not publish public key at %s: %v", cfg.PublicKeyPath, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o644 {
+		t.Errorf("public key perm = %o, want 0644", perm)
+	}
+}
+
+// TestVerifyCLIWhileDaemonRunning is the read-side counterpart to the chain-
+// integrity test: with the daemon actively writing, agent-receipts verify
+// must succeed using the published public-key file and the OpenReadOnly DB
+// path. This is the "must not collide with the daemon's exclusive ownership
+// of the write side" half of the acceptance criterion.
+func TestVerifyCLIWhileDaemonRunning(t *testing.T) {
+	cfg, _, _ := startDaemon(t)
+
+	const frames = 5
+	for i := 0; i < frames; i++ {
+		emitFrame(t, cfg.SocketPath, pipeline.EmitterFrame{
+			Version:   "1",
+			TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
+			SessionID: "verify-while-running",
+			Channel:   "sdk",
+			Tool:      pipeline.EmitterTool{Name: "noop"},
+			Decision:  "allowed",
+		})
+	}
+	_ = waitForReceiptCount(t, cfg.DBPath, cfg.ChainID, frames, 5*time.Second)
+
+	var stdout, stderr bytes.Buffer
+	code := verifycli.Run(
+		[]string{"--db", cfg.DBPath, "--public-key", cfg.PublicKeyPath, "--chain-id", cfg.ChainID},
+		&stdout, &stderr,
+		func(string) string { return "" },
+	)
+	if code != verifycli.ExitOK {
+		t.Fatalf("verify exit = %d, want %d (stdout=%q stderr=%q)", code, verifycli.ExitOK, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), fmt.Sprintf("Chain %s: VALID", cfg.ChainID)) {
+		t.Errorf("stdout = %q, expected VALID line", stdout.String())
+	}
+}
+
+// TestVerifyCLIWithDaemonStopped is the "Independent verifiability is not
+// gated on daemon availability" acceptance criterion. Start the daemon, emit
+// some receipts, shut the daemon down, then run agent-receipts verify against
+// the on-disk DB and the published public key. Must succeed.
+func TestVerifyCLIWithDaemonStopped(t *testing.T) {
+	dir := t.TempDir()
+	cfg := daemon.Config{
+		SocketPath:           filepath.Join(dir, "events.sock"),
+		DBPath:               filepath.Join(dir, "receipts.db"),
+		KeyPath:              filepath.Join(dir, "signing.key"),
+		PublicKeyPath:        filepath.Join(dir, "signing.key.pub"),
+		ChainID:              "stopped-chain",
+		IssuerID:             "did:agent-receipts-daemon:integration",
+		VerificationMethodID: "did:agent-receipts-daemon:integration#k1",
+		Logger:               log.New(io.Discard, "", 0),
+	}
+	writeTestKey(t, cfg.KeyPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- daemon.Run(ctx, cfg) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(cfg.SocketPath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("socket did not appear")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	const frames = 3
+	for i := 0; i < frames; i++ {
+		emitFrame(t, cfg.SocketPath, pipeline.EmitterFrame{
+			Version:   "1",
+			TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
+			SessionID: "verify-after-stop",
+			Channel:   "sdk",
+			Tool:      pipeline.EmitterTool{Name: "noop"},
+			Decision:  "allowed",
+		})
+	}
+	_ = waitForReceiptCount(t, cfg.DBPath, cfg.ChainID, frames, 5*time.Second)
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Logf("daemon Run returned: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("daemon did not shut down within 3s")
+	}
+
+	// Sanity-check the daemon really is gone before running verify; otherwise
+	// a passing test wouldn't actually demonstrate the daemon-down property.
+	if conn, err := net.Dial("unix", cfg.SocketPath); err == nil {
+		conn.Close()
+		t.Fatal("socket still accepting connections after cancel — daemon did not stop")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := verifycli.Run(
+		[]string{"--db", cfg.DBPath, "--public-key", cfg.PublicKeyPath, "--chain-id", cfg.ChainID},
+		&stdout, &stderr,
+		func(string) string { return "" },
+	)
+	if code != verifycli.ExitOK {
+		t.Fatalf("verify with daemon stopped: exit = %d, want %d (stdout=%q stderr=%q)", code, verifycli.ExitOK, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), fmt.Sprintf("Chain %s: VALID (%d receipts)", cfg.ChainID, frames)) {
+		t.Errorf("stdout = %q, expected VALID + count line", stdout.String())
 	}
 }
