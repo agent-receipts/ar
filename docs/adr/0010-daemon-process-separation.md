@@ -26,12 +26,12 @@ Split every integration into two roles:
 
 ### IPC transport
 
-- Linux: Unix domain socket (`SOCK_SEQPACKET`) at `/run/agentreceipts/events.sock`.
-- macOS: Unix domain socket (`SOCK_SEQPACKET`) at `/var/run/agentreceipts/events.sock` (which resolves to `/private/var/run/agentreceipts/events.sock`).
+- Linux: Unix domain socket (`SOCK_STREAM` with 4-byte big-endian length-prefix framing) at `/run/agentreceipts/events.sock`.
+- macOS: Unix domain socket (`SOCK_STREAM` with 4-byte big-endian length-prefix framing) at `/var/run/agentreceipts/events.sock` (which resolves to `/private/var/run/agentreceipts/events.sock`).
 - Windows: named pipe via Node's `net` module (`\\.\pipe\agentreceipts-events`) with equivalent ACL semantics.
 - Socket and pipe locations are configurable; unprivileged installs override the default (e.g. `$XDG_RUNTIME_DIR/agentreceipts/events.sock`).
 - TCP loopback is explicitly rejected — it dissolves the filesystem permission model and would require a bespoke local auth scheme.
-- `SOCK_SEQPACKET` is chosen over `SOCK_DGRAM` so peer credentials are reliably retrievable at the OS level — datagram sockets either lack a defined cred mechanism or require per-message ancillary data with platform-specific gaps — and over `SOCK_STREAM` so each event remains a discrete message without length-prefix framing.
+- `SOCK_STREAM` with length-prefix framing is chosen over `SOCK_DGRAM` because peer credentials on datagram sockets either lack a defined OS-level mechanism or require per-message ancillary data with platform-specific gaps. `SOCK_SEQPACKET` would have been the natural choice — discrete messages without explicit framing — but macOS `AF_UNIX` does not implement SEQPACKET, and macOS is a hard MVP target. Peer-credential capture (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` + `LOCAL_PEEREPID` on macOS) is tied to the connected socket rather than to message boundaries, so it works identically on stream sockets and the trust model is unchanged from the original SEQPACKET design.
 
 ### Permissions and trust
 
@@ -98,3 +98,9 @@ A future read socket for live-tail (`agent-receipts tail -f`) is in scope but no
 - [ADR-0001 (Ed25519 signing)](./0001-ed25519-for-receipt-signing.md) — unchanged, but the key now lives only in the daemon.
 - [ADR-0002 (RFC 8785 canonicalization)](./0002-rfc8785-json-canonicalization.md) — moves exclusively to the daemon.
 - [ADR-0004 (SQLite storage)](./0004-sqlite-for-local-receipt-storage.md) — daemon is sole writer; readers use filesystem permissions.
+
+## Amendments
+
+### 2026-05-05: IPC framing — `SOCK_STREAM` with length prefix instead of `SOCK_SEQPACKET`
+
+Phase 1 (#322) shipped the daemon with `SOCK_STREAM` and a 4-byte big-endian length-prefix framing, not `SOCK_SEQPACKET` as originally specified in the *IPC transport* section above. macOS `AF_UNIX` does not implement SEQPACKET, and macOS is a hard MVP target — keeping SEQPACKET would have meant cutting macOS support or maintaining two transport implementations. Peer-credential capture (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` and `LOCAL_PEEREPID` on macOS) is tied to the connected socket rather than to message boundaries, so it works identically on stream sockets and the trust-model arguments in *Permissions and trust* are unchanged. The *IPC transport* section above has been updated to describe what shipped; this entry records the deviation history for future readers.
