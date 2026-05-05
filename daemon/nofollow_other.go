@@ -8,7 +8,7 @@ package daemon
 const oNoFollow = 0
 
 // isSymlinkLoop is unreachable on non-unix platforms — the daemon's runtime
-// gate refuses to start there — and existing solely so daemon.go's symlink
+// gate refuses to start there — and exists solely so daemon.go's symlink
 // diagnostic compiles in cross-platform CI without referencing
 // syscall.ELOOP, which is not defined on every Go port.
 func isSymlinkLoop(_ error) bool { return false }
