@@ -13,10 +13,15 @@ import (
 // shortSocketDir returns a temp directory whose path is short enough to fit a
 // socket filename within the 104-byte AF_UNIX sun_path limit on macOS.
 // t.TempDir() on macOS GitHub Actions can return paths > 90 bytes, leaving
-// no room for the socket filename.
+// no room for the socket filename. We prefer /tmp when it exists; on platforms
+// where it does not (e.g. Windows), we fall back to os.TempDir().
 func shortSocketDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "ar*")
+	base := "/tmp"
+	if _, err := os.Stat(base); err != nil {
+		base = os.TempDir()
+	}
+	dir, err := os.MkdirTemp(base, "ar*")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
