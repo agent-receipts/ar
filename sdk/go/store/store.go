@@ -140,12 +140,20 @@ func OpenReadOnly(dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve db path: %w", err)
 	}
-	// SQLite URI form: file:<abs>?mode=ro. mode=ro opens the main DB file
-	// read-only without taking the immutable=1 path — that matters because
+	// Build the SQLite URI via url.URL + filepath.ToSlash so reserved
+	// characters in the path (spaces, '?', '#', etc.) are percent-encoded
+	// correctly without mangling the path separators, and Windows '\' gets
+	// normalised to '/' for the URI form. Mirrors the pattern in
+	// mcp-proxy/internal/audit/store.go.OpenReadOnly. mode=ro opens the main
+	// DB read-only without taking the immutable=1 path — that matters because
 	// a daemon crash mid-checkpoint still needs WAL recovery to be possible
 	// when the verify CLI runs. busy_timeout via _pragma keeps brief writer
 	// contention from surfacing as SQLITE_BUSY in the verify path.
-	dsn := "file:" + url.PathEscape(abs) + "?mode=ro&_pragma=busy_timeout(5000)"
+	dsn := (&url.URL{
+		Scheme:   "file",
+		Path:     filepath.ToSlash(abs),
+		RawQuery: "mode=ro&_pragma=busy_timeout(5000)",
+	}).String()
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database read-only: %w", err)

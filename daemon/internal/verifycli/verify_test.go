@@ -107,7 +107,10 @@ func TestRun_ReportsBrokenChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherDER, _ := x509.MarshalPKIXPublicKey(otherPub)
+	otherDER, err := x509.MarshalPKIXPublicKey(otherPub)
+	if err != nil {
+		t.Fatal(err)
+	}
 	wrongPubPath := filepath.Join(dir, "wrong.pub")
 	if err := os.WriteFile(wrongPubPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: otherDER}), 0o644); err != nil {
 		t.Fatal(err)
