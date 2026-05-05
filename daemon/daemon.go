@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 
 	"github.com/agent-receipts/ar/daemon/internal/chain"
 	"github.com/agent-receipts/ar/daemon/internal/keysource"
@@ -324,7 +323,7 @@ func publishPublicKey(ks keysource.KeySource, path string) error {
 	// fresh-write half of the TOCTOU window Copilot flagged on PR #325.
 	fh, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|oNoFollow, 0o644)
 	if err != nil {
-		if errors.Is(err, syscall.ELOOP) {
+		if isSymlinkLoop(err) {
 			return fmt.Errorf("daemon: public-key path %s appeared as a symlink between existence check and create; refusing", path)
 		}
 		return fmt.Errorf("create public-key file %s: %w", path, err)
@@ -364,7 +363,7 @@ func publishPublicKey(ks keysource.KeySource, path string) error {
 func reconcileExistingPublicKey(path, wantPubPEM string) error {
 	fh, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
 	if err != nil {
-		if errors.Is(err, syscall.ELOOP) {
+		if isSymlinkLoop(err) {
 			return fmt.Errorf("daemon: public-key path %s changed to a symlink between check and open; refusing", path)
 		}
 		return fmt.Errorf("open public-key file %s: %w", path, err)

@@ -85,14 +85,27 @@ itself is `0660`. Phase 1 unprivileged installs use the per-user defaults
 (`$TMPDIR` on macOS, `$XDG_RUNTIME_DIR` on Linux when set).
 
 On every startup the daemon publishes the matching SPKI public key to
-`--public-key` (default `<KeyPath>.pub`) with mode `0644`, so independent
-verifiers — `agent-receipts verify`, audit scripts, CI checks — can load it
-without access to the private key path. If the file already exists with the
-same contents the publish is a no-op; if the contents differ the daemon
-refuses to start (a mismatch means either the signing key was rotated /
-restored from backup, or the published file was tampered with — operator
-must remove the stale file deliberately). The daemon also refuses if the
-path is a symlink, FIFO, device, etc.
+`--public-key` (default `<KeyPath>.pub`, tracking any `--key` override) with
+mode `0644`, so independent verifiers — `agent-receipts verify`, audit
+scripts, CI checks — can load it without access to the private key path. If
+the file already exists with the same contents the publish is a no-op; if
+the contents differ the daemon refuses to start (a mismatch means either
+the signing key was rotated / restored from backup, or the published file
+was tampered with — operator must remove the stale file deliberately). The
+daemon also refuses if the path is a symlink, FIFO, device, etc.
+
+The published key file is `0644`, but its parent directory is created at
+`0750` to match the receipt-store directory's access policy — non-owners
+must be in the daemon user's group to traverse it and reach the public key.
+Per-user installs (the MVP path: `~/.agent-receipts/`) are unaffected since
+the operator who runs the verify CLI owns the directory. System installs
+(`/etc/agentreceipts/`, `/var/lib/agentreceipts/`) are expected to give the
+daemon a dedicated `agentreceipts` user and the read-side an
+`agentreceipts-read` group whose members traverse the directory; that
+ownership/grouping is a packaging concern (Homebrew / launchd / systemd) and
+not something the daemon assigns at runtime. If the directory already exists
+the daemon does not modify its mode, so operator-managed permissions are
+preserved.
 
 ## Read interface: `agent-receipts verify`
 

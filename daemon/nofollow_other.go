@@ -6,3 +6,9 @@ package daemon
 // these platforms (see Run's platform gate), so this constant exists solely
 // to keep the package compilable in cross-platform CI.
 const oNoFollow = 0
+
+// isSymlinkLoop is unreachable on non-unix platforms — the daemon's runtime
+// gate refuses to start there — and existing solely so daemon.go's symlink
+// diagnostic compiles in cross-platform CI without referencing
+// syscall.ELOOP, which is not defined on every Go port.
+func isSymlinkLoop(_ error) bool { return false }

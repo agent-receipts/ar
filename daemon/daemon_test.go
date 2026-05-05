@@ -271,6 +271,50 @@ func TestPublishPublicKey_FreshWriteRefusesPreCreatedSymlink(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_PublicKeyPathDefaultsFromKeyPath pins the contract the
+// agent-receipts-daemon CLI relies on after the PR #325 review fix: when
+// PublicKeyPath is left empty by the caller, validateConfig fills it from
+// the final KeyPath, so a `--key /tmp/x.key` invocation publishes to
+// `/tmp/x.key.pub` — not whatever path was computed before flag.Parse.
+func TestValidateConfig_PublicKeyPathDefaultsFromKeyPath(t *testing.T) {
+	cfg := Config{
+		SocketPath:           "/tmp/sock",
+		DBPath:               "/tmp/db",
+		KeyPath:              "/tmp/custom.key",
+		PublicKeyPath:        "", // operator did not set --public-key / env
+		ChainID:              "c",
+		IssuerID:             "i",
+		VerificationMethodID: "v",
+	}
+	if err := validateConfig(&cfg); err != nil {
+		t.Fatalf("validateConfig: %v", err)
+	}
+	if want := "/tmp/custom.key.pub"; cfg.PublicKeyPath != want {
+		t.Errorf("PublicKeyPath = %q, want %q (must track --key)", cfg.PublicKeyPath, want)
+	}
+}
+
+// TestValidateConfig_PublicKeyPathExplicitWins ensures an explicitly set
+// PublicKeyPath is not clobbered by the KeyPath-derived default — the
+// fallback only applies when the operator left it empty.
+func TestValidateConfig_PublicKeyPathExplicitWins(t *testing.T) {
+	cfg := Config{
+		SocketPath:           "/tmp/sock",
+		DBPath:               "/tmp/db",
+		KeyPath:              "/tmp/custom.key",
+		PublicKeyPath:        "/etc/agentreceipts/signing.pub",
+		ChainID:              "c",
+		IssuerID:             "i",
+		VerificationMethodID: "v",
+	}
+	if err := validateConfig(&cfg); err != nil {
+		t.Fatalf("validateConfig: %v", err)
+	}
+	if want := "/etc/agentreceipts/signing.pub"; cfg.PublicKeyPath != want {
+		t.Errorf("PublicKeyPath = %q, want %q (explicit must not be overwritten)", cfg.PublicKeyPath, want)
+	}
+}
+
 func TestPublishPublicKey_RequiresPath(t *testing.T) {
 	if err := publishPublicKey(&stubKeySource{pub: "x"}, ""); err == nil {
 		t.Fatal("expected error when PublicKeyPath is empty")
