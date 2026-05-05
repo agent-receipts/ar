@@ -8,11 +8,10 @@ import (
 	"testing"
 )
 
-// TestResolveExePath_Self resolves the running test binary's exe_path via
-// proc_pidpath and verifies the syscall wiring works end-to-end. A correct
-// result is the absolute path of the test binary go test compiled. Anything
-// else means the SYS_PROC_INFO call number, flavor, or buffer-handling is
-// wrong.
+// TestResolveExePath_Self verifies the SYS_PROC_INFO(PROC_PIDPATHINFO)
+// syscall wiring end-to-end by resolving the running test binary's own
+// exe_path. A non-empty absolute path that stat's successfully means the
+// call number, flavor, buffer pointer, and NUL-trimming are all correct.
 func TestResolveExePath_Self(t *testing.T) {
 	got := resolveExePath(int32(os.Getpid()))
 	if got == "" {
