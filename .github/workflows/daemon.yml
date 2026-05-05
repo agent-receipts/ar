@@ -17,7 +17,15 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Matrix exercises both Linux (SO_PEERCRED, /proc/<pid>/exe) and macOS
+    # (LOCAL_PEERCRED, LOCAL_PEEREPID, SYS_PROC_INFO(PROC_PIDPATHINFO))
+    # peer-credential paths in CI. fail-fast is off so a darwin-only flake
+    # doesn't mask a Linux regression and vice versa.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: daemon

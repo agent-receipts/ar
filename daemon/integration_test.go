@@ -22,6 +22,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -36,6 +37,52 @@ import (
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
+
+// emitterHelperEnvVar dispatches the test binary into one-shot emitter mode
+// when set to a socket path. TestMain checks for it before m.Run() so a
+// parent test can re-exec us as a subprocess to drive the daemon's
+// peer-credential capture against a process that is NOT the listener (see
+// TestPeerCredFromSubprocess for why that matters).
+const emitterHelperEnvVar = "AR_TEST_EMITTER_SOCKET"
+
+// TestMain handles the subprocess-emitter dispatch. When emitterHelperEnvVar
+// is set in the environment, the binary connects to that socket, writes one
+// frame, and exits — the test framework is never engaged. When unset (the
+// normal case for both `go test` and the parent test), m.Run() runs the
+// suite as usual. This pattern lets us re-exec the test binary as a
+// peer-cred fixture without standing up a separate helper module.
+func TestMain(m *testing.M) {
+	if sock := os.Getenv(emitterHelperEnvVar); sock != "" {
+		runEmitterHelper(sock)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// runEmitterHelper connects to sock and writes one length-prefix-framed
+// emitter frame, then returns so TestMain can exit cleanly. Errors are
+// fatal so the parent's CombinedOutput surfaces them in the test failure.
+func runEmitterHelper(sock string) {
+	conn, err := net.Dial("unix", sock)
+	if err != nil {
+		log.Fatalf("emitter helper: dial %s: %v", sock, err)
+	}
+	defer conn.Close()
+	body, err := json.Marshal(pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
+		SessionID: "subprocess-helper",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "subprocess-emitter"},
+		Decision:  "allowed",
+	})
+	if err != nil {
+		log.Fatalf("emitter helper: marshal frame: %v", err)
+	}
+	if err := socket.WriteFrame(conn, body); err != nil {
+		log.Fatalf("emitter helper: write frame: %v", err)
+	}
+}
 
 func writeTestKey(t *testing.T, path string) string {
 	t.Helper()
@@ -269,6 +316,62 @@ func TestPeerCredCaptured(t *testing.T) {
 		}
 		if !os.SameFile(gotInfo, wantInfo) {
 			t.Errorf("peer.exe_path = %q is not the same file as os.Executable = %q (the test process is the daemon's connecting peer)", got, want)
+		}
+	}
+}
+
+// TestPeerCredFromSubprocess verifies the daemon reads peer credentials
+// from the connecting process, not the listener's own process state.
+// TestPeerCredCaptured runs daemon.Run in a goroutine inside this test
+// process, so its captured pid/exe_path cannot distinguish "client" from
+// "server" — both are the same OS process. This test re-execs the test
+// binary as a subprocess (dispatched by TestMain via emitterHelperEnvVar),
+// so the daemon's peer-cred capture runs against a process with a
+// different pid. A regression that recorded the listener's pid instead of
+// the connecting peer's would pass TestPeerCredCaptured but fail this.
+func TestPeerCredFromSubprocess(t *testing.T) {
+	cfg, _, _ := startDaemon(t)
+
+	// -test.run=^$ matches no test function, so even if TestMain ever falls
+	// through to m.Run() (it shouldn't, runEmitterHelper exits via os.Exit),
+	// no tests would re-execute and create overlapping fixtures.
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), emitterHelperEnvVar+"="+cfg.SocketPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("subprocess emitter: %v (output: %s)", err, out)
+	}
+
+	receipts := waitForReceiptCount(t, cfg.DBPath, cfg.ChainID, 1, 5*time.Second)
+	pd := receipts[0].CredentialSubject.Action.ParametersDisclosure
+
+	// peer.pid must NOT be the test process's pid: the daemon must have
+	// captured the subprocess's pid via the connected-socket primitive
+	// (SO_PEERCRED on Linux, LOCAL_PEEREPID on macOS).
+	if pd["peer.pid"] == strconv.Itoa(os.Getpid()) {
+		t.Errorf("peer.pid = %q (= os.Getpid()); daemon recorded the listener's own pid instead of the connecting subprocess's", pd["peer.pid"])
+	}
+	if pd["peer.pid"] == "" {
+		t.Errorf("peer.pid empty — peer-cred capture failed for subprocess connection")
+	}
+
+	// peer.exe_path: subprocess is the same binary, so SameFile against
+	// os.Executable() still holds. This catches the regression where the
+	// daemon records a hardcoded or constant path.
+	if got := pd["peer.exe_path"]; got != "" {
+		want, err := os.Executable()
+		if err != nil {
+			t.Fatalf("os.Executable: %v", err)
+		}
+		gotInfo, err := os.Stat(got)
+		if err != nil {
+			t.Fatalf("os.Stat(peer.exe_path %q): %v", got, err)
+		}
+		wantInfo, err := os.Stat(want)
+		if err != nil {
+			t.Fatalf("os.Stat(os.Executable %q): %v", want, err)
+		}
+		if !os.SameFile(gotInfo, wantInfo) {
+			t.Errorf("peer.exe_path = %q is not the same file as os.Executable = %q (subprocess is the same binary as parent)", got, want)
 		}
 	}
 }
