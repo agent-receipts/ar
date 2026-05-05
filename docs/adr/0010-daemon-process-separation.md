@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-05-03)
+Accepted (2026-05-03), amended 2026-05-05 (see *Amendments*)
 
 ## Implementation status
 
@@ -26,12 +26,12 @@ Split every integration into two roles:
 
 ### IPC transport
 
-- Linux: Unix domain socket (`SOCK_SEQPACKET`) at `/run/agentreceipts/events.sock`.
-- macOS: Unix domain socket (`SOCK_SEQPACKET`) at `/var/run/agentreceipts/events.sock` (which resolves to `/private/var/run/agentreceipts/events.sock`).
+- Linux: Unix domain socket (`SOCK_STREAM` with 4-byte big-endian length-prefix framing). Default `$XDG_RUNTIME_DIR/agentreceipts/events.sock` (per-user, when the variable is set), falling back to `/run/agentreceipts/events.sock` (system-wide; requires privileged directory setup).
+- macOS: Unix domain socket (`SOCK_STREAM` with 4-byte big-endian length-prefix framing). Default `$TMPDIR/agentreceipts/events.sock` (per-user); the launchd-managed system install will select an alternative path explicitly via `AGENTRECEIPTS_SOCKET` once packaging lands.
 - Windows: named pipe via Node's `net` module (`\\.\pipe\agentreceipts-events`) with equivalent ACL semantics.
-- Socket and pipe locations are configurable; unprivileged installs override the default (e.g. `$XDG_RUNTIME_DIR/agentreceipts/events.sock`).
+- Socket and pipe locations are configurable via the `AGENTRECEIPTS_SOCKET` environment variable (Linux/macOS) or the equivalent on Windows.
 - TCP loopback is explicitly rejected — it dissolves the filesystem permission model and would require a bespoke local auth scheme.
-- `SOCK_SEQPACKET` is chosen over `SOCK_DGRAM` so peer credentials are reliably retrievable at the OS level — datagram sockets either lack a defined cred mechanism or require per-message ancillary data with platform-specific gaps — and over `SOCK_STREAM` so each event remains a discrete message without length-prefix framing.
+- `SOCK_STREAM` with length-prefix framing is chosen over `SOCK_DGRAM` because peer credentials on datagram sockets either lack a defined OS-level mechanism or require per-message ancillary data with platform-specific gaps. `SOCK_SEQPACKET` would have been the natural choice — discrete messages without explicit framing — but macOS `AF_UNIX` does not implement `SOCK_SEQPACKET`, and macOS is in MVP scope. Peer-credential capture (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` + `LOCAL_PEEREPID` on macOS) is tied to the connected socket rather than to message boundaries, so it works identically on stream sockets — the trust-model properties described under *Permissions and trust* hold unchanged.
 
 ### Permissions and trust
 
@@ -98,3 +98,13 @@ A future read socket for live-tail (`agent-receipts tail -f`) is in scope but no
 - [ADR-0001 (Ed25519 signing)](./0001-ed25519-for-receipt-signing.md) — unchanged, but the key now lives only in the daemon.
 - [ADR-0002 (RFC 8785 canonicalization)](./0002-rfc8785-json-canonicalization.md) — moves exclusively to the daemon.
 - [ADR-0004 (SQLite storage)](./0004-sqlite-for-local-receipt-storage.md) — daemon is sole writer; readers use filesystem permissions.
+
+## Amendments
+
+### 2026-05-05: IPC framing — `SOCK_STREAM` with length-prefix framing instead of `SOCK_SEQPACKET`
+
+Phase 1 (#322) implemented `SOCK_STREAM` with a 4-byte big-endian length-prefix frame in place of the originally-specified `SOCK_SEQPACKET`, because macOS `AF_UNIX` does not implement `SOCK_SEQPACKET`. The *IPC transport* section above describes the current wire format and reasoning; this entry records the deviation history.
+
+### 2026-05-05: Default socket paths — per-user defaults instead of system paths
+
+Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or systemd-managed system install yet. macOS uses `$TMPDIR/agentreceipts/events.sock` (the originally-specified `/var/run/agentreceipts/events.sock` is not produced by `daemon.DefaultSocketPath()`, only by explicit configuration); Linux uses `$XDG_RUNTIME_DIR/agentreceipts/events.sock` when that variable is set, falling back to `/run/agentreceipts/events.sock` only when it is not. Both originally-specified system paths can still be selected explicitly via `AGENTRECEIPTS_SOCKET` (or `--socket`) and will become the packaging-managed defaults once launchd / systemd integration lands. The *IPC transport* section above describes the current resolution.
