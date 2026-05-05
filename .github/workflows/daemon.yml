@@ -35,7 +35,9 @@ jobs:
         run: go build ./cmd/...
 
       - name: Test
-        run: go test -race ./... -v
-
-      - name: Integration tests
+        # Single tagged run covers unit + integration tests; the
+        # `integration` build tag only adds files (it does not exclude
+        # untagged ones), so this matches the coverage of running
+        # `go test ./...` and `go test -tags=integration ./...`
+        # separately, without re-running the untagged tests.
         run: go test -race -tags=integration ./... -v
