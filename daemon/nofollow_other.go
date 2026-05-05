@@ -2,10 +2,13 @@
 
 package daemon
 
-// oNoFollow is a no-op on non-POSIX platforms. The daemon refuses to start on
-// these platforms (see Run's platform gate), so this constant exists solely
-// to keep the package compilable in cross-platform CI.
-const oNoFollow = 0
+// oNoFollow / oNonblock are no-ops on non-POSIX platforms. The daemon refuses
+// to start on these platforms (see Run's platform gate), so these constants
+// exist solely to keep the package compilable in cross-platform CI.
+const (
+	oNoFollow = 0
+	oNonblock = 0
+)
 
 // isSymlinkLoop is unreachable on non-unix platforms — the daemon's runtime
 // gate refuses to start there — and exists solely so daemon.go's symlink

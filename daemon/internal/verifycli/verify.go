@@ -12,6 +12,9 @@
 package verifycli
 
 import (
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -84,13 +87,21 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		return ExitUsageError
 	}
 	if *pubKeyPath == "" {
-		fmt.Fprintln(stderr, "agent-receipts verify: --public-key is required (no AGENTRECEIPTS_PUBLIC_KEY/_KEY and no home directory)")
+		fmt.Fprintln(stderr, "agent-receipts verify: --public-key is required (set AGENTRECEIPTS_PUBLIC_KEY directly, or AGENTRECEIPTS_KEY so its <KeyPath>.pub default can be derived; both are unset and no home directory is available)")
 		return ExitUsageError
 	}
 
 	pubPEM, err := os.ReadFile(*pubKeyPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "agent-receipts verify: read public key: %v\n", err)
+		return ExitUsageError
+	}
+	// Validate the public key's PEM/SPKI shape upfront so a malformed key
+	// surfaces as a usage error instead of being routed through
+	// VerifyStoredChain → ExitChainBad, which would falsely suggest the chain
+	// itself was tampered with.
+	if err := validatePublicKeyPEM(pubPEM); err != nil {
+		fmt.Fprintf(stderr, "agent-receipts verify: invalid public key at %s: %v\n", *pubKeyPath, err)
 		return ExitUsageError
 	}
 
@@ -116,6 +127,12 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		return ExitOK
 	}
 	fmt.Fprintf(stdout, "Chain %s: BROKEN at receipt %d\n", *chainID, result.BrokenAt)
+	if result.Error != "" {
+		// Surface the structured failure cause from VerifyChain — for hash
+		// recompute / response_hash / chain-length / terminal-receipt errors
+		// it carries detail the per-receipt status lines can't express.
+		fmt.Fprintf(stdout, "  cause: %s\n", result.Error)
+	}
 	for _, rv := range result.Receipts {
 		status := "ok"
 		switch {
@@ -129,4 +146,27 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		fmt.Fprintf(stdout, "  [%d] %s — %s\n", rv.Index, rv.ReceiptID, status)
 	}
 	return ExitChainBad
+}
+
+// validatePublicKeyPEM rejects PEM bytes that don't decode to an Ed25519 SPKI
+// public key. Catching key-format errors here lets the CLI surface them as
+// ExitUsageError instead of routing them through VerifyStoredChain, where a
+// malformed key would surface as a "BROKEN" chain — falsely implicating the
+// receipts.
+func validatePublicKeyPEM(pubPEM []byte) error {
+	block, _ := pem.Decode(pubPEM)
+	if block == nil {
+		return errors.New("PEM decode failed (no PUBLIC KEY block)")
+	}
+	if block.Type != "PUBLIC KEY" {
+		return fmt.Errorf("PEM block type is %q, want PUBLIC KEY", block.Type)
+	}
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse SPKI public key: %w", err)
+	}
+	if _, ok := parsed.(ed25519.PublicKey); !ok {
+		return fmt.Errorf("public key is %T, want ed25519.PublicKey", parsed)
+	}
+	return nil
 }

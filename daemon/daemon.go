@@ -269,7 +269,8 @@ func tightenDBFiles(dbPath string) error {
 // Behaviour:
 //   - File missing → write the current public key with mode 0644.
 //   - File present and identical to the current public key → no-op (perms
-//     converged to 0644 if a stricter umask had loosened them).
+//     converged to 0644 if a stricter umask had narrowed them at create time,
+//     e.g. 0640).
 //   - File present and differs from the current public key → refuse. A
 //     mismatch means either the private key changed (rotation, restored from
 //     backup) or the published file was tampered with; silently overwriting
@@ -317,10 +318,10 @@ func publishPublicKey(ks keysource.KeySource, path string) error {
 		return fmt.Errorf("create public-key dir: %w", err)
 	}
 	// O_CREATE|O_EXCL + O_NOFOLLOW: refuses to follow a symlink AND refuses
-	// any pre-existing file. An attacker who creates a symlink at path
-	// between the Lstat ENOENT above and this Open will trip O_EXCL (the
-	// symlink dirent exists), so we never write through it — closes the
-	// fresh-write half of the TOCTOU window Copilot flagged on PR #325.
+	// any pre-existing file. An attacker who creates a symlink (or any other
+	// dirent) at path between the Lstat ENOENT above and this Open will trip
+	// O_EXCL — the dirent exists — so the daemon never writes through it.
+	// That closes the fresh-write half of the Lstat→Open TOCTOU window.
 	fh, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|oNoFollow, 0o644)
 	if err != nil {
 		if isSymlinkLoop(err) {
@@ -357,11 +358,21 @@ func publishPublicKey(ks keysource.KeySource, path string) error {
 }
 
 // reconcileExistingPublicKey handles the case where Lstat saw a regular file
-// at path. It opens with O_NOFOLLOW + fstat to confirm we read the same inode
-// Lstat saw (closing the Lstat→Open race), then no-ops, fchmod's, or refuses
-// based on whether the on-disk contents match the current keysource.
+// at path. It then no-ops, fchmod's, or refuses based on whether the on-disk
+// contents match the current keysource.
+//
+// The open uses O_NOFOLLOW so a regular-file→symlink swap between Lstat and
+// Open trips ELOOP and is refused; it adds O_NONBLOCK so a regular-file→FIFO
+// swap can't park the daemon at startup waiting for a writer. The fstat-on-fd
+// after Open re-rejects any non-regular file that slipped past Lstat (FIFO,
+// device, …); it does NOT compare st_ino/st_dev against the earlier Lstat
+// result — the file-permission and content checks are what we rely on, not
+// inode identity.
 func reconcileExistingPublicKey(path, wantPubPEM string) error {
-	fh, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
+	// O_NONBLOCK is a no-op on regular files (Linux/Darwin) but prevents an
+	// O_RDONLY open from blocking on a FIFO that a racing attacker might
+	// substitute for the regular file we Lstat'd.
+	fh, err := os.OpenFile(path, os.O_RDONLY|oNoFollow|oNonblock, 0)
 	if err != nil {
 		if isSymlinkLoop(err) {
 			return fmt.Errorf("daemon: public-key path %s changed to a symlink between check and open; refusing", path)

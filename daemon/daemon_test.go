@@ -232,11 +232,11 @@ func TestPublishPublicKey_RefusesSymlinkAtPath(t *testing.T) {
 	}
 }
 
-// TestPublishPublicKey_FreshWriteRefusesPreCreatedSymlink is the regression
-// test for the symlink-race Copilot flagged on PR #325: even when Lstat
-// reports the path missing, an attacker who plants a symlink before the
-// create-and-write must not get the daemon to write/chmod the symlink target.
-// The O_CREATE|O_EXCL|O_NOFOLLOW open is what closes the window.
+// TestPublishPublicKey_FreshWriteRefusesPreCreatedSymlink pins the
+// fresh-write half of the Lstat→Open TOCTOU defence: even if Lstat sees the
+// path missing, an attacker who plants a symlink at the path before the
+// create-and-write must not get the daemon to write/chmod the symlink
+// target. O_CREATE|O_EXCL|O_NOFOLLOW is what closes the window.
 func TestPublishPublicKey_FreshWriteRefusesPreCreatedSymlink(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "attacker-target")
@@ -272,10 +272,10 @@ func TestPublishPublicKey_FreshWriteRefusesPreCreatedSymlink(t *testing.T) {
 }
 
 // TestValidateConfig_PublicKeyPathDefaultsFromKeyPath pins the contract the
-// agent-receipts-daemon CLI relies on after the PR #325 review fix: when
-// PublicKeyPath is left empty by the caller, validateConfig fills it from
-// the final KeyPath, so a `--key /tmp/x.key` invocation publishes to
-// `/tmp/x.key.pub` — not whatever path was computed before flag.Parse.
+// agent-receipts-daemon CLI relies on: when PublicKeyPath is left empty by
+// the caller, validateConfig fills it from the final KeyPath, so a
+// `--key /tmp/x.key` invocation publishes to `/tmp/x.key.pub` — not whatever
+// path was computed before flag.Parse.
 func TestValidateConfig_PublicKeyPathDefaultsFromKeyPath(t *testing.T) {
 	cfg := Config{
 		SocketPath:           "/tmp/sock",

@@ -15,6 +15,13 @@ import (
 // internal/keysource so the two file-handling sites stay symmetrical.
 const oNoFollow = syscall.O_NOFOLLOW
 
+// oNonblock is OR'd into O_RDONLY opens of paths the daemon already Lstat'd
+// as a regular file. On regular files O_NONBLOCK is a no-op on Linux/Darwin;
+// on a FIFO it makes the read end open without parking the daemon waiting
+// for a writer. That defends against a regular-file→FIFO swap between Lstat
+// and Open — fstat-on-fd then rejects the non-regular file.
+const oNonblock = syscall.O_NONBLOCK
+
 // isSymlinkLoop reports whether err is the kernel's "would-follow-a-symlink"
 // errno (ELOOP) returned when O_NOFOLLOW is set on an OpenFile against a
 // symlink target. Wrapping the check in a build-tagged helper avoids

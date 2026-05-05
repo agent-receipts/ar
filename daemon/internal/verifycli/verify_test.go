@@ -170,6 +170,27 @@ func TestRun_BadFlagIsUsageError(t *testing.T) {
 	}
 }
 
+func TestRun_MalformedPublicKeyIsUsageError(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, _ := fixtureChain(t, dir, "chain-1", 1)
+	pubKeyPath := filepath.Join(dir, "garbage.pub")
+	if err := os.WriteFile(pubKeyPath, []byte("not a pem block"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--chain-id", "chain-1",
+	})
+	if code != ExitUsageError {
+		t.Fatalf("exit = %d, want %d (malformed key should be a usage error, not ExitChainBad)", code, ExitUsageError)
+	}
+	if !strings.Contains(stderr, "invalid public key") {
+		t.Errorf("stderr = %q, expected 'invalid public key' diagnostic", stderr)
+	}
+}
+
 func TestRun_RejectsPositionalArgs(t *testing.T) {
 	dir := t.TempDir()
 	dbPath, pubKeyPath := fixtureChain(t, dir, "chain-1", 1)
