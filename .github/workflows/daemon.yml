@@ -32,9 +32,7 @@ jobs:
         run: go vet ./...
 
       - name: Build
-        run: |
-          go build ./cmd/agent-receipts-daemon
-          go build ./cmd/agent-receipts
+        run: go build ./cmd/...
 
       - name: Test
         run: go test -race ./... -v

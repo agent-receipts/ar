@@ -35,12 +35,11 @@ the require in `daemon/go.mod`.
 
 ### CI coverage
 
-`.github/workflows/daemon.yml` runs `go vet`, builds both `cmd/`
-binaries, and runs unit + integration tests with `-race` on every push
-and pull request that touches `daemon/**` or `sdk/go/**` (the latter so
-that `sdk/go` changes which break the daemon are caught in the same PR
-that introduces them, mirroring how `mcp-proxy.yml` triggers on its
-upstream module).
+`.github/workflows/daemon.yml` runs `go vet`, builds `./cmd/...`, and
+runs unit + integration tests with `-race` on every push and pull
+request that touches `daemon/**` or `sdk/go/**`. The `sdk/go/**` trigger
+mirrors `mcp-proxy.yml` so that `sdk/go` changes which break the daemon
+are caught in the same PR that introduces them.
 
 ## Run
 
