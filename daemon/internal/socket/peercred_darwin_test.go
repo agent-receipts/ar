@@ -10,8 +10,13 @@ import (
 
 // TestResolveExePath_Self verifies the SYS_PROC_INFO(PROC_PIDPATHINFO)
 // syscall wiring end-to-end by resolving the running test binary's own
-// exe_path. A non-empty absolute path that stat's successfully means the
-// call number, flavor, buffer pointer, and NUL-trimming are all correct.
+// exe_path. A non-empty absolute path pointing to the same file as
+// os.Executable() means the call number, flavor, buffer pointer, and
+// NUL-trimming are all correct. The os.SameFile comparison rather than
+// string equality tolerates path-canonicalisation differences (e.g.
+// /var → /private/var on macOS) and symlinks while still catching the
+// regression a non-empty-only check misses: passing the wrong pid would
+// produce a valid path that does not match the test process.
 func TestResolveExePath_Self(t *testing.T) {
 	got := resolveExePath(int32(os.Getpid()))
 	if got == "" {
@@ -20,9 +25,19 @@ func TestResolveExePath_Self(t *testing.T) {
 	if !filepath.IsAbs(got) {
 		t.Errorf("resolveExePath = %q, want absolute path", got)
 	}
-	// Sanity: proc_pidpath returns a real on-disk path, not a /proc-style
-	// symlink that disappears after exec.
-	if _, err := os.Stat(got); err != nil {
-		t.Errorf("resolveExePath returned %q which does not stat: %v", got, err)
+	want, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	gotInfo, err := os.Stat(got)
+	if err != nil {
+		t.Fatalf("os.Stat(resolveExePath %q): %v", got, err)
+	}
+	wantInfo, err := os.Stat(want)
+	if err != nil {
+		t.Fatalf("os.Stat(os.Executable %q): %v", want, err)
+	}
+	if !os.SameFile(gotInfo, wantInfo) {
+		t.Errorf("resolveExePath = %q is not the same file as os.Executable = %q", got, want)
 	}
 }

@@ -246,6 +246,31 @@ func TestPeerCredCaptured(t *testing.T) {
 	default:
 		t.Errorf("unexpected peer.platform = %q", pd["peer.platform"])
 	}
+
+	// peer.exe_path is non-empty alone is too weak: a regression that records
+	// the wrong process's path (the daemon's own binary instead of the
+	// connecting client's) still produces a valid absolute path. The test
+	// process is the daemon's connecting peer here, so peer.exe_path must
+	// refer to the same file as os.Executable. os.SameFile comparison rather
+	// than string equality tolerates path canonicalisation (e.g. macOS's
+	// /var → /private/var symlink) and any /proc-style resolution difference.
+	if got := pd["peer.exe_path"]; got != "" {
+		want, err := os.Executable()
+		if err != nil {
+			t.Fatalf("os.Executable: %v", err)
+		}
+		gotInfo, err := os.Stat(got)
+		if err != nil {
+			t.Fatalf("os.Stat(peer.exe_path %q): %v", got, err)
+		}
+		wantInfo, err := os.Stat(want)
+		if err != nil {
+			t.Fatalf("os.Stat(os.Executable %q): %v", want, err)
+		}
+		if !os.SameFile(gotInfo, wantInfo) {
+			t.Errorf("peer.exe_path = %q is not the same file as os.Executable = %q (the test process is the daemon's connecting peer)", got, want)
+		}
+	}
 }
 
 // TestShutdownWithIdleClient confirms the daemon shuts down promptly even
