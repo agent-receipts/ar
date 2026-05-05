@@ -240,7 +240,9 @@ func TestPeerCredCaptured(t *testing.T) {
 			t.Error("Linux daemon should populate peer.exe_path from /proc/<pid>/exe")
 		}
 	case "darwin":
-		// Phase 1 leaves exe_path empty on macOS.
+		if pd["peer.exe_path"] == "" {
+			t.Error("macOS daemon should populate peer.exe_path via SYS_PROC_INFO(PROC_PIDPATHINFO)")
+		}
 	default:
 		t.Errorf("unexpected peer.platform = %q", pd["peer.platform"])
 	}
