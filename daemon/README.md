@@ -11,9 +11,10 @@ rationale and [issue #236](https://github.com/agent-receipts/ar/issues/236)
 for the work breakdown.
 
 This is **Phase 1** of the daemon roll-out — the foundation slice. It ships
-the standalone daemon binary, peer-cred capture, chain-tail resumption, and
-the file-backed `KeySource`. Emitter refactor for mcp-proxy / OpenClaw / SDK
-ships in later phases.
+the standalone daemon binary, peer-cred capture, chain-tail resumption, the
+file-backed `KeySource`, and the `agent-receipts verify` read CLI (which
+works whether the daemon is up or down). Emitter refactor for mcp-proxy /
+OpenClaw / SDK ships in later phases.
 
 ## Build
 
@@ -69,6 +70,7 @@ agent-receipts-daemon \
 | `--key` | `AGENTRECEIPTS_KEY` | `~/.agent-receipts/signing.key` |
 | `--chain-id` | `AGENTRECEIPTS_CHAIN_ID` | `default` |
 | `--issuer-id` | `AGENTRECEIPTS_ISSUER_ID` | `did:agent-receipts-daemon:local` |
+| `--public-key` | `AGENTRECEIPTS_PUBLIC_KEY` | `<--key>.pub` |
 | `--verification-method` | `AGENTRECEIPTS_VERIFICATION_METHOD` | `did:agent-receipts-daemon:local#k1` |
 
 The signing key file must be a PKCS#8-encoded Ed25519 private key (the format
@@ -81,6 +83,56 @@ non-regular file at this path.
 The socket directory is created with mode `0750` if missing; the socket
 itself is `0660`. Phase 1 unprivileged installs use the per-user defaults
 (`$TMPDIR` on macOS, `$XDG_RUNTIME_DIR` on Linux when set).
+
+On every startup the daemon publishes the matching SPKI public key to
+`--public-key` (default `<KeyPath>.pub`, tracking any `--key` override) with
+mode `0644`, so independent verifiers — `agent-receipts verify`, audit
+scripts, CI checks — can load it without access to the private key path. If
+the file already exists with the same contents the publish is a no-op; if
+the contents differ the daemon refuses to start (a mismatch means either
+the signing key was rotated / restored from backup, or the published file
+was tampered with — operator must remove the stale file deliberately). The
+daemon also refuses if the path is a symlink, FIFO, device, etc.
+
+The published key file is `0644`, but its parent directory is created at
+`0750` to match the receipt-store directory's access policy — non-owners
+must be in the daemon user's group to traverse it and reach the public key.
+Per-user installs (the MVP path: `~/.agent-receipts/`) are unaffected since
+the operator who runs the verify CLI owns the directory. System installs
+(`/etc/agentreceipts/`, `/var/lib/agentreceipts/`) are expected to give the
+daemon a dedicated `agentreceipts` user and the read-side an
+`agentreceipts-read` group whose members traverse the directory; that
+ownership/grouping is a packaging concern (Homebrew / launchd / systemd) and
+not something the daemon assigns at runtime. If the directory already exists
+the daemon does not modify its mode, so operator-managed permissions are
+preserved.
+
+## Read interface: `agent-receipts verify`
+
+```sh
+agent-receipts verify --chain-id default
+# or, with explicit paths:
+agent-receipts verify \
+  --db /var/lib/agentreceipts/receipts.db \
+  --public-key /etc/agentreceipts/signing.key.pub \
+  --chain-id default
+```
+
+Defaults match the daemon's: a verify run without flags works after
+`agent-receipts-daemon` has run at least once with the same per-user paths.
+
+`verify` opens the SQLite store **read-only** via `sdk/go/store.OpenReadOnly`
+so it is safe to run while the daemon is the active writer, and it does not
+require the daemon socket to be reachable. Independent verifiability is not
+gated on daemon availability (issue #236, Section 4).
+
+Exit codes are stable for scripting:
+
+| Code | Meaning |
+|---|---|
+| `0` | Chain verified |
+| `1` | Chain failed verification (output lists per-receipt status) |
+| `2` | Usage error (bad flags, missing key file, unreadable DB) |
 
 ## Wire protocol
 
@@ -144,8 +196,9 @@ The following are deliberate Phase 1 choices, all callable out for follow-up:
 ## Layout
 
 ```
-daemon.go                                  # Run() entrypoint and Config
-cmd/agent-receipts-daemon/main.go          # CLI: flag/env parsing, signal handling
+daemon.go                                  # Run() entrypoint and Config; publishes the public key on startup
+cmd/agent-receipts-daemon/main.go          # daemon CLI: flag/env parsing, signal handling
+cmd/agent-receipts/main.go                 # read CLI: thin shim over internal/verifycli
 internal/
   chain/state.go                           # in-memory (seq, prev_hash) owner; sole writer
   keysource/keysource.go                   # KeySource interface (ADR-0015 shape)
@@ -153,5 +206,6 @@ internal/
   socket/listener.go                       # Unix-domain socket + length-prefix framing
   socket/peercred_{linux,darwin,other}.go  # OS-specific peer-credential capture
   pipeline/build.go                        # frame + peer -> AgentReceipt -> sign -> store
-integration_test.go                        # tags: integration. End-to-end concurrency + peer-cred fixture.
+  verifycli/verify.go                      # `agent-receipts verify` subcommand
+integration_test.go                        # tags: integration. End-to-end concurrency, peer-cred, and verify-CLI fixtures.
 ```

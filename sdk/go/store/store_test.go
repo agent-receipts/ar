@@ -1,6 +1,7 @@
 package store
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
@@ -567,6 +568,124 @@ func TestCloseMultipleTimes(t *testing.T) {
 	}
 	// Second close should not panic.
 	_ = s.Close()
+}
+
+func TestOpenReadOnlyVerifiesExistingChain(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "receipts.db")
+
+	rw, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kp, _ := receipt.GenerateKeyPair()
+	var prevHash *string
+	for i := 1; i <= 3; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
+		h, _ := receipt.HashReceipt(r)
+		if err := rw.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+	if err := rw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ro, err := OpenReadOnly(dbPath)
+	if err != nil {
+		t.Fatalf("OpenReadOnly: %v", err)
+	}
+	t.Cleanup(func() { ro.Close() })
+
+	result, err := ro.VerifyStoredChain("chain-1", kp.PublicKey)
+	if err != nil {
+		t.Fatalf("VerifyStoredChain on read-only handle: %v", err)
+	}
+	if !result.Valid {
+		t.Fatalf("expected valid chain, broken at %d", result.BrokenAt)
+	}
+	if result.Length != 3 {
+		t.Fatalf("expected 3 receipts verified, got %d", result.Length)
+	}
+}
+
+func TestOpenReadOnlyRejectsWrites(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "receipts.db")
+
+	rw, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ro, err := OpenReadOnly(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ro.Close() })
+
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
+	h, _ := receipt.HashReceipt(r)
+	// We deliberately don't pin a specific SQLite error string here — the
+	// driver's wording around read-only rejection has shifted between
+	// modernc.org/sqlite versions, and the behaviour we actually care about
+	// is "the write was rejected", regardless of how it's phrased.
+	if err := ro.Insert(r, h); err == nil {
+		t.Fatal("expected Insert against read-only handle to fail, got nil")
+	}
+}
+
+func TestOpenReadOnlyConcurrentWithWriter(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "receipts.db")
+
+	rw, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rw.Close() })
+
+	kp, _ := receipt.GenerateKeyPair()
+	var prevHash *string
+	for i := 1; i <= 2; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
+		h, _ := receipt.HashReceipt(r)
+		if err := rw.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+
+	// Open read-only while the writer handle is still live — verifies the
+	// daemon-up case where agent-receipts verify must not collide with the
+	// daemon's exclusive ownership of the write side.
+	ro, err := OpenReadOnly(dbPath)
+	if err != nil {
+		t.Fatalf("OpenReadOnly while writer is open: %v", err)
+	}
+	t.Cleanup(func() { ro.Close() })
+
+	got, err := ro.GetChain("chain-1")
+	if err != nil {
+		t.Fatalf("GetChain: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 receipts, got %d", len(got))
+	}
+}
+
+func TestOpenReadOnlyRejectsMemoryAndEmpty(t *testing.T) {
+	if _, err := OpenReadOnly(""); err == nil {
+		t.Fatal("expected error for empty path")
+	}
+	if _, err := OpenReadOnly(":memory:"); err == nil {
+		t.Fatal("expected error for :memory:")
+	}
 }
 
 func TestVerifyStoredChain(t *testing.T) {
