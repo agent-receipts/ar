@@ -9,6 +9,10 @@ Claude Code is a CLI-based agent that connects to MCP servers for tools like Git
 The default policy includes a `pause_high_risk` rule. When you generate a config with `mcp-proxy init`, the snippet includes `-http 127.0.0.1:7778` so the approval listener starts automatically. If you run the proxy manually without `-http`, the listener is off and paused calls fail fast with `-32003`. Pass `--no-approval` to `mcp-proxy init` to generate a snippet without `-http`. If you're seeing `-32002` on tools that shouldn't pause, suspect client-side denial first — see [troubleshooting](/mcp-proxy/configuration/#-32002-errors-on-tool-calls).
 :::
 
+:::danger[Never put secrets in the config file]
+Both `claude mcp add-json` and `.mcp.json` persist their content as plaintext on disk (`~/.claude.json` and committed project files respectively). **Never** paste a token, API key, or other credential as a literal string into either one. Reference secrets via `${VAR}` placeholders — Claude Code expands them at server-launch time — and keep the actual values in your shell environment or a secret manager. The snippets on this page follow that pattern; if you adapt them for other servers, preserve it.
+:::
+
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
