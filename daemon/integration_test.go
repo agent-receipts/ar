@@ -98,6 +98,7 @@ func runEmitterHelper(sock string) {
 	if err := socket.WriteFrame(conn, body); err != nil {
 		log.Fatalf("emitter helper: write frame: %v", err)
 	}
+	syncWithDaemon(conn)
 }
 
 func writeTestKey(t *testing.T, path string) string {
@@ -180,6 +181,24 @@ func emitFrame(t *testing.T, socketPath string, frame pipeline.EmitterFrame) {
 	if err := socket.WriteFrame(conn, body); err != nil {
 		t.Fatalf("write frame: %v", err)
 	}
+	syncWithDaemon(conn)
+}
+
+// syncWithDaemon half-closes the write side of conn and blocks reading
+// until the daemon closes its end. This guarantees the daemon has finished
+// processing the frame — and, crucially, has already called
+// getsockopt(LOCAL_PEEREPID) at accept time — before the emitter's deferred
+// Close() removes the peer's socket state. Without this synchronization,
+// rapid connect→write→close races the daemon's accept-loop getsockopt on
+// macOS: the kernel reaps the peer pcb and LOCAL_PEEREPID returns ENOTCONN.
+// peercred_darwin.go tolerates that by recording pid=0, but the integration
+// test still wants to assert the happy path (peer.pid == os.Getpid()), so
+// the emitter does the synchronizing rather than the assertion relaxing.
+func syncWithDaemon(conn net.Conn) {
+	if uc, ok := conn.(*net.UnixConn); ok {
+		_ = uc.CloseWrite()
+	}
+	_, _ = io.Copy(io.Discard, conn)
 }
 
 func waitForReceiptCount(t *testing.T, dbPath, chainID string, want int, timeout time.Duration) []receipt.AgentReceipt {
