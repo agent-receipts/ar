@@ -33,9 +33,9 @@ Re-running `init` is safe — it warns and skips if the key already exists. Use 
 
 ## Register the proxy with Claude Code
 
-Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. Your shell resolves the proxy, key, and server paths at paste time — no manual substitution required (replace only `YOUR_TOKEN`).
+Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. Your shell resolves the proxy, key, and server paths at paste time. The token is referenced as `${GITHUB_PERSONAL_ACCESS_TOKEN}` — Claude Code expands that placeholder at server-launch time, so the secret stays in your environment (or a secret manager) rather than in the stored config.
 
-**bash / zsh:**
+**bash / zsh** — `\$` escapes the placeholder so bash leaves it intact at paste time:
 
 ```bash
 # heredoc terminator (JSON) must be alone on its line; closing ) follows on the next
@@ -51,7 +51,7 @@ JSON_BODY=$(cat <<JSON
     "$(which github-mcp-server)", "stdio"
   ],
   "env": {
-    "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "\${GITHUB_PERSONAL_ACCESS_TOKEN}"
   }
 }
 JSON
@@ -60,7 +60,7 @@ JSON
 claude mcp add-json github-audited --scope user "$JSON_BODY"
 ```
 
-**fish** (no heredoc support — build JSON via `printf` instead):
+**fish** (no heredoc support — build JSON via `printf` instead; the single-quoted format string passes the placeholder through literally):
 
 ```fish
 set MCP_PROXY (which mcp-proxy)
@@ -78,12 +78,14 @@ set json (printf '{
     "%s", "stdio"
   ],
   "env": {
-    "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
   }
 }' $MCP_PROXY $KEY $GITHUB_MCP | string collect)
 
 claude mcp add-json github-audited --scope user $json
 ```
+
+Set `GITHUB_PERSONAL_ACCESS_TOKEN` in your shell rc (`~/.zshrc`, `~/.config/fish/config.fish`, etc.) — or fetch it on demand from a secret manager — before launching Claude Code. Verify the placeholder reached the stored config (and was *not* expanded at paste time) with `claude mcp get github-audited`.
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
 
