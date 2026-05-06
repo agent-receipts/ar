@@ -122,7 +122,7 @@ Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or 
 
 **Spec/code changes:**
 - No migration logic in daemon startup.
-- No schema migrations or data import tooling in `sdk/go/store`.
+- No v1→v2 chain migration or data import tooling in `sdk/go/store` (schema migrations for other purposes are unaffected).
 - Documentation MUST include a deprecation notice: "v1 in-process receipts are not migrated; preserve offline copies if long-term verification is required."
 
 ### 2026-05-06: OQ3 — SDK cutover sequencing — single-shot release
