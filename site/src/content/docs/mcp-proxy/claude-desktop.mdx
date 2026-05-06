@@ -78,6 +78,9 @@ Point Claude Desktop at `op run` — it resolves the `op://` reference at exec t
         "/Users/YOU/go/bin/mcp-proxy",
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-issuer-name", "Claude Desktop",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
         "/opt/homebrew/bin/github-mcp-server", "stdio"
       ]
     }
@@ -89,7 +92,7 @@ Point Claude Desktop at `op run` — it resolves the `op://` reference at exec t
 
 ### Fallback: OS keychain launcher script
 
-If you don't have a secret manager, store the token in the OS keychain and add a small launcher that exec's mcp-proxy with the secret in env. The launcher itself contains no secrets.
+If you don't have a secret manager, store the token in the OS keychain and add a small launcher that execs mcp-proxy with the secret in env. The launcher itself contains no secrets.
 
 **macOS** — store the token, then create the launcher:
 
@@ -118,6 +121,9 @@ Point Claude Desktop at the launcher — no `env` block, since the script sets i
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-issuer-name", "Claude Desktop",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
         "/opt/homebrew/bin/github-mcp-server", "stdio"
       ]
     }
@@ -137,6 +143,9 @@ Useful for kicking the tyres against a throwaway PAT before wiring up secret man
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-issuer-name", "Claude Desktop",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
         "/opt/homebrew/bin/github-mcp-server", "stdio"
       ],
       "env": {
