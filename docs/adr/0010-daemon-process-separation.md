@@ -113,10 +113,10 @@ Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or 
 
 **Decision:** v1 users have per-emitter SQLite databases. Phase 2 (Section 3, thin-emitter refactor) will abandon existing v1 chains and start a fresh daemon-managed chain at `seq=1`. No in-place migration or `import-chain` script. The daemon and emitters use new default DB/key paths (separate from v1) to ensure accidental resume does not happen; operators who want to preserve v1 chains for verification must keep v1 and v2 DBs in separate directories.
 
-**Rationale:** Agent-Receipts is pre-1.0 with early-stage adoption (solo dev and lab usage). No production audit dependencies exist that would prohibit a clean break, and the cost of migration logic (either in-process DB surgery during daemon startup or a separate import tool) compounds the already-substantial emitter refactor burden of Section 3.
+**Rationale:** agent-receipts is pre-1.0 with early-stage adoption (solo dev and lab usage). No production audit dependencies exist that would prohibit a clean break, and the cost of migration logic (either in-process DB surgery during daemon startup or a separate import tool) compounds the already-substantial emitter refactor burden of Section 3.
 
 **Consequences:**
-- Auditors must preserve v1 SQLite databases and matching public keys offline if they require long-term audit of pre-Phase-2 events. V1 receipts remain cryptographically verifiable with those artifacts; v2 tooling and daemon will not verify or import v1 chains.
+- Auditors must preserve v1 SQLite databases and matching public keys offline if they require long-term audit of pre-Phase-2 events. V1 receipts remain cryptographically verifiable with those artifacts; v2 daemon does not automatically resume or import v1 chains (separate DB/key paths prevent accidental coexistence).
 - v1 chains are not resumed on v2 daemon startup (separate DB/key paths prevent accidental coexistence).
 - On daemon startup with a fresh database, the chain starts at `seq=1` with no previous-receipt hash.
 
@@ -143,10 +143,10 @@ Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or 
 
 ### 2026-05-06: OQ4 — session_id allocation rule — UUID at startup, persistent across reconnects
 
-**Decision:** Each emitter process MUST provide a stable `session_id` (opaque string) for its logical session. If the host provides a session identifier, forward it unchanged. Otherwise, generate a new UUID v4 at startup (recommended form for generated IDs). The `session_id` remains constant across daemon reconnects and instance-local (lifetime of the emitter instance). The daemon records `session_id` faithfully; verifiers MUST treat it as an advisory grouping hint, not a cryptographic boundary.
+**Decision:** Each emitter process MUST provide a stable `session_id` (opaque string) for its logical session. If the host provides a session identifier, forward it unchanged. Otherwise, generate a new UUID v4 at startup (recommended form for generated IDs). The `session_id` remains constant across daemon reconnects and is instance-local (lifetime of the emitter instance). The daemon records `session_id` faithfully; verifiers MUST treat it as an advisory grouping hint, not a cryptographic boundary.
 
 **Rationale:**
-- **At startup (not per-run):** Agents invoke multiple tool calls within a single logical session. One `session_id` per agent-run would fragment a logical audit session into N receipts with N identifiers. Grouping by emitter-instance lifetime naturally clusters tool calls.
+- **At startup (not per-tool-call):** Agents invoke multiple tool calls within a single logical session. Generating a new `session_id` per tool call would fragment a logical agent session into N receipts with N identifiers. Grouping by emitter-instance lifetime (one session_id for all tool calls within the instance's lifetime) naturally clusters them.
 - **Persistent across daemon reconnect:** The emitter holds the session_id in memory. If the daemon restarts or the network drops and reconnects, the emitter retransmits with the same `session_id`, keeping receipts logically grouped. No persist-to-disk is required (the session_id dies with the emitter instance).
 - **Uniform across SDKs:** All three SDK emitters (Go, TS, Py) and integration points (mcp-proxy, OpenClaw) initialize `session_id` once at construction time; never generate a new one per emit(). If multiple SDK instances exist in the same process, they should share or coordinate on a single session_id.
 
