@@ -3,6 +3,7 @@
 package socket
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"unsafe"
@@ -30,6 +31,17 @@ const (
 //
 // macOS LOCAL_PEERCRED returns an xucred whose Groups[0] is the effective gid;
 // LOCAL_PEEREPID returns the effective pid (xucred itself does not carry pid).
+//
+// Unlike Linux's SO_PEERCRED — which snapshots the ucred at connect time and
+// remains readable after the peer detaches — macOS's LOCAL_PEEREPID reads the
+// live peer's pcb and returns ENOTCONN once the peer has closed its end. With
+// rapid connect → write → close patterns (one connection per frame), the peer
+// often disconnects between accept() and our getsockopt call. We treat
+// ENOTCONN as "pid unresolved": uid/gid still come from the cached xucred
+// (which LOCAL_PEERCRED captures at connect time, so it survives peer
+// detachment), and the frame still gets processed. PID and exe_path stay zero
+// for that record, mirroring the existing tolerance for an unreadable
+// /proc/<pid>/exe on Linux.
 func capturePeer(conn *net.UnixConn) (PeerCred, error) {
 	rc, err := conn.SyscallConn()
 	if err != nil {
@@ -54,6 +66,10 @@ func capturePeer(conn *net.UnixConn) (PeerCred, error) {
 
 		pid, err := unix.GetsockoptInt(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEEREPID)
 		if err != nil {
+			if errors.Is(err, unix.ENOTCONN) {
+				// Peer detached between accept() and getsockopt; pid stays 0.
+				return
+			}
 			inner = fmt.Errorf("LOCAL_PEEREPID: %w", err)
 			return
 		}
@@ -68,8 +84,12 @@ func capturePeer(conn *net.UnixConn) (PeerCred, error) {
 
 	// Resolve exe_path. Failure is non-fatal: the daemon still records
 	// pid/uid/gid and exe_path stays empty, mirroring the Linux path which
-	// also tolerates an unreadable /proc/<pid>/exe.
-	pc.ExePath = resolveExePath(pc.PID)
+	// also tolerates an unreadable /proc/<pid>/exe. Skip when pid is unknown
+	// (LOCAL_PEEREPID returned ENOTCONN above) — proc_pidpath(0) would target
+	// the kernel.
+	if pc.PID > 0 {
+		pc.ExePath = resolveExePath(pc.PID)
+	}
 
 	return pc, nil
 }
