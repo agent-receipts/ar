@@ -105,11 +105,11 @@ security add-generic-password -s github-mcp -a "$USER" -w
 #!/usr/bin/env bash
 # ~/.agent-receipts/run-mcp-proxy-github.sh — chmod 700
 set -euo pipefail
-GITHUB_PERSONAL_ACCESS_TOKEN="$(security find-generic-password -s github-mcp -w)" \
+GITHUB_PERSONAL_ACCESS_TOKEN="$(security find-generic-password -s github-mcp -a "$USER" -w)" \
   exec /Users/YOU/go/bin/mcp-proxy "$@"
 ```
 
-**Linux**: swap the keychain calls for `secret-tool store --label=github-mcp service github-mcp` and `secret-tool lookup service github-mcp`. **Windows**: a `.ps1` wrapper using the [SecretManagement module](https://learn.microsoft.com/en-us/powershell/utility-modules/secretmanagement/overview) (`Get-Secret github-mcp`) plays the same role.
+**Linux**: swap the keychain calls for `secret-tool store --label=github-mcp service github-mcp account "$USER"` and `secret-tool lookup service github-mcp account "$USER"` (matching the same `account` qualifier on store and lookup avoids ambiguity if you ever store more than one entry under the same service name). **Windows**: a `.ps1` wrapper using the [SecretManagement module](https://learn.microsoft.com/en-us/powershell/utility-modules/secretmanagement/overview) (`Get-Secret github-mcp`) plays the same role.
 
 Point Claude Desktop at the launcher — no `env` block, since the script sets it:
 
