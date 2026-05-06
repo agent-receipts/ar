@@ -167,23 +167,27 @@ func hasJSONPayload(raw json.RawMessage) bool {
 	return !bytes.Equal(trimmed, []byte("null"))
 }
 
-// canonicalSHA256 unmarshals raw, canonicalises per RFC 8785, and returns the
-// "sha256:<hex>" digest. Callers must check hasJSONPayload first; passing a
-// null/empty value canonicalises to "null" and produces a misleading hash.
+// canonicalSHA256 canonicalises raw per RFC 8785 and returns the
+// "sha256:<hex>" digest. Callers MUST check hasJSONPayload first: a literal
+// JSON null reaches receipt.Canonicalize and hashes "null", which would
+// falsely commit the daemon to a value the emitter did not send.
 //
-// Errors here are real and expected: json.RawMessage on a successfully-parsed
-// EmitterFrame is only guaranteed to be a syntactically valid JSON token.
-// Re-unmarshalling into Go's `any` can still fail — a JSON number like
-// `1e400` is valid JSON syntax but overflows float64. The daemon MUST
-// surface that as a per-frame error and keep running; a panic here would
-// let any authenticated emitter DoS every other emitter on the same socket
-// (and the orphaned chain.State allocation would leave the lock held).
+// raw is passed to receipt.Canonicalize directly; json.RawMessage's
+// MarshalJSON returns its bytes verbatim, so Canonicalize's existing
+// marshal+unmarshal handles the parse without us doing an extra unmarshal
+// here. (Empty RawMessage is not a callable shape — Canonicalize would
+// return EOF — but hasJSONPayload rejects it before we get here.)
+//
+// Errors are real and expected: a JSON number like `1e400` is syntactically
+// valid (so it survives EmitterFrame's outer Unmarshal as a token) but
+// overflows float64 when Canonicalize re-parses into Go's `any`. The daemon
+// MUST surface that as a per-frame error and keep running; a panic here
+// would let any authenticated emitter DoS the daemon — and the orphaned
+// chain.State allocation, even with the deferred-Rollback guard in Process,
+// would still mean Process never returns to the listener loop for the bad
+// frame.
 func canonicalSHA256(raw json.RawMessage) (string, error) {
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return "", fmt.Errorf("unmarshal: %w", err)
-	}
-	canonical, err := receipt.Canonicalize(v)
+	canonical, err := receipt.Canonicalize(raw)
 	if err != nil {
 		return "", fmt.Errorf("canonicalize: %w", err)
 	}
