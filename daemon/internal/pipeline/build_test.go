@@ -206,11 +206,209 @@ func TestProcess_AcceptsExplicitNullInputOutput(t *testing.T) {
 	state := chain.New("chain-1")
 	p := New(state, ks, st, "did:agent-receipts-daemon:test")
 
-	// "input": null and "output": null are the documented Phase 1 wire form
-	// (see daemon/README.md). They MUST be accepted as equivalent to absent.
+	// "input": null and "output": null are the documented wire form for events
+	// that genuinely have no payload (see daemon/README.md). They MUST be
+	// accepted as equivalent to absent — and MUST NOT produce hashes (a hash
+	// of literal null would falsely commit the daemon to "the input was null"
+	// vs. "no input was sent").
 	payload := []byte(`{"v":"1","ts_emit":"2026-05-03T00:00:00Z","session_id":"s","channel":"sdk","tool":{"name":"noop"},"input":null,"output":null,"decision":"allowed"}`)
 	if err := p.Process(socket.Frame{Payload: payload}); err != nil {
 		t.Fatalf("frame with explicit null input/output should be accepted: %v", err)
+	}
+	chainReceipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := chainReceipts[0]
+	if r.CredentialSubject.Action.ParametersHash != "" {
+		t.Errorf("null input must not produce parameters_hash, got %q", r.CredentialSubject.Action.ParametersHash)
+	}
+	if r.CredentialSubject.Outcome.ResponseHash != "" {
+		t.Errorf("null output must not produce response_hash, got %q", r.CredentialSubject.Outcome.ResponseHash)
+	}
+}
+
+func TestProcess_HashesInput(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	input := json.RawMessage(`{"path":"/etc/passwd","mode":"r"}`)
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "fs.read"},
+		Input:     input,
+		Decision:  "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("frame with input should be accepted: %v", err)
+	}
+	chainReceipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := chainReceipts[0]
+
+	// Recompute the expected hash via the same canonicalization path the
+	// receipt.Create helper uses — no shortcut through the daemon's internals.
+	var v any
+	if err := json.Unmarshal(input, &v); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := receipt.Canonicalize(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := receipt.SHA256Hash(canonical)
+	if got := r.CredentialSubject.Action.ParametersHash; got != want {
+		t.Errorf("parameters_hash = %q, want %q", got, want)
+	}
+}
+
+func TestProcess_HashesOutput(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	output := json.RawMessage(`{"bytes":1024,"checksum":"sha256:abc"}`)
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "fs.read"},
+		Output:    output,
+		Decision:  "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("frame with output should be accepted: %v", err)
+	}
+	chainReceipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := chainReceipts[0]
+
+	var v any
+	if err := json.Unmarshal(output, &v); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := receipt.Canonicalize(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := receipt.SHA256Hash(canonical)
+	if got := r.CredentialSubject.Outcome.ResponseHash; got != want {
+		t.Errorf("response_hash = %q, want %q", got, want)
+	}
+}
+
+func TestProcess_HashesAreCanonical(t *testing.T) {
+	// Same logical payload sent two different ways (key order, whitespace) MUST
+	// produce identical hashes — that's the property cross-language verifiers
+	// rely on. If this test ever fails, the canonicalizer regressed and every
+	// SDK that ever produced a hash is at risk of mismatch.
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	frameA, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "fs.read"},
+		Input:     json.RawMessage(`{"a":1,"b":2,"c":3}`),
+		Output:    json.RawMessage(`{"x":[1,2,3],"y":"ok"}`),
+		Decision:  "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frameB, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "fs.read"},
+		Input:     json.RawMessage(`{ "c":3, "b":2 ,  "a":1 }`),
+		Output:    json.RawMessage("{\n  \"y\":\"ok\",\n  \"x\":[1, 2, 3]\n}"),
+		Decision:  "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: frameA}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: frameB}); err != nil {
+		t.Fatal(err)
+	}
+	chainReceipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chainReceipts) != 2 {
+		t.Fatalf("got %d receipts, want 2", len(chainReceipts))
+	}
+	a, b := chainReceipts[0], chainReceipts[1]
+	if a.CredentialSubject.Action.ParametersHash != b.CredentialSubject.Action.ParametersHash {
+		t.Errorf("parameters_hash differs across whitespace/key-order variants:\n  a=%q\n  b=%q",
+			a.CredentialSubject.Action.ParametersHash, b.CredentialSubject.Action.ParametersHash)
+	}
+	if a.CredentialSubject.Outcome.ResponseHash != b.CredentialSubject.Outcome.ResponseHash {
+		t.Errorf("response_hash differs across whitespace/key-order variants:\n  a=%q\n  b=%q",
+			a.CredentialSubject.Outcome.ResponseHash, b.CredentialSubject.Outcome.ResponseHash)
+	}
+}
+
+func TestProcess_AcceptsPrimitiveInputOutput(t *testing.T) {
+	// MCP tool inputs are typically JSON objects, but tool outputs are
+	// commonly strings, numbers, or arrays. The wire schema MUST accept any
+	// valid JSON value and hash it consistently.
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "echo"},
+		Input:     json.RawMessage(`"hello"`),
+		Output:    json.RawMessage(`["a","b"]`),
+		Decision:  "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("primitive input + array output should be accepted: %v", err)
+	}
+	chainReceipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := chainReceipts[0]
+	if r.CredentialSubject.Action.ParametersHash == "" {
+		t.Error("primitive input must produce a parameters_hash")
+	}
+	if r.CredentialSubject.Outcome.ResponseHash == "" {
+		t.Error("array output must produce a response_hash")
 	}
 }
 
@@ -267,9 +465,6 @@ func TestProcess_RejectsMalformedFrames(t *testing.T) {
 		{"missing tool.name", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{},"decision":"allowed"}`},
 		{"missing decision", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"}}`},
 		{"unknown decision", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"maybe"}`},
-		{"input present (Phase 1 forbidden)", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":{"x":1}}`},
-		{"output present (Phase 1 forbidden)", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","output":{"y":2}}`},
-		{"input as primitive (Phase 1 forbidden)", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","input":"hello"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -34,14 +34,12 @@ const SupportedFrameVersion = "1"
 // split". Fields the emitter does not populate are zero/empty; the daemon
 // fills in the authoritative chain/peer/id/ts_recv before signing.
 //
-// Phase 1 limitation: Input and Output are recognised in the schema (so the
-// wire format already matches what Phase 2 emitters will send) but the daemon
-// does not yet hash them into action.parameters_hash / outcome.response_hash.
-// Accepting non-empty Input/Output today would silently drop the payload from
-// the receipt and mislead emitter authors into thinking tool I/O is being
-// committed when it isn't. validateFrame rejects frames that populate them
-// until Phase 2 wires the canonical-hash path through receipt.Create's
-// ResponseBody and an explicit ParametersHash computation.
+// Input and Output carry the raw tool I/O. The daemon does NOT persist the
+// raw bytes in the receipt; it canonicalises them (RFC 8785) and stores only
+// the SHA-256 digests in action.parameters_hash and outcome.response_hash.
+// A literal JSON null (or omitted field) means "no payload" and produces no
+// hash — hashing the literal "null" would falsely commit the daemon to a
+// value the emitter did not send.
 type EmitterFrame struct {
 	Version   string          `json:"v"`
 	TsEmit    string          `json:"ts_emit"`
@@ -146,15 +144,10 @@ func validateFrame(f *EmitterFrame) error {
 	default:
 		return fmt.Errorf("unknown decision %q (want allowed|denied|pending)", f.Decision)
 	}
-	// Phase 1 hard-rejects non-null Input/Output rather than silently dropping
-	// them — see EmitterFrame doc comment. JSON null is treated as equivalent
-	// to omitted, since "v":"1","input":null is the documented wire form.
-	if hasJSONPayload(f.Input) {
-		return fmt.Errorf("input not supported in Phase 1 (would be silently dropped); see EmitterFrame doc")
-	}
-	if hasJSONPayload(f.Output) {
-		return fmt.Errorf("output not supported in Phase 1 (would be silently dropped); see EmitterFrame doc")
-	}
+	// Input and Output are accepted as any valid JSON value (object, array,
+	// primitive, or null). json.Unmarshal into EmitterFrame already validated
+	// JSON syntax, so anything reaching this point is well-formed. The hash
+	// computation happens in buildAndSign; null/empty are skipped there.
 	return nil
 }
 
@@ -166,6 +159,27 @@ func hasJSONPayload(raw json.RawMessage) bool {
 		return false
 	}
 	return !bytes.Equal(trimmed, []byte("null"))
+}
+
+// canonicalSHA256 unmarshals raw, canonicalises per RFC 8785, and returns the
+// "sha256:<hex>" digest. Callers must check hasJSONPayload first; passing a
+// null/empty value canonicalises to "null" and produces a misleading hash.
+//
+// raw is expected to already be valid JSON — json.Unmarshal into EmitterFrame
+// would have failed earlier otherwise — so the unmarshal here cannot fail
+// in practice. We still surface the error rather than panicking; a daemon
+// crash on a malformed inbound frame would be the wrong failure mode even
+// for an "impossible" path.
+func canonicalSHA256(raw json.RawMessage) (string, error) {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return "", fmt.Errorf("unmarshal: %w", err)
+	}
+	canonical, err := receipt.Canonicalize(v)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize: %w", err)
+	}
+	return receipt.SHA256Hash(canonical), nil
 }
 
 func (p *Pipeline) buildAndSign(
@@ -233,6 +247,30 @@ func (p *Pipeline) buildAndSign(
 	// field once the emitter SDKs land.
 	risk := taxonomy.ResolveActionType(actionType).RiskLevel
 
+	action := receipt.Action{
+		Type:                 actionType,
+		ToolName:             f.Tool.Name,
+		RiskLevel:            risk,
+		Timestamp:            now,
+		ParametersDisclosure: disclosure,
+	}
+	if hasJSONPayload(f.Input) {
+		hash, err := canonicalSHA256(f.Input)
+		if err != nil {
+			return receipt.AgentReceipt{}, "", fmt.Errorf("hash input: %w", err)
+		}
+		action.ParametersHash = hash
+	}
+
+	// Pass Output through CreateInput.ResponseBody when present; receipt.Create
+	// canonicalises and hashes it into Outcome.ResponseHash. hasJSONPayload
+	// filters out null and the empty case so we don't commit to a hash of
+	// "null" for events that genuinely have no output.
+	var responseBody json.RawMessage
+	if hasJSONPayload(f.Output) {
+		responseBody = f.Output
+	}
+
 	unsigned := receipt.Create(receipt.CreateInput{
 		Issuer: receipt.Issuer{
 			ID:        p.IssuerID,
@@ -240,13 +278,7 @@ func (p *Pipeline) buildAndSign(
 			SessionID: f.SessionID,
 		},
 		Principal: receipt.Principal{ID: "did:user:unknown"},
-		Action: receipt.Action{
-			Type:                 actionType,
-			ToolName:             f.Tool.Name,
-			RiskLevel:            risk,
-			Timestamp:            now,
-			ParametersDisclosure: disclosure,
-		},
+		Action:    action,
 		Outcome: receipt.Outcome{
 			Status: status,
 			Error:  f.Error,
@@ -256,6 +288,7 @@ func (p *Pipeline) buildAndSign(
 			PreviousReceiptHash: alloc.PrevHash,
 			ChainID:             p.State.ChainID(),
 		},
+		ResponseBody: responseBody,
 	})
 	// receipt.Create stamps IssuanceDate from time.Now() internally. Replace it
 	// with our deterministic now so action.timestamp, issuanceDate, and

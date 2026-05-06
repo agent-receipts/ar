@@ -144,16 +144,20 @@ The JSON payload is the ADR-0010 emitter schema:
   "session_id": "uuid-v4",
   "channel": "mcp_proxy",
   "tool": { "server": "github", "name": "list_repos" },
-  "input": null,
-  "output": null,
+  "input": { "owner": "agent-receipts" },
+  "output": [ { "name": "ar" } ],
   "error": "",
   "decision": "allowed"
 }
 ```
 
-`decision` is one of `allowed` / `denied` / `pending`. The daemon adds
-`seq`, `prev_hash`, `ts_recv`, peer attestation, and the receipt id before
-signing, so emitters never see those fields and cannot forge them.
+`decision` is one of `allowed` / `denied` / `pending`. `input` and `output`
+accept any JSON value (object, array, primitive) or `null` / omitted for
+events with no payload; the daemon canonicalises (RFC 8785) and stores only
+the SHA-256 digest in `action.parameters_hash` and `outcome.response_hash`,
+never the raw bytes. The daemon adds `seq`, `prev_hash`, `ts_recv`, peer
+attestation, and the receipt id before signing, so emitters never see those
+fields and cannot forge them.
 
 ## Phase 1 scope and deviations
 
