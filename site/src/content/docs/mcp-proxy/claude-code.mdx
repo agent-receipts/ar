@@ -33,10 +33,13 @@ Re-running `init` is safe — it warns and skips if the key already exists. Use 
 
 ## Register the proxy with Claude Code
 
-Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. The heredoc lets your shell resolve the proxy, key, and server paths at paste time — no manual substitution required (replace only `YOUR_TOKEN`):
+Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. Your shell resolves the proxy, key, and server paths at paste time — no manual substitution required (replace only `YOUR_TOKEN`).
+
+**bash / zsh:**
 
 ```bash
-claude mcp add-json github-audited --scope user "$(cat <<JSON
+# heredoc terminator (JSON) must be alone on its line; closing ) follows on the next
+JSON_BODY=$(cat <<JSON
 {
   "command": "$(which mcp-proxy)",
   "args": [
@@ -52,7 +55,34 @@ claude mcp add-json github-audited --scope user "$(cat <<JSON
   }
 }
 JSON
-)"
+)
+
+claude mcp add-json github-audited --scope user "$JSON_BODY"
+```
+
+**fish** (no heredoc support — build JSON via `printf` instead):
+
+```fish
+set MCP_PROXY (which mcp-proxy)
+set GITHUB_MCP (which github-mcp-server)
+set KEY $HOME/.agent-receipts/github-proxy.pem
+
+set json (printf '{
+  "command": "%s",
+  "args": [
+    "-name", "github",
+    "-key", "%s",
+    "-issuer-name", "Claude Code",
+    "-operator-id", "did:web:anthropic.com",
+    "-operator-name", "Anthropic",
+    "%s", "stdio"
+  ],
+  "env": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+  }
+}' $MCP_PROXY $KEY $GITHUB_MCP)
+
+claude mcp add-json github-audited --scope user $json
 ```
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
@@ -132,6 +162,8 @@ Read tools like `list_issues` and `list_pull_requests` show `data.api.read / low
 ## Gotchas
 
 **Absolute paths required.** Claude Code launches MCP servers with a clean `PATH`. Use the full path to `mcp-proxy` (find it with `which mcp-proxy`) and the full path to the wrapped server binary.
+
+**fish shell.** Fish does not support heredocs — pasting the bash/zsh snippet as-is fails with `Expected a string, but found a redirection`. Use the [fish alternative above](#register-the-proxy-with-claude-code), which builds the JSON via `printf` and stores it in a variable.
 
 **Want human-in-the-loop approvals? Opt in with `-http`.** The approval listener is off by default. If your server exposes tools that cross the risk-score threshold (e.g. `create_token` = 50, `update_auth_config` = 70), pass `-http 127.0.0.1:<port>` and run an approver — see [Approval Server](/mcp-proxy/approval-ui/). Without it, a paused call fails immediately with JSON-RPC code `-32003` (`no approver configured`). To prevent pausing entirely, drop `pause`/`block` rules from a custom `-rules` YAML.
 
