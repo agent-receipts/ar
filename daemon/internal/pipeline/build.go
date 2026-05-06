@@ -165,11 +165,13 @@ func hasJSONPayload(raw json.RawMessage) bool {
 // "sha256:<hex>" digest. Callers must check hasJSONPayload first; passing a
 // null/empty value canonicalises to "null" and produces a misleading hash.
 //
-// raw is expected to already be valid JSON — json.Unmarshal into EmitterFrame
-// would have failed earlier otherwise — so the unmarshal here cannot fail
-// in practice. We still surface the error rather than panicking; a daemon
-// crash on a malformed inbound frame would be the wrong failure mode even
-// for an "impossible" path.
+// Errors here are real and expected: json.RawMessage on a successfully-parsed
+// EmitterFrame is only guaranteed to be a syntactically valid JSON token.
+// Re-unmarshalling into Go's `any` can still fail — a JSON number like
+// `1e400` is valid JSON syntax but overflows float64. The daemon MUST
+// surface that as a per-frame error and keep running; a panic here would
+// let any authenticated emitter DoS every other emitter on the same socket
+// (and the orphaned chain.State allocation would leave the lock held).
 func canonicalSHA256(raw json.RawMessage) (string, error) {
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
@@ -262,13 +264,21 @@ func (p *Pipeline) buildAndSign(
 		action.ParametersHash = hash
 	}
 
-	// Pass Output through CreateInput.ResponseBody when present; receipt.Create
-	// canonicalises and hashes it into Outcome.ResponseHash. hasJSONPayload
-	// filters out null and the empty case so we don't commit to a hash of
-	// "null" for events that genuinely have no output.
-	var responseBody json.RawMessage
+	outcome := receipt.Outcome{
+		Status: status,
+		Error:  f.Error,
+	}
 	if hasJSONPayload(f.Output) {
-		responseBody = f.Output
+		// Hash Output here rather than via receipt.CreateInput.ResponseBody
+		// (which panics on bad JSON). f.Output is emitter-controlled and may
+		// be syntactically valid JSON yet still fail re-unmarshal — see
+		// canonicalSHA256 doc — so the daemon MUST surface that as an error,
+		// not a crash.
+		hash, err := canonicalSHA256(f.Output)
+		if err != nil {
+			return receipt.AgentReceipt{}, "", fmt.Errorf("hash output: %w", err)
+		}
+		outcome.ResponseHash = hash
 	}
 
 	unsigned := receipt.Create(receipt.CreateInput{
@@ -279,16 +289,12 @@ func (p *Pipeline) buildAndSign(
 		},
 		Principal: receipt.Principal{ID: "did:user:unknown"},
 		Action:    action,
-		Outcome: receipt.Outcome{
-			Status: status,
-			Error:  f.Error,
-		},
+		Outcome:   outcome,
 		Chain: receipt.Chain{
 			Sequence:            int(alloc.Sequence),
 			PreviousReceiptHash: alloc.PrevHash,
 			ChainID:             p.State.ChainID(),
 		},
-		ResponseBody: responseBody,
 	})
 	// receipt.Create stamps IssuanceDate from time.Now() internally. Replace it
 	// with our deterministic now so action.timestamp, issuanceDate, and

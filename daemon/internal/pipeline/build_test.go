@@ -412,6 +412,48 @@ func TestProcess_AcceptsPrimitiveInputOutput(t *testing.T) {
 	}
 }
 
+func TestProcess_RejectsUnrepresentableNumbers(t *testing.T) {
+	// 1e400 is syntactically valid JSON, so it survives the EmitterFrame
+	// unmarshal (json.RawMessage stores the token verbatim without numeric
+	// parsing). Re-unmarshaling into Go's `any` for canonicalisation fails
+	// because the value overflows float64. The daemon MUST surface that as a
+	// per-frame error and keep running — a panic here would let any
+	// authenticated emitter DoS the daemon for every other emitter on the
+	// same socket.
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	cases := []struct {
+		name    string
+		payload []byte
+	}{
+		{"input is unrepresentable number", []byte(`{"v":"1","ts_emit":"2026-05-03T00:00:00Z","session_id":"s","channel":"sdk","tool":{"name":"t"},"input":1e400,"decision":"allowed"}`)},
+		{"output is unrepresentable number", []byte(`{"v":"1","ts_emit":"2026-05-03T00:00:00Z","session_id":"s","channel":"sdk","tool":{"name":"t"},"output":1e400,"decision":"allowed"}`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("Process panicked on %s — daemon would crash: %v", tc.name, r)
+				}
+			}()
+			if err := p.Process(socket.Frame{Payload: tc.payload}); err == nil {
+				t.Errorf("expected error for %s, got nil", tc.name)
+			}
+		})
+	}
+
+	// Chain state must NOT have advanced — error before persist means
+	// alloc.Rollback ran on every case.
+	a := state.Allocate()
+	defer a.Rollback()
+	if a.Sequence != 1 {
+		t.Errorf("after rejected frames, next seq = %d, want 1 (no advance)", a.Sequence)
+	}
+}
+
 func TestProcess_DaemonControlsAllTimestamps(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)
