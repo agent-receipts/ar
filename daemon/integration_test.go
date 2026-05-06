@@ -33,26 +33,42 @@ import (
 	"github.com/agent-receipts/ar/daemon"
 	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/daemon/internal/socket"
+	"github.com/agent-receipts/ar/daemon/internal/sockettest"
 	"github.com/agent-receipts/ar/daemon/internal/verifycli"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
-// emitterHelperEnvVar dispatches the test binary into one-shot emitter mode
-// when set to a socket path. TestMain checks for it before m.Run() so a
-// parent test can re-exec us as a subprocess to drive the daemon's
-// peer-credential capture against a process that is NOT the listener (see
-// TestPeerCredFromSubprocess for why that matters).
+// emitterHelperGuardVar is the explicit "this binary was re-exec'd as the
+// subprocess emitter helper" sentinel. TestMain only enters helper mode when
+// it is set to "1" AND emitterHelperEnvVar is also set. A single-var design
+// risked silent false-greens if a developer or CI environment happened to
+// have AR_TEST_EMITTER_SOCKET exported for unrelated reasons — the suite
+// would have skipped m.Run() and exited 0 with zero tests run. The guard +
+// socket pair makes accidental collision effectively impossible and fails
+// loudly when the guard is set without the socket path.
+const emitterHelperGuardVar = "AR_TEST_EMITTER_HELPER"
+
+// emitterHelperEnvVar carries the daemon socket path the helper should
+// connect to. Set together with emitterHelperGuardVar by the parent test
+// (TestPeerCredFromSubprocess); see that function for why we need a
+// separate-process emitter rather than dialling from the listener's own
+// goroutine.
 const emitterHelperEnvVar = "AR_TEST_EMITTER_SOCKET"
 
-// TestMain handles the subprocess-emitter dispatch. When emitterHelperEnvVar
-// is set in the environment, the binary connects to that socket, writes one
-// frame, and exits — the test framework is never engaged. When unset (the
-// normal case for both `go test` and the parent test), m.Run() runs the
-// suite as usual. This pattern lets us re-exec the test binary as a
-// peer-cred fixture without standing up a separate helper module.
+// TestMain handles the subprocess-emitter dispatch. When the guard env var
+// is set to "1", the binary runs runEmitterHelper (connect, write one
+// length-prefix frame, exit) and never calls m.Run(). When the guard is
+// unset (normal go test invocation), the suite runs as usual. The guard is
+// checked before the socket var so a stray emitterHelperEnvVar export does
+// not silently swallow the suite; if the guard is set without the socket,
+// we log.Fatalf rather than exit 0 to make the misconfiguration loud.
 func TestMain(m *testing.M) {
-	if sock := os.Getenv(emitterHelperEnvVar); sock != "" {
+	if os.Getenv(emitterHelperGuardVar) == "1" {
+		sock := os.Getenv(emitterHelperEnvVar)
+		if sock == "" {
+			log.Fatalf("emitter helper: %s=1 set but %s is empty; refusing to silently exit 0 with no tests run", emitterHelperGuardVar, emitterHelperEnvVar)
+		}
 		runEmitterHelper(sock)
 		os.Exit(0)
 	}
@@ -103,29 +119,9 @@ func writeTestKey(t *testing.T, path string) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 }
 
-// shortSocketDir returns a temp directory whose path is short enough to fit a
-// socket filename within the 104-byte AF_UNIX sun_path limit on macOS.
-// t.TempDir() on macOS GitHub Actions can return paths >90 bytes, leaving no
-// room for the socket filename and causing bind: invalid argument. We prefer
-// /tmp when it exists; on platforms where it does not (e.g. Windows) we fall
-// back to os.TempDir().
-func shortSocketDir(t *testing.T) string {
-	t.Helper()
-	base := "/tmp"
-	if _, err := os.Stat(base); err != nil {
-		base = os.TempDir()
-	}
-	dir, err := os.MkdirTemp(base, "ar*")
-	if err != nil {
-		t.Fatalf("MkdirTemp: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
-}
-
 func startDaemon(t *testing.T) (cfg daemon.Config, pubPEM string, cancel func()) {
 	t.Helper()
-	sockDir := shortSocketDir(t)
+	sockDir := sockettest.ShortSocketDir(t)
 	dataDir := t.TempDir()
 	cfg = daemon.Config{
 		SocketPath:           filepath.Join(sockDir, "events.sock"),
@@ -359,7 +355,10 @@ func TestPeerCredFromSubprocess(t *testing.T) {
 	// through to m.Run() (it shouldn't, runEmitterHelper exits via os.Exit),
 	// no tests would re-execute and create overlapping fixtures.
 	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	cmd.Env = append(os.Environ(), emitterHelperEnvVar+"="+cfg.SocketPath)
+	cmd.Env = append(os.Environ(),
+		emitterHelperGuardVar+"=1",
+		emitterHelperEnvVar+"="+cfg.SocketPath,
+	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("subprocess emitter: %v (output: %s)", err, out)
 	}
@@ -405,7 +404,7 @@ func TestPeerCredFromSubprocess(t *testing.T) {
 // connection is intentionally left open across the cancel — the test's own
 // defer would otherwise close it and mask the bug.
 func TestShutdownWithIdleClient(t *testing.T) {
-	sockDir := shortSocketDir(t)
+	sockDir := sockettest.ShortSocketDir(t)
 	dataDir := t.TempDir()
 	cfg := daemon.Config{
 		SocketPath:           filepath.Join(sockDir, "events.sock"),
@@ -466,7 +465,7 @@ func TestShutdownWithIdleClient(t *testing.T) {
 // daemon started against an existing DB picks up the highest-sequence receipt
 // and continues from there, rather than restarting at 1.
 func TestResumesChainAfterRestart(t *testing.T) {
-	sockDir := shortSocketDir(t)
+	sockDir := sockettest.ShortSocketDir(t)
 	dataDir := t.TempDir()
 	dbPath := filepath.Join(dataDir, "receipts.db")
 	keyPath := filepath.Join(dataDir, "signing.key")
@@ -609,7 +608,7 @@ func TestVerifyCLIWhileDaemonRunning(t *testing.T) {
 // some receipts, shut the daemon down, then run agent-receipts verify against
 // the on-disk DB and the published public key. Must succeed.
 func TestVerifyCLIWithDaemonStopped(t *testing.T) {
-	sockDir := shortSocketDir(t)
+	sockDir := sockettest.ShortSocketDir(t)
 	dataDir := t.TempDir()
 	cfg := daemon.Config{
 		SocketPath:           filepath.Join(sockDir, "events.sock"),
