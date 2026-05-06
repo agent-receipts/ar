@@ -9,6 +9,10 @@ OpenAI Codex (CLI and IDE extension) stores MCP configuration in `~/.codex/confi
 The default policy includes a `pause_high_risk` rule. When you generate a config with `mcp-proxy init`, the snippet includes `-http 127.0.0.1:7778` so the approval listener starts automatically. If you run the proxy manually without `-http`, the listener is off and paused calls fail fast with `-32003`. Pass `--no-approval` to `mcp-proxy init` to generate a snippet without `-http`. See [Approval Server](/mcp-proxy/approval-ui/).
 :::
 
+:::danger[Never put secrets in ~/.codex/config.toml]
+`~/.codex/config.toml` (and `.codex/config.toml`) is plaintext on disk, and `codex mcp add --env KEY=VALUE` stores whatever you pass it verbatim. Do **not** put real tokens, API keys, or other credentials there. Use a secret-manager wrapper (`op run`, `aws-vault exec`, …) or an OS keychain launcher script — both are documented below. The literal-token snippet at the bottom is a demo-only path; treat the file as compromised the moment you save a real credential to it.
+:::
+
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
@@ -33,7 +37,51 @@ Re-running `init` is safe — it warns and skips if the key already exists. Use 
 
 ## Configure via CLI
 
-Use `codex mcp add` to register the proxy wrapping any MCP server. The shell resolves the proxy, key, and server paths at paste time (replace only `YOUR_TOKEN`):
+Use `codex mcp add` to register the proxy wrapping any MCP server. The shell resolves the proxy, key, and server paths at paste time. Pick whichever secrets pattern below matches your setup; **do not pass `--env GITHUB_PERSONAL_ACCESS_TOKEN=…`** in the recommended or fallback forms — the value would be persisted to `config.toml` verbatim, defeating the point.
+
+### Recommended: secret manager (`op run`)
+
+Install the 1Password CLI (`brew install 1password-cli`), sign in (`op signin`), and create a referenced env file:
+
+```ini
+# ~/.agent-receipts/mcp.env  (chmod 600)
+GITHUB_PERSONAL_ACCESS_TOKEN=op://Personal/GitHub/token
+```
+
+Register `op run` as the command — it resolves `op://` references at exec time and injects them into the proxy's env without touching disk:
+
+```bash
+codex mcp add github-audited \
+  -- "$(which op)" run "--env-file=$HOME/.agent-receipts/mcp.env" -- \
+    "$(which mcp-proxy)" \
+    -name github \
+    -key "$HOME/.agent-receipts/github-proxy.pem" \
+    -issuer-name Codex \
+    -operator-id did:web:openai.com \
+    -operator-name OpenAI \
+    "$(which github-mcp-server)" stdio
+```
+
+`aws-vault exec`, `chamber exec`, and `direnv` with `op://` references follow the same wrapping pattern.
+
+### Fallback: OS keychain launcher
+
+Reuse the launcher script described in [Claude Desktop's keychain fallback](/mcp-proxy/claude-desktop/#fallback-os-keychain-launcher-script) (one script works across clients). Register the script path as Codex's command:
+
+```bash
+codex mcp add github-audited \
+  -- "$HOME/.agent-receipts/run-mcp-proxy-github.sh" \
+    -name github \
+    -key "$HOME/.agent-receipts/github-proxy.pem" \
+    -issuer-name Codex \
+    -operator-id did:web:openai.com \
+    -operator-name OpenAI \
+    "$(which github-mcp-server)" stdio
+```
+
+### Demo only: literal token
+
+For kicking the tyres against a throwaway PAT. **Treat `config.toml` as compromised the moment you save a real credential**, and rotate before moving to either pattern above.
 
 ```bash
 codex mcp add github-audited \
@@ -47,26 +95,31 @@ codex mcp add github-audited \
     "$(which github-mcp-server)" stdio
 ```
 
-Add `--scope user` to make the server available across all projects (default is project-scoped).
+Add `--scope user` to any of the above to make the server available across all projects (default is project-scoped).
 
 `-issuer-name`, `-operator-id`, and `-operator-name` stamp the signed receipt with the agent and the organisation running it. Setting `-issuer-name` to `Codex` here (and to `Claude Code` in the [Claude Code integration](/mcp-proxy/claude-code/)) is what lets you tell at receipt-inspection time which client made a given call — without it, every receipt just shows the default `did:agent:mcp-proxy` issuer. See the [configuration reference](/mcp-proxy/configuration/#cli-flags) for the full set of identity flags.
 
 ## Configure via config.toml
 
-Alternatively, edit `~/.codex/config.toml` directly. TOML doesn't shell-expand, so print your absolute paths first:
+Alternatively, edit `~/.codex/config.toml` directly. TOML doesn't shell-expand and Codex doesn't expand `${VAR}` in env tables, so use the same secrets patterns as the CLI form above. Print your absolute paths first:
 
 ```bash
 echo "command: $(which mcp-proxy)"
 echo "key:     $HOME/.agent-receipts/github-proxy.pem"
 echo "server:  $(which github-mcp-server)"
+echo "op:      $(which op)"
 ```
 
-Then substitute them into the template:
+The recommended (secret-manager) form — `op run` resolves the `op://` reference in `mcp.env` at exec time, no env table needed in `config.toml`:
 
 ```toml
 [mcp_servers.github-audited]
-command = "/Users/YOU/go/bin/mcp-proxy"
+command = "/opt/homebrew/bin/op"
 args = [
+  "run",
+  "--env-file=/Users/YOU/.agent-receipts/mcp.env",
+  "--",
+  "/Users/YOU/go/bin/mcp-proxy",
   "-name", "github",
   "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
   "-issuer-name", "Codex",
@@ -75,10 +128,9 @@ args = [
   "/opt/homebrew/bin/github-mcp-server", "stdio"
 ]
 enabled = true
-
-[mcp_servers.github-audited.env]
-GITHUB_PERSONAL_ACCESS_TOKEN = "YOUR_TOKEN"
 ```
+
+The keychain-launcher and demo-only equivalents follow the same shape — for the launcher, set `command` to the launcher script path and drop the env table (the script sets `GITHUB_PERSONAL_ACCESS_TOKEN`); for the demo path, use the original `command = "/path/to/mcp-proxy"` form and add `[mcp_servers.github-audited.env]` with the literal token (throwaway PATs only).
 
 For project-scoped setup, place the same config in `.codex/config.toml` at the project root (only applies in trusted projects).
 
