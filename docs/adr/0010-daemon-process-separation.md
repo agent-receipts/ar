@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-05-03), amended 2026-05-05 (see *Amendments*)
+Accepted (2026-05-03), amended 2026-05-05 and 2026-05-06 (see *Amendments*)
 
 ## Implementation status
 
@@ -50,7 +50,7 @@ Emitter sends the minimum faithful representation:
 
 - `v` (schema version)
 - `ts_emit` (RFC 3339, advisory)
-- `session_id` (UUID, scopes one agent run)
+- `session_id` (opaque string; UUID v4 recommended when emitter-generated; persists for emitter-instance lifetime; detailed allocation rule in the *Amendments* section, OQ4)
 - `channel` (`openclaw` | `mcp_proxy` | `sdk` | ...)
 - `tool` (`{ server, name }` for MCP; equivalent shape for other channels)
 - `input`, `output`, `error` (raw, no normalisation)
@@ -108,3 +108,59 @@ Phase 1 (#322) implemented `SOCK_STREAM` with a 4-byte big-endian length-prefix 
 ### 2026-05-05: Default socket paths — per-user defaults instead of system paths
 
 Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or systemd-managed system install yet. macOS uses `$TMPDIR/agentreceipts/events.sock` (the originally-specified `/var/run/agentreceipts/events.sock` is not produced by `daemon.DefaultSocketPath()`, only by explicit configuration); Linux uses `$XDG_RUNTIME_DIR/agentreceipts/events.sock` when that variable is set, falling back to `/run/agentreceipts/events.sock` only when it is not. Both originally-specified system paths can still be selected explicitly via `AGENTRECEIPTS_SOCKET` (or `--socket`) and will become the packaging-managed defaults once launchd / systemd integration lands. The *IPC transport* section above describes the current resolution.
+
+### 2026-05-06: OQ2 — Existing chain migration policy — abandon old chains
+
+**Decision:** v1 users have per-emitter SQLite databases. Phase 2 (Section 3, thin-emitter refactor) will abandon existing v1 chains and start a fresh daemon-managed chain at `seq=1`. No in-place migration or `import-chain` script. The daemon and emitters use new default DB/key paths (separate from v1) to ensure accidental resume does not happen; operators who want to preserve v1 chains for verification must keep v1 and v2 DBs in separate directories.
+
+**Rationale:** agent-receipts is pre-1.0 with early-stage adoption (solo dev and lab usage). No production audit dependencies exist that would prohibit a clean break, and the cost of migration logic (either in-process DB surgery during daemon startup or a separate import tool) compounds the already-substantial emitter refactor burden of Section 3.
+
+**Consequences:**
+- Auditors must preserve v1 SQLite databases and matching public keys offline if they require long-term audit of pre-Phase-2 events. V1 receipts remain cryptographically verifiable with those artifacts; v2 daemon does not automatically resume or import v1 chains (separate DB/key paths prevent accidental coexistence).
+- v1 chains are not resumed on v2 daemon startup (separate DB/key paths prevent accidental coexistence).
+- On daemon startup with a fresh database, the chain starts at `seq=1` with no previous-receipt hash.
+
+**Spec/code changes:**
+- No migration logic in daemon startup.
+- No v1→v2 chain migration or data import tooling in `sdk/go/store` (schema migrations for other purposes are unaffected).
+- Documentation MUST include a deprecation notice: "v1 in-process receipts are not migrated; preserve offline copies if long-term verification is required."
+
+### 2026-05-06: OQ3 — SDK cutover sequencing — single-shot release
+
+**Decision:** All three SDKs (Go, TS, Py), mcp-proxy, and OpenClaw ship in a single PR/release. No phased rollout per channel.
+
+**Rationale:** Phased cutover introduces a mixed-state window where v1 emitters (in-process signing/storage) and v2 emitters (daemon socket, fire-and-forget) write to two separate chains — breaking the core property of daemon-process-separation: a single unified chain. Single-shot release on day one ensures all emitters speak the same schema. The large PR is one cohesive unit; reviewability is not materially worse than five parallel reviews, and readers see the full story at once.
+
+**What mixed-state means for chain integrity (the scenario we avoid by choosing single-shot):**
+- During a phased cutover, v1 emitters create receipts in their own per-process SQLite DBs (one per process, no shared `seq` space) while v2 emitters send to the daemon socket (one shared chain, monotonic `seq`).
+- Auditors query two independent chains: the daemon chain (v2, authoritative for post-cutover) and N orphaned v1 chains (v1, final state at the moment each module upgraded).
+- Cross-channel correlation (e.g., "all receipts for this agent session") requires application logic to coalesce results from both chains, violating the single-chain guarantee.
+- Phased rollout would surface this as a gap in audit coverage; single-shot eliminates the window.
+
+**Consequences:**
+- Section 3 (thin-emitter refactor) produces one large, multi-module PR (likely 1500+ lines). Structured as one commit per module for clarity, each with test coverage.
+- v1 is the final in-process release; v2 is the first daemon-backed release. No intermediate release or beta channel for the cutover itself.
+
+### 2026-05-06: OQ4 — session_id allocation rule — UUID at startup, persistent across reconnects
+
+**Decision:** Each emitter process MUST provide a stable `session_id` (opaque string) for its logical session. If the host provides a session identifier, forward it unchanged. Otherwise, generate a new UUID v4 at startup (recommended form for generated IDs). The `session_id` remains constant across daemon reconnects and is instance-local (lifetime of the emitter instance). The daemon records `session_id` faithfully; verifiers MUST treat it as an advisory grouping hint, not a cryptographic boundary.
+
+**Rationale:**
+- **At startup (not per-tool-call):** Agents invoke multiple tool calls within a single logical session. Generating a new `session_id` per tool call would fragment a logical agent session into N receipts with N identifiers. Grouping by emitter-instance lifetime (one session_id for all tool calls within the instance's lifetime) naturally clusters them.
+- **Persistent across daemon reconnect:** The emitter holds the session_id in memory. If the daemon restarts or the network drops and reconnects, the emitter retransmits with the same `session_id`, keeping receipts logically grouped. No persist-to-disk is required (the session_id dies with the emitter instance).
+- **Uniform across SDKs:** All three SDK emitters (Go, TS, Py) and integration points (mcp-proxy, OpenClaw) initialize `session_id` once at construction time; never generate a new one per emit(). If multiple SDK instances exist in the same process, they should share or coordinate on a single session_id.
+
+**Cardinality and indexing:**
+- **Expected cardinality:** Few long-lived sessions per deployment. An agent run typically has one emitter instance (hence one session_id), lasting minutes to hours. Database sees ~1–10 unique `session_id` values per day in typical usage.
+- **Indexing strategy:** Phase 2 will extract `session_id` into a dedicated (or generated) column and add a non-unique index to support efficient queries like `SELECT * FROM receipts WHERE session_id = ?`. For now, session_id is only in the receipt JSON; extraction is deferred to the Section 3 schema evolution.
+
+**Normative spec line:**
+> "Each emitter process MUST provide a stable `session_id` (opaque string) for its logical session. If the host or parent process provides a session identifier (e.g., Claude Code's session ID, an agent-loop context ID), forward it unchanged. Otherwise, generate a new UUID v4 at emitter startup (recommended form for generated IDs). The `session_id` remains constant across daemon reconnects, instance-local (survives only the lifetime of the emitter instance). The daemon makes no guarantee that `session_id` values are unique across deployments or across time, only that it records the value faithfully."
+
+**SDK author guideline:**
+> "Initialize `session_id` once per emitter/SDK instance at construction time. If the host provides a session identifier, use it unchanged; otherwise generate a new UUID v4. Do not generate a new session_id on each emit(). Reuse the same session_id across all tool calls and daemon reconnects within the instance lifetime. No persistence to disk is required."
+
+**Spec/code changes:**
+- All three SDKs emit the same `session_id` for their process lifetime; no SDK-specific logic.
+- Daemon: no new logic (session_id is already captured in `receipt.Issuer.SessionID`). Schema extraction and indexing deferred to Section 3 (Phase 2).
+- Agent-receipts verify CLI can filter by session_id (e.g., `--session <UUID>`) once the schema extraction lands.

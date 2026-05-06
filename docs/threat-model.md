@@ -1,6 +1,6 @@
 # Threat Model
 
-**Status:** Forward-looking. The body of this document describes the v2 architecture introduced by [ADR-0010](adr/0010-daemon-process-separation.md) (daemon process separation) and [ADR-0015](adr/0015-key-rotation-byok-anchoring.md) (key rotation, BYOK, external anchoring). Both ADRs are Proposed at the time of writing. The shipped v1 architecture differs in load-bearing ways; those differences are captured in [v1 caveats (current state)](#v1-caveats-current-state) below.
+**Status:** Forward-looking. The body of this document describes the v2 architecture introduced by [ADR-0010](adr/0010-daemon-process-separation.md) (daemon process separation, Accepted) and [ADR-0015](adr/0015-key-rotation-byok-anchoring.md) (key rotation, BYOK, external anchoring, Proposed). The shipped v1 architecture differs in load-bearing ways; those differences are captured in [v1 caveats (current state)](#v1-caveats-current-state) below.
 
 **Audience:** Security leads evaluating Agent Receipts for their environment, white-hat reviewers probing the system, and compliance teams writing audit narratives. The intent is that trust assumptions are stated upfront — not discovered.
 
@@ -127,7 +127,7 @@ The v1-to-v2 transition is a hard breaking change for emitters, by deliberate de
 
 | Concern | ADR | Issue | Status |
 |---|---|---|---|
-| Daemon process separation (signing/storage isolation from agent) | [ADR-0010](adr/0010-daemon-process-separation.md) | [#236](https://github.com/agent-receipts/ar/issues/236) | Proposed; implementation pending |
+| Daemon process separation (signing/storage isolation from agent) | [ADR-0010](adr/0010-daemon-process-separation.md) | [#236](https://github.com/agent-receipts/ar/issues/236) | Accepted; Phase 1 shipped, Phase 2+ pending |
 | Key rotation, BYOK, external anchoring | [ADR-0015](adr/0015-key-rotation-byok-anchoring.md) | [#307](https://github.com/agent-receipts/ar/issues/307) (PR [#319](https://github.com/agent-receipts/ar/pull/319)) | Proposed; implementation phased (rotation anchoring → checkpoint anchoring) |
 | DID-based identity for issuer/key resolution | [ADR-0007](adr/0007-did-method-strategy.md) | [#46](https://github.com/agent-receipts/ar/issues/46) | Proposed |
 | Algorithm agility (PQ-ready signing) | — (`KeySource` interface in ADR-0015 is algorithm-agnostic by design) | [#32](https://github.com/agent-receipts/ar/issues/32) | Tracked |
