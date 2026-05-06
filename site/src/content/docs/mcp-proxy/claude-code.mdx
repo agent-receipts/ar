@@ -80,7 +80,7 @@ set json (printf '{
   "env": {
     "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
   }
-}' $MCP_PROXY $KEY $GITHUB_MCP)
+}' $MCP_PROXY $KEY $GITHUB_MCP | string collect)
 
 claude mcp add-json github-audited --scope user $json
 ```
