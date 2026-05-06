@@ -32,7 +32,8 @@ type PeerCred struct {
 
 	// ExePath is the absolute path to the connecting process's executable,
 	// or "" when the daemon could not resolve it. On Linux this is read from
-	// /proc/<pid>/exe. On macOS Phase 1 leaves this empty — proc_pidpath
-	// requires CGO or a raw libSystem syscall and is out of scope here.
+	// /proc/<pid>/exe; on macOS via the SYS_PROC_INFO(PROC_PIDPATHINFO)
+	// syscall (the call libproc's proc_pidpath() wraps). Failure is
+	// non-fatal — the daemon still records pid/uid/gid.
 	ExePath string
 }

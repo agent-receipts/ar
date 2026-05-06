@@ -8,10 +8,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agent-receipts/ar/daemon/internal/sockettest"
 )
 
 func TestListen_RefusesNonSocketPreexistingFile(t *testing.T) {
-	dir := t.TempDir()
+	dir := sockettest.ShortSocketDir(t)
 	path := filepath.Join(dir, "events.sock")
 
 	// Create a regular file at the socket path. A misconfigured
@@ -39,7 +41,7 @@ func TestListen_RefusesNonSocketPreexistingFile(t *testing.T) {
 }
 
 func TestListen_RefusesWhenAnotherDaemonIsLive(t *testing.T) {
-	dir := t.TempDir()
+	dir := sockettest.ShortSocketDir(t)
 	path := filepath.Join(dir, "events.sock")
 
 	first, err := Listen(Options{

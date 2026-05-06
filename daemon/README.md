@@ -172,9 +172,11 @@ The following are deliberate Phase 1 choices, all callable out for follow-up:
   `peer.uid`, `peer.gid`, `peer.exe_path`. The values are still
   signature-protected. The emitter-refactor phase will introduce the
   proper spec field.
-- **macOS `peer.exe_path`.** Linux populates this from `/proc/<pid>/exe`.
-  macOS leaves it empty in Phase 1 — `proc_pidpath` requires CGO or a raw
-  libSystem syscall. Tracked for follow-up.
+- **macOS `peer.exe_path`.** Linux populates this from `/proc/<pid>/exe`;
+  macOS uses the `SYS_PROC_INFO(PROC_PIDPATHINFO)` syscall directly
+  (the call libproc's `proc_pidpath()` wraps), so the daemon stays
+  CGO-free. Failure is non-fatal — `exe_path` is left empty and pid /
+  uid / gid are still recorded.
 - **Single chain id.** The daemon owns one chain id per process. Multi-chain
   support can grow `chain.State` into a chainID-keyed map without breaking
   callers.

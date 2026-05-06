@@ -22,6 +22,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,10 +33,73 @@ import (
 	"github.com/agent-receipts/ar/daemon"
 	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/daemon/internal/socket"
+	"github.com/agent-receipts/ar/daemon/internal/sockettest"
 	"github.com/agent-receipts/ar/daemon/internal/verifycli"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
+
+// emitterHelperGuardVar is the explicit "this binary was re-exec'd as the
+// subprocess emitter helper" sentinel. TestMain only enters helper mode when
+// it is set to "1" AND emitterHelperEnvVar is also set. A single-var design
+// risked silent false-greens if a developer or CI environment happened to
+// have AR_TEST_EMITTER_SOCKET exported for unrelated reasons — the suite
+// would have skipped m.Run() and exited 0 with zero tests run. The guard +
+// socket pair makes accidental collision effectively impossible and fails
+// loudly when the guard is set without the socket path.
+const emitterHelperGuardVar = "AR_TEST_EMITTER_HELPER"
+
+// emitterHelperEnvVar carries the daemon socket path the helper should
+// connect to. Set together with emitterHelperGuardVar by the parent test
+// (TestPeerCredFromSubprocess); see that function for why we need a
+// separate-process emitter rather than dialling from the listener's own
+// goroutine.
+const emitterHelperEnvVar = "AR_TEST_EMITTER_SOCKET"
+
+// TestMain handles the subprocess-emitter dispatch. When the guard env var
+// is set to "1", the binary runs runEmitterHelper (connect, write one
+// length-prefix frame, exit) and never calls m.Run(). When the guard is
+// unset (normal go test invocation), the suite runs as usual. The guard is
+// checked before the socket var so a stray emitterHelperEnvVar export does
+// not silently swallow the suite; if the guard is set without the socket,
+// we log.Fatalf rather than exit 0 to make the misconfiguration loud.
+func TestMain(m *testing.M) {
+	if os.Getenv(emitterHelperGuardVar) == "1" {
+		sock := os.Getenv(emitterHelperEnvVar)
+		if sock == "" {
+			log.Fatalf("emitter helper: %s=1 set but %s is empty; refusing to silently exit 0 with no tests run", emitterHelperGuardVar, emitterHelperEnvVar)
+		}
+		runEmitterHelper(sock)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// runEmitterHelper connects to sock and writes one length-prefix-framed
+// emitter frame, then returns so TestMain can exit cleanly. Errors are
+// fatal so the parent's CombinedOutput surfaces them in the test failure.
+func runEmitterHelper(sock string) {
+	conn, err := net.Dial("unix", sock)
+	if err != nil {
+		log.Fatalf("emitter helper: dial %s: %v", sock, err)
+	}
+	defer conn.Close()
+	body, err := json.Marshal(pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
+		SessionID: "subprocess-helper",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "subprocess-emitter"},
+		Decision:  "allowed",
+	})
+	if err != nil {
+		log.Fatalf("emitter helper: marshal frame: %v", err)
+	}
+	if err := socket.WriteFrame(conn, body); err != nil {
+		log.Fatalf("emitter helper: write frame: %v", err)
+	}
+	syncWithDaemon(conn)
+}
 
 func writeTestKey(t *testing.T, path string) string {
 	t.Helper()
@@ -58,12 +122,13 @@ func writeTestKey(t *testing.T, path string) string {
 
 func startDaemon(t *testing.T) (cfg daemon.Config, pubPEM string, cancel func()) {
 	t.Helper()
-	dir := t.TempDir()
+	sockDir := sockettest.ShortSocketDir(t)
+	dataDir := t.TempDir()
 	cfg = daemon.Config{
-		SocketPath:           filepath.Join(dir, "events.sock"),
-		DBPath:               filepath.Join(dir, "receipts.db"),
-		KeyPath:              filepath.Join(dir, "signing.key"),
-		PublicKeyPath:        filepath.Join(dir, "signing.key.pub"),
+		SocketPath:           filepath.Join(sockDir, "events.sock"),
+		DBPath:               filepath.Join(dataDir, "receipts.db"),
+		KeyPath:              filepath.Join(dataDir, "signing.key"),
+		PublicKeyPath:        filepath.Join(dataDir, "signing.key.pub"),
 		ChainID:              "it-chain",
 		IssuerID:             "did:agent-receipts-daemon:integration",
 		VerificationMethodID: "did:agent-receipts-daemon:integration#k1",
@@ -116,6 +181,24 @@ func emitFrame(t *testing.T, socketPath string, frame pipeline.EmitterFrame) {
 	if err := socket.WriteFrame(conn, body); err != nil {
 		t.Fatalf("write frame: %v", err)
 	}
+	syncWithDaemon(conn)
+}
+
+// syncWithDaemon half-closes the write side of conn and blocks reading
+// until the daemon closes its end. This guarantees the daemon has finished
+// processing the frame — and, crucially, has already called
+// getsockopt(LOCAL_PEEREPID) at accept time — before the emitter's deferred
+// Close() removes the peer's socket state. Without this synchronization,
+// rapid connect→write→close races the daemon's accept-loop getsockopt on
+// macOS: the kernel reaps the peer pcb and LOCAL_PEEREPID returns ENOTCONN.
+// peercred_darwin.go tolerates that by recording pid=0, but the integration
+// test still wants to assert the happy path (peer.pid == os.Getpid()), so
+// the emitter does the synchronizing rather than the assertion relaxing.
+func syncWithDaemon(conn net.Conn) {
+	if uc, ok := conn.(*net.UnixConn); ok {
+		_ = uc.CloseWrite()
+	}
+	_, _ = io.Copy(io.Discard, conn)
 }
 
 func waitForReceiptCount(t *testing.T, dbPath, chainID string, want int, timeout time.Duration) []receipt.AgentReceipt {
@@ -240,9 +323,97 @@ func TestPeerCredCaptured(t *testing.T) {
 			t.Error("Linux daemon should populate peer.exe_path from /proc/<pid>/exe")
 		}
 	case "darwin":
-		// Phase 1 leaves exe_path empty on macOS.
+		if pd["peer.exe_path"] == "" {
+			// SYS_PROC_INFO may be restricted in sandboxed CI environments; the
+			// daemon degrades gracefully (pid/uid/gid still recorded). Log only.
+			t.Log("darwin: peer.exe_path empty; SYS_PROC_INFO may be restricted in this environment")
+		}
 	default:
 		t.Errorf("unexpected peer.platform = %q", pd["peer.platform"])
+	}
+
+	// peer.exe_path is non-empty alone is too weak: a regression that records
+	// the wrong process's path (the daemon's own binary instead of the
+	// connecting client's) still produces a valid absolute path. The test
+	// process is the daemon's connecting peer here, so peer.exe_path must
+	// refer to the same file as os.Executable. os.SameFile comparison rather
+	// than string equality tolerates path canonicalisation (e.g. macOS's
+	// /var → /private/var symlink) and any /proc-style resolution difference.
+	if got := pd["peer.exe_path"]; got != "" {
+		want, err := os.Executable()
+		if err != nil {
+			t.Fatalf("os.Executable: %v", err)
+		}
+		gotInfo, err := os.Stat(got)
+		if err != nil {
+			t.Fatalf("os.Stat(peer.exe_path %q): %v", got, err)
+		}
+		wantInfo, err := os.Stat(want)
+		if err != nil {
+			t.Fatalf("os.Stat(os.Executable %q): %v", want, err)
+		}
+		if !os.SameFile(gotInfo, wantInfo) {
+			t.Errorf("peer.exe_path = %q is not the same file as os.Executable = %q (the test process is the daemon's connecting peer)", got, want)
+		}
+	}
+}
+
+// TestPeerCredFromSubprocess verifies the daemon reads peer credentials
+// from the connecting process, not the listener's own process state.
+// TestPeerCredCaptured runs daemon.Run in a goroutine inside this test
+// process, so its captured pid/exe_path cannot distinguish "client" from
+// "server" — both are the same OS process. This test re-execs the test
+// binary as a subprocess (dispatched by TestMain via emitterHelperEnvVar),
+// so the daemon's peer-cred capture runs against a process with a
+// different pid. A regression that recorded the listener's pid instead of
+// the connecting peer's would pass TestPeerCredCaptured but fail this.
+func TestPeerCredFromSubprocess(t *testing.T) {
+	cfg, _, _ := startDaemon(t)
+
+	// -test.run=^$ matches no test function, so even if TestMain ever falls
+	// through to m.Run() (it shouldn't, runEmitterHelper exits via os.Exit),
+	// no tests would re-execute and create overlapping fixtures.
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(),
+		emitterHelperGuardVar+"=1",
+		emitterHelperEnvVar+"="+cfg.SocketPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("subprocess emitter: %v (output: %s)", err, out)
+	}
+
+	receipts := waitForReceiptCount(t, cfg.DBPath, cfg.ChainID, 1, 5*time.Second)
+	pd := receipts[0].CredentialSubject.Action.ParametersDisclosure
+
+	// peer.pid must NOT be the test process's pid: the daemon must have
+	// captured the subprocess's pid via the connected-socket primitive
+	// (SO_PEERCRED on Linux, LOCAL_PEEREPID on macOS).
+	if pd["peer.pid"] == strconv.Itoa(os.Getpid()) {
+		t.Errorf("peer.pid = %q (= os.Getpid()); daemon recorded the listener's own pid instead of the connecting subprocess's", pd["peer.pid"])
+	}
+	if pd["peer.pid"] == "" {
+		t.Errorf("peer.pid empty — peer-cred capture failed for subprocess connection")
+	}
+
+	// peer.exe_path: subprocess is the same binary, so SameFile against
+	// os.Executable() still holds. This catches the regression where the
+	// daemon records a hardcoded or constant path.
+	if got := pd["peer.exe_path"]; got != "" {
+		want, err := os.Executable()
+		if err != nil {
+			t.Fatalf("os.Executable: %v", err)
+		}
+		gotInfo, err := os.Stat(got)
+		if err != nil {
+			t.Fatalf("os.Stat(peer.exe_path %q): %v", got, err)
+		}
+		wantInfo, err := os.Stat(want)
+		if err != nil {
+			t.Fatalf("os.Stat(os.Executable %q): %v", want, err)
+		}
+		if !os.SameFile(gotInfo, wantInfo) {
+			t.Errorf("peer.exe_path = %q is not the same file as os.Executable = %q (subprocess is the same binary as parent)", got, want)
+		}
 	}
 }
 
@@ -252,11 +423,12 @@ func TestPeerCredCaptured(t *testing.T) {
 // connection is intentionally left open across the cancel — the test's own
 // defer would otherwise close it and mask the bug.
 func TestShutdownWithIdleClient(t *testing.T) {
-	dir := t.TempDir()
+	sockDir := sockettest.ShortSocketDir(t)
+	dataDir := t.TempDir()
 	cfg := daemon.Config{
-		SocketPath:           filepath.Join(dir, "events.sock"),
-		DBPath:               filepath.Join(dir, "receipts.db"),
-		KeyPath:              filepath.Join(dir, "signing.key"),
+		SocketPath:           filepath.Join(sockDir, "events.sock"),
+		DBPath:               filepath.Join(dataDir, "receipts.db"),
+		KeyPath:              filepath.Join(dataDir, "signing.key"),
 		ChainID:              "idle",
 		IssuerID:             "did:t",
 		VerificationMethodID: "did:t#k1",
@@ -312,10 +484,11 @@ func TestShutdownWithIdleClient(t *testing.T) {
 // daemon started against an existing DB picks up the highest-sequence receipt
 // and continues from there, rather than restarting at 1.
 func TestResumesChainAfterRestart(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "receipts.db")
-	keyPath := filepath.Join(dir, "signing.key")
-	socketPath := filepath.Join(dir, "events.sock")
+	sockDir := sockettest.ShortSocketDir(t)
+	dataDir := t.TempDir()
+	dbPath := filepath.Join(dataDir, "receipts.db")
+	keyPath := filepath.Join(dataDir, "signing.key")
+	socketPath := filepath.Join(sockDir, "events.sock")
 
 	writeTestKey(t, keyPath)
 
@@ -454,12 +627,13 @@ func TestVerifyCLIWhileDaemonRunning(t *testing.T) {
 // some receipts, shut the daemon down, then run agent-receipts verify against
 // the on-disk DB and the published public key. Must succeed.
 func TestVerifyCLIWithDaemonStopped(t *testing.T) {
-	dir := t.TempDir()
+	sockDir := sockettest.ShortSocketDir(t)
+	dataDir := t.TempDir()
 	cfg := daemon.Config{
-		SocketPath:           filepath.Join(dir, "events.sock"),
-		DBPath:               filepath.Join(dir, "receipts.db"),
-		KeyPath:              filepath.Join(dir, "signing.key"),
-		PublicKeyPath:        filepath.Join(dir, "signing.key.pub"),
+		SocketPath:           filepath.Join(sockDir, "events.sock"),
+		DBPath:               filepath.Join(dataDir, "receipts.db"),
+		KeyPath:              filepath.Join(dataDir, "signing.key"),
+		PublicKeyPath:        filepath.Join(dataDir, "signing.key.pub"),
 		ChainID:              "stopped-chain",
 		IssuerID:             "did:agent-receipts-daemon:integration",
 		VerificationMethodID: "did:agent-receipts-daemon:integration#k1",
