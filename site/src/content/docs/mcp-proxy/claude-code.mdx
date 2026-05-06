@@ -9,6 +9,10 @@ Claude Code is a CLI-based agent that connects to MCP servers for tools like Git
 The default policy includes a `pause_high_risk` rule. When you generate a config with `mcp-proxy init`, the snippet includes `-http 127.0.0.1:7778` so the approval listener starts automatically. If you run the proxy manually without `-http`, the listener is off and paused calls fail fast with `-32003`. Pass `--no-approval` to `mcp-proxy init` to generate a snippet without `-http`. If you're seeing `-32002` on tools that shouldn't pause, suspect client-side denial first — see [troubleshooting](/mcp-proxy/configuration/#-32002-errors-on-tool-calls).
 :::
 
+:::danger[Never put secrets in the config file]
+Both `claude mcp add-json` and `.mcp.json` persist their content as plaintext on disk (`~/.claude.json` and committed project files respectively). **Never** paste a token, API key, or other credential as a literal string into either one. Reference secrets via `${VAR}` placeholders — Claude Code expands them at server-launch time — and keep the actual values in your shell environment or a secret manager. The snippets on this page follow that pattern; if you adapt them for other servers, preserve it.
+:::
+
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
@@ -33,10 +37,13 @@ Re-running `init` is safe — it warns and skips if the key already exists. Use 
 
 ## Register the proxy with Claude Code
 
-Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. The heredoc lets your shell resolve the proxy, key, and server paths at paste time — no manual substitution required (replace only `YOUR_TOKEN`):
+Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. Your shell resolves the proxy, key, and server paths at paste time. The token is referenced as `${GITHUB_PERSONAL_ACCESS_TOKEN}` — Claude Code expands that placeholder at server-launch time, so the secret stays in your environment (or a secret manager) rather than in the stored config.
+
+**bash / zsh** — `\$` escapes the placeholder so bash leaves it intact at paste time:
 
 ```bash
-claude mcp add-json github-audited --scope user "$(cat <<JSON
+# heredoc terminator (JSON) must be alone on its line; closing ) follows on the next
+JSON_BODY=$(cat <<JSON
 {
   "command": "$(which mcp-proxy)",
   "args": [
@@ -48,12 +55,41 @@ claude mcp add-json github-audited --scope user "$(cat <<JSON
     "$(which github-mcp-server)", "stdio"
   ],
   "env": {
-    "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "\${GITHUB_PERSONAL_ACCESS_TOKEN}"
   }
 }
 JSON
-)"
+)
+
+claude mcp add-json github-audited --scope user "$JSON_BODY"
 ```
+
+**fish** (no heredoc support — build JSON via `printf` instead; the single-quoted format string passes the placeholder through literally):
+
+```fish
+set MCP_PROXY (which mcp-proxy)
+set GITHUB_MCP (which github-mcp-server)
+set KEY $HOME/.agent-receipts/github-proxy.pem
+
+set json (printf '{
+  "command": "%s",
+  "args": [
+    "-name", "github",
+    "-key", "%s",
+    "-issuer-name", "Claude Code",
+    "-operator-id", "did:web:anthropic.com",
+    "-operator-name", "Anthropic",
+    "%s", "stdio"
+  ],
+  "env": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+  }
+}' $MCP_PROXY $KEY $GITHUB_MCP | string collect)
+
+claude mcp add-json github-audited --scope user $json
+```
+
+Set `GITHUB_PERSONAL_ACCESS_TOKEN` in your shell rc (`~/.zshrc`, `~/.config/fish/config.fish`, etc.) — or fetch it on demand from a secret manager — before launching Claude Code. Verify the placeholder reached the stored config (and was *not* expanded at paste time) with `claude mcp get github-audited`.
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
 
@@ -132,6 +168,8 @@ Read tools like `list_issues` and `list_pull_requests` show `data.api.read / low
 ## Gotchas
 
 **Absolute paths required.** Claude Code launches MCP servers with a clean `PATH`. Use the full path to `mcp-proxy` (find it with `which mcp-proxy`) and the full path to the wrapped server binary.
+
+**fish shell.** Fish does not support heredocs — pasting the bash/zsh snippet as-is fails with `Expected a string, but found a redirection`. Use the [fish alternative above](#register-the-proxy-with-claude-code), which builds the JSON via `printf` and stores it in a variable.
 
 **Want human-in-the-loop approvals? Opt in with `-http`.** The approval listener is off by default. If your server exposes tools that cross the risk-score threshold (e.g. `create_token` = 50, `update_auth_config` = 70), pass `-http 127.0.0.1:<port>` and run an approver — see [Approval Server](/mcp-proxy/approval-ui/). Without it, a paused call fails immediately with JSON-RPC code `-32003` (`no approver configured`). To prevent pausing entirely, drop `pause`/`block` rules from a custom `-rules` YAML.
 

@@ -9,6 +9,10 @@ Claude Desktop connects to MCP servers via `claude_desktop_config.json`. The Age
 The default policy includes a `pause_high_risk` rule. When you generate a config with `mcp-proxy init`, the snippet includes `-http 127.0.0.1:7778` so the approval listener starts automatically. If you run the proxy manually without `-http`, the listener is off and paused calls fail fast with `-32003`. Pass `--no-approval` to `mcp-proxy init` to generate a snippet without `-http`. See [Approval Server](/mcp-proxy/approval-ui/).
 :::
 
+:::danger[Never put secrets in claude_desktop_config.json]
+`claude_desktop_config.json` is plaintext on disk, and Claude Desktop does **not** expand `${VAR}` references in `env` blocks — anything you write there is stored verbatim. Use a secret-manager wrapper (`op run`, `aws-vault exec`, …) or an OS keychain launcher script — both are documented below. The literal-token snippet at the bottom is a demo-only path; treat the file as compromised the moment you save a real credential to it.
+:::
+
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
@@ -49,7 +53,87 @@ If the file doesn't exist yet, create it.
 
 If it already contains app preferences (for example, `{"preferences": {...}}`), that's normal. Add `mcpServers` as another top-level key rather than replacing the file — the result should look like `{"preferences": {...}, "mcpServers": {...}}` (mind the comma between sibling keys).
 
-Then substitute the three values into the `mcpServers` block below, and replace `YOUR_TOKEN` in `env` with your actual GitHub personal access token:
+The token needs to reach the MCP server's environment **without being written into the config file**. Pick whichever pattern matches your secrets setup; all three produce an equivalent wrapped server, only the credential plumbing differs.
+
+### Recommended: secret manager (`op run`, `aws-vault exec`, …)
+
+Install the 1Password CLI (`brew install 1password-cli`), sign in (`op signin`), and create a referenced env file:
+
+```ini
+# ~/.agent-receipts/mcp.env  (chmod 600)
+GITHUB_PERSONAL_ACCESS_TOKEN=op://Personal/GitHub/token
+```
+
+Point Claude Desktop at `op run` — it resolves the `op://` reference at exec time, injects the value into the child process's env, and never writes the token to disk. Find your `op` path with `which op`:
+
+```json
+{
+  "mcpServers": {
+    "github-audited": {
+      "command": "/opt/homebrew/bin/op",
+      "args": [
+        "run",
+        "--env-file=/Users/YOU/.agent-receipts/mcp.env",
+        "--",
+        "/Users/YOU/go/bin/mcp-proxy",
+        "-name", "github",
+        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-issuer-name", "Claude Desktop",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
+        "/opt/homebrew/bin/github-mcp-server", "stdio"
+      ]
+    }
+  }
+}
+```
+
+`aws-vault exec`, `chamber exec` (AWS Parameter Store), and `direnv` with `op://` references all follow the same wrapping pattern — substitute whichever your team already deploys.
+
+### Fallback: OS keychain launcher script
+
+If you don't have a secret manager, store the token in the OS keychain and add a small launcher that execs mcp-proxy with the secret in env. The launcher itself contains no secrets.
+
+**macOS** — store the token, then create the launcher:
+
+```bash
+security add-generic-password -s github-mcp -a "$USER" -w
+# (paste the PAT when prompted)
+```
+
+```bash
+#!/usr/bin/env bash
+# ~/.agent-receipts/run-mcp-proxy-github.sh — chmod 700
+set -euo pipefail
+GITHUB_PERSONAL_ACCESS_TOKEN="$(security find-generic-password -s github-mcp -a "$USER" -w)" \
+  exec /Users/YOU/go/bin/mcp-proxy "$@"
+```
+
+**Linux**: swap the keychain calls for `secret-tool store --label=github-mcp service github-mcp account "$USER"` and `secret-tool lookup service github-mcp account "$USER"` (matching the same `account` qualifier on store and lookup avoids ambiguity if you ever store more than one entry under the same service name). **Windows**: a `.ps1` wrapper using the [SecretManagement module](https://learn.microsoft.com/en-us/powershell/utility-modules/secretmanagement/overview) (`Get-Secret github-mcp`) plays the same role.
+
+Point Claude Desktop at the launcher — no `env` block, since the script sets it:
+
+```json
+{
+  "mcpServers": {
+    "github-audited": {
+      "command": "/Users/YOU/.agent-receipts/run-mcp-proxy-github.sh",
+      "args": [
+        "-name", "github",
+        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-issuer-name", "Claude Desktop",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
+        "/opt/homebrew/bin/github-mcp-server", "stdio"
+      ]
+    }
+  }
+}
+```
+
+### Demo only: literal token
+
+Useful for kicking the tyres against a throwaway PAT before wiring up secret management. **Treat the file as compromised the moment you save a real credential**, and rotate the PAT before moving to either pattern above.
 
 ```json
 {
@@ -59,6 +143,9 @@ Then substitute the three values into the `mcpServers` block below, and replace 
       "args": [
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-issuer-name", "Claude Desktop",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
         "/opt/homebrew/bin/github-mcp-server", "stdio"
       ],
       "env": {
@@ -69,11 +156,9 @@ Then substitute the three values into the `mcpServers` block below, and replace 
 }
 ```
 
-The approval listener is off by default. If the policy pauses a call (e.g. a high-risk tool your server exposes), it fails immediately with JSON-RPC code `-32003` (`no approver configured`). To enable approvals, add `-http 127.0.0.1:<port>` to `args` and run an approver — see [Approval Server](/mcp-proxy/approval-ui/).
+The approval listener is off by default. If the policy pauses a call (e.g. a high-risk tool your server exposes), it fails immediately with JSON-RPC code `-32003` (`no approver configured`). To enable approvals, add `-http 127.0.0.1:<port>` to `args` in any of the three configurations above and run an approver — see [Approval Server](/mcp-proxy/approval-ui/).
 
 Restart Claude Desktop. The GitHub MCP server now runs behind the proxy — every tool call goes through it transparently.
-
-> **Note:** `claude_desktop_config.json` is not encrypted. Avoid committing it to version control, and prefer sourcing tokens from your OS keychain or a secret manager where possible.
 
 ## Verifying receipts
 

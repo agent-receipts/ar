@@ -70,30 +70,31 @@ To enable the approval workflow, pass `-http 127.0.0.1:<port>` — see [Approval
 
 ## Claude Desktop integration
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS). Claude Desktop doesn't expand `${VAR}` in `env` blocks, so wrap the proxy in a secret manager (`op run`, `aws-vault exec`, …) — the snippet below uses 1Password CLI, with the token resolved from `op://` at exec time and never written to disk:
 
 ```json
 {
   "mcpServers": {
     "github-audited": {
-      "command": "/Users/YOU/go/bin/mcp-proxy",
+      "command": "/opt/homebrew/bin/op",
       "args": [
+        "run",
+        "--env-file=/Users/YOU/.agent-receipts/mcp.env",
+        "--",
+        "/Users/YOU/go/bin/mcp-proxy",
         "-name", "github",
         "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
         "/opt/homebrew/bin/github-mcp-server", "stdio"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
-      }
+      ]
     }
   }
 }
 ```
 
-> **Note:** `claude_desktop_config.json` is not encrypted. Avoid committing it to version control, and prefer sourcing tokens from your OS keychain or a secret manager where possible.
+`mcp.env` references the secret by path (`GITHUB_PERSONAL_ACCESS_TOKEN=op://Personal/GitHub/token`); see the [Claude Desktop integration guide](/mcp-proxy/claude-desktop/#configure-claude_desktop_configjson) for the OS-keychain-launcher fallback and other patterns.
 
 ## Claude Code integration
 
@@ -111,7 +112,7 @@ claude mcp add-json github-audited --scope user '{
     "/opt/homebrew/bin/github-mcp-server", "stdio"
   ],
   "env": {
-    "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
   }
 }'
 ```
