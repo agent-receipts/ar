@@ -75,12 +75,20 @@ func (s *State) NextSeq() int64 {
 
 // Allocation is a reservation of the next (sequence, prev_hash) pair. Callers
 // MUST eventually call Commit (with the freshly inserted receipt's hash) or
-// Rollback. Failing to do so deadlocks the daemon — the underlying mutex stays
-// held.
+// Rollback to release the State's mutex.
+//
+// Commit and Rollback are mutually exclusive and idempotent: whichever runs
+// first wins and any subsequent call is a no-op. This lets the daemon use
+// `defer alloc.Rollback()` immediately after Allocate as a panic-safety guard
+// without double-unlocking on the success path where Commit ran first.
 type Allocation struct {
 	state    *State
 	Sequence int64
 	PrevHash *string // copy; nil for the first receipt
+	// release is a heap-allocated sync.Once shared across value copies of the
+	// Allocation. The first Commit or Rollback runs the unlock; subsequent
+	// calls are no-ops via sync.Once's exactly-once guarantee.
+	release *sync.Once
 }
 
 // Allocate reserves the next chain slot and returns it. The State's mutex is
@@ -93,26 +101,38 @@ func (s *State) Allocate() Allocation {
 		v := *s.prevHash
 		prev = &v
 	}
-	return Allocation{state: s, Sequence: s.nextSeq, PrevHash: prev}
+	return Allocation{
+		state:    s,
+		Sequence: s.nextSeq,
+		PrevHash: prev,
+		release:  &sync.Once{},
+	}
 }
 
 // Commit advances the chain past this allocation. newHash is the hash of the
 // just-inserted receipt and becomes the prev_hash for the next allocation.
+// No-op if Commit or Rollback has already been called on this allocation.
 func (a Allocation) Commit(newHash string) {
 	if a.state == nil {
 		panic("chain.Allocation: Commit on zero-value Allocation")
 	}
-	a.state.nextSeq = a.Sequence + 1
-	h := newHash
-	a.state.prevHash = &h
-	a.state.mu.Unlock()
+	a.release.Do(func() {
+		a.state.nextSeq = a.Sequence + 1
+		h := newHash
+		a.state.prevHash = &h
+		a.state.mu.Unlock()
+	})
 }
 
 // Rollback releases the allocation without advancing the chain. Use this when
-// the build/sign/insert pipeline fails after Allocate.
+// the build/sign/insert pipeline fails after Allocate. Safe to defer: a
+// Rollback after a successful Commit is a no-op rather than an "unlock of
+// unlocked mutex" panic.
 func (a Allocation) Rollback() {
 	if a.state == nil {
 		panic("chain.Allocation: Rollback on zero-value Allocation")
 	}
-	a.state.mu.Unlock()
+	a.release.Do(func() {
+		a.state.mu.Unlock()
+	})
 }

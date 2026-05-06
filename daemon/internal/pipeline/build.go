@@ -84,6 +84,12 @@ func New(s *chain.State, ks keysource.KeySource, store store.ReceiptStore, issue
 // the next chain slot, builds and signs the AgentReceipt, persists it via
 // store.Insert, and Commits the chain allocation. Any error before Commit
 // triggers Rollback so the chain state is not advanced past a missing receipt.
+//
+// Rollback is deferred — and chain.Allocation.Commit/Rollback are idempotent
+// via sync.Once — so the chain mutex is released even if buildAndSign or
+// Store.Insert panics. Without that guarantee, a single panicking frame would
+// orphan the lock and deadlock the daemon for every subsequent emitter on the
+// same socket.
 func (p *Pipeline) Process(f socket.Frame) error {
 	var frame EmitterFrame
 	if err := json.Unmarshal(f.Payload, &frame); err != nil {
@@ -94,13 +100,13 @@ func (p *Pipeline) Process(f socket.Frame) error {
 	}
 
 	alloc := p.State.Allocate()
+	defer alloc.Rollback()
+
 	signed, hash, err := p.buildAndSign(&frame, f.Peer, alloc)
 	if err != nil {
-		alloc.Rollback()
 		return err
 	}
 	if err := p.Store.Insert(signed, hash); err != nil {
-		alloc.Rollback()
 		return fmt.Errorf("insert receipt: %w", err)
 	}
 	alloc.Commit(hash)

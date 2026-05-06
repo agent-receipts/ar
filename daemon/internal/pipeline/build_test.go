@@ -454,6 +454,53 @@ func TestProcess_RejectsUnrepresentableNumbers(t *testing.T) {
 	}
 }
 
+// panicSigningKeySource panics on Sign, simulating any unexpected runtime
+// failure between Allocate and Commit. Used to prove pipeline.Process releases
+// the chain mutex via deferred Rollback even when buildAndSign panics.
+type panicSigningKeySource struct{}
+
+func (panicSigningKeySource) Init() error                  { return nil }
+func (panicSigningKeySource) Teardown() error              { return nil }
+func (panicSigningKeySource) PublicKey() (string, error)   { return "", nil }
+func (panicSigningKeySource) VerificationMethod() string   { return "did:test#k1" }
+func (panicSigningKeySource) Rotate() error                { return nil }
+func (panicSigningKeySource) Sign(_ []byte) ([]byte, error) {
+	panic("simulated panic during signing")
+}
+
+func TestProcess_PanicReleasesChainAllocation(t *testing.T) {
+	// Any panic between Allocate and Commit MUST release the chain mutex via
+	// the deferred Rollback. Without that, a single bad frame would deadlock
+	// the daemon for every subsequent emitter on the same socket.
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, panicSigningKeySource{}, st, "did:agent-receipts-daemon:test")
+
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected Process to panic with the panicSigningKeySource stub; setup is broken")
+			}
+		}()
+		_ = p.Process(sampleFrame(t))
+	}()
+
+	// If the chain mutex is still held, the next Allocate would block forever.
+	// Run it on a goroutine with a tight timeout so the test fails loudly
+	// rather than hanging until the framework's default kill.
+	done := make(chan struct{})
+	go func() {
+		a := state.Allocate()
+		a.Rollback()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("chain.State.Allocate timed out: panic in buildAndSign orphaned the mutex")
+	}
+}
+
 func TestProcess_DaemonControlsAllTimestamps(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)
