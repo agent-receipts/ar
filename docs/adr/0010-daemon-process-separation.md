@@ -111,13 +111,13 @@ Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or 
 
 ### 2026-05-06: OQ2 — Existing chain migration policy — abandon old chains
 
-**Decision:** v1 users have per-emitter SQLite databases. Phase 2 (Section 3, thin-emitter refactor) will abandon existing v1 chains and start a fresh daemon-managed chain at `seq=1`. No in-place migration or `import-chain` script.
+**Decision:** v1 users have per-emitter SQLite databases. Phase 2 (Section 3, thin-emitter refactor) will abandon existing v1 chains and start a fresh daemon-managed chain at `seq=1`. No in-place migration or `import-chain` script. The daemon and emitters use new default DB/key paths (separate from v1) to ensure accidental resume does not happen; operators who want to preserve v1 chains for verification must keep v1 and v2 DBs in separate directories.
 
 **Rationale:** Agent-Receipts is pre-1.0 with early-stage adoption (solo dev and lab usage). No production audit dependencies exist that would prohibit a clean break, and the cost of migration logic (either in-process DB surgery during daemon startup or a separate import tool) compounds the already-substantial emitter refactor burden of Section 3.
 
 **Consequences:**
-- Auditors must preserve v1 SQLite databases offline if they require long-term audit of pre-Phase-2 events. This is a one-time notice; v2 chains persist continuously under daemon supervision.
-- v1 receipt verification becomes impossible post-upgrade (no daemon will hold v1 public keys or databases).
+- Auditors must preserve v1 SQLite databases and matching public keys offline if they require long-term audit of pre-Phase-2 events. V1 receipts remain cryptographically verifiable with those artifacts; v2 tooling and daemon will not verify or import v1 chains.
+- v1 chains are not resumed on v2 daemon startup (separate DB/key paths prevent accidental coexistence).
 - On daemon startup with a fresh database, the chain starts at `seq=1` with no previous-receipt hash.
 
 **Spec/code changes:**
@@ -155,10 +155,10 @@ Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or 
 - **Indexing strategy:** Phase 2 will extract `session_id` into a dedicated (or generated) column and add a non-unique index to support efficient queries like `SELECT * FROM receipts WHERE session_id = ?`. For now, session_id is only in the receipt JSON; extraction is deferred to the Section 3 schema evolution.
 
 **Normative spec line:**
-> "Each emitter process MUST generate a unique `session_id` (UUID) at startup and include it in every frame sent to the daemon. The `session_id` remains constant across daemon reconnects, process-local (survives only the lifetime of the emitter process). The daemon makes no guarantee that `session_id` values are unique across deployments or across time, only that it records the value faithfully."
+> "Each emitter process MUST provide a stable `session_id` (UUID) for its logical session. If the host or parent process provides a session identifier (e.g., Claude Code's session ID, an agent-loop context ID), forward it unchanged. Otherwise, generate a new UUID v4 at emitter startup. The `session_id` remains constant across daemon reconnects, process-local (survives only the lifetime of the emitter process). The daemon makes no guarantee that `session_id` values are unique across deployments or across time, only that it records the value faithfully."
 
 **SDK author guideline:**
-> "Initialize `session_id` once per emitter/SDK instance at construction time using a UUID (v4 or v5). Do not generate a new session_id on each emit(). Reuse the same session_id across all tool calls and daemon reconnects within the process lifetime. No persistence to disk is required."
+> "Initialize `session_id` once per emitter/SDK instance at construction time. If the host provides a session identifier, use it; otherwise generate a new UUID v4. Do not generate a new session_id on each emit(). Reuse the same session_id across all tool calls and daemon reconnects within the process lifetime. No persistence to disk is required."
 
 **Spec/code changes:**
 - All three SDKs emit the same `session_id` for their process lifetime; no SDK-specific logic.
