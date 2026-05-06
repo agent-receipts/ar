@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-05-03), amended 2026-05-05 (see *Amendments*)
+Accepted (2026-05-03), amended 2026-05-05 and 2026-05-06 (see *Amendments*)
 
 ## Implementation status
 
@@ -143,15 +143,15 @@ Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or 
 
 ### 2026-05-06: OQ4 — session_id allocation rule — UUID at startup, persistent across reconnects
 
-**Decision:** Each emitter process MUST generate a unique `session_id` (UUID v4 or v5) at startup and include it in every frame sent to the daemon. The `session_id` remains constant across daemon reconnects and process-local (lifetime of the emitter process). The daemon records `session_id` faithfully; verifiers MUST treat it as an advisory grouping hint, not a cryptographic boundary.
+**Decision:** Each emitter process MUST provide a stable `session_id` (UUID v4) for its logical session. If the host provides a session identifier, forward it unchanged. Otherwise, generate a new UUID v4 at startup. The `session_id` remains constant across daemon reconnects and instance-local (lifetime of the emitter instance). The daemon records `session_id` faithfully; verifiers MUST treat it as an advisory grouping hint, not a cryptographic boundary.
 
 **Rationale:**
-- **At startup (not per-run):** Agents invoke multiple tool calls within a single logical session. One `session_id` per agent-run would fragment a logical audit session into N receipts with N identifiers. Grouping by emitter-process lifetime naturally clusters tool calls.
-- **Persistent across daemon reconnect:** The emitter holds the session_id in memory. If the daemon restarts or the network drops and reconnects, the emitter retransmits with the same `session_id`, keeping receipts logically grouped. No persist-to-disk is required (the session_id dies with the emitter process).
-- **Uniform across SDKs:** All three SDK emitters (Go, TS, Py) and integration points (mcp-proxy, OpenClaw) initialize `session_id` at construction time; never generate a new one per emit().
+- **At startup (not per-run):** Agents invoke multiple tool calls within a single logical session. One `session_id` per agent-run would fragment a logical audit session into N receipts with N identifiers. Grouping by emitter-instance lifetime naturally clusters tool calls.
+- **Persistent across daemon reconnect:** The emitter holds the session_id in memory. If the daemon restarts or the network drops and reconnects, the emitter retransmits with the same `session_id`, keeping receipts logically grouped. No persist-to-disk is required (the session_id dies with the emitter instance).
+- **Uniform across SDKs:** All three SDK emitters (Go, TS, Py) and integration points (mcp-proxy, OpenClaw) initialize `session_id` once at construction time; never generate a new one per emit(). If multiple SDK instances exist in the same process, they should share or coordinate on a single session_id.
 
 **Cardinality and indexing:**
-- **Expected cardinality:** Few long-lived sessions per deployment. An agent session lasts minutes to hours; an emitter process lasts the lifetime of the agent (or MCP proxy). Database sees ~1–10 unique `session_id` values per day in typical usage.
+- **Expected cardinality:** Few long-lived sessions per deployment. An agent run typically has one emitter instance (hence one session_id), lasting minutes to hours. Database sees ~1–10 unique `session_id` values per day in typical usage.
 - **Indexing strategy:** Phase 2 will extract `session_id` into a dedicated (or generated) column and add a non-unique index to support efficient queries like `SELECT * FROM receipts WHERE session_id = ?`. For now, session_id is only in the receipt JSON; extraction is deferred to the Section 3 schema evolution.
 
 **Normative spec line:**
