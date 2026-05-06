@@ -15,6 +15,31 @@ export default defineConfig({
     starlight({
       title: "Agent Receipts",
       tagline: "Cryptographically signed audit trails for AI agent actions",
+      head: [
+        {
+          tag: "link",
+          attrs: {
+            rel: "me",
+            href: "https://github.com/agent-receipts",
+          },
+        },
+        {
+          tag: "script",
+          attrs: { type: "application/ld+json" },
+          content: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            name: "Agent Receipts",
+            url: "https://agentreceipts.ai",
+            publisher: {
+              "@type": "Organization",
+              name: "Agent Receipts",
+              url: "https://agentreceipts.ai",
+              sameAs: ["https://github.com/agent-receipts"],
+            },
+          }),
+        },
+      ],
       social: [
         {
           icon: "github",
@@ -22,6 +47,9 @@ export default defineConfig({
           href: "https://github.com/agent-receipts",
         },
       ],
+      components: {
+        SocialIcons: "./src/components/SocialIcons.astro",
+      },
       customCss: ["./src/styles/custom.css"],
       sidebar: [
         {
