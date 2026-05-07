@@ -204,11 +204,20 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	default:
 		return fmt.Errorf("emitter: invalid decision %q (want allowed|denied|pending)", ev.Decision)
 	}
-	if len(ev.Input) > 0 && !json.Valid(ev.Input) {
-		return errors.New("emitter: Input is not valid JSON")
+	// json.Valid only checks lexical syntax — `1e400` parses as a token but
+	// overflows float64, so the daemon's RFC 8785 canonicalisation (which
+	// re-unmarshals into Go values) would reject it. Use Unmarshal here to
+	// gate exactly what the daemon can canonicalise; better to fail fast at
+	// the caller than to silently drop on the daemon side.
+	if len(ev.Input) > 0 {
+		if err := json.Unmarshal(ev.Input, new(interface{})); err != nil {
+			return fmt.Errorf("emitter: Input is not valid JSON: %w", err)
+		}
 	}
-	if len(ev.Output) > 0 && !json.Valid(ev.Output) {
-		return errors.New("emitter: Output is not valid JSON")
+	if len(ev.Output) > 0 {
+		if err := json.Unmarshal(ev.Output, new(interface{})); err != nil {
+			return fmt.Errorf("emitter: Output is not valid JSON: %w", err)
+		}
 	}
 
 	body, err := json.Marshal(frame{
@@ -239,11 +248,11 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		return errors.New("emitter: closed")
 	}
 
-	if err := e.dialIfNeededLocked(); err != nil {
+	if err := e.dialIfNeededLocked(ctx); err != nil {
 		e.logDrop(ctx, "dial", err)
 		return nil
 	}
-	if err := e.writeFrameLocked(body); err != nil {
+	if err := e.writeFrameLocked(ctx, body); err != nil {
 		e.logDrop(ctx, "write", err)
 		// A failed write almost always means the daemon went away. Drop
 		// the conn so the next Emit re-dials transparently. Per ADR-0010
@@ -274,11 +283,16 @@ func (e *Emitter) Close() error {
 	return err
 }
 
-func (e *Emitter) dialIfNeededLocked() error {
+func (e *Emitter) dialIfNeededLocked(ctx context.Context) error {
 	if e.conn != nil {
 		return nil
 	}
-	conn, err := net.DialTimeout("unix", e.socketPath, dialTimeout)
+	// Use DialContext rather than net.DialTimeout so that a caller-supplied
+	// ctx with a tighter deadline (or one that has been cancelled) cuts the
+	// dial short. net.DialTimeout would otherwise let Emit block up to the
+	// full dialTimeout regardless of ctx state.
+	d := net.Dialer{Timeout: dialTimeout}
+	conn, err := d.DialContext(ctx, "unix", e.socketPath)
 	if err != nil {
 		return err
 	}
@@ -286,8 +300,16 @@ func (e *Emitter) dialIfNeededLocked() error {
 	return nil
 }
 
-func (e *Emitter) writeFrameLocked(body []byte) error {
-	if err := e.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+func (e *Emitter) writeFrameLocked(ctx context.Context, body []byte) error {
+	// The effective write deadline is min(now+writeTimeout, ctx.Deadline()).
+	// Without honouring ctx here, a caller's tighter deadline could be
+	// silently extended up to writeTimeout, breaking the fire-and-forget
+	// budget callers expect when they pass a ctx with a deadline.
+	deadline := time.Now().Add(writeTimeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if err := e.conn.SetWriteDeadline(deadline); err != nil {
 		return err
 	}
 	defer func() { _ = e.conn.SetWriteDeadline(time.Time{}) }()

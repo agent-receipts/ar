@@ -1,10 +1,20 @@
-//go:build linux || darwin
+//go:build integration && (linux || darwin)
 
 // Tests run end-to-end against an in-process agent-receipts daemon.
-// Build-tag-gated to linux/darwin because the emitter speaks AF_UNIX and the
-// daemon refuses to start on other platforms — running these tests on a
-// Windows builder would fail at daemon.Run, not at the emitter we want to
-// exercise.
+//
+// Build-tag-gated to:
+//   - integration: the test imports github.com/agent-receipts/ar/daemon, but
+//     sdk/go's published go.mod cannot require the daemon module — daemon
+//     already requires sdk/go, and a back-edge would create an import cycle.
+//     Under GOWORK=off (publish/verify path) the import would fail to resolve,
+//     so the integration tag keeps the test out of the default `go test ./...`
+//     run and pulls it in only via `go test -tags=integration` where go.work
+//     wires the two modules locally. Matches sdk/go/integration_test.go and
+//     sdk/go/cross_language_test.go which gate the same way for the same
+//     reason.
+//   - linux/darwin: the emitter speaks AF_UNIX and the daemon refuses to start
+//     on other platforms — running these tests on a Windows builder would fail
+//     at daemon.Run, not at the emitter we want to exercise.
 package emitter_test
 
 import (
