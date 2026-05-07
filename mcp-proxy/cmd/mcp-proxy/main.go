@@ -739,6 +739,17 @@ func serve() {
 				// result string so the daemon receives raw JSON the same way
 				// the in-process receipt signer does. errorStr is always the
 				// raw (unencrypted) error text.
+				//
+				// decision is always "allowed" here because reaching this
+				// branch means the proxy did NOT block the call — the policy
+				// engine permitted it through. The upstream's success-vs-
+				// failure outcome is communicated separately via the Error
+				// field; the daemon stores both decision and error on the
+				// receipt. (The in-process signer also derives outcome.status
+				// from msg.Error != nil; the daemon currently maps decision
+				// → status verbatim, so phase 3 receipts may report
+				// StatusSuccess for upstream-errored calls until the daemon
+				// learns to flip that. Tracking issue: #236 follow-ups.)
 				if em != nil {
 					var outputRaw json.RawMessage
 					if resultStr != "" && json.Valid([]byte(resultStr)) {
@@ -883,13 +894,20 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 }
 
 // emitToContext forwards one tool-call event to the daemon emitter (ADR-0010,
-// fire-and-forget). The emitter returns nil on transient failures, so the only
-// errors are caller bugs (closed emitter, invalid decision, etc.) — we log
-// those at warn level so they surface in tests without breaking normal operation.
-// serverName becomes the tool channel (e.g. the MCP server name). toolName is
-// the bare tool name. input and output are raw JSON bytes; either may be nil.
-// errStr carries the error text from the upstream server response (empty for
-// successful calls). decision must be "allowed", "denied", or "pending".
+// fire-and-forget). The emitter returns nil on transient failures (no daemon,
+// broken socket); the only errors emerging here are caller bugs that no retry
+// could fix — closed emitter, empty channel, invalid decision, malformed
+// Input/Output JSON. We log them via log.Printf so misuse surfaces in proxy
+// logs rather than crashing the request flow.
+//
+// The Channel is hard-coded to "mcp" because every event from this proxy
+// originates from an MCP server tool call; serverName populates Tool.Server
+// (the upstream MCP server identifier, e.g. "github") and toolName populates
+// Tool.Name. Together the daemon assembles them into action.type
+// "mcp.<server>.<tool>". input and output are raw JSON bytes; either may be
+// nil to signal "no payload" (the daemon will skip hashing in that case).
+// errStr carries the upstream error text (empty for successful calls).
+// decision must be "allowed", "denied", or "pending".
 func emitToContext(em *emitter.Emitter, serverName, toolName string, input, output json.RawMessage, errStr, decision string) {
 	if err := em.Emit(context.Background(), emitter.Event{
 		Channel:  "mcp",

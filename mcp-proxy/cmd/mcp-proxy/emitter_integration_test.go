@@ -17,6 +17,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -150,8 +151,11 @@ func waitForDaemonReceipts(t *testing.T, dbPath, chainID string, want int, timeo
 	}
 }
 
-// silentEmitterLogger discards drop-log output to keep test output clean.
-var silentEmitterLogger = log.New(io.Discard, "", 0)
+// silentSlog returns a slog.Logger that discards every level. Tests pass it
+// to emitter.New so dial/write drops do not pollute `go test -v` output.
+func silentSlog() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 // newSilentEmitter returns an Emitter that discards its slog drop output.
 func newSilentEmitter(t *testing.T, socketPath, sessionID string) *emitter.Emitter {
@@ -159,6 +163,7 @@ func newSilentEmitter(t *testing.T, socketPath, sessionID string) *emitter.Emitt
 	em, err := emitter.New(
 		emitter.WithSocketPath(socketPath),
 		emitter.WithSessionID(sessionID),
+		emitter.WithLogger(silentSlog()),
 	)
 	if err != nil {
 		t.Fatalf("emitter.New: %v", err)
@@ -259,6 +264,7 @@ func TestEmitToContext_FireAndForgetWhenNoDaemon(t *testing.T) {
 	em, err := emitter.New(
 		emitter.WithSocketPath(filepath.Join(dir, "no-daemon.sock")),
 		emitter.WithSessionID("proxy-test-noDaemon"),
+		emitter.WithLogger(silentSlog()),
 	)
 	if err != nil {
 		t.Fatalf("emitter.New: %v", err)
@@ -290,6 +296,7 @@ func TestEmitToContext_NilInputsAreValid(t *testing.T) {
 	em, err := emitter.New(
 		emitter.WithSocketPath(filepath.Join(dir, "no-daemon2.sock")),
 		emitter.WithSessionID("proxy-test-nilinputs"),
+		emitter.WithLogger(silentSlog()),
 	)
 	if err != nil {
 		t.Fatalf("emitter.New: %v", err)
@@ -299,4 +306,36 @@ func TestEmitToContext_NilInputsAreValid(t *testing.T) {
 	// nil input and output are valid: the emitter accepts them and the daemon
 	// treats them as absent. No panic, no error returned.
 	emitToContext(em, "srv", "tool-with-no-io", nil, nil, "", "allowed")
+}
+
+// TestEmitToContext_SessionIDPropagatesToReceipts verifies the ADR-0010 OQ4
+// invariant that the proxy's session id (the same value the audit DB sees)
+// is the issuer.session_id of every receipt the daemon writes. Without this
+// the operator cannot correlate proxy logs with daemon-produced receipts.
+func TestEmitToContext_SessionIDPropagatesToReceipts(t *testing.T) {
+	d := startTestDaemon(t, shortSocketDirEmitter(t))
+
+	const sid = "proxy-session-id-stability-2026-05"
+	em := newSilentEmitter(t, d.cfg.SocketPath, sid)
+
+	for i := 0; i < 3; i++ {
+		emitToContext(em, "srv", "tool", json.RawMessage(`{"i":1}`), nil, "", "allowed")
+	}
+
+	waitForDaemonReceipts(t, d.cfg.DBPath, d.cfg.ChainID, 3, 5*time.Second)
+
+	s, err := store.OpenReadOnly(d.cfg.DBPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	receipts, err := s.GetChain(d.cfg.ChainID)
+	if err != nil {
+		t.Fatalf("GetChain: %v", err)
+	}
+	for i, r := range receipts {
+		if r.Issuer.SessionID != sid {
+			t.Errorf("receipt[%d]: issuer.session_id = %q; want %q", i, r.Issuer.SessionID, sid)
+		}
+	}
 }
