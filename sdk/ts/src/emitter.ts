@@ -530,9 +530,7 @@ function hasNonFiniteNumber(val: unknown): boolean {
 		return val.some(hasNonFiniteNumber);
 	}
 	if (val !== null && typeof val === "object") {
-		return Object.values(val as Record<string, unknown>).some(
-			hasNonFiniteNumber,
-		);
+		return Object.values(val).some(hasNonFiniteNumber);
 	}
 	return false;
 }

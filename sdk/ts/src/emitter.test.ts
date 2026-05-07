@@ -184,6 +184,25 @@ describe("Emitter — validation errors (caller bugs)", () => {
 		e.close();
 	});
 
+	it("returns an error for input containing a non-finite number", async () => {
+		// 1e400 overflows float64 to Infinity; JSON.parse accepts it but the
+		// daemon's RFC 8785 canonicaliser rejects it — catch it here as a
+		// caller-bug Error rather than letting it become a silent drop.
+		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const err = await e.emit({ ...GOOD_EVENT, input: '{"n":1e400}' });
+		expect(err).toBeInstanceOf(Error);
+		expect(err?.message).toMatch(/input is not valid JSON/);
+		e.close();
+	});
+
+	it("returns an error for output containing a non-finite number", async () => {
+		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const err = await e.emit({ ...GOOD_EVENT, output: "[1e400]" });
+		expect(err).toBeInstanceOf(Error);
+		expect(err?.message).toMatch(/output is not valid JSON/);
+		e.close();
+	});
+
 	it("returns an error after close", async () => {
 		const sockPath = tempSockPath("closed");
 		const { stop } = startEchoServer(sockPath);
