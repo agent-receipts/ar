@@ -29,10 +29,10 @@ make build
 
 ## Usage
 
-Point the dashboard at a receipt database:
+If you use the standard per-user path (`~/.agent-receipts/receipts.db`), no flags are needed:
 
 ```sh
-dashboard -db ./receipts.db
+dashboard
 ```
 
 Then open [http://localhost:8080](http://localhost:8080) in your browser.
@@ -41,15 +41,18 @@ Then open [http://localhost:8080](http://localhost:8080) in your browser.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-db` | *(required)* | Path to a receipt SQLite database |
+| `-db` | `~/.agent-receipts/receipts.db` | Path to a receipt SQLite database |
 | `-port` | `8080` | Port to serve on |
 
 ### Example
 
 ```sh
-# View receipts from the MCP proxy
-dashboard -db ~/.config/ar/receipts.db
+# Standard local install — no flags required
+dashboard
+
+# Point at a custom database
+dashboard -db ./receipts.db
 
 # Use a custom port
-dashboard -db ./receipts.db -port 9090
+dashboard -port 9090
 ```
