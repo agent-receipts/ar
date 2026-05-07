@@ -12,6 +12,7 @@
  *   - defaultSocketPath: env-var and OS-default resolution
  */
 
+import { unlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,19 +27,30 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** A unique socket path for this test run. */
+/** Monotonic counter so every tempSockPath call returns a unique path. */
+let _sockSeq = 0;
+
+/** A unique socket path for each call (pid + counter + suffix). */
 function tempSockPath(suffix: string): string {
-	return join(tmpdir(), `ar-emitter-test-${process.pid}-${suffix}.sock`);
+	return join(
+		tmpdir(),
+		`ar-emitter-test-${process.pid}-${++_sockSeq}-${suffix}.sock`,
+	);
 }
 
 /**
  * Minimal echo server that reads length-prefixed frames and collects the JSON
  * body of each frame. Returns the socket path and a way to read received
  * frames.
+ *
+ * `ready` resolves once the server is actually listening. Tests that emit
+ * immediately after construction should await it to avoid a race between the
+ * first connect and the server's bind completing.
  */
 function startEchoServer(sockPath: string): {
 	frames: () => Promise<string[]>;
 	stop: () => Promise<void>;
+	ready: Promise<void>;
 } {
 	const received: string[] = [];
 	// Track open client sockets so stop() can forcefully destroy them,
@@ -64,6 +76,18 @@ function startEchoServer(sockPath: string): {
 		});
 	});
 
+	// Unlink any stale socket file from a previous (possibly crashed) test run
+	// so server.listen() doesn't get EADDRINUSE.
+	try {
+		unlinkSync(sockPath);
+	} catch {
+		// Socket file didn't exist — fine.
+	}
+
+	const ready = new Promise<void>((resolve, reject) => {
+		server.once("listening", resolve);
+		server.once("error", reject);
+	});
 	server.listen(sockPath);
 
 	return {
@@ -81,6 +105,7 @@ function startEchoServer(sockPath: string): {
 				}
 				server.close((err) => (err ? reject(err) : resolve()));
 			}),
+		ready,
 	};
 }
 
@@ -169,9 +194,10 @@ describe("Emitter — frame round-trip", () => {
 	let server: ReturnType<typeof startEchoServer>;
 	let emitter: Emitter;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		sockPath = tempSockPath("roundtrip");
 		server = startEchoServer(sockPath);
+		await server.ready;
 		emitter = new Emitter({ socketPath: sockPath });
 	});
 

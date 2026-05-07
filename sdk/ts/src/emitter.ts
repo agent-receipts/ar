@@ -258,17 +258,21 @@ export class Emitter {
 
 		let serialised = JSON.stringify(wireFrame);
 		if (ev.input !== undefined) {
+			// Match "input":"<sentinel>" so the replacement can never target
+			// another field even if the sentinel appears elsewhere in the frame.
 			// Use a function replacement so '$' sequences in ev.input are not
 			// interpreted as String.prototype.replace special patterns.
+			const input = ev.input;
 			serialised = serialised.replace(
-				JSON.stringify(RAW_INPUT_SENTINEL),
-				() => ev.input as string,
+				`"input":${JSON.stringify(RAW_INPUT_SENTINEL)}`,
+				() => `"input":${input}`,
 			);
 		}
 		if (ev.output !== undefined) {
+			const output = ev.output;
 			serialised = serialised.replace(
-				JSON.stringify(RAW_OUTPUT_SENTINEL),
-				() => ev.output as string,
+				`"output":${JSON.stringify(RAW_OUTPUT_SENTINEL)}`,
+				() => `"output":${output}`,
 			);
 		}
 		const body = Buffer.from(serialised, "utf8");
@@ -455,13 +459,15 @@ export class Emitter {
 
 			const header = Buffer.allocUnsafe(4);
 			header.writeUInt32BE(body.length, 0);
-			const frame = Buffer.concat([header, body]);
 
 			const timer = setTimeout(() => {
 				settle(new Error(`write timeout after ${WRITE_TIMEOUT_MS}ms`));
 			}, WRITE_TIMEOUT_MS);
 
-			conn.write(frame, (err) => {
+			// Write header and body as two sequential calls to avoid allocating
+			// a concat buffer for every emit (avoids one copy of the full frame).
+			conn.write(header);
+			conn.write(body, (err) => {
 				settle(err ?? null);
 			});
 		});
