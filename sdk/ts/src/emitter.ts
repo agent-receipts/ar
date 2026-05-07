@@ -333,14 +333,19 @@ export class Emitter {
 	private async doWrite(body: Buffer): Promise<Error | null> {
 		const dialErr = await this.dialIfNeeded();
 		if (dialErr !== null) {
+			// "emitter: closed" is a caller-bug error — propagate it so
+			// emit() surfaces it even when close() raced past the entry check.
+			if (dialErr.message === "emitter: closed") {
+				return dialErr;
+			}
 			this.logDrop("dial", dialErr);
 			return null;
 		}
 
 		const conn = this.conn;
 		if (conn === null) {
-			// Closed between dial and write; drop silently.
-			return null;
+			// close() raced between dialIfNeeded and this read.
+			return this.closed ? new Error("emitter: closed") : null;
 		}
 
 		const writeErr = await this.writeFrame(conn, body);
@@ -402,6 +407,13 @@ export class Emitter {
 			}, DIAL_TIMEOUT_MS);
 
 			const socket = createConnection({ path: this.socketPath }, () => {
+				// Dial timeout already fired and destroyed this socket — the
+				// promise is settled. Discard the late-arriving connection
+				// without touching this.conn so the next emit() re-dials.
+				if (settled) {
+					socket.destroy();
+					return;
+				}
 				// Attach a permanent error listener BEFORE settling. Without
 				// it, any later 'error' event on this socket (peer reset,
 				// daemon crash, EPIPE on a half-open conn) crashes the host
@@ -496,12 +508,31 @@ export class Emitter {
 	}
 }
 
-/** Returns true if the string is syntactically valid JSON. */
+/**
+ * Returns true if the string is syntactically valid JSON and contains no
+ * non-finite numbers. JSON.parse accepts overflow values like 1e400 as
+ * Infinity, but the daemon's RFC 8785 canonicaliser rejects non-finite
+ * numbers — so we reject them here rather than silently dropping the frame.
+ */
 function isValidJson(s: string): boolean {
 	try {
-		JSON.parse(s);
-		return true;
+		return !hasNonFiniteNumber(JSON.parse(s));
 	} catch {
 		return false;
 	}
+}
+
+function hasNonFiniteNumber(val: unknown): boolean {
+	if (typeof val === "number") {
+		return !Number.isFinite(val);
+	}
+	if (Array.isArray(val)) {
+		return val.some(hasNonFiniteNumber);
+	}
+	if (val !== null && typeof val === "object") {
+		return Object.values(val as Record<string, unknown>).some(
+			hasNonFiniteNumber,
+		);
+	}
+	return false;
 }
