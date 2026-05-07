@@ -139,6 +139,52 @@ func TestProcess_BuildsSignedReceipt(t *testing.T) {
 	}
 }
 
+func TestProcess_OutcomeStatus(t *testing.T) {
+	cases := []struct {
+		name       string
+		decision   string
+		errorField string
+		want       receipt.OutcomeStatus
+	}{
+		{"allowed no error", "allowed", "", receipt.StatusSuccess},
+		{"allowed with error", "allowed", "upstream timeout", receipt.StatusFailure},
+		{"denied", "denied", "", receipt.StatusFailure},
+		{"pending", "pending", "", receipt.StatusPending},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ks := newTestKeySource(t)
+			st := newTestStore(t)
+			state := chain.New("chain-1")
+			p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+			body, err := json.Marshal(EmitterFrame{
+				Version:   "1",
+				TsEmit:    "2026-05-03T00:00:00Z",
+				SessionID: "s",
+				Channel:   "sdk",
+				Tool:      EmitterTool{Name: "t"},
+				Decision:  tc.decision,
+				Error:     tc.errorField,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.Process(socket.Frame{Payload: body}); err != nil {
+				t.Fatalf("Process: %v", err)
+			}
+			receipts, err := st.GetChain("chain-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := receipts[0].CredentialSubject.Outcome.Status
+			if got != tc.want {
+				t.Errorf("status = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestProcess_AdvancesSequenceAndPrevHash(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)
