@@ -1,6 +1,7 @@
 """Python SDK for the Agent Receipts protocol."""
 
 from agent_receipts._version import VERSION
+from agent_receipts.emitter import Emitter, default_socket_path
 from agent_receipts.receipt.chain import (
     ChainVerification,
     ReceiptVerification,
@@ -101,6 +102,9 @@ __all__ = [
     "CreateReceiptInput",
     "create_receipt",
     "createReceipt",
+    # Emitter (ADR-0010 daemon client)
+    "Emitter",
+    "default_socket_path",
     # Hashing
     "canonicalize",
     "hash_receipt",

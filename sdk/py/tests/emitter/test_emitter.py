@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import sqlite3
 import struct
@@ -17,10 +18,14 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from agent_receipts.emitter import Emitter, default_socket_path
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # ---------------------------------------------------------------------------
 # Helpers shared by daemon-backed tests
@@ -71,8 +76,9 @@ class DaemonHandle:
             _write_test_key(self.key_path)
 
     def start(self) -> None:
-        env = os.environ.copy()
-        env["AGENTRECEIPTS_SOCKET"] = self.socket_path
+        # Every required setting is passed as a CLI flag below; no env vars
+        # need to be propagated. AGENTRECEIPTS_SOCKET would otherwise leak
+        # into the child if it was set in the test runner's environment.
         self._proc = subprocess.Popen(
             [
                 _DAEMON_BIN,
@@ -115,7 +121,9 @@ class DaemonHandle:
             self._proc.wait()
         self._proc = None
 
-    def wait_for_receipts(self, want: int, timeout: float = 5.0) -> list[dict]:  # type: ignore[type-arg]
+    def wait_for_receipts(
+        self, want: int, timeout: float = 5.0
+    ) -> list[dict[str, Any]]:
         """Poll the SQLite DB until at least ``want`` receipts appear."""
         deadline = time.monotonic() + timeout
         while True:
@@ -128,7 +136,7 @@ class DaemonHandle:
                 )
             time.sleep(0.02)
 
-    def _query_receipts(self) -> list[dict]:  # type: ignore[type-arg]
+    def _query_receipts(self) -> list[dict[str, Any]]:
         if not Path(self.db_path).exists():
             return []
         try:
@@ -147,16 +155,16 @@ class DaemonHandle:
 
 
 @pytest.fixture()
-def daemon(tmp_path_factory: pytest.TempPathFactory) -> DaemonHandle:  # type: ignore[return]
+def daemon() -> Iterator[DaemonHandle]:
     """Start a fresh daemon for one test; stop it on teardown."""
     tmpdir = _short_tmp()
     d = DaemonHandle(tmpdir)
     d.start()
-    yield d  # type: ignore[misc]
-    d.stop()
-    import shutil
-
-    shutil.rmtree(tmpdir, ignore_errors=True)
+    try:
+        yield d
+    finally:
+        d.stop()
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 _DAEMON_SKIP_REASON = (
@@ -166,7 +174,7 @@ _DAEMON_SKIP_REASON = (
 requires_daemon = pytest.mark.skipif(not _DAEMON_AVAILABLE, reason=_DAEMON_SKIP_REASON)
 
 
-def _session_id_from_receipt(r: dict) -> str:  # type: ignore[type-arg]
+def _session_id_from_receipt(r: dict[str, Any]) -> str:
     """Read session_id from a receipt dict, tolerating camelCase or snake_case key."""
     return r["issuer"].get("sessionId") or r["issuer"].get("session_id", "")
 
@@ -278,7 +286,7 @@ class TestEmitterValidation:
 
     def test_oversized_frame(self) -> None:
         big = json.dumps({"x": "a" * (1 << 20)})
-        with pytest.raises(OverflowError, match="frame too large"):
+        with pytest.raises(ValueError, match="frame too large"):
             self.e.emit(
                 channel="sdk",
                 tool_name="noop",
@@ -307,6 +315,106 @@ class TestFireAndForgetWhenDaemonDown:
         e.close()
 
 
+class TestThreadSafety:
+    """Concurrent emit() calls must not corrupt frames or raise spuriously."""
+
+    def test_concurrent_emit_no_data_races(self) -> None:
+        """Many threads emit concurrently; all frames arrive intact."""
+        tmpdir = _short_tmp()
+        sock_path = os.path.join(tmpdir, "concurrent.sock")
+
+        n_threads = 8
+        n_per_thread = 10
+        total = n_threads * n_per_thread
+
+        frames: list[bytes] = []
+        frames_lock = threading.Lock()
+        accept_done = threading.Event()
+
+        def _server() -> None:
+            srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                srv.bind(sock_path)
+                srv.listen(n_threads + 1)
+                deadline = time.monotonic() + 5.0
+                received = 0
+                while received < total and time.monotonic() < deadline:
+                    srv.settimeout(0.5)
+                    try:
+                        conn, _ = srv.accept()
+                    except TimeoutError:
+                        continue
+                    # Drain every frame this connection sends until EOF.
+                    with conn:
+                        while True:
+                            hdr = b""
+                            while len(hdr) < 4:
+                                chunk = conn.recv(4 - len(hdr))
+                                if not chunk:
+                                    break
+                                hdr += chunk
+                            if len(hdr) < 4:
+                                break
+                            length = struct.unpack(">I", hdr)[0]
+                            body = b""
+                            while len(body) < length:
+                                chunk = conn.recv(length - len(body))
+                                if not chunk:
+                                    break
+                                body += chunk
+                            with frames_lock:
+                                frames.append(body)
+                            received += 1
+            finally:
+                srv.close()
+                accept_done.set()
+
+        srv_thread = threading.Thread(target=_server, daemon=True)
+        srv_thread.start()
+        # Give the server a moment to bind.
+        time.sleep(0.05)
+
+        try:
+            e = Emitter(socket_path=sock_path)
+
+            def _producer(idx: int) -> None:
+                for j in range(n_per_thread):
+                    e.emit(
+                        channel="sdk",
+                        tool_name=f"t{idx}-{j}",
+                        decision="allowed",
+                    )
+
+            workers = [
+                threading.Thread(target=_producer, args=(i,), daemon=True)
+                for i in range(n_threads)
+            ]
+            for w in workers:
+                w.start()
+            for w in workers:
+                w.join(timeout=5)
+            e.close()
+            srv_thread.join(timeout=5)
+            assert accept_done.is_set(), "server did not finish in time"
+
+            with frames_lock:
+                # All emitted frames must round-trip as valid JSON.
+                assert len(frames) == total, (
+                    f"expected {total} frames, got {len(frames)}"
+                )
+                tool_names: set[str] = set()
+                for raw in frames:
+                    decoded = json.loads(raw)
+                    tool_names.add(decoded["tool"]["name"])
+                # Every tool name produced by the workers should be present.
+                expected = {
+                    f"t{i}-{j}" for i in range(n_threads) for j in range(n_per_thread)
+                }
+                assert tool_names == expected
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class TestRawJSONPassthrough:
     """The emitter must forward input/output bytes verbatim (no re-serialisation)."""
 
@@ -314,7 +422,8 @@ class TestRawJSONPassthrough:
         """Round-trip a frame through a mini echo server and verify input verbatim."""
         frames: list[bytes] = []
         ready = threading.Event()
-        sock_path = f"/tmp/ar-raw-test-{os.getpid()}.sock"
+        tmpdir = _short_tmp()
+        sock_path = os.path.join(tmpdir, "raw.sock")
 
         def _server() -> None:
             srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -360,10 +469,7 @@ class TestRawJSONPassthrough:
             raw_frame = frames[0]
             assert b'{ "b":  2 , "a" : 1 }' in raw_frame
         finally:
-            try:
-                os.unlink(sock_path)
-            except OSError:
-                pass
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -376,35 +482,22 @@ def test_emit_frame_round_trip(daemon: DaemonHandle) -> None:
     """Three events materialise as three signed receipts in the daemon's chain."""
     e = Emitter(socket_path=daemon.socket_path)
 
-    events = [
-        {
-            "channel": "sdk",
-            "tool_name": "alpha",
-            "tool_server": "fixture",
-            "decision": "allowed",
-        },
-        {
-            "channel": "sdk",
-            "tool_name": "beta",
-            "tool_server": "fixture",
-            "decision": "denied",
-        },
-        {"channel": "sdk", "tool_name": "gamma", "decision": "pending"},
-    ]
-    for ev in events:
-        e.emit(**ev)  # type: ignore[arg-type]
+    e.emit(channel="sdk", tool_name="alpha", tool_server="fixture", decision="allowed")
+    e.emit(channel="sdk", tool_name="beta", tool_server="fixture", decision="denied")
+    e.emit(channel="sdk", tool_name="gamma", decision="pending")
     e.close()
 
     receipts = daemon.wait_for_receipts(3)
     assert len(receipts) == 3
 
     want_types = ["sdk.fixture.alpha", "sdk.fixture.beta", "sdk.gamma"]
+    want_tool_names = ["alpha", "beta", "gamma"]
     want_status = ["success", "failure", "pending"]
     for i, r in enumerate(receipts):
         subj = r["credentialSubject"]
         assert subj["chain"]["sequence"] == i + 1
         assert subj["action"]["type"] == want_types[i], f"receipt {i}: wrong type"
-        assert subj["action"]["tool_name"] == events[i]["tool_name"]
+        assert subj["action"]["tool_name"] == want_tool_names[i]
         assert subj["outcome"]["status"] == want_status[i]
 
 
@@ -443,13 +536,9 @@ def test_emit_with_host_session_id(daemon: DaemonHandle) -> None:
 
 
 @requires_daemon
-def test_emit_reconnect_after_daemon_restart(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> None:
+def test_emit_reconnect_after_daemon_restart() -> None:
     """The emitter re-dials after the daemon restarts, session_id stays stable."""
     tmpdir = _short_tmp()
-    import shutil
-
     try:
         d1 = DaemonHandle(tmpdir)
         d1.start()

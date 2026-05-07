@@ -23,6 +23,7 @@ import socket
 import struct
 import threading
 import uuid
+from datetime import UTC, datetime
 from typing import cast
 
 logger = logging.getLogger(__name__)
@@ -162,11 +163,10 @@ class Emitter:
         ------
         ValueError
             For caller bugs: empty channel, empty tool_name, invalid decision,
-            invalid JSON in input/output.
+            invalid JSON in input/output, or a serialised frame larger than
+            ``MAX_FRAME_SIZE`` (1 MiB — the daemon's hard wire-protocol cap).
         RuntimeError
             When the emitter has been closed.
-        OverflowError
-            When the serialised frame exceeds ``MAX_FRAME_SIZE`` (1 MiB).
         """
         # --- validate caller inputs first (before acquiring lock) ---
         if not channel:
@@ -201,7 +201,7 @@ class Emitter:
 
         body = _marshal_frame(frame)
         if len(body) > MAX_FRAME_SIZE:
-            raise OverflowError(
+            raise ValueError(
                 f"emitter: frame too large: {len(body)} bytes (max {MAX_FRAME_SIZE})"
             )
 
@@ -252,13 +252,18 @@ class Emitter:
         """Return the live connection, dialing if needed. Returns None on failure."""
         if self._conn is not None:
             return self._conn
+        conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             conn.settimeout(_DIAL_TIMEOUT)
             conn.connect(self._socket_path)
-            self._conn = conn
-            return conn
         except OSError as exc:
+            # Release the FD eagerly — without this, the half-open socket
+            # would linger until garbage collection and we would leak FDs
+            # on every emit() against a missing daemon.
+            try:
+                conn.close()
+            except OSError:
+                pass
             self._log.debug(
                 "agent-receipts emitter dropped event",
                 extra={
@@ -268,6 +273,8 @@ class Emitter:
                 },
             )
             return None
+        self._conn = conn
+        return conn
 
     def _write_frame(self, conn: socket.socket, body: bytes) -> bool:
         """Write a length-prefixed frame. Returns True on success."""
@@ -333,11 +340,14 @@ def _build_tool(name: str, server: str) -> dict[str, str]:
 
 
 def _now_rfc3339() -> str:
-    """Return current UTC time as RFC3339 with microsecond precision."""
-    from datetime import UTC, datetime
+    """Return current UTC time as RFC3339Nano with microsecond precision.
 
+    The daemon parses ``ts_emit`` with Go's ``time.RFC3339Nano``, which accepts
+    0–9 fractional-second digits. Python's stdlib only resolves to microseconds
+    (6 digits); we pad with three trailing zeros so the wire format is visibly
+    RFC3339Nano even when no nanosecond detail is available.
+    """
     now = datetime.now(tz=UTC)
-    # Python datetime only goes to microseconds; format as RFC3339Nano-ish.
     return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond:06d}000Z"
 
 
