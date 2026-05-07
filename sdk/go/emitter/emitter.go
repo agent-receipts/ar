@@ -146,7 +146,7 @@ func New(opts ...Option) (*Emitter, error) {
 		cfg.socketPath = DefaultSocketPath()
 	}
 	if cfg.socketPath == "" {
-		return nil, fmt.Errorf("emitter: no default socket path on %s; set AGENTRECEIPTS_SOCKET or pass WithSocketPath", runtime.GOOS)
+		return nil, fmt.Errorf("emitter: no default socket path on %s; pass WithSocketPath", runtime.GOOS)
 	}
 	if cfg.sessionID == "" {
 		cfg.sessionID = uuid.NewString()
@@ -418,30 +418,33 @@ func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
 
 // DefaultSocketPath returns the per-OS default path for the daemon socket.
 // The OS rules match daemon.DefaultSocketPath; the emitter adds one layer:
-// AGENTRECEIPTS_SOCKET is consulted first so a single env var redirects
-// both daemon and emitter to a non-default socket. The daemon reads the
-// env var in main, not in its DefaultSocketPath, so the two functions are
-// not identical despite producing the same paths when the env var is unset.
+// AGENTRECEIPTS_SOCKET is consulted first on supported platforms so a
+// single env var redirects both daemon and emitter to a non-default socket.
+// The daemon reads the env var in main, not in its DefaultSocketPath, so
+// the two functions are not identical despite producing the same paths when
+// the env var is unset.
 //
-//   - AGENTRECEIPTS_SOCKET (any platform): overrides all OS rules.
-//   - macOS: $TMPDIR/agentreceipts/events.sock (TMPDIR defaults to /tmp).
-//   - Linux with $XDG_RUNTIME_DIR set: $XDG_RUNTIME_DIR/agentreceipts/
-//     events.sock — per-user, unprivileged.
-//   - Linux fallback: /run/agentreceipts/events.sock (system-install path).
-//   - Other platforms: empty string. New returns an error in that case
-//     so callers must pass WithSocketPath explicitly.
+//   - macOS: AGENTRECEIPTS_SOCKET if set, else $TMPDIR/agentreceipts/events.sock
+//     (TMPDIR defaults to /tmp).
+//   - Linux: AGENTRECEIPTS_SOCKET if set, else $XDG_RUNTIME_DIR/agentreceipts/
+//     events.sock when XDG_RUNTIME_DIR is set, else /run/agentreceipts/events.sock.
+//   - Other platforms: empty string. New returns an error in that case;
+//     callers must pass WithSocketPath explicitly.
 func DefaultSocketPath() string {
-	if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
-		return p
-	}
 	switch runtime.GOOS {
 	case "darwin":
+		if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
+			return p
+		}
 		base := os.Getenv("TMPDIR")
 		if base == "" {
 			base = "/tmp"
 		}
 		return filepath.Join(base, "agentreceipts", "events.sock")
 	case "linux":
+		if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
+			return p
+		}
 		if base := os.Getenv("XDG_RUNTIME_DIR"); base != "" {
 			return filepath.Join(base, "agentreceipts", "events.sock")
 		}
