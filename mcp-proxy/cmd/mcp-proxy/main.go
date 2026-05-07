@@ -109,7 +109,7 @@ func serve() {
 		httpAddr           = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
 		approvalWait       = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
 		strictPermissions  = flag.Bool("strict-permissions", false, "Fatal error if the private key file has permissions wider than 0600 (group/world-accessible)")
-		socketPath         = flag.String("socket", emitter.DefaultSocketPath(), "Unix-domain socket for the agent-receipts daemon (ADR-0010). Empty string disables the emitter. Overridden by AGENTRECEIPTS_SOCKET.")
+		socketPath         = flag.String("socket", emitter.DefaultSocketPath(), "Unix-domain socket for the agent-receipts daemon (ADR-0010). Defaults to AGENTRECEIPTS_SOCKET if set; explicit --socket wins. Empty string (--socket=\"\") disables the emitter.")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
@@ -169,10 +169,10 @@ func serve() {
 	// Wire the fire-and-forget daemon emitter (ADR-0010). The emitter is
 	// optional: when --socket is empty the proxy continues without forwarding
 	// events to the daemon (backwards-compatible default for installations
-	// that have not yet deployed the daemon). AGENTRECEIPTS_SOCKET takes
-	// precedence over --socket when both are set; emitter.DefaultSocketPath
-	// already applies that precedence rule, so overriding here keeps the two
-	// in sync.
+	// that have not yet deployed the daemon). AGENTRECEIPTS_SOCKET sets the
+	// default for --socket via emitter.DefaultSocketPath; an explicit
+	// --socket flag always wins, and --socket="" disables the emitter
+	// regardless of the env var.
 	var em *emitter.Emitter
 	if sp := *socketPath; sp != "" {
 		var initErr error
@@ -909,6 +909,9 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 // errStr carries the upstream error text (empty for successful calls).
 // decision must be "allowed", "denied", or "pending".
 func emitToContext(em *emitter.Emitter, serverName, toolName string, input, output json.RawMessage, errStr, decision string) {
+	if em == nil {
+		return
+	}
 	if err := em.Emit(context.Background(), emitter.Event{
 		Channel:  "mcp",
 		Tool:     emitter.Tool{Server: serverName, Name: toolName},

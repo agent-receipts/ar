@@ -283,14 +283,10 @@ func TestEmitToContext_FireAndForgetWhenNoDaemon(t *testing.T) {
 	}
 }
 
-// TestEmitToContext_NilEmitterIsNoOp guards the nil-check in serve(): when em
-// is nil (daemon socket empty or emitter init failed), emitToContext must not
-// be called — but if it were called with a nil *emitter.Emitter, it must not
-// panic. This test documents and validates that invariant.
-//
-// NOTE: emitToContext requires a non-nil *emitter.Emitter; callers in serve()
-// guard with `if em != nil`. This test uses a real (no-daemon) emitter instead
-// of a nil one so it validates the function signature without nil-deref risk.
+// TestEmitToContext_NilInputsAreValid verifies that nil input and output
+// arguments are accepted without panic. emitter.Emit treats nil JSON fields as
+// absent; the daemon skips hashing for missing payloads. The test uses a real
+// (no-daemon) emitter so the full Emit call path is exercised.
 func TestEmitToContext_NilInputsAreValid(t *testing.T) {
 	dir := shortSocketDirEmitter(t)
 	em, err := emitter.New(
@@ -306,6 +302,16 @@ func TestEmitToContext_NilInputsAreValid(t *testing.T) {
 	// nil input and output are valid: the emitter accepts them and the daemon
 	// treats them as absent. No panic, no error returned.
 	emitToContext(em, "srv", "tool-with-no-io", nil, nil, "", "allowed")
+}
+
+// TestEmitToContext_NilEmitterIsNoOp guards the nil-emitter path in serve():
+// when em is nil (daemon socket empty or emitter init failed), emitToContext
+// must silently return without panic. The nil guard in emitToContext makes the
+// `if em != nil` check in serve() redundant for safety purposes, but the
+// explicit guard at the call sites is kept for clarity.
+func TestEmitToContext_NilEmitterIsNoOp(t *testing.T) {
+	// Must not panic.
+	emitToContext(nil, "srv", "tool", nil, nil, "", "allowed")
 }
 
 // TestEmitToContext_SessionIDPropagatesToReceipts verifies the ADR-0010 OQ4
