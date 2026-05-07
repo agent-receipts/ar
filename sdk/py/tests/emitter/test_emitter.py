@@ -171,7 +171,9 @@ def daemon() -> Iterator[DaemonHandle]:
 
 _DAEMON_SKIP_REASON = (
     f"daemon binary not found at {_DAEMON_BIN}; "
-    "build with: cd daemon && go build ./cmd/agent-receipts-daemon"
+    "build with: cd daemon && go build"
+    " -o /tmp/agent-receipts-daemon ./cmd/agent-receipts-daemon"
+    " (or set AGENT_RECEIPTS_DAEMON to a custom path)"
 )
 requires_daemon = pytest.mark.skipif(not _DAEMON_AVAILABLE, reason=_DAEMON_SKIP_REASON)
 
