@@ -22,6 +22,7 @@ import platform
 import socket
 import struct
 import threading
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import cast
@@ -278,11 +279,11 @@ class Emitter:
 
     def _write_frame(self, conn: socket.socket, body: bytes) -> bool:
         """Write a length-prefixed frame. Returns True on success."""
+        deadline = time.monotonic() + _WRITE_TIMEOUT
         try:
-            conn.settimeout(_WRITE_TIMEOUT)
             header = struct.pack(">I", len(body))
-            _send_all(conn, header)
-            _send_all(conn, body)
+            _send_all(conn, header, deadline)
+            _send_all(conn, body, deadline)
             return True
         except OSError as exc:
             self._log.debug(
@@ -301,11 +302,15 @@ class Emitter:
 # ---------------------------------------------------------------------------
 
 
-def _send_all(conn: socket.socket, data: bytes) -> None:
-    """Send all bytes, handling partial writes."""
+def _send_all(conn: socket.socket, data: bytes, deadline: float) -> None:
+    """Send all bytes against a single absolute monotonic deadline."""
     view = memoryview(data)
     sent = 0
     while sent < len(data):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise OSError("write deadline exceeded")
+        conn.settimeout(remaining)
         n = conn.send(view[sent:])
         if n == 0:
             raise OSError("socket send returned 0 (connection closed)")
@@ -320,7 +325,10 @@ def _to_raw_json(value: bytes | str | None, field: str) -> bytes | None:
     if value is None:
         return None
     if isinstance(value, str):
-        raw = value.encode()
+        try:
+            raw = value.encode()
+        except UnicodeEncodeError as exc:
+            raise ValueError(f"emitter: {field} is not UTF-8 encoded: {exc}") from exc
     else:
         raw = bytes(value)
         # Reject non-UTF-8 bytes early: _encode_value does raw.decode() which

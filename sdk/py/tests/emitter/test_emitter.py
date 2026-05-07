@@ -70,7 +70,6 @@ class DaemonHandle:
         self.key_path = os.path.join(tmpdir, "signing.key")
         self.chain_id = "py-emitter-test-chain"
         self._proc: subprocess.Popen[bytes] | None = None
-        self._tmpdir = tmpdir
 
         if not Path(self.key_path).exists():
             _write_test_key(self.key_path)
