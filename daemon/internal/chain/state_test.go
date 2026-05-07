@@ -121,6 +121,46 @@ func TestRollbackReleasesLock(t *testing.T) {
 	}
 }
 
+// TestRollbackAfterCommitIsNoOp documents the property pipeline.Process relies
+// on: `defer alloc.Rollback()` is safe even when Commit ran first. Without
+// idempotency this would panic with "unlock of unlocked mutex" or advance the
+// chain twice.
+func TestRollbackAfterCommitIsNoOp(t *testing.T) {
+	s := New("c")
+	a := s.Allocate()
+	a.Commit("sha256:1")
+	a.Rollback() // must not panic, must not double-unlock
+
+	a2 := s.Allocate()
+	defer a2.Rollback()
+	if a2.Sequence != 2 {
+		t.Errorf("Rollback after Commit advanced or rewound the chain: seq = %d, want 2", a2.Sequence)
+	}
+}
+
+func TestCommitAfterRollbackIsNoOp(t *testing.T) {
+	s := New("c")
+	a := s.Allocate()
+	a.Rollback()
+	a.Commit("sha256:1") // must not panic, must not advance the chain
+
+	a2 := s.Allocate()
+	defer a2.Rollback()
+	if a2.Sequence != 1 {
+		t.Errorf("Commit after Rollback advanced the chain: seq = %d, want 1", a2.Sequence)
+	}
+	if a2.PrevHash != nil {
+		t.Errorf("Commit after Rollback set prev_hash: %v, want nil", a2.PrevHash)
+	}
+}
+
+func TestDoubleRollbackIsNoOp(t *testing.T) {
+	s := New("c")
+	a := s.Allocate()
+	a.Rollback()
+	a.Rollback() // must not panic with "unlock of unlocked mutex"
+}
+
 // intToString avoids strconv import in a tight loop just to keep the file
 // dependency-light. Used only for synthesizing unique commit hashes in tests.
 func intToString(n int64) string {
