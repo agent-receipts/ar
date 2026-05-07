@@ -210,10 +210,17 @@ func (p *Pipeline) buildAndSign(
 
 	// validateFrame already restricted f.Decision to the supported set, so the
 	// switch never falls through.
+	// A non-empty error field means the tool call ran but the upstream returned
+	// an error; even though the proxy permitted the call (decision="allowed"),
+	// the execution outcome is a failure.
 	var status receipt.OutcomeStatus
 	switch f.Decision {
 	case "allowed":
-		status = receipt.StatusSuccess
+		if f.Error != "" {
+			status = receipt.StatusFailure
+		} else {
+			status = receipt.StatusSuccess
+		}
 	case "denied":
 		status = receipt.StatusFailure
 	case "pending":
