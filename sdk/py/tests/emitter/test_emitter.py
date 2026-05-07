@@ -1,0 +1,504 @@
+"""Tests for the fire-and-forget emitter (ADR-0010).
+
+End-to-end tests start the agent-receipts-daemon as a subprocess.  The
+daemon binary is built from daemon/ and its path is resolved via the
+AGENT_RECEIPTS_DAEMON env var or a fixed /tmp path set up in conftest.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import sqlite3
+import struct
+import subprocess
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+from agent_receipts.emitter import Emitter, default_socket_path
+
+# ---------------------------------------------------------------------------
+# Helpers shared by daemon-backed tests
+# ---------------------------------------------------------------------------
+
+_DAEMON_BIN = os.environ.get(
+    "AGENT_RECEIPTS_DAEMON",
+    "/tmp/agent-receipts-daemon",
+)
+
+_DAEMON_AVAILABLE = Path(_DAEMON_BIN).is_file() and os.access(_DAEMON_BIN, os.X_OK)
+
+
+def _short_tmp() -> str:
+    """Return a temp dir short enough for AF_UNIX sun_path (104-byte limit on macOS)."""
+    base = "/tmp" if Path("/tmp").exists() else tempfile.gettempdir()
+    d = tempfile.mkdtemp(prefix="ar", dir=base)
+    return d
+
+
+def _write_test_key(path: str) -> None:
+    """Write a fresh Ed25519 private key in PKCS8 PEM format."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+    )
+
+    key = Ed25519PrivateKey.generate()
+    pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    Path(path).write_bytes(pem)
+    Path(path).chmod(0o600)
+
+
+class DaemonHandle:
+    """Manages a daemon subprocess for testing."""
+
+    def __init__(self, tmpdir: str) -> None:
+        self.socket_path = os.path.join(tmpdir, "events.sock")
+        self.db_path = os.path.join(tmpdir, "receipts.db")
+        self.key_path = os.path.join(tmpdir, "signing.key")
+        self.chain_id = "py-emitter-test-chain"
+        self._proc: subprocess.Popen[bytes] | None = None
+        self._tmpdir = tmpdir
+
+        if not Path(self.key_path).exists():
+            _write_test_key(self.key_path)
+
+    def start(self) -> None:
+        env = os.environ.copy()
+        env["AGENTRECEIPTS_SOCKET"] = self.socket_path
+        self._proc = subprocess.Popen(
+            [
+                _DAEMON_BIN,
+                "--socket",
+                self.socket_path,
+                "--db",
+                self.db_path,
+                "--key",
+                self.key_path,
+                "--chain-id",
+                self.chain_id,
+                "--issuer-id",
+                "did:agent-receipts-daemon:py-test",
+                "--verification-method",
+                "did:agent-receipts-daemon:py-test#k1",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # Wait for the socket to appear (up to 2s).
+        deadline = time.monotonic() + 2.0
+        while True:
+            if Path(self.socket_path).exists():
+                break
+            if time.monotonic() > deadline:
+                self.stop()
+                raise RuntimeError(
+                    f"daemon socket {self.socket_path!r} did not appear within 2s"
+                )
+            time.sleep(0.01)
+
+    def stop(self) -> None:
+        if self._proc is None:
+            return
+        self._proc.terminate()
+        try:
+            self._proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+            self._proc.wait()
+        self._proc = None
+
+    def wait_for_receipts(self, want: int, timeout: float = 5.0) -> list[dict]:  # type: ignore[type-arg]
+        """Poll the SQLite DB until at least ``want`` receipts appear."""
+        deadline = time.monotonic() + timeout
+        while True:
+            rows = self._query_receipts()
+            if len(rows) >= want:
+                return rows
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"timed out waiting for {want} receipts; got {len(rows)}"
+                )
+            time.sleep(0.02)
+
+    def _query_receipts(self) -> list[dict]:  # type: ignore[type-arg]
+        if not Path(self.db_path).exists():
+            return []
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT receipt_json FROM receipts"
+                " WHERE chain_id = ? ORDER BY sequence",
+                (self.chain_id,),
+            )
+            rows = [json.loads(r["receipt_json"]) for r in cur.fetchall()]
+            conn.close()
+            return rows
+        except sqlite3.OperationalError:
+            return []
+
+
+@pytest.fixture()
+def daemon(tmp_path_factory: pytest.TempPathFactory) -> DaemonHandle:  # type: ignore[return]
+    """Start a fresh daemon for one test; stop it on teardown."""
+    tmpdir = _short_tmp()
+    d = DaemonHandle(tmpdir)
+    d.start()
+    yield d  # type: ignore[misc]
+    d.stop()
+    import shutil
+
+    shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+_DAEMON_SKIP_REASON = (
+    f"daemon binary not found at {_DAEMON_BIN}; "
+    "build with: cd daemon && go build ./cmd/agent-receipts-daemon"
+)
+requires_daemon = pytest.mark.skipif(not _DAEMON_AVAILABLE, reason=_DAEMON_SKIP_REASON)
+
+
+def _session_id_from_receipt(r: dict) -> str:  # type: ignore[type-arg]
+    """Read session_id from a receipt dict, tolerating camelCase or snake_case key."""
+    return r["issuer"].get("sessionId") or r["issuer"].get("session_id", "")
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — no daemon required
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultSocketPath:
+    def test_env_var_overrides(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AGENTRECEIPTS_SOCKET", "/custom/path.sock")
+        assert default_socket_path() == "/custom/path.sock"
+
+    def test_env_var_cleared(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("AGENTRECEIPTS_SOCKET", raising=False)
+        monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+        path = default_socket_path()
+        # On macOS or Linux we get a non-empty path; on other platforms empty.
+        import platform
+
+        system = platform.system()
+        if system in ("Darwin", "Linux"):
+            assert path.endswith("agentreceipts/events.sock")
+        # Other platforms: may be empty — just don't crash.
+
+
+class TestEmitterConstruction:
+    def test_generates_session_id(self) -> None:
+        e = Emitter(socket_path="/tmp/nonexistent.sock")
+        assert e.session_id
+        assert len(e.session_id) == 36  # UUID v4 canonical form
+
+    def test_accepts_host_session_id(self) -> None:
+        sid = "host-session-abc123"
+        e = Emitter(socket_path="/tmp/nonexistent.sock", session_id=sid)
+        assert e.session_id == sid
+
+    def test_session_id_stable_across_instances(self) -> None:
+        e1 = Emitter(socket_path="/tmp/nonexistent.sock")
+        e2 = Emitter(socket_path="/tmp/nonexistent.sock")
+        assert e1.session_id != e2.session_id  # each gets a fresh UUID
+
+    def test_raises_on_unsupported_platform_without_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("AGENTRECEIPTS_SOCKET", raising=False)
+        monkeypatch.setattr("platform.system", lambda: "Windows")
+        with pytest.raises(ValueError, match="no default socket path"):
+            Emitter()
+
+    def test_context_manager(self) -> None:
+        with Emitter(socket_path="/tmp/nonexistent.sock") as e:
+            assert e.session_id
+
+    def test_close_idempotent(self) -> None:
+        e = Emitter(socket_path="/tmp/nonexistent.sock")
+        e.close()
+        e.close()  # should not raise
+
+
+class TestEmitterValidation:
+    """Validation errors are raised before any dial attempt."""
+
+    def setup_method(self) -> None:
+        self.e = Emitter(socket_path="/tmp/nonexistent-validation.sock")
+
+    def teardown_method(self) -> None:
+        self.e.close()
+
+    def test_missing_channel(self) -> None:
+        with pytest.raises(ValueError, match="missing channel"):
+            self.e.emit(channel="", tool_name="noop", decision="allowed")
+
+    def test_missing_tool_name(self) -> None:
+        with pytest.raises(ValueError, match="missing tool_name"):
+            self.e.emit(channel="sdk", tool_name="", decision="allowed")
+
+    def test_empty_decision(self) -> None:
+        with pytest.raises(ValueError, match="invalid decision"):
+            self.e.emit(channel="sdk", tool_name="noop", decision="")
+
+    def test_unknown_decision(self) -> None:
+        with pytest.raises(ValueError, match="invalid decision"):
+            self.e.emit(channel="sdk", tool_name="noop", decision="maybe")
+
+    def test_invalid_input_json(self) -> None:
+        with pytest.raises(ValueError, match="input is not valid JSON"):
+            self.e.emit(
+                channel="sdk",
+                tool_name="noop",
+                decision="allowed",
+                input=b"{bad}",
+            )
+
+    def test_invalid_output_json(self) -> None:
+        with pytest.raises(ValueError, match="output is not valid JSON"):
+            self.e.emit(
+                channel="sdk",
+                tool_name="noop",
+                decision="allowed",
+                output="[unclosed",
+            )
+
+    def test_error_after_close(self) -> None:
+        self.e.close()
+        with pytest.raises(RuntimeError, match="closed"):
+            self.e.emit(channel="sdk", tool_name="noop", decision="allowed")
+
+    def test_oversized_frame(self) -> None:
+        big = json.dumps({"x": "a" * (1 << 20)})
+        with pytest.raises(OverflowError, match="frame too large"):
+            self.e.emit(
+                channel="sdk",
+                tool_name="noop",
+                decision="allowed",
+                input=big,
+            )
+
+
+class TestFireAndForgetWhenDaemonDown:
+    """Emit must return quickly and not raise when the daemon is absent."""
+
+    def test_returns_none_quickly(self) -> None:
+        e = Emitter(socket_path="/tmp/no-such-daemon-py-test.sock")
+        start = time.monotonic()
+        result = e.emit(channel="sdk", tool_name="noop", decision="allowed")
+        elapsed = time.monotonic() - start
+        assert result is None
+        assert elapsed < 0.050, f"emit blocked for {elapsed:.3f}s, want <50ms"
+        e.close()
+
+    def test_multiple_emits_all_return_none(self) -> None:
+        e = Emitter(socket_path="/tmp/no-such-daemon-py-test.sock")
+        for _ in range(5):
+            result = e.emit(channel="sdk", tool_name="noop", decision="allowed")
+            assert result is None
+        e.close()
+
+
+class TestRawJSONPassthrough:
+    """The emitter must forward input/output bytes verbatim (no re-serialisation)."""
+
+    def test_frame_contains_raw_input(self) -> None:
+        """Round-trip a frame through a mini echo server and verify input verbatim."""
+        frames: list[bytes] = []
+        ready = threading.Event()
+        sock_path = f"/tmp/ar-raw-test-{os.getpid()}.sock"
+
+        def _server() -> None:
+            srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            srv.bind(sock_path)
+            srv.listen(1)
+            ready.set()
+            conn, _ = srv.accept()
+            hdr = conn.recv(4)
+            if len(hdr) == 4:
+                length = struct.unpack(">I", hdr)[0]
+                body = b""
+                while len(body) < length:
+                    chunk = conn.recv(length - len(body))
+                    if not chunk:
+                        break
+                    body += chunk
+                frames.append(body)
+            conn.close()
+            srv.close()
+
+        t = threading.Thread(target=_server, daemon=True)
+        t.start()
+        ready.wait(timeout=2)
+
+        try:
+            e = Emitter(socket_path=sock_path)
+            # Whitespace and key-order variation — must travel verbatim.
+            raw_input = b'{ "b":  2 , "a" : 1 }'
+            e.emit(
+                channel="sdk",
+                tool_name="hash-fixture",
+                decision="allowed",
+                input=raw_input,
+            )
+            e.close()
+            t.join(timeout=2)
+
+            assert frames, "no frame received by echo server"
+            frame = json.loads(frames[0])
+            # The input field in the frame must be valid JSON with values b=2, a=1.
+            assert frame["input"] == {"b": 2, "a": 1}
+            # And the raw bytes must be present verbatim (not re-encoded).
+            raw_frame = frames[0]
+            assert b'{ "b":  2 , "a" : 1 }' in raw_frame
+        finally:
+            try:
+                os.unlink(sock_path)
+            except OSError:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# End-to-end tests — require the daemon binary
+# ---------------------------------------------------------------------------
+
+
+@requires_daemon
+def test_emit_frame_round_trip(daemon: DaemonHandle) -> None:
+    """Three events materialise as three signed receipts in the daemon's chain."""
+    e = Emitter(socket_path=daemon.socket_path)
+
+    events = [
+        {
+            "channel": "sdk",
+            "tool_name": "alpha",
+            "tool_server": "fixture",
+            "decision": "allowed",
+        },
+        {
+            "channel": "sdk",
+            "tool_name": "beta",
+            "tool_server": "fixture",
+            "decision": "denied",
+        },
+        {"channel": "sdk", "tool_name": "gamma", "decision": "pending"},
+    ]
+    for ev in events:
+        e.emit(**ev)  # type: ignore[arg-type]
+    e.close()
+
+    receipts = daemon.wait_for_receipts(3)
+    assert len(receipts) == 3
+
+    want_types = ["sdk.fixture.alpha", "sdk.fixture.beta", "sdk.gamma"]
+    want_status = ["success", "failure", "pending"]
+    for i, r in enumerate(receipts):
+        subj = r["credentialSubject"]
+        assert subj["chain"]["sequence"] == i + 1
+        assert subj["action"]["type"] == want_types[i], f"receipt {i}: wrong type"
+        assert subj["action"]["tool_name"] == events[i]["tool_name"]
+        assert subj["outcome"]["status"] == want_status[i]
+
+
+@requires_daemon
+def test_emit_session_id_stable(daemon: DaemonHandle) -> None:
+    """session_id is generated once and reused across all emits (ADR-0010 OQ4)."""
+    e = Emitter(socket_path=daemon.socket_path)
+    want_session = e.session_id
+    assert want_session  # non-empty
+
+    for _ in range(3):
+        e.emit(channel="sdk", tool_name="noop", decision="allowed")
+    e.close()
+
+    receipts = daemon.wait_for_receipts(3)
+    for i, r in enumerate(receipts):
+        got = _session_id_from_receipt(r)
+        assert got == want_session, (
+            f"receipt {i}: sessionId={got!r}, want {want_session!r}"
+        )
+
+
+@requires_daemon
+def test_emit_with_host_session_id(daemon: DaemonHandle) -> None:
+    """WithSessionID forwards a host-supplied id to the daemon."""
+    host_session = "host-supplied-session-py-9f3a"
+    e = Emitter(socket_path=daemon.socket_path, session_id=host_session)
+    assert e.session_id == host_session
+
+    e.emit(channel="sdk", tool_name="noop", decision="allowed")
+    e.close()
+
+    receipts = daemon.wait_for_receipts(1)
+    got = _session_id_from_receipt(receipts[0])
+    assert got == host_session
+
+
+@requires_daemon
+def test_emit_reconnect_after_daemon_restart(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The emitter re-dials after the daemon restarts, session_id stays stable."""
+    tmpdir = _short_tmp()
+    import shutil
+
+    try:
+        d1 = DaemonHandle(tmpdir)
+        d1.start()
+
+        e = Emitter(socket_path=d1.socket_path)
+        want_session = e.session_id
+
+        # Round 1: two emits to the first daemon.
+        for _ in range(2):
+            e.emit(channel="sdk", tool_name="before-restart", decision="allowed")
+        d1.wait_for_receipts(2)
+
+        # Stop daemon 1.
+        d1.stop()
+
+        # Start daemon 2 reusing the same dir (same socket path + DB).
+        d2 = DaemonHandle(tmpdir)
+        d2.start()
+
+        # Loop until reconnect succeeds.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            e.emit(channel="sdk", tool_name="after-restart", decision="allowed")
+            rows = d2._query_receipts()
+            if len(rows) >= 3:
+                # Verify session_id is still stable on post-restart receipts.
+                for r in rows[2:]:
+                    got = _session_id_from_receipt(r)
+                    assert got == want_session
+                    subj = r["credentialSubject"]
+                    assert subj["action"]["tool_name"] == "after-restart"
+                e.close()
+                d2.stop()
+                return
+            time.sleep(0.05)
+
+        e.close()
+        d2.stop()
+        pytest.fail("emitter did not reconnect to the restarted daemon within 5s")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@requires_daemon
+def test_emit_returns_error_after_close(daemon: DaemonHandle) -> None:
+    """emit() raises RuntimeError after close(); close() is idempotent."""
+    e = Emitter(socket_path=daemon.socket_path)
+    e.close()
+    e.close()  # idempotent
+
+    with pytest.raises(RuntimeError, match="closed"):
+        e.emit(channel="sdk", tool_name="noop", decision="allowed")
