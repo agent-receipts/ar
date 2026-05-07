@@ -291,11 +291,13 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 
 	// Hold e.mu across the write so concurrent Emits cannot interleave
 	// length-prefix + body bytes on the same conn. The write deadline
-	// caps how long the lock is held in the pathological case (frozen
-	// daemon with a full kernel send buffer).
+	// caps how long the write itself blocks in the pathological case
+	// (frozen daemon with a full kernel send buffer). logDrop and
+	// conn.Close run outside the lock to avoid blocking sibling Emits
+	// on I/O while the mutex is held.
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if e.closed {
+		e.mu.Unlock()
 		return errors.New("emitter: closed")
 	}
 	conn := e.conn
@@ -305,20 +307,26 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		// would double the worst-case Emit latency on every outage
 		// (ADR-0010 prefers next-Emit re-dial); drop and let the next
 		// Emit re-establish.
+		e.mu.Unlock()
 		e.logDrop(ctx, "write", errors.New("connection reset by sibling Emit"))
 		return nil
 	}
 	if err := e.writeFrame(ctx, conn, body); err != nil {
-		e.logDrop(ctx, "write", err)
 		// A failed write almost always means the daemon went away. Drop
 		// the conn so the next Emit re-dials transparently. Per ADR-0010
 		// the redial happens on the FOLLOWING Emit, not as an inline
 		// retry — an inline retry would double the worst-case Emit
 		// latency on every actual outage.
-		_ = conn.Close()
+		// Nil conn before unlocking so sibling Emits see it gone; then
+		// call logDrop and conn.Close outside the lock (both can block
+		// on I/O — holding e.mu across them would stall sibling Emits).
 		e.conn = nil
+		e.mu.Unlock()
+		e.logDrop(ctx, "write", err)
+		_ = conn.Close()
 		return nil
 	}
+	e.mu.Unlock()
 	return nil
 }
 
@@ -387,13 +395,13 @@ func (e *Emitter) writeFrame(ctx context.Context, conn net.Conn, body []byte) er
 func writeAll(w io.Writer, buf []byte) error {
 	for len(buf) > 0 {
 		n, err := w.Write(buf)
+		buf = buf[n:]
 		if err != nil {
 			return err
 		}
 		if n == 0 {
 			return io.ErrShortWrite
 		}
-		buf = buf[n:]
 	}
 	return nil
 }
