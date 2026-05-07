@@ -542,8 +542,8 @@ describe("Emitter — socket-error robustness", () => {
 	// permanent error listener the host process would crash via Node's
 	// unhandled-'error' rule. These tests pin that contract.
 	function getConn(emitter: Emitter): import("node:net").Socket | null {
-		return (emitter as unknown as { conn: import("node:net").Socket | null })
-			.conn;
+		// @ts-expect-error accessing private conn for test assertions
+		return emitter.conn;
 	}
 
 	it("surviving an 'error' event on a live conn does not crash the process", async () => {

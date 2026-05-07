@@ -484,11 +484,15 @@ export class Emitter {
 	}
 
 	private logDrop(stage: string, err: Error): void {
-		this.debugLog("agent-receipts emitter dropped event", {
-			stage,
-			socket: this.socketPath,
-			err: err.message,
-		});
+		try {
+			this.debugLog("agent-receipts emitter dropped event", {
+				stage,
+				socket: this.socketPath,
+				err: err.message,
+			});
+		} catch {
+			// A throwing debugLog must not take down the host process.
+		}
 	}
 }
 
