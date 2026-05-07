@@ -215,12 +215,12 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	// the caller than to silently drop on the daemon side.
 	if len(ev.Input) > 0 {
 		if err := json.Unmarshal(ev.Input, new(interface{})); err != nil {
-			return fmt.Errorf("emitter: Input is not valid JSON: %w", err)
+			return fmt.Errorf("emitter: Input is not valid or representable JSON: %w", err)
 		}
 	}
 	if len(ev.Output) > 0 {
 		if err := json.Unmarshal(ev.Output, new(interface{})); err != nil {
-			return fmt.Errorf("emitter: Output is not valid JSON: %w", err)
+			return fmt.Errorf("emitter: Output is not valid or representable JSON: %w", err)
 		}
 	}
 
