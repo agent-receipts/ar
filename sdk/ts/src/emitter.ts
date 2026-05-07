@@ -52,13 +52,17 @@ export interface EmitEvent {
 	channel: string;
 	tool: EmitTool;
 	/**
-	 * Raw JSON string for the tool input. Forwarded verbatim — NOT
-	 * re-serialised. Must be valid JSON if provided.
+	 * Raw JSON string for the tool input. Forwarded verbatim — the exact
+	 * bytes are embedded in the frame without re-parsing or reformatting,
+	 * so the daemon's RFC 8785 canonicalisation sees the same bytes the
+	 * caller produced. Must be valid JSON if provided.
 	 */
 	input?: string;
 	/**
-	 * Raw JSON string for the tool output. Forwarded verbatim — NOT
-	 * re-serialised. Must be valid JSON if provided.
+	 * Raw JSON string for the tool output. Forwarded verbatim — the exact
+	 * bytes are embedded in the frame without re-parsing or reformatting,
+	 * so the daemon's RFC 8785 canonicalisation sees the same bytes the
+	 * caller produced. Must be valid JSON if provided.
 	 */
 	output?: string;
 	/** Human-readable error message when the tool call failed. */
@@ -88,7 +92,13 @@ export interface EmitterOptions {
 	debugLog?: (message: string, attrs: Record<string, string>) => void;
 }
 
-/** Wire frame sent to the daemon (field names must match exactly). */
+/**
+ * Wire frame sent to the daemon (field names must match exactly).
+ *
+ * input/output are sentinel placeholder strings during JSON.stringify; the
+ * encoded sentinels are then replaced with the caller's raw JSON bytes so
+ * the daemon hashes the verbatim input/output the caller produced.
+ */
 interface WireFrame {
 	v: string;
 	ts_emit: string;
@@ -98,11 +108,26 @@ interface WireFrame {
 		server?: string;
 		name: string;
 	};
-	input?: unknown;
-	output?: unknown;
+	input?: string;
+	output?: string;
 	error?: string;
 	decision: string;
 }
+
+/**
+ * Sentinel placeholders for verbatim input/output pass-through. These strings
+ * are placed into the frame in the input/output slots, then JSON.stringify
+ * encodes them as JSON string literals (with surrounding quotes). After
+ * stringification we splice the encoded sentinel out and splice the caller's
+ * raw JSON bytes in, so the daemon's RFC 8785 canonicalisation sees the
+ * exact bytes the caller produced (no whitespace normalisation, no key
+ * reordering, no number reformatting).
+ *
+ * Sentinels include random hex so they cannot collide with caller content
+ * even if the caller deliberately tries to forge them.
+ */
+const RAW_INPUT_SENTINEL = `__AR_RAW_INPUT_${randomUUID()}__`;
+const RAW_OUTPUT_SENTINEL = `__AR_RAW_OUTPUT_${randomUUID()}__`;
 
 /**
  * Returns the per-OS default path for the daemon socket.
@@ -177,9 +202,8 @@ export class Emitter {
 			);
 		}
 		this.socketPath = socketPath;
-		this.sessionId = options.sessionId?.trim()
-			? options.sessionId
-			: randomUUID();
+		const trimmedSessionId = options.sessionId?.trim();
+		this.sessionId = trimmedSessionId ? trimmedSessionId : randomUUID();
 		this.debugLog = options.debugLog ?? (() => {});
 	}
 
@@ -213,6 +237,10 @@ export class Emitter {
 			return new Error("emitter: output is not valid JSON");
 		}
 
+		// Build the frame with sentinel placeholder strings for input/output.
+		// JSON.stringify will encode these as JSON string literals; we then
+		// splice the raw caller-supplied JSON bytes in so the daemon hashes
+		// the exact bytes the caller produced (verbatim pass-through).
 		const wireFrame: WireFrame = {
 			v: SUPPORTED_FRAME_VERSION,
 			ts_emit: rfc3339Nano(),
@@ -222,13 +250,28 @@ export class Emitter {
 				...(ev.tool.server ? { server: ev.tool.server } : {}),
 				name: ev.tool.name,
 			},
-			...(ev.input !== undefined ? { input: parseJsonRaw(ev.input) } : {}),
-			...(ev.output !== undefined ? { output: parseJsonRaw(ev.output) } : {}),
+			...(ev.input !== undefined ? { input: RAW_INPUT_SENTINEL } : {}),
+			...(ev.output !== undefined ? { output: RAW_OUTPUT_SENTINEL } : {}),
 			...(ev.error ? { error: ev.error } : {}),
 			decision: ev.decision,
 		};
 
-		const body = Buffer.from(JSON.stringify(wireFrame), "utf8");
+		let serialised = JSON.stringify(wireFrame);
+		if (ev.input !== undefined) {
+			// Use a function replacement so '$' sequences in ev.input are not
+			// interpreted as String.prototype.replace special patterns.
+			serialised = serialised.replace(
+				JSON.stringify(RAW_INPUT_SENTINEL),
+				() => ev.input as string,
+			);
+		}
+		if (ev.output !== undefined) {
+			serialised = serialised.replace(
+				JSON.stringify(RAW_OUTPUT_SENTINEL),
+				() => ev.output as string,
+			);
+		}
+		const body = Buffer.from(serialised, "utf8");
 		if (body.length > MAX_FRAME_SIZE) {
 			return new Error(
 				`emitter: frame too large: ${body.length} bytes (max ${MAX_FRAME_SIZE})`,
@@ -441,13 +484,4 @@ function isValidJson(s: string): boolean {
 	} catch {
 		return false;
 	}
-}
-
-/**
- * Parse a raw JSON string into a value that will be serialised verbatim by
- * JSON.stringify. Using JSON.parse ensures the value round-trips correctly
- * without double-encoding.
- */
-function parseJsonRaw(s: string): unknown {
-	return JSON.parse(s);
 }

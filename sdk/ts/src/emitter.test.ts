@@ -128,8 +128,8 @@ describe("Emitter — validation errors (caller bugs)", () => {
 		const e = new Emitter({ socketPath: tempSockPath("noop") });
 		const err = await e.emit({
 			...GOOD_EVENT,
-			// biome-ignore lint/suspicious/noExplicitAny: testing invalid value
-			decision: "maybe" as any,
+			// @ts-expect-error testing invalid decision value
+			decision: "maybe",
 		});
 		expect(err).toBeInstanceOf(Error);
 		expect(err?.message).toMatch(/invalid decision/);
@@ -249,6 +249,36 @@ describe("Emitter — frame round-trip", () => {
 		const f = JSON.parse(frames[0] ?? "{}");
 		expect(f.input).toEqual({ key: "value" });
 		expect(f.output).toEqual([1, 2, 3]);
+	});
+
+	it("input and output are byte-exact verbatim (whitespace preserved)", async () => {
+		// The daemon canonicalises (RFC 8785) and hashes the raw frame bytes,
+		// so any whitespace, key-order, or number-formatting changes here would
+		// silently change the receipt hash. Pin the verbatim guarantee.
+		const rawInput = '{ "b": 2,\n  "a": 1 }';
+		const rawOutput = "[\t1.0,\n2,\n3 ]";
+		await emitter.emit({
+			...GOOD_EVENT,
+			input: rawInput,
+			output: rawOutput,
+		});
+		await waitFor(async () => (await server.frames()).length > 0);
+
+		const raw = (await server.frames())[0] ?? "";
+		expect(raw).toContain(`"input":${rawInput}`);
+		expect(raw).toContain(`"output":${rawOutput}`);
+	});
+
+	it("preserves '$' sequences in input/output (no String.replace pattern interpretation)", async () => {
+		// String.prototype.replace treats '$&', '$1', etc. as backreferences when
+		// the replacement is a string. We use the function form to avoid that —
+		// pin it with a payload that would be mangled if we ever regressed.
+		const rawInput = '{"price":"$100","ref":"$1$&$\'"}';
+		await emitter.emit({ ...GOOD_EVENT, input: rawInput });
+		await waitFor(async () => (await server.frames()).length > 0);
+
+		const raw = (await server.frames())[0] ?? "";
+		expect(raw).toContain(`"input":${rawInput}`);
 	});
 
 	it("omits input and output when not provided", async () => {
@@ -450,12 +480,26 @@ describe("defaultSocketPath", () => {
 });
 
 describe("Emitter — constructor", () => {
-	it("throws when no socket path is available on unsupported platform", () => {
-		// We can't change the real platform, but we can test with an explicit empty path.
-		// The only way defaultSocketPath returns "" is on non-darwin/linux, which we mock
-		// by passing socketPath: "" through options — which replicates the same code path.
-		// Actually, socketPath: "" is treated as undefined (falls through to defaultSocketPath).
-		// Instead just verify that socketPath: "/" does NOT throw.
+	it("throws when socketPath is an empty string and no env override is set", () => {
+		// An explicit empty socketPath replicates the same failure code path
+		// that occurs on platforms where defaultSocketPath() returns "".
+		// (??-fallback only triggers on null/undefined, so "" reaches the
+		// !socketPath guard.) The constructor must reject this with an
+		// actionable error rather than silently producing an unusable emitter.
+		const original = process.env.AGENTRECEIPTS_SOCKET;
+		delete process.env.AGENTRECEIPTS_SOCKET;
+		try {
+			expect(() => new Emitter({ socketPath: "" })).toThrow(
+				/no default socket path/,
+			);
+		} finally {
+			if (original !== undefined) {
+				process.env.AGENTRECEIPTS_SOCKET = original;
+			}
+		}
+	});
+
+	it("does not throw when given a valid explicit socket path", () => {
 		expect(() => new Emitter({ socketPath: "/tmp/test.sock" })).not.toThrow();
 	});
 });
