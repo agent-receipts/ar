@@ -446,6 +446,58 @@ func TestEmit_ReturnsErrorAfterClose(t *testing.T) {
 	}
 }
 
+// TestEmit_ValidatesEvent checks that Emit returns an error immediately for
+// events the daemon would hard-reject, before any dial attempt. These are
+// caller bugs, not transient failures, so they must not be silently dropped.
+func TestEmit_ValidatesEvent(t *testing.T) {
+	em, err := emitter.New(
+		emitter.WithSocketPath("/nonexistent/events.sock"),
+		emitter.WithLogger(silentLogger),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	ctx := context.Background()
+	cases := []struct {
+		name string
+		ev   emitter.Event
+	}{
+		{
+			"missing channel",
+			emitter.Event{Tool: emitter.Tool{Name: "noop"}, Decision: "allowed"},
+		},
+		{
+			"missing tool.name",
+			emitter.Event{Channel: "sdk", Decision: "allowed"},
+		},
+		{
+			"empty decision",
+			emitter.Event{Channel: "sdk", Tool: emitter.Tool{Name: "noop"}},
+		},
+		{
+			"unknown decision",
+			emitter.Event{Channel: "sdk", Tool: emitter.Tool{Name: "noop"}, Decision: "maybe"},
+		},
+		{
+			"invalid Input JSON",
+			emitter.Event{Channel: "sdk", Tool: emitter.Tool{Name: "noop"}, Decision: "allowed", Input: json.RawMessage(`{bad}`)},
+		},
+		{
+			"invalid Output JSON",
+			emitter.Event{Channel: "sdk", Tool: emitter.Tool{Name: "noop"}, Decision: "allowed", Output: json.RawMessage(`[unclosed`)},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := em.Emit(ctx, tc.ev); err == nil {
+				t.Error("Emit returned nil, want error")
+			}
+		})
+	}
+}
+
 // TestEmit_WithSessionIDOverride pins the OQ4 host-id forwarding path:
 // when WithSessionID supplies a non-empty value, every receipt carries
 // that exact id rather than a freshly generated UUID. Mirrors the

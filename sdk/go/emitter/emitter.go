@@ -186,11 +186,29 @@ type frameTool struct {
 // Emit sends one event to the daemon. Returns nil even when the daemon
 // is unreachable: dial and write failures are logged at debug level and
 // the conn is reset for re-dial on the next Emit. Returns an error only
-// for caller bugs (Emitter closed, oversized frame, malformed input
-// causing JSON marshal to fail) — situations a retry could not fix.
+// for caller bugs (Emitter closed, oversized frame, invalid event fields,
+// malformed Input/Output JSON) — situations a retry could not fix.
 func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if ev.Channel == "" {
+		return errors.New("emitter: missing channel")
+	}
+	if ev.Tool.Name == "" {
+		return errors.New("emitter: missing tool.name")
+	}
+	switch ev.Decision {
+	case "allowed", "denied", "pending":
+		// ok
+	default:
+		return fmt.Errorf("emitter: invalid decision %q (want allowed|denied|pending)", ev.Decision)
+	}
+	if len(ev.Input) > 0 && !json.Valid(ev.Input) {
+		return errors.New("emitter: Input is not valid JSON")
+	}
+	if len(ev.Output) > 0 && !json.Valid(ev.Output) {
+		return errors.New("emitter: Output is not valid JSON")
 	}
 
 	body, err := json.Marshal(frame{
@@ -292,6 +310,9 @@ func writeAll(w io.Writer, buf []byte) error {
 		if err != nil {
 			return err
 		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
 		buf = buf[n:]
 	}
 	return nil
@@ -305,11 +326,14 @@ func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
 	)
 }
 
-// DefaultSocketPath returns the per-OS default daemon socket path. Mirrors
-// daemon.DefaultSocketPath exactly so emitter and daemon agree without
-// either importing the other:
+// DefaultSocketPath returns the per-OS default path for the daemon socket.
+// The OS rules match daemon.DefaultSocketPath; the emitter adds one layer:
+// AGENTRECEIPTS_SOCKET is consulted first so a single env var redirects
+// both daemon and emitter to a non-default socket. The daemon reads the
+// env var in main, not in its DefaultSocketPath, so the two functions are
+// not identical despite producing the same paths when the env var is unset.
 //
-//   - AGENTRECEIPTS_SOCKET wins when set (any platform).
+//   - AGENTRECEIPTS_SOCKET (any platform): overrides all OS rules.
 //   - macOS: $TMPDIR/agentreceipts/events.sock (TMPDIR defaults to /tmp).
 //   - Linux with $XDG_RUNTIME_DIR set: $XDG_RUNTIME_DIR/agentreceipts/
 //     events.sock — per-user, unprivileged.
