@@ -260,6 +260,9 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	if needDial {
 		dialed, err := e.dial(ctx)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 			e.logDrop(ctx, "dial", err)
 			return nil
 		}
@@ -362,16 +365,19 @@ func (e *Emitter) writeFrame(ctx context.Context, conn net.Conn, body []byte) er
 		deadline = d
 	}
 	if err := conn.SetWriteDeadline(deadline); err != nil {
-		return err
+		return fmt.Errorf("set write deadline: %w", err)
 	}
 	defer func() { _ = conn.SetWriteDeadline(time.Time{}) }()
 
 	var hdr [4]byte
 	binary.BigEndian.PutUint32(hdr[:], uint32(len(body)))
 	if err := writeAll(conn, hdr[:]); err != nil {
-		return err
+		return fmt.Errorf("write header: %w", err)
 	}
-	return writeAll(conn, body)
+	if err := writeAll(conn, body); err != nil {
+		return fmt.Errorf("write body: %w", err)
+	}
+	return nil
 }
 
 // writeAll handles the io.Writer short-write contract. Local AF_UNIX
