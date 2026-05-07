@@ -103,7 +103,14 @@ function startEchoServer(sockPath: string): {
 				for (const s of openSockets) {
 					s.destroy();
 				}
-				server.close((err) => (err ? reject(err) : resolve()));
+				server.close((err) => {
+					try {
+						unlinkSync(sockPath);
+					} catch {
+						// Already gone — fine.
+					}
+					err ? reject(err) : resolve();
+				});
 			}),
 		ready,
 	};
@@ -443,8 +450,7 @@ describe("Emitter — reconnect after daemon restart", () => {
 
 		// Restart on the same socket path, then emit again — should re-dial.
 		const server2 = startEchoServer(sockPath);
-		// Give the OS a moment to bind.
-		await new Promise((r) => setTimeout(r, 20));
+		await server2.ready;
 
 		const errAfterRestart = await emitter.emit(GOOD_EVENT);
 		expect(errAfterRestart).toBeNull();

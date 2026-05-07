@@ -319,14 +319,16 @@ export class Emitter {
 	 * doWrite dials if needed, then writes the framed body. Returns null on
 	 * success, logs and returns null on transient errors (fire-and-forget).
 	 *
-	 * If the write fails on a previously-established connection (e.g. the
-	 * daemon restarted), the dead connection is discarded and one transparent
-	 * re-dial + re-write is attempted before giving up. The transparent
-	 * retry exists because Node buffers writes optimistically: a write that
-	 * "succeeded" earlier may turn out to have been on a stale socket the
-	 * kernel only reports as dead on the next attempt, so the FIRST emit
-	 * after a daemon restart would otherwise be lost without anyone seeing
-	 * a transient failure.
+	 * Write timeouts are treated as drops without retry: a timeout does not
+	 * mean the frame was not received — the data may already be in-flight or
+	 * fully delivered, so retrying risks a duplicate receipt.
+	 *
+	 * Connection errors (EPIPE, ECONNRESET, etc.) on a previously-established
+	 * connection trigger one transparent re-dial + re-write. Node buffers
+	 * writes optimistically: a write that "succeeded" earlier may turn out to
+	 * have been on a stale socket the kernel only reports as dead on the next
+	 * attempt, so the FIRST emit after a daemon restart would otherwise be
+	 * lost without anyone seeing a transient failure.
 	 */
 	private async doWrite(body: Buffer): Promise<Error | null> {
 		const dialErr = await this.dialIfNeeded();
@@ -346,8 +348,16 @@ export class Emitter {
 			return null;
 		}
 
-		// First write failed: the conn is dead. Discard it, then attempt
-		// one transparent re-dial + re-write.
+		// A write timeout means the frame may already have been received by
+		// the daemon. Retrying risks a duplicate receipt — treat as a drop.
+		if (writeErr.message.startsWith("write timeout")) {
+			this.logDrop("write", writeErr);
+			this.discardConn(conn);
+			return null;
+		}
+
+		// Connection error: the daemon definitively did not receive the frame.
+		// Discard and attempt one transparent re-dial + re-write.
 		this.discardConn(conn);
 
 		const redialErr = await this.dialIfNeeded();
