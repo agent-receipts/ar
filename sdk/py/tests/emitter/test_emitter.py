@@ -75,6 +75,12 @@ class DaemonHandle:
             _write_test_key(self.key_path)
 
     def start(self) -> None:
+        # Remove any stale socket file left by a previous run so the
+        # file-existence readiness check below cannot false-positive.
+        try:
+            Path(self.socket_path).unlink()
+        except FileNotFoundError:
+            pass
         # Strip AGENTRECEIPTS_* from the child env — not all daemon settings
         # have CLI flag overrides (e.g. AGENTRECEIPTS_PUBLIC_KEY), so the only
         # safe approach is to remove them at the subprocess boundary.
