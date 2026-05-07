@@ -8,6 +8,9 @@
 // Concurrency: Emit is safe to call from multiple goroutines on a single
 // Emitter instance. A mutex serialises the length-prefix + body write so
 // concurrent calls cannot interleave bytes on the same socket connection.
+// The dial step happens OUTSIDE the mutex so a slow accept (up to
+// dialTimeout) cannot stall sibling Emit calls past their fire-and-forget
+// budget; only the framed write itself holds the lock.
 //
 // Failure model: Emit MUST NOT block the agent on the daemon. When the
 // socket is unreachable (daemon not started, socket file missing, broken
@@ -241,25 +244,75 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		return fmt.Errorf("emitter: frame too large: %d bytes (max %d)", len(body), MaxFrameSize)
 	}
 
+	// Snapshot connection state under a brief lock. Holding e.mu across
+	// the dial would serialise every concurrent Emit on a single dial's
+	// 25ms timeout, blowing the per-call fire-and-forget budget under
+	// load; instead we only lock for the snapshot, the optional install,
+	// and the framed write.
+	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		return errors.New("emitter: closed")
+	}
+	needDial := e.conn == nil
+	e.mu.Unlock()
+
+	if needDial {
+		dialed, err := e.dial(ctx)
+		if err != nil {
+			e.logDrop(ctx, "dial", err)
+			return nil
+		}
+		// Install with a check-and-set: if a sibling Emit dialled and
+		// installed first while we were dialling, prefer the established
+		// connection and discard ours. Costs one redundant dial in the
+		// race window — cheaper than serialising every Emit on a single
+		// dial. If the emitter was closed while we were dialling, drop
+		// our conn so it does not leak past Close.
+		e.mu.Lock()
+		switch {
+		case e.closed:
+			e.mu.Unlock()
+			_ = dialed.Close()
+			return errors.New("emitter: closed")
+		case e.conn == nil:
+			e.conn = dialed
+		default:
+			// Loser of the dial race. Close the redundant conn after
+			// releasing the mutex so we do not block sibling Emits on
+			// the kernel close path.
+			defer func() { _ = dialed.Close() }()
+		}
+		e.mu.Unlock()
+	}
+
+	// Hold e.mu across the write so concurrent Emits cannot interleave
+	// length-prefix + body bytes on the same conn. The write deadline
+	// caps how long the lock is held in the pathological case (frozen
+	// daemon with a full kernel send buffer).
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
 	if e.closed {
 		return errors.New("emitter: closed")
 	}
-
-	if err := e.dialIfNeededLocked(ctx); err != nil {
-		e.logDrop(ctx, "dial", err)
+	conn := e.conn
+	if conn == nil {
+		// A sibling Emit's write failed and reset e.conn between our
+		// dial-install and write-lock acquisition. Re-dialing inline
+		// would double the worst-case Emit latency on every outage
+		// (ADR-0010 prefers next-Emit re-dial); drop and let the next
+		// Emit re-establish.
+		e.logDrop(ctx, "write", errors.New("connection reset by sibling Emit"))
 		return nil
 	}
-	if err := e.writeFrameLocked(ctx, body); err != nil {
+	if err := e.writeFrame(ctx, conn, body); err != nil {
 		e.logDrop(ctx, "write", err)
 		// A failed write almost always means the daemon went away. Drop
 		// the conn so the next Emit re-dials transparently. Per ADR-0010
 		// the redial happens on the FOLLOWING Emit, not as an inline
 		// retry — an inline retry would double the worst-case Emit
 		// latency on every actual outage.
-		_ = e.conn.Close()
+		_ = conn.Close()
 		e.conn = nil
 		return nil
 	}
@@ -280,27 +333,26 @@ func (e *Emitter) Close() error {
 	}
 	err := e.conn.Close()
 	e.conn = nil
-	return err
-}
-
-func (e *Emitter) dialIfNeededLocked(ctx context.Context) error {
-	if e.conn != nil {
-		return nil
-	}
-	// Use DialContext rather than net.DialTimeout so that a caller-supplied
-	// ctx with a tighter deadline (or one that has been cancelled) cuts the
-	// dial short. net.DialTimeout would otherwise let Emit block up to the
-	// full dialTimeout regardless of ctx state.
-	d := net.Dialer{Timeout: dialTimeout}
-	conn, err := d.DialContext(ctx, "unix", e.socketPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("emitter: close: %w", err)
 	}
-	e.conn = conn
 	return nil
 }
 
-func (e *Emitter) writeFrameLocked(ctx context.Context, body []byte) error {
+// dial opens a new connection to the daemon socket. Runs OUTSIDE e.mu so
+// concurrent Emit calls don't serialise on a single 25ms dialTimeout.
+// DialContext is used (not net.DialTimeout) so a caller-supplied ctx with
+// a tighter deadline cuts the dial short.
+func (e *Emitter) dial(ctx context.Context) (net.Conn, error) {
+	d := net.Dialer{Timeout: dialTimeout}
+	return d.DialContext(ctx, "unix", e.socketPath)
+}
+
+// writeFrame writes one length-prefixed frame to conn. The caller must
+// hold e.mu so concurrent writes cannot interleave bytes on the same
+// connection (the 4-byte header and body must reach the daemon as one
+// contiguous sequence).
+func (e *Emitter) writeFrame(ctx context.Context, conn net.Conn, body []byte) error {
 	// The effective write deadline is min(now+writeTimeout, ctx.Deadline()).
 	// Without honouring ctx here, a caller's tighter deadline could be
 	// silently extended up to writeTimeout, breaking the fire-and-forget
@@ -309,17 +361,17 @@ func (e *Emitter) writeFrameLocked(ctx context.Context, body []byte) error {
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	if err := e.conn.SetWriteDeadline(deadline); err != nil {
+	if err := conn.SetWriteDeadline(deadline); err != nil {
 		return err
 	}
-	defer func() { _ = e.conn.SetWriteDeadline(time.Time{}) }()
+	defer func() { _ = conn.SetWriteDeadline(time.Time{}) }()
 
 	var hdr [4]byte
 	binary.BigEndian.PutUint32(hdr[:], uint32(len(body)))
-	if err := writeAll(e.conn, hdr[:]); err != nil {
+	if err := writeAll(conn, hdr[:]); err != nil {
 		return err
 	}
-	return writeAll(e.conn, body)
+	return writeAll(conn, body)
 }
 
 // writeAll handles the io.Writer short-write contract. Local AF_UNIX
