@@ -141,17 +141,20 @@ class DaemonHandle:
             return []
         try:
             conn = sqlite3.connect(self.db_path)
+        except sqlite3.OperationalError:
+            return []
+        try:
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
                 "SELECT receipt_json FROM receipts"
                 " WHERE chain_id = ? ORDER BY sequence",
                 (self.chain_id,),
             )
-            rows = [json.loads(r["receipt_json"]) for r in cur.fetchall()]
-            conn.close()
-            return rows
+            return [json.loads(r["receipt_json"]) for r in cur.fetchall()]
         except sqlite3.OperationalError:
             return []
+        finally:
+            conn.close()
 
 
 @pytest.fixture()
@@ -213,7 +216,7 @@ class TestEmitterConstruction:
         e = Emitter(socket_path="/tmp/nonexistent.sock", session_id=sid)
         assert e.session_id == sid
 
-    def test_session_id_stable_across_instances(self) -> None:
+    def test_session_id_unique_per_instance(self) -> None:
         e1 = Emitter(socket_path="/tmp/nonexistent.sock")
         e2 = Emitter(socket_path="/tmp/nonexistent.sock")
         assert e1.session_id != e2.session_id  # each gets a fresh UUID
@@ -431,7 +434,12 @@ class TestRawJSONPassthrough:
             srv.listen(1)
             ready.set()
             conn, _ = srv.accept()
-            hdr = conn.recv(4)
+            hdr = b""
+            while len(hdr) < 4:
+                chunk = conn.recv(4 - len(hdr))
+                if not chunk:
+                    break
+                hdr += chunk
             if len(hdr) == 4:
                 length = struct.unpack(">I", hdr)[0]
                 body = b""

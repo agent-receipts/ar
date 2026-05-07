@@ -182,8 +182,8 @@ class Emitter:
         raw_input = _to_raw_json(input, "input")
         raw_output = _to_raw_json(output, "output")
 
-        # Build the frame dict.  Input/output are embedded as pre-parsed
-        # JSON so json.dumps does NOT re-encode them — they travel verbatim.
+        # Build the frame dict.  Input/output are wrapped in _RawJSON so the
+        # custom _encode_dict serialiser embeds them verbatim — no re-encoding.
         frame: dict[str, object] = {
             "v": SUPPORTED_FRAME_VERSION,
             "ts_emit": _now_rfc3339(),
@@ -218,7 +218,7 @@ class Emitter:
                 try:
                     conn.close()
                 except OSError:
-                    pass
+                    pass  # close errors during teardown are intentionally ignored
                 self._conn = None
 
     def close(self) -> None:
@@ -235,7 +235,7 @@ class Emitter:
                 try:
                     self._conn.close()
                 except OSError:
-                    pass
+                    pass  # best-effort close; connection is being discarded regardless
                 self._conn = None
 
     def __enter__(self) -> Emitter:
@@ -263,7 +263,7 @@ class Emitter:
             try:
                 conn.close()
             except OSError:
-                pass
+                pass  # close errors on a failed dial are intentionally ignored
             self._log.debug(
                 "agent-receipts emitter dropped event",
                 extra={
@@ -323,6 +323,13 @@ def _to_raw_json(value: bytes | str | None, field: str) -> bytes | None:
         raw = value.encode()
     else:
         raw = bytes(value)
+        # Reject non-UTF-8 bytes early: _encode_value does raw.decode() which
+        # defaults to UTF-8, so non-UTF-8 input would raise UnicodeDecodeError
+        # inside emit(), breaking the documented failure model.
+        try:
+            raw.decode()
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"emitter: {field} is not UTF-8 encoded: {exc}") from exc
     if not raw:
         return None
     try:
