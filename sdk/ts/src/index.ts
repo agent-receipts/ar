@@ -1,4 +1,13 @@
 export {
+	defaultSocketPath,
+	type EmitEvent,
+	type EmitTool,
+	Emitter,
+	type EmitterOptions,
+	MAX_FRAME_SIZE,
+	SUPPORTED_FRAME_VERSION,
+} from "./emitter.js";
+export {
 	type ChainVerification,
 	type ReceiptVerification,
 	verifyChain,
