@@ -19,7 +19,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { createConnection } from "node:net";
+import { createConnection, type Socket } from "node:net";
 import { platform } from "node:os";
 import { join } from "node:path";
 
@@ -164,7 +164,7 @@ export class Emitter {
 		attrs: Record<string, string>,
 	) => void;
 
-	private conn: ReturnType<typeof createConnection> | null = null;
+	private conn: Socket | null = null;
 	private closed = false;
 	// Serialise writes so concurrent emit() calls cannot interleave bytes.
 	private writeQueue: Promise<void> = Promise.resolve();
@@ -274,7 +274,12 @@ export class Emitter {
 	 *
 	 * If the write fails on a previously-established connection (e.g. the
 	 * daemon restarted), the dead connection is discarded and one transparent
-	 * re-dial + re-write is attempted before giving up.
+	 * re-dial + re-write is attempted before giving up. The transparent
+	 * retry exists because Node buffers writes optimistically: a write that
+	 * "succeeded" earlier may turn out to have been on a stale socket the
+	 * kernel only reports as dead on the next attempt, so the FIRST emit
+	 * after a daemon restart would otherwise be lost without anyone seeing
+	 * a transient failure.
 	 */
 	private async doWrite(body: Buffer): Promise<Error | null> {
 		const dialErr = await this.dialIfNeeded();
@@ -283,29 +288,34 @@ export class Emitter {
 			return null;
 		}
 
-		const writeErr = await this.writeFrame(body);
-		if (writeErr !== null) {
-			// Discard the dead connection.
-			this.conn?.destroy();
-			this.conn = null;
+		const conn = this.conn;
+		if (conn === null) {
+			// Closed between dial and write; drop silently.
+			return null;
+		}
 
-			// One transparent retry: re-dial and try again.
-			const redialErr = await this.dialIfNeeded();
-			if (redialErr !== null) {
-				this.logDrop("dial", redialErr);
-				return null;
-			}
-			const retryErr = await this.writeFrame(body);
-			if (retryErr !== null) {
-				this.logDrop("write", retryErr);
-				// TypeScript narrows this.conn to null after the earlier assignment;
-				// re-dial may have set it to a new socket, so capture before clearing.
-				const deadConn = this.conn as ReturnType<
-					typeof createConnection
-				> | null;
-				this.conn = null;
-				deadConn?.destroy();
-			}
+		const writeErr = await this.writeFrame(conn, body);
+		if (writeErr === null) {
+			return null;
+		}
+
+		// First write failed: the conn is dead. Discard it, then attempt
+		// one transparent re-dial + re-write.
+		this.discardConn(conn);
+
+		const redialErr = await this.dialIfNeeded();
+		if (redialErr !== null) {
+			this.logDrop("dial", redialErr);
+			return null;
+		}
+		const newConn = this.conn;
+		if (newConn === null) {
+			return null;
+		}
+		const retryErr = await this.writeFrame(newConn, body);
+		if (retryErr !== null) {
+			this.logDrop("write", retryErr);
+			this.discardConn(newConn);
 		}
 		return null;
 	}
@@ -315,49 +325,101 @@ export class Emitter {
 		if (this.conn !== null) {
 			return Promise.resolve(null);
 		}
+		if (this.closed) {
+			return Promise.resolve(new Error("emitter: closed"));
+		}
 		return new Promise((resolve) => {
+			let settled = false;
+			const settle = (err: Error | null) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				clearTimeout(timer);
+				resolve(err);
+			};
+
 			const timer = setTimeout(() => {
 				socket.destroy();
-				resolve(new Error(`dial timeout after ${DIAL_TIMEOUT_MS}ms`));
+				settle(new Error(`dial timeout after ${DIAL_TIMEOUT_MS}ms`));
 			}, DIAL_TIMEOUT_MS);
 
 			const socket = createConnection({ path: this.socketPath }, () => {
-				clearTimeout(timer);
+				// Attach a permanent error listener BEFORE settling. Without
+				// it, any later 'error' event on this socket (peer reset,
+				// daemon crash, EPIPE on a half-open conn) crashes the host
+				// process via Node's unhandled-'error' rule. The listener
+				// also discards the dead conn so the next emit() re-dials
+				// transparently.
+				socket.on("error", (err) => this.handleSocketError(socket, err));
+				// If close() ran while we were dialing, drop this freshly
+				// connected socket on the floor — the caller already asked
+				// to release resources.
+				if (this.closed) {
+					socket.destroy();
+					settle(new Error("emitter: closed"));
+					return;
+				}
 				this.conn = socket;
-				resolve(null);
+				settle(null);
 			});
 
 			socket.once("error", (err) => {
-				clearTimeout(timer);
-				resolve(err);
+				// Dial-time error: 'connect' never fired, so the permanent
+				// listener was never installed and this once-listener is
+				// the only one. settle() also clears the dial timer.
+				settle(err);
 			});
 		});
 	}
 
+	/**
+	 * Permanent socket error listener. Discards the dead conn so the next
+	 * emit() re-dials, and logs the drop. This listener is what prevents
+	 * a peer reset from crashing the host process via Node's unhandled-
+	 * 'error' rule.
+	 */
+	private handleSocketError(socket: Socket, err: Error): void {
+		this.logDrop("socket", err);
+		// Only forget conn if it still points at this socket; a later dial
+		// may have replaced it and we don't want to drop the live one.
+		if (this.conn === socket) {
+			this.conn = null;
+		}
+		socket.destroy();
+	}
+
+	/** Discard a connection: forget it if current, then destroy. */
+	private discardConn(socket: Socket): void {
+		if (this.conn === socket) {
+			this.conn = null;
+		}
+		socket.destroy();
+	}
+
 	/** Write a 4-byte big-endian length prefix followed by the body. */
-	private writeFrame(body: Buffer): Promise<Error | null> {
+	private writeFrame(conn: Socket, body: Buffer): Promise<Error | null> {
 		return new Promise((resolve) => {
-			if (this.conn === null) {
-				resolve(new Error("no connection"));
-				return;
-			}
-			const conn = this.conn;
+			let settled = false;
+			const settle = (err: Error | null) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				clearTimeout(timer);
+				resolve(err);
+			};
 
 			const header = Buffer.allocUnsafe(4);
 			header.writeUInt32BE(body.length, 0);
 			const frame = Buffer.concat([header, body]);
 
 			const timer = setTimeout(() => {
-				resolve(new Error(`write timeout after ${WRITE_TIMEOUT_MS}ms`));
+				settle(new Error(`write timeout after ${WRITE_TIMEOUT_MS}ms`));
 			}, WRITE_TIMEOUT_MS);
 
 			conn.write(frame, (err) => {
-				clearTimeout(timer);
-				if (err) {
-					resolve(err);
-				} else {
-					resolve(null);
-				}
+				settle(err ?? null);
 			});
 		});
 	}

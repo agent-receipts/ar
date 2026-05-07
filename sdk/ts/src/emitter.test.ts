@@ -459,3 +459,92 @@ describe("Emitter — constructor", () => {
 		expect(() => new Emitter({ socketPath: "/tmp/test.sock" })).not.toThrow();
 	});
 });
+
+describe("Emitter — socket-error robustness", () => {
+	// Reach into the private conn to simulate Node firing an 'error' event on
+	// the underlying socket (peer reset, daemon crash, EPIPE). Without a
+	// permanent error listener the host process would crash via Node's
+	// unhandled-'error' rule. These tests pin that contract.
+	function getConn(emitter: Emitter): import("node:net").Socket | null {
+		return (emitter as unknown as { conn: import("node:net").Socket | null })
+			.conn;
+	}
+
+	it("surviving an 'error' event on a live conn does not crash the process", async () => {
+		const sockPath = tempSockPath("err-survive");
+		const server = startEchoServer(sockPath);
+		const drops: string[] = [];
+		const emitter = new Emitter({
+			socketPath: sockPath,
+			debugLog: (_msg, attrs) => {
+				if (attrs.stage) drops.push(attrs.stage);
+			},
+		});
+
+		// Establish a live connection.
+		await emitter.emit(GOOD_EVENT);
+		await waitFor(async () => (await server.frames()).length > 0);
+
+		const conn = getConn(emitter);
+		expect(conn).not.toBeNull();
+		// At least one listener must be attached for 'error' so the next
+		// peer-side mishap cannot crash the host.
+		expect(conn?.listenerCount("error")).toBeGreaterThan(0);
+
+		// Simulate a peer reset. Without the permanent listener this would
+		// throw an unhandled 'error' and tear the process down.
+		conn?.emit("error", new Error("synthetic ECONNRESET"));
+
+		// Listener should have logged the drop and cleared the conn.
+		expect(drops).toContain("socket");
+		expect(getConn(emitter)).toBeNull();
+
+		emitter.close();
+		await server.stop();
+	});
+
+	it("re-dials transparently after a socket error event", async () => {
+		const sockPath = tempSockPath("err-redial");
+		const server = startEchoServer(sockPath);
+		const emitter = new Emitter({ socketPath: sockPath });
+
+		// First emit dials and delivers.
+		await emitter.emit(GOOD_EVENT);
+		await waitFor(async () => (await server.frames()).length > 0);
+
+		// Inject a synthetic error on the live conn — the permanent listener
+		// must clear it without throwing.
+		getConn(emitter)?.emit("error", new Error("synthetic peer reset"));
+
+		// Next emit should re-dial and deliver another frame to the SAME
+		// echo server (it never went away).
+		await emitter.emit(GOOD_EVENT);
+		await waitFor(async () => (await server.frames()).length >= 2);
+		expect(await server.frames()).toHaveLength(2);
+
+		emitter.close();
+		await server.stop();
+	});
+
+	it("is safe to close while a dial is in flight", async () => {
+		// Connect to a server that exists, then call close() before the
+		// connect callback has fired. The freshly connected socket must be
+		// destroyed and not retained.
+		const sockPath = tempSockPath("close-during-dial");
+		const server = startEchoServer(sockPath);
+		const emitter = new Emitter({ socketPath: sockPath });
+
+		const emitPromise = emitter.emit(GOOD_EVENT);
+		// Close immediately. Depending on timing this may or may not race
+		// the connect callback, but neither outcome must crash or leak.
+		emitter.close();
+
+		const result = await emitPromise;
+		// Either null (silently dropped) or the closed Error — both acceptable.
+		if (result !== null) {
+			expect(result.message).toMatch(/closed/);
+		}
+
+		await server.stop();
+	});
+});
