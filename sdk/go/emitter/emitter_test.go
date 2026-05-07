@@ -167,7 +167,9 @@ func waitForReceiptCount(t *testing.T, dbPath, chainID string, want int, timeout
 			t.Fatalf("open store: %v", err)
 		}
 		got, err := s.GetChain(chainID)
-		s.Close()
+		if cerr := s.Close(); cerr != nil {
+			t.Logf("close store: %v", cerr)
+		}
 		if err == nil && len(got) >= want {
 			return got
 		}
