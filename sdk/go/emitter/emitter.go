@@ -188,9 +188,10 @@ type frameTool struct {
 
 // Emit sends one event to the daemon. Returns nil even when the daemon
 // is unreachable: dial and write failures are logged at debug level and
-// the conn is reset for re-dial on the next Emit. Returns an error only
-// for caller bugs (Emitter closed, oversized frame, invalid event fields,
-// malformed Input/Output JSON) — situations a retry could not fix.
+// the conn is reset for re-dial on the next Emit. Returns an error for
+// caller bugs (Emitter closed, oversized frame, invalid event fields,
+// malformed Input/Output JSON — situations a retry could not fix) or
+// when ctx is already cancelled on entry or is cancelled while dialling.
 func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -334,17 +335,18 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 // calls return an error. Safe to call multiple times.
 func (e *Emitter) Close() error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if e.closed {
+		e.mu.Unlock()
 		return nil
 	}
 	e.closed = true
-	if e.conn == nil {
+	conn := e.conn
+	e.conn = nil
+	e.mu.Unlock()
+	if conn == nil {
 		return nil
 	}
-	err := e.conn.Close()
-	e.conn = nil
-	if err != nil {
+	if err := conn.Close(); err != nil {
 		return fmt.Errorf("emitter: close: %w", err)
 	}
 	return nil
