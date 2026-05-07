@@ -1,8 +1,8 @@
 """Tests for the fire-and-forget emitter (ADR-0010).
 
 End-to-end tests start the agent-receipts-daemon as a subprocess.  The
-daemon binary is built from daemon/ and its path is resolved via the
-AGENT_RECEIPTS_DAEMON env var or a fixed /tmp path set up in conftest.
+daemon binary is resolved via the AGENT_RECEIPTS_DAEMON env var, falling
+back to /tmp/agent-receipts-daemon.
 """
 
 from __future__ import annotations
@@ -75,9 +75,12 @@ class DaemonHandle:
             _write_test_key(self.key_path)
 
     def start(self) -> None:
-        # Every required setting is passed as a CLI flag below; no env vars
-        # need to be propagated. AGENTRECEIPTS_SOCKET would otherwise leak
-        # into the child if it was set in the test runner's environment.
+        # Strip AGENTRECEIPTS_* from the child env — not all daemon settings
+        # have CLI flag overrides (e.g. AGENTRECEIPTS_PUBLIC_KEY), so the only
+        # safe approach is to remove them at the subprocess boundary.
+        env = {
+            k: v for k, v in os.environ.items() if not k.startswith("AGENTRECEIPTS_")
+        }
         self._proc = subprocess.Popen(
             [
                 _DAEMON_BIN,
@@ -94,8 +97,9 @@ class DaemonHandle:
                 "--verification-method",
                 "did:agent-receipts-daemon:py-test#k1",
             ],
+            env=env,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
         # Wait for the socket to appear (up to 2s).
         deadline = time.monotonic() + 2.0
@@ -103,10 +107,15 @@ class DaemonHandle:
             if Path(self.socket_path).exists():
                 break
             if time.monotonic() > deadline:
+                proc = self._proc
                 self.stop()
-                raise RuntimeError(
-                    f"daemon socket {self.socket_path!r} did not appear within 2s"
-                )
+                stderr_out = b""
+                if proc is not None and proc.stderr is not None:
+                    stderr_out = proc.stderr.read()
+                msg = f"daemon socket {self.socket_path!r} did not appear within 2s"
+                if stderr_out:
+                    msg += f"\ndaemon stderr:\n{stderr_out.decode(errors='replace')}"
+                raise RuntimeError(msg)
             time.sleep(0.01)
 
     def stop(self) -> None:

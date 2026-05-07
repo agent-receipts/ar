@@ -60,7 +60,7 @@ def default_socket_path() -> str:
 
     system = platform.system()
     if system == "Darwin":
-        base = os.environ.get("TMPDIR", "/tmp")
+        base = os.environ.get("TMPDIR") or "/tmp"
         return os.path.join(base, "agentreceipts", "events.sock")
     if system == "Linux":
         xdg = os.environ.get("XDG_RUNTIME_DIR", "")
