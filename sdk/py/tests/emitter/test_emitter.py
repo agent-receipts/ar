@@ -80,7 +80,7 @@ class DaemonHandle:
         try:
             Path(self.socket_path).unlink()
         except FileNotFoundError:
-            pass
+            pass  # No stale socket to remove — that's fine.
         # Strip AGENTRECEIPTS_* from the child env — not all daemon settings
         # have CLI flag overrides (e.g. AGENTRECEIPTS_PUBLIC_KEY), so the only
         # safe approach is to remove them at the subprocess boundary.
