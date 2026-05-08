@@ -113,6 +113,10 @@ class Emitter:
                 "set AGENTRECEIPTS_SOCKET or pass socket_path="
             )
         self._socket_path = socket_path
+        if session_id and not isinstance(session_id, str):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError(
+                f"emitter: session_id must be a str, got {type(session_id).__name__!r}"
+            )
         self._session_id = session_id if session_id else str(uuid.uuid4())
         self._log = log if log is not None else logger
 
