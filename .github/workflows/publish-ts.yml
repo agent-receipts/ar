@@ -48,5 +48,18 @@ jobs:
       - run: pnpm test
       - run: pnpm run build
 
+      # Pre-release versions go to a non-default dist-tag so they don't
+      # clobber `latest` for users on the stable line. Extracts the
+      # pre-release identifier from semver (alpha/beta/rc/...).
+      - name: Determine npm dist-tag
+        id: dist_tag
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [[ "$PKG_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-([a-z]+) ]]; then
+            echo "tag=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --tag ${{ steps.dist_tag.outputs.tag }}

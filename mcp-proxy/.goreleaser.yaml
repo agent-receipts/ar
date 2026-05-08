@@ -40,6 +40,12 @@ release:
 
 brews:
   - name: mcp-proxy
+    # `auto` skips the formula bump PR when the release version contains a
+    # pre-release suffix (e.g. v0.8.0-alpha.1). The Homebrew tap stays
+    # locked to the latest stable mcp-proxy until a non-pre-release tag
+    # is cut, so `brew install agent-receipts/tap/mcp-proxy` keeps giving
+    # users a non-alpha build during the daemon-backed cutover soak.
+    skip_upload: auto
     repository:
       owner: agent-receipts
       name: homebrew-tap

@@ -3,20 +3,32 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <module> <version>
+Usage: $(basename "$0") [--dry-run] <module> <version>
 
 Create a GitHub Release for a module in this monorepo.
 
 Modules:
-  sdk-go       Go SDK         (tag: sdk/go/vVERSION)
-  sdk-ts       TypeScript SDK (tag: sdk-ts-vVERSION)
-  sdk-py       Python SDK     (tag: sdk-py-vVERSION)
-  mcp-proxy    MCP proxy      (tag: mcp-proxy/vVERSION)
+  sdk-go       Go SDK                 (tag: sdk/go/vVERSION)
+  sdk-ts       TypeScript SDK         (tag: sdk-ts-vVERSION)
+  sdk-py       Python SDK             (tag: sdk-py-vVERSION)
+  mcp-proxy    MCP proxy              (tag: mcp-proxy/vVERSION)
+  daemon       agent-receipts daemon  (tag: daemon/vVERSION)
+
+Flags:
+  --dry-run    Validate everything and print the actions, but do not push
+               tags or create releases.
+
+Notes:
+  - Pre-release versions (e.g. 0.8.0-alpha.1) are automatically marked
+    as GitHub pre-releases.
+  - mcp-proxy pushes the tag only and lets release-mcp-proxy.yml build
+    binaries and create the GitHub Release. Other modules use
+    'gh release create' directly.
 
 Examples:
   $(basename "$0") sdk-go 0.2.0
-  $(basename "$0") sdk-ts 0.3.0
-  $(basename "$0") mcp-proxy 0.1.0
+  $(basename "$0") --dry-run mcp-proxy 0.8.0-alpha.1
+  $(basename "$0") daemon 0.8.0-alpha.1
 EOF
   exit 1
 }
@@ -31,10 +43,19 @@ command -v git >/dev/null 2>&1 || fail "git is not installed"
 command -v gh >/dev/null 2>&1 || fail "gh CLI is not installed — see https://cli.github.com"
 gh auth status >/dev/null 2>&1 || fail "gh is not authenticated — run gh auth login"
 
-[[ $# -eq 2 ]] || usage
+DRY_RUN=false
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=true ;;
+    -h|--help) usage ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+[[ ${#ARGS[@]} -eq 2 ]] || usage
 
-MODULE="$1"
-VERSION="$2"
+MODULE="${ARGS[0]}"
+VERSION="${ARGS[1]}"
 
 # Validate version format
 [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]] || \
@@ -53,7 +74,7 @@ REMOTE=$(git rev-parse origin/main)
 
 # Go modules don't support build metadata in tags
 case "$MODULE" in
-  sdk-go|mcp-proxy)
+  sdk-go|mcp-proxy|daemon)
     [[ "$VERSION" != *+* ]] || fail "Go module versions cannot contain build metadata (+...)"
     ;;
 esac
@@ -74,6 +95,10 @@ case "$MODULE" in
   mcp-proxy)
     TAG="mcp-proxy/v${VERSION}"
     DIR="mcp-proxy"
+    ;;
+  daemon)
+    TAG="daemon/v${VERSION}"
+    DIR="daemon"
     ;;
   *)
     fail "unknown module '$MODULE' — run with no args for usage"
@@ -103,6 +128,11 @@ case "$MODULE" in
     fi
     echo "--- Running Go checks in $DIR"
     (cd "$DIR" && go vet ./... && go test ./...)
+    ;;
+  daemon)
+    command -v go >/dev/null 2>&1 || fail "go is not installed"
+    echo "--- Running Go checks in $DIR (matches daemon.yml: -race -tags=integration)"
+    (cd "$DIR" && go vet ./... && go test -race -tags=integration ./...)
     ;;
   sdk-ts)
     command -v node >/dev/null 2>&1 || fail "node is not installed"
@@ -134,15 +164,46 @@ esac
 echo ""
 echo "--- All checks passed"
 echo ""
+
+PRERELEASE=false
+[[ "$VERSION" == *-* ]] && PRERELEASE=true
+
 echo "Will create release:"
-echo "  Tag:    $TAG"
-echo "  Title:  $MODULE v$VERSION"
+echo "  Tag:         $TAG"
+echo "  Title:       $MODULE v$VERSION"
+[[ "$PRERELEASE" == "true" ]] && echo "  Pre-release: yes (version contains '-')"
+if [[ "$MODULE" == "mcp-proxy" ]]; then
+  echo "  Action:      push tag only; release-mcp-proxy.yml builds binaries and creates the GitHub Release"
+else
+  echo "  Action:      gh release create"
+fi
 echo ""
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "==> Dry run; not pushing tag or creating release."
+  exit 0
+fi
+
 read -rp "Proceed? [y/N] " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
 
 REPO_URL=$(gh repo view --json url -q '.url')
-gh release create "$TAG" --title "$MODULE v$VERSION" --generate-notes
-echo ""
-echo "==> Released $MODULE v$VERSION"
-echo "    ${REPO_URL}/releases/tag/$TAG"
+
+if [[ "$MODULE" == "mcp-proxy" ]]; then
+  # release-mcp-proxy.yml owns release creation; we only push the tag.
+  # Avoids "release already exists" conflict between this script and the
+  # workflow when both call gh release create against the same tag.
+  git tag "$TAG"
+  git push origin "$TAG"
+  echo ""
+  echo "==> Pushed tag $TAG"
+  echo "    release-mcp-proxy.yml builds binaries and creates the GitHub Release."
+  echo "    ${REPO_URL}/actions/workflows/release-mcp-proxy.yml"
+else
+  PRERELEASE_FLAG=()
+  [[ "$PRERELEASE" == "true" ]] && PRERELEASE_FLAG=("--prerelease")
+  gh release create "$TAG" --title "$MODULE v$VERSION" --generate-notes "${PRERELEASE_FLAG[@]}"
+  echo ""
+  echo "==> Released $MODULE v$VERSION"
+  echo "    ${REPO_URL}/releases/tag/$TAG"
+fi
