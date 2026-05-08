@@ -217,7 +217,13 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	// json.Unmarshal pass. The daemon caps frames at MaxFrameSize anyway, so
 	// there is no point paying the Unmarshal cost on payloads that could never
 	// fit on the wire.
-	if len(ev.Input) > MaxFrameSize || len(ev.Output) > MaxFrameSize {
+	if ev.Input != nil && len(ev.Input) == 0 {
+		return fmt.Errorf("emitter: Input is a non-nil empty slice; pass nil to indicate no payload")
+	}
+	if ev.Output != nil && len(ev.Output) == 0 {
+		return fmt.Errorf("emitter: Output is a non-nil empty slice; pass nil to indicate no payload")
+	}
+	if len(ev.Input)+len(ev.Output) > MaxFrameSize {
 		return fmt.Errorf("emitter: Input or Output exceeds MaxFrameSize (%d bytes)", MaxFrameSize)
 	}
 	// json.Valid only checks lexical syntax — `1e400` parses as a token but
