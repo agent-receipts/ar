@@ -105,6 +105,10 @@ class Emitter:
             Pass ``logging.getLogger("null")`` (configured with NullHandler)
             to silence drop logs in tests.
         """
+        if not isinstance(socket_path, str):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError(
+                f"emitter: socket_path must be str, got {type(socket_path).__name__!r}"
+            )
         if not socket_path:
             socket_path = default_socket_path()
         if not socket_path:
@@ -113,7 +117,7 @@ class Emitter:
                 "set AGENTRECEIPTS_SOCKET or pass socket_path="
             )
         self._socket_path = socket_path
-        if session_id and not isinstance(session_id, str):  # pyright: ignore[reportUnnecessaryIsInstance]
+        if not isinstance(session_id, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError(
                 f"emitter: session_id must be a str, got {type(session_id).__name__!r}"
             )
