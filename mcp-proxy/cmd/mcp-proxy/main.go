@@ -737,19 +737,16 @@ func serve() {
 				// (ADR-0010 fire-and-forget). We use the pre-redaction
 				// arguments map held in pc.arguments and the pre-encryption
 				// result string so the daemon receives raw JSON the same way
-				// the in-process receipt signer does. errorStr is always the
-				// raw (unencrypted) error text.
+				// the in-process receipt signer does. errorStr is raw JSON
+				// (the JSON-RPC error object from msg.Error).
 				//
 				// decision is always "allowed" here because reaching this
 				// branch means the proxy did NOT block the call — the policy
 				// engine permitted it through. The upstream's success-vs-
 				// failure outcome is communicated separately via the Error
-				// field; the daemon stores both decision and error on the
-				// receipt. (The in-process signer also derives outcome.status
-				// from msg.Error != nil; the daemon currently maps decision
-				// → status verbatim, so phase 3 receipts may report
-				// StatusSuccess for upstream-errored calls until the daemon
-				// learns to flip that. Tracking issue: #236 follow-ups.)
+				// field; the daemon derives outcome.status from both decision
+				// and the presence of a non-empty error (allowed+error →
+				// failure).
 				if em != nil {
 					var outputRaw json.RawMessage
 					if resultStr != "" && json.Valid([]byte(resultStr)) {

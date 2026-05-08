@@ -123,7 +123,7 @@ func (r *recordingListener) serveConn(conn net.Conn) {
 		if n == 0 || n > MaxFrameSize {
 			return
 		}
-		buf := make([]byte, n)
+		buf := make([]byte, int(n))
 		if _, err := io.ReadFull(conn, buf); err != nil {
 			return
 		}
@@ -344,8 +344,9 @@ func TestEmit_ReconnectsAfterListenerRestart(t *testing.T) {
 }
 
 func TestEmit_FireAndForgetWhenSocketMissing(t *testing.T) {
+	dir := shortSocketDir(t)
 	em, err := New(
-		WithSocketPath("/tmp/agentreceipts-emitter-no-such-socket.sock"),
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithSessionID("no-daemon-test"),
 		WithLogger(silentLogger()),
 	)
