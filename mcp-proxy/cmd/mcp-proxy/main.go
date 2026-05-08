@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -24,6 +25,7 @@ import (
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/proxy"
+	"github.com/agent-receipts/ar/sdk/go/emitter"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	receiptStore "github.com/agent-receipts/ar/sdk/go/store"
 	"github.com/agent-receipts/ar/sdk/go/taxonomy"
@@ -107,6 +109,7 @@ func serve() {
 		httpAddr           = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
 		approvalWait       = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
 		strictPermissions  = flag.Bool("strict-permissions", false, "Fatal error if the private key file has permissions wider than 0600 (group/world-accessible)")
+		socketPath         = flag.String("socket", emitter.DefaultSocketPath(), "Unix-domain socket for the agent-receipts daemon (ADR-0010). Defaults to AGENTRECEIPTS_SOCKET if set; explicit --socket wins. Empty string (--socket=\"\") disables the emitter.")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
@@ -162,6 +165,30 @@ func serve() {
 		log.Fatalf("mcp-proxy: create session: %v", err)
 	}
 	defer auditDB.EndSession(sessionID)
+
+	// Wire the fire-and-forget daemon emitter (ADR-0010). The emitter is
+	// optional: when --socket is empty the proxy continues without forwarding
+	// events to the daemon (backwards-compatible default for installations
+	// that have not yet deployed the daemon). AGENTRECEIPTS_SOCKET sets the
+	// default for --socket via emitter.DefaultSocketPath; an explicit
+	// --socket flag always wins, and --socket="" disables the emitter
+	// regardless of the env var.
+	var em *emitter.Emitter
+	if sp := *socketPath; sp != "" {
+		var initErr error
+		em, initErr = emitter.New(
+			emitter.WithSocketPath(sp),
+			emitter.WithSessionID(sessionID),
+		)
+		if initErr != nil {
+			// Log but don't abort: running without daemon is valid.
+			log.Printf("mcp-proxy: emitter init: %v (daemon forwarding disabled)", initErr)
+			em = nil
+		} else {
+			defer em.Close()
+			log.Printf("mcp-proxy: emitter targeting daemon socket %s", sp)
+		}
+	}
 
 	// Open receipt store.
 	if err := ensureDBDir(*receiptDB); err != nil {
@@ -427,6 +454,9 @@ func serve() {
 						requestedAt:  requestedAt,
 						policyEvalUs: policyEvalUs,
 					})
+					if em != nil {
+						emitToContext(em, *serverName, toolName, json.RawMessage(argJSON), nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied")
+					}
 					return &proxy.HandlerResult{
 						Block:          true,
 						ClientResponse: proxy.MakeErrorResponse(msg.ID, -32001, fmt.Sprintf("blocked by policy: %s", decision.Reason)),
@@ -464,6 +494,9 @@ func serve() {
 							policyEvalUs:   policyEvalUs,
 							approvalWaitUs: approvalWaitUs,
 						})
+						if em != nil {
+							emitToContext(em, *serverName, toolName, json.RawMessage(argJSON), nil, message, "denied")
+						}
 						return &proxy.HandlerResult{
 							Block: true,
 							ClientResponse: proxy.MakeErrorResponseWithData(
@@ -699,6 +732,34 @@ func serve() {
 						log.Printf("mcp-proxy: update receipt sign timing: %v", updateErr)
 					}
 				}
+
+				// Forward the completed tool call to the daemon emitter
+				// (ADR-0010 fire-and-forget). We use the pre-redaction
+				// arguments map held in pc.arguments and the pre-encryption
+				// result string so the daemon receives raw JSON the same way
+				// the in-process receipt signer does. errorStr is raw JSON
+				// (the JSON-RPC error object from msg.Error).
+				//
+				// decision is always "allowed" here because reaching this
+				// branch means the proxy did NOT block the call — the policy
+				// engine permitted it through. The upstream's success-vs-
+				// failure outcome is communicated separately via the Error
+				// field; the daemon derives outcome.status from both decision
+				// and the presence of a non-empty error (allowed+error →
+				// failure).
+				if em != nil {
+					var outputRaw json.RawMessage
+					if resultStr != "" && json.Valid([]byte(resultStr)) {
+						outputRaw = json.RawMessage(resultStr)
+					}
+					var inputRaw json.RawMessage
+					if b, marshalErr := json.Marshal(pc.arguments); marshalErr == nil {
+						inputRaw = json.RawMessage(b)
+					} else {
+						log.Printf("mcp-proxy: marshal arguments for daemon: %v; emitting nil input", marshalErr)
+					}
+					emitToContext(em, *serverName, pc.toolName, inputRaw, outputRaw, errorStr, "allowed")
+				}
 			}
 		}
 
@@ -828,6 +889,38 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 	}
 	if b, err := json.Marshal(payload); err == nil {
 		fmt.Fprintln(os.Stderr, string(b))
+	}
+}
+
+// emitToContext forwards one tool-call event to the daemon emitter (ADR-0010,
+// fire-and-forget). The emitter returns nil on transient failures (no daemon,
+// broken socket); the only errors emerging here are caller bugs that no retry
+// could fix — closed emitter, empty channel, invalid decision, malformed
+// Input/Output JSON. We log them via log.Printf so misuse surfaces in proxy
+// logs rather than crashing the request flow.
+//
+// The Channel is hard-coded to "mcp" because every event from this proxy
+// originates from an MCP server tool call; serverName populates Tool.Server
+// (the upstream MCP server identifier, e.g. "github") and toolName populates
+// Tool.Name. Together the daemon assembles them into action.type
+// "mcp.<server>.<tool>". input and output are raw JSON bytes; either may be
+// nil to signal "no payload" (the daemon will skip hashing in that case).
+// errStr carries the error payload string (raw JSON-RPC error object JSON for
+// upstream errors, a policy message for denied calls; empty for success).
+// decision must be "allowed", "denied", or "pending".
+func emitToContext(em *emitter.Emitter, serverName, toolName string, input, output json.RawMessage, errStr, decision string) {
+	if em == nil {
+		return
+	}
+	if err := em.Emit(context.Background(), emitter.Event{
+		Channel:  "mcp",
+		Tool:     emitter.Tool{Server: serverName, Name: toolName},
+		Input:    input,
+		Output:   output,
+		Error:    errStr,
+		Decision: decision,
+	}); err != nil {
+		log.Printf("mcp-proxy: emitter: %v", err)
 	}
 }
 
