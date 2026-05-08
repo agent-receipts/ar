@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -22,6 +23,10 @@ import (
 	"testing"
 	"time"
 )
+
+func silentLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 // shortSocketDir returns a temp directory whose path leaves room for an
 // AF_UNIX socket name. macOS sun_path is 104 bytes; t.TempDir() under
