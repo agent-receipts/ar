@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import platform
 import socket
@@ -170,8 +171,16 @@ class Emitter:
             When the emitter has been closed.
         """
         # --- validate caller inputs first (before acquiring lock) ---
+        if not isinstance(channel, str):
+            raise ValueError(
+                f"emitter: channel must be a str, got {type(channel).__name__!r}"
+            )
         if not channel:
             raise ValueError("emitter: missing channel")
+        if not isinstance(tool_name, str):
+            raise ValueError(
+                f"emitter: tool_name must be a str, got {type(tool_name).__name__!r}"
+            )
         if not tool_name:
             raise ValueError("emitter: missing tool_name")
         if decision not in _VALID_DECISIONS:
@@ -341,10 +350,31 @@ def _to_raw_json(value: bytes | str | None, field: str) -> bytes | None:
     if not raw:
         return None
     try:
-        json.loads(raw)
+        parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError(f"emitter: {field} is not valid JSON: {exc}") from exc
+    _check_finite(parsed, field)
     return raw
+
+
+def _check_finite(value: object, field: str) -> None:
+    """Recursively reject non-finite floats (inf, -inf, nan).
+
+    RFC 8785 canonicalisation rejects non-finite numbers, and Python's
+    json.loads() accepts ``1e400`` as ``float('inf')``, so we must catch
+    these before the frame reaches the daemon.
+    """
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(
+                f"emitter: {field} contains a non-finite number ({value!r})"
+            )
+    elif isinstance(value, dict):
+        for v in value.values():
+            _check_finite(v, field)
+    elif isinstance(value, list):
+        for item in value:
+            _check_finite(item, field)
 
 
 def _build_tool(name: str, server: str) -> dict[str, str]:
