@@ -171,13 +171,13 @@ class Emitter:
             When the emitter has been closed.
         """
         # --- validate caller inputs first (before acquiring lock) ---
-        if not isinstance(channel, str):
+        if not isinstance(channel, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError(
                 f"emitter: channel must be a str, got {type(channel).__name__!r}"
             )
         if not channel:
             raise ValueError("emitter: missing channel")
-        if not isinstance(tool_name, str):
+        if not isinstance(tool_name, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError(
                 f"emitter: tool_name must be a str, got {type(tool_name).__name__!r}"
             )
@@ -187,12 +187,12 @@ class Emitter:
             raise ValueError(
                 f"emitter: invalid decision {decision!r} (want allowed|denied|pending)"
             )
-        if not isinstance(tool_server, str):
+        if not isinstance(tool_server, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError(
                 "emitter: tool_server must be a str,"
                 f" got {type(tool_server).__name__!r}"
             )
-        if not isinstance(error, str):
+        if not isinstance(error, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError(
                 f"emitter: error must be a str, got {type(error).__name__!r}"
             )
@@ -379,10 +379,10 @@ def _check_finite(value: object, field: str) -> None:
                 f"emitter: {field} contains a non-finite number ({value!r})"
             )
     elif isinstance(value, dict):
-        for v in value.values():
+        for v in cast("dict[str, object]", value).values():
             _check_finite(v, field)
     elif isinstance(value, list):
-        for item in value:
+        for item in cast("list[object]", value):
             _check_finite(item, field)
 
 
