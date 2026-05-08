@@ -758,6 +758,8 @@ func serve() {
 					var inputRaw json.RawMessage
 					if b, marshalErr := json.Marshal(pc.arguments); marshalErr == nil {
 						inputRaw = json.RawMessage(b)
+					} else {
+						log.Printf("mcp-proxy: marshal arguments for daemon: %v; emitting nil input", marshalErr)
 					}
 					emitToContext(em, *serverName, pc.toolName, inputRaw, outputRaw, errorStr, "allowed")
 				}
