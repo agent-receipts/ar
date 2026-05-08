@@ -280,6 +280,24 @@ class TestEmitterValidation:
         with pytest.raises(ValueError, match="invalid decision"):
             self.e.emit(channel="sdk", tool_name="noop", decision="maybe")
 
+    def test_non_str_channel(self) -> None:
+        with pytest.raises(ValueError, match="channel must be a str"):
+            self.e.emit(channel=42, tool_name="noop", decision="allowed")  # type: ignore[arg-type]
+
+    def test_non_str_tool_name(self) -> None:
+        with pytest.raises(ValueError, match="tool_name must be a str"):
+            self.e.emit(channel="sdk", tool_name=42, decision="allowed")  # type: ignore[arg-type]
+
+    def test_non_str_tool_server(self) -> None:
+        with pytest.raises(ValueError, match="tool_server must be a str"):
+            self.e.emit(  # type: ignore[arg-type]
+                channel="sdk", tool_name="noop", decision="allowed", tool_server=42
+            )
+
+    def test_non_str_error(self) -> None:
+        with pytest.raises(ValueError, match="error must be a str"):
+            self.e.emit(channel="sdk", tool_name="noop", decision="allowed", error=42)  # type: ignore[arg-type]
+
     def test_invalid_input_json(self) -> None:
         with pytest.raises(ValueError, match="input is not valid JSON"):
             self.e.emit(
@@ -349,12 +367,14 @@ class TestThreadSafety:
         frames: list[bytes] = []
         frames_lock = threading.Lock()
         accept_done = threading.Event()
+        bind_ready = threading.Event()
 
         def _server() -> None:
             srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
                 srv.bind(sock_path)
                 srv.listen(n_threads + 1)
+                bind_ready.set()
                 deadline = time.monotonic() + 5.0
                 received = 0
                 while received < total and time.monotonic() < deadline:
@@ -390,8 +410,7 @@ class TestThreadSafety:
 
         srv_thread = threading.Thread(target=_server, daemon=True)
         srv_thread.start()
-        # Give the server a moment to bind.
-        time.sleep(0.05)
+        bind_ready.wait(timeout=2.0)
 
         try:
             e = Emitter(socket_path=sock_path)

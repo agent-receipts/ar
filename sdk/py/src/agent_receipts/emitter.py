@@ -187,6 +187,15 @@ class Emitter:
             raise ValueError(
                 f"emitter: invalid decision {decision!r} (want allowed|denied|pending)"
             )
+        if not isinstance(tool_server, str):
+            raise ValueError(
+                "emitter: tool_server must be a str,"
+                f" got {type(tool_server).__name__!r}"
+            )
+        if not isinstance(error, str):
+            raise ValueError(
+                f"emitter: error must be a str, got {type(error).__name__!r}"
+            )
 
         # Normalise input/output to bytes and validate JSON.
         raw_input = _to_raw_json(input, "input")
