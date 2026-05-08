@@ -905,7 +905,8 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 // Tool.Name. Together the daemon assembles them into action.type
 // "mcp.<server>.<tool>". input and output are raw JSON bytes; either may be
 // nil to signal "no payload" (the daemon will skip hashing in that case).
-// errStr carries the upstream error text (empty for successful calls).
+// errStr carries the error payload string (raw JSON-RPC error object JSON for
+// upstream errors, a policy message for denied calls; empty for success).
 // decision must be "allowed", "denied", or "pending".
 func emitToContext(em *emitter.Emitter, serverName, toolName string, input, output json.RawMessage, errStr, decision string) {
 	if em == nil {
