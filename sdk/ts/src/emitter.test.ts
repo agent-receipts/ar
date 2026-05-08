@@ -30,12 +30,16 @@ import {
 /** Monotonic counter so every tempSockPath call returns a unique path. */
 let _sockSeq = 0;
 
-/** A unique socket path for each call (pid + counter + suffix). */
+/**
+ * A unique socket path for each call (pid + counter + suffix).
+ *
+ * On macOS, os.tmpdir() returns a long path under /var/folders/… that can
+ * exceed the AF_UNIX 104-byte limit. Use /tmp directly on darwin to keep
+ * paths well under the limit.
+ */
 function tempSockPath(suffix: string): string {
-	return join(
-		tmpdir(),
-		`ar-emitter-test-${process.pid}-${++_sockSeq}-${suffix}.sock`,
-	);
+	const base = process.platform === "darwin" ? "/tmp" : tmpdir();
+	return join(base, `ar-${process.pid}-${++_sockSeq}-${suffix}.sock`);
 }
 
 /**
@@ -205,13 +209,14 @@ describe("Emitter — validation errors (caller bugs)", () => {
 
 	it("returns an error after close", async () => {
 		const sockPath = tempSockPath("closed");
-		const { stop } = startEchoServer(sockPath);
+		const server = startEchoServer(sockPath);
+		await server.ready;
 		const e = new Emitter({ socketPath: sockPath });
 		e.close();
 		const err = await e.emit(GOOD_EVENT);
 		expect(err).toBeInstanceOf(Error);
 		expect(err?.message).toMatch(/closed/);
-		await stop();
+		await server.stop();
 	});
 });
 
@@ -369,6 +374,7 @@ describe("Emitter — session_id stability", () => {
 	it("session_id is stable across multiple emits", async () => {
 		const sockPath = tempSockPath("session");
 		const server = startEchoServer(sockPath);
+		await server.ready;
 		const emitter = new Emitter({ socketPath: sockPath });
 
 		await emitter.emit(GOOD_EVENT);
@@ -387,6 +393,7 @@ describe("Emitter — session_id stability", () => {
 	it("host-supplied sessionId is used and stable", async () => {
 		const sockPath = tempSockPath("supplied-session");
 		const server = startEchoServer(sockPath);
+		await server.ready;
 		const emitter = new Emitter({
 			socketPath: sockPath,
 			sessionId: "my-session-42",
@@ -455,6 +462,7 @@ describe("Emitter — reconnect after daemon restart", () => {
 	it("re-dials after the server stops and restarts", async () => {
 		const sockPath = tempSockPath("reconnect");
 		const server1 = startEchoServer(sockPath);
+		await server1.ready;
 		const emitter = new Emitter({ socketPath: sockPath });
 
 		// First emit reaches server1.
@@ -568,6 +576,7 @@ describe("Emitter — socket-error robustness", () => {
 	it("surviving an 'error' event on a live conn does not crash the process", async () => {
 		const sockPath = tempSockPath("err-survive");
 		const server = startEchoServer(sockPath);
+		await server.ready;
 		const drops: string[] = [];
 		const emitter = new Emitter({
 			socketPath: sockPath,
@@ -601,6 +610,7 @@ describe("Emitter — socket-error robustness", () => {
 	it("re-dials transparently after a socket error event", async () => {
 		const sockPath = tempSockPath("err-redial");
 		const server = startEchoServer(sockPath);
+		await server.ready;
 		const emitter = new Emitter({ socketPath: sockPath });
 
 		// First emit dials and delivers.
@@ -627,6 +637,7 @@ describe("Emitter — socket-error robustness", () => {
 		// destroyed and not retained.
 		const sockPath = tempSockPath("close-during-dial");
 		const server = startEchoServer(sockPath);
+		await server.ready;
 		const emitter = new Emitter({ socketPath: sockPath });
 
 		const emitPromise = emitter.emit(GOOD_EVENT);

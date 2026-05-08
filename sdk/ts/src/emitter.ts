@@ -213,6 +213,12 @@ export class Emitter {
 	 * the conn is reset for re-dial on the next emit(). Returns an Error only
 	 * for caller bugs (emitter closed, oversized frame, invalid event fields,
 	 * malformed input/output JSON) — situations a retry could not fix.
+	 *
+	 * Concurrent-close caveat: if close() is called concurrently with an
+	 * in-flight emit() that has already passed the initial closed check, the
+	 * emit may result in a silent drop (null) rather than an Error. This is
+	 * consistent with the fire-and-forget failure model — the daemon may or
+	 * may not have received the frame by the time close() interrupts.
 	 */
 	async emit(ev: EmitEvent): Promise<Error | null> {
 		// Validate caller-supplied fields first (before acquiring the write lock).
