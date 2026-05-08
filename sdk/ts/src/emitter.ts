@@ -147,7 +147,11 @@ export function defaultSocketPath(): string {
 	const os = platform();
 	if (os === "darwin") {
 		const tmpdir = process.env.TMPDIR ?? "/tmp";
-		return join(tmpdir, "agentreceipts", "events.sock");
+		const candidate = join(tmpdir, "agentreceipts", "events.sock");
+		// AF_UNIX sun_path is ~104 bytes on macOS; guard against unusually long $TMPDIR.
+		return candidate.length <= 90
+			? candidate
+			: "/tmp/agentreceipts/events.sock";
 	}
 	if (os === "linux") {
 		const xdgRuntime = process.env.XDG_RUNTIME_DIR;
