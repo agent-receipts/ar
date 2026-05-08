@@ -95,6 +95,11 @@ type config struct {
 // WithSocketPath overrides the daemon socket path. When unset, the path
 // is resolved from the AGENTRECEIPTS_SOCKET environment variable, then
 // the per-OS default (see DefaultSocketPath).
+//
+// Callers that supply an explicit path bypass platform detection entirely
+// and take responsibility for ensuring the path is reachable on the
+// target OS. This is intentional: WithSocketPath works on any platform,
+// including those where DefaultSocketPath returns an empty string.
 func WithSocketPath(path string) Option {
 	return func(c *config) { c.socketPath = path }
 }
@@ -207,6 +212,13 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		// ok
 	default:
 		return fmt.Errorf("emitter: invalid decision %q (want allowed|denied|pending)", ev.Decision)
+	}
+	// Reject clearly oversized Input/Output before the more expensive
+	// json.Unmarshal pass. The daemon caps frames at MaxFrameSize anyway, so
+	// there is no point paying the Unmarshal cost on payloads that could never
+	// fit on the wire.
+	if len(ev.Input) > MaxFrameSize || len(ev.Output) > MaxFrameSize {
+		return fmt.Errorf("emitter: Input or Output exceeds MaxFrameSize (%d bytes)", MaxFrameSize)
 	}
 	// json.Valid only checks lexical syntax — `1e400` parses as a token but
 	// overflows float64, so the daemon's RFC 8785 canonicalisation (which
@@ -397,7 +409,9 @@ func (e *Emitter) writeFrame(ctx context.Context, conn net.Conn, body []byte) er
 func writeAll(w io.Writer, buf []byte) error {
 	for len(buf) > 0 {
 		n, err := w.Write(buf)
-		buf = buf[n:]
+		if n > 0 {
+			buf = buf[n:]
+		}
 		if err != nil {
 			return err
 		}
@@ -423,6 +437,11 @@ func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
 // The daemon reads the env var in main, not in its DefaultSocketPath, so
 // the two functions are not identical despite producing the same paths when
 // the env var is unset.
+//
+// The platform gate in this function applies only to automatic default path
+// resolution. Callers that pass WithSocketPath to New bypass this function
+// entirely and can use any path on any OS — platform detection is not their
+// concern.
 //
 //   - macOS: AGENTRECEIPTS_SOCKET if set, else $TMPDIR/agentreceipts/events.sock
 //     (TMPDIR defaults to /tmp).

@@ -106,21 +106,23 @@ func startDaemon(t *testing.T, dir string) *daemonHandle {
 	done := make(chan error, 1)
 	go func() { done <- daemon.Run(ctx, cfg) }()
 
-	deadline := time.Now().Add(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(2 * time.Second)
+	defer timeout.Stop()
 	for {
 		if _, err := os.Stat(cfg.SocketPath); err == nil {
 			break
-		}
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatalf("socket %s did not appear within 2s", cfg.SocketPath)
 		}
 		select {
 		case err := <-done:
 			cancel()
 			t.Fatalf("daemon exited before socket appeared: %v", err)
-		default:
-			time.Sleep(10 * time.Millisecond)
+		case <-timeout.C:
+			cancel()
+			t.Fatalf("socket %s did not appear within 2s", cfg.SocketPath)
+		case <-ticker.C:
+			// poll again
 		}
 	}
 
