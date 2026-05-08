@@ -331,6 +331,43 @@ class TestEmitterValidation:
                 input=big,
             )
 
+    def test_non_utf8_input_bytes_raises(self) -> None:
+        with pytest.raises(ValueError, match="not UTF-8 encoded"):
+            self.e.emit(
+                channel="sdk",
+                tool_name="noop",
+                decision="allowed",
+                input=b"\xff",
+            )
+
+    def test_non_utf8_output_bytes_raises(self) -> None:
+        with pytest.raises(ValueError, match="not UTF-8 encoded"):
+            self.e.emit(
+                channel="sdk",
+                tool_name="noop",
+                decision="allowed",
+                output=b"\x80\x81",
+            )
+
+    def test_non_finite_input_raises(self) -> None:
+        # json.loads parses 1e400 as float('inf'); _check_finite rejects it
+        with pytest.raises(ValueError, match="non-finite number"):
+            self.e.emit(
+                channel="sdk",
+                tool_name="noop",
+                decision="allowed",
+                input='{"x": 1e400}',
+            )
+
+    def test_non_finite_output_raises(self) -> None:
+        with pytest.raises(ValueError, match="non-finite number"):
+            self.e.emit(
+                channel="sdk",
+                tool_name="noop",
+                decision="allowed",
+                output='{"score": 1e400}',
+            )
+
 
 class TestFireAndForgetWhenDaemonDown:
     """Emit must return quickly and not raise when the daemon is absent."""
