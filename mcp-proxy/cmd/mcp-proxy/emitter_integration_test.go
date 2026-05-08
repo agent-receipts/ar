@@ -101,7 +101,13 @@ func startTestDaemon(t *testing.T, dir string) *testDaemonHandle {
 			cancel()
 			t.Fatalf("socket %s did not appear within 2s", cfg.SocketPath)
 		}
-		time.Sleep(10 * time.Millisecond)
+		select {
+		case err := <-done:
+			cancel()
+			t.Fatalf("daemon exited prematurely during startup: %v", err)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 
 	d := &testDaemonHandle{cfg: cfg, cancel: cancel, done: done}
