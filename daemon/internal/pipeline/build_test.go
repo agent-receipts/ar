@@ -177,6 +177,9 @@ func TestProcess_OutcomeStatus(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if len(receipts) != 1 {
+				t.Fatalf("want 1 receipt, got %d", len(receipts))
+			}
 			got := receipts[0].CredentialSubject.Outcome.Status
 			if got != tc.want {
 				t.Errorf("status = %q, want %q", got, tc.want)
