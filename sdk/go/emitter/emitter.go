@@ -224,7 +224,7 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		return fmt.Errorf("emitter: Output is a non-nil empty slice; pass nil to indicate no payload")
 	}
 	if len(ev.Input)+len(ev.Output) > MaxFrameSize {
-		return fmt.Errorf("emitter: Input or Output exceeds MaxFrameSize (%d bytes)", MaxFrameSize)
+		return fmt.Errorf("emitter: combined Input+Output payload exceeds MaxFrameSize (%d bytes)", MaxFrameSize)
 	}
 	// json.Valid only checks lexical syntax — `1e400` parses as a token but
 	// overflows float64, so the daemon's RFC 8785 canonicalisation (which
