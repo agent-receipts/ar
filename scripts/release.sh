@@ -57,9 +57,26 @@ done
 MODULE="${ARGS[0]}"
 VERSION="${ARGS[1]}"
 
-# Validate version format
-[[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]] || \
-  fail "invalid version '$VERSION' — expected semver (e.g. 0.2.0, 1.0.0-beta.1)"
+# Validate version format. PEP 440 pre-release form (e.g. 0.8.0a1) is
+# accepted only for sdk-py because PyPI rejects SemVer-style hyphenated
+# pre-releases. Go modules (sdk-go, mcp-proxy, daemon) and the npm
+# module (sdk-ts) require SemVer; accepting PEP 440 there would silently
+# create tags that go.mod / npm cannot resolve.
+SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+PEP440_PRE_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(a|b|rc)[0-9]+$'
+case "$MODULE" in
+  sdk-py)
+    [[ "$VERSION" =~ $SEMVER_RE ]] || [[ "$VERSION" =~ $PEP440_PRE_RE ]] || \
+      fail "invalid version '$VERSION' for sdk-py — expected SemVer (e.g. 0.5.0, 1.0.0-beta.1) or PEP 440 pre-release (e.g. 0.8.0a1)"
+    ;;
+  sdk-go|sdk-ts|mcp-proxy|daemon)
+    [[ "$VERSION" =~ $SEMVER_RE ]] || \
+      fail "invalid version '$VERSION' for $MODULE — expected SemVer (e.g. 0.2.0, 1.0.0-beta.1). PEP 440 form (e.g. 0.8.0a1) is accepted only for sdk-py."
+    ;;
+  *)
+    fail "unknown module '$MODULE' — run with no args for usage"
+    ;;
+esac
 
 # Ensure we're on main and up to date
 BRANCH=$(git branch --show-current)
@@ -168,14 +185,17 @@ echo ""
 PRERELEASE=false
 # Strip SemVer build metadata before detecting pre-release: build metadata
 # (anything after '+') can legally contain '-', so a naive *-* glob would
-# misclassify e.g. 1.2.3+build-4 as a pre-release.
+# misclassify e.g. 1.2.3+build-4 as a pre-release. Also flag PEP 440
+# pre-release suffixes (e.g. 0.8.0a1) which use no '-' separator.
 CORE_VERSION="${VERSION%%+*}"
-[[ "$CORE_VERSION" == *-* ]] && PRERELEASE=true
+if [[ "$CORE_VERSION" == *-* ]] || [[ "$CORE_VERSION" =~ [0-9]+(a|b|rc)[0-9]+$ ]]; then
+  PRERELEASE=true
+fi
 
 echo "Will create release:"
 echo "  Tag:         $TAG"
 echo "  Title:       $MODULE v$VERSION"
-[[ "$PRERELEASE" == "true" ]] && echo "  Pre-release: yes (version contains '-')"
+[[ "$PRERELEASE" == "true" ]] && echo "  Pre-release: yes"
 if [[ "$MODULE" == "mcp-proxy" ]]; then
   echo "  Action:      push tag only; release-mcp-proxy.yml builds binaries and creates the GitHub Release"
 else
