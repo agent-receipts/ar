@@ -34,25 +34,30 @@ def test_version_is_non_empty() -> None:
 
 def test_version_matches_project_release_shape() -> None:
     """Catch a future regression where VERSION starts containing arbitrary
-    text. This isn't a full PEP 440 validator (it doesn't accept epochs,
-    post releases, or dev releases) — the project deliberately only ever
-    ships standard / pre-release semver + the ``0.0.0+unknown`` fallback,
-    so the regex is intentionally narrow. If the project starts shipping
-    `.postN` or `.devN` builds, broaden the pattern at that point."""
+    text. The pattern mirrors ``scripts/release.sh``'s ``SEMVER_RE`` and
+    ``PEP440_PRE_RE`` — strict ``X.Y.Z`` (no leading zeros, no two-part or
+    four-part variants), an optional PEP 440 pre-release suffix, plus a
+    SemVer ``+local`` tail to cover the ``0.0.0+unknown`` fallback. If the
+    release tooling ever broadens to accept ``.postN`` / ``.devN`` /
+    epochs, broaden this regex at the same time so the two stay in sync."""
 
+    # Mirrors release.sh's PEP440_PRE_RE / SEMVER_RE numeric component
+    # rule: zero, or any positive int with no leading zeros.
+    component = r"(0|[1-9]\d*)"
     project_release_shape = re.compile(
-        r"""
-        ^                    # full match
-        \d+(\.\d+)*          # release segment (e.g. 0.8.0)
-        (a\d+|b\d+|rc\d+)?   # optional pre-release (a1, b2, rc3)
-        (\+[a-zA-Z0-9.]+)?   # optional local version (+unknown, +g1234abcd)
+        rf"""
+        ^                                     # full match
+        {component}\.{component}\.{component} # strict X.Y.Z
+        ((a|b|rc)\d+)?                        # optional PEP 440 pre-release
+        (\+[0-9A-Za-z.-]+)?                   # optional +local (covers +unknown)
         $
         """,
         re.VERBOSE,
     )
     assert project_release_shape.match(agent_receipts.VERSION), (
-        f"VERSION {agent_receipts.VERSION!r} does not match the shapes this "
-        "project releases (semver + optional aN/bN/rcN + optional +local)"
+        f"VERSION {agent_receipts.VERSION!r} does not match the strict X.Y.Z "
+        "shape that scripts/release.sh accepts (no two-part / four-part / "
+        "leading-zero variants; pre-release must be aN/bN/rcN)"
     )
 
 
@@ -60,22 +65,16 @@ def test_version_is_distinct_from_receipt_schema_version() -> None:
     """The package version (``VERSION``) and the receipt schema version
     (``RECEIPT_VERSION``) are intentionally separate — see the note in
     ``__init__.py``. Pin that the two don't accidentally converge in a
-    way that would mask drift between package release and schema bump."""
+    way that would mask drift between package release and schema bump.
+
+    The exact-equals pin on ``RECEIPT_VERSION`` lives in
+    ``tests/receipt/test_types.py``; this test deliberately stays focused
+    on the ``VERSION != RECEIPT_VERSION`` invariant."""
 
     # Both exist and are independently exported.
     assert agent_receipts.VERSION
     assert agent_receipts.RECEIPT_VERSION
-    # The headline invariant the test name promises: package version and
-    # schema version are separate values from separate sources.
     assert agent_receipts.VERSION != agent_receipts.RECEIPT_VERSION, (
         "package VERSION and RECEIPT_VERSION converged — "
         "if intentional, drop this test; otherwise one of the constants drifted"
-    )
-    # Belt-and-braces: schema version stays in the 0.2.x range
-    # (per receipt/types.py). If this ever fails, the schema bumped —
-    # review whether the test still expresses the right invariant.
-    schema = agent_receipts.RECEIPT_VERSION
-    assert schema.startswith("0.2."), (
-        f"receipt schema version moved past 0.2.x ({schema!r}); "
-        "update this guard if intentional"
     )
