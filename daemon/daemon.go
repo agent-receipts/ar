@@ -137,9 +137,24 @@ func DefaultPublicKeyPath(keyPath string) string {
 	return keyPath + ".pub"
 }
 
-// GenerateKey creates a new Ed25519 key pair and saves the private key to keyPath
-// (mode 0600) and public key to publicKeyPath (mode 0644). Fails if either file
-// already exists. Use this explicitly via --init; do not call silently.
+// GenerateKey creates a new Ed25519 key pair and saves the private key to
+// keyPath (mode 0600) and public key to publicKeyPath (mode 0644). Refuses
+// to overwrite an existing file at either path, and refuses to follow a
+// symlink at either path. Use this explicitly via --init; never call it as
+// a side-effect of starting the daemon — silently regenerating a missing
+// key would invalidate every receipt previously signed by the operator's
+// real key.
+//
+// Atomicity: both files are created with O_CREATE|O_EXCL|O_NOFOLLOW so an
+// attacker who plants a symlink (or any other dirent) at either path
+// between the directory creation and the file open trips O_EXCL — we never
+// write through the symlink target. If the public-key write fails after
+// the private-key write succeeded, the private-key file is removed so the
+// caller doesn't end up with a half-initialised on-disk state.
+//
+// The mode passed to OpenFile may be narrowed by the process umask; an
+// explicit fchmod after open ensures the on-disk mode matches what the
+// caller asked for.
 func GenerateKey(keyPath, publicKeyPath string) error {
 	if keyPath == "" {
 		return errors.New("keyPath is required")
@@ -147,43 +162,84 @@ func GenerateKey(keyPath, publicKeyPath string) error {
 	if publicKeyPath == "" {
 		publicKeyPath = DefaultPublicKeyPath(keyPath)
 	}
-
-	// Check that neither file exists.
-	if _, err := os.Stat(keyPath); err == nil {
-		return fmt.Errorf("key file already exists: %s", keyPath)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("stat key path: %w", err)
+	if keyPath == publicKeyPath {
+		return fmt.Errorf("keyPath and publicKeyPath must differ; both are %s", keyPath)
 	}
 
-	if _, err := os.Stat(publicKeyPath); err == nil {
-		return fmt.Errorf("public key file already exists: %s", publicKeyPath)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("stat public key path: %w", err)
-	}
-
-	// Create key directory if needed.
-	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
-		return fmt.Errorf("create key dir: %w", err)
-	}
-
-	// Generate key pair.
+	// Generate the key pair before touching the filesystem so a generation
+	// failure leaves no half-state behind.
 	kp, err := receipt.GenerateKeyPair()
 	if err != nil {
 		return fmt.Errorf("generate key pair: %w", err)
 	}
 
-	// Write private key with mode 0600.
-	if err := os.WriteFile(keyPath, []byte(kp.PrivateKey), 0o600); err != nil {
-		return fmt.Errorf("write private key: %w", err)
+	// Create both parent directories. The private-key dir uses 0o750
+	// because the key inside is operator-only; the public-key dir uses
+	// 0o755 because the key inside is meant to be readable by verifiers.
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
+		return fmt.Errorf("create key dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(publicKeyPath), 0o755); err != nil {
+		return fmt.Errorf("create public-key dir: %w", err)
 	}
 
-	// Write public key with mode 0644.
-	if err := os.WriteFile(publicKeyPath, []byte(kp.PublicKey), 0o644); err != nil {
-		// Clean up private key on failure.
+	if err := writeNewSecretFile(keyPath, []byte(kp.PrivateKey), 0o600); err != nil {
+		return fmt.Errorf("write private key %s: %w", keyPath, err)
+	}
+
+	if err := writeNewSecretFile(publicKeyPath, []byte(kp.PublicKey), 0o644); err != nil {
+		// Roll back so the operator can re-run --init from a clean state
+		// instead of being stuck with a private key whose public half is
+		// missing or wrong.
 		_ = os.Remove(keyPath)
-		return fmt.Errorf("write public key: %w", err)
+		return fmt.Errorf("write public key %s: %w", publicKeyPath, err)
 	}
 
+	return nil
+}
+
+// writeNewSecretFile creates a file at path containing data with the given
+// mode. It refuses to overwrite an existing file (O_EXCL) and refuses to
+// follow a symlink at the path (O_NOFOLLOW), closing the TOCTOU window
+// where a Stat-then-Write pair could be tricked into writing through a
+// symlink an attacker plants between the two syscalls.
+//
+// fchmod after the write ensures the on-disk permissions match mode even
+// when the process umask would otherwise narrow them; on failure the
+// partially-written file is removed so a retry sees a clean slate.
+func writeNewSecretFile(path string, data []byte, mode os.FileMode) error {
+	fh, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|oNoFollow, mode)
+	if err != nil {
+		if isSymlinkLoop(err) {
+			return fmt.Errorf("refusing to follow symlink at %s", path)
+		}
+		return err
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			_ = fh.Close()
+			_ = os.Remove(path)
+		}
+	}()
+
+	if _, err := fh.Write(data); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	// fchmod via the open fd, not path-based Chmod, so the mode applies to
+	// the inode we just created — no symlink-target chmod risk even if the
+	// directory entry is replaced after we write.
+	if err := fh.Chmod(mode); err != nil {
+		return fmt.Errorf("chmod %o: %w", mode, err)
+	}
+	closed = true
+	if err := fh.Close(); err != nil {
+		// Close-time errors (NFS commit failure, disk-full, quota
+		// exceeded) can lose data we just "wrote". Remove the file so the
+		// caller can retry from a clean state.
+		_ = os.Remove(path)
+		return fmt.Errorf("close: %w", err)
+	}
 	return nil
 }
 
