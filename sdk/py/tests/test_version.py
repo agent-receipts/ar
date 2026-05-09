@@ -24,18 +24,23 @@ def test_version_matches_installed_package_metadata() -> None:
 def test_version_is_non_empty() -> None:
     """Even on the PackageNotFoundError fallback path, VERSION must be a
     non-empty string — diagnostics and crash reports that interpolate it
-    should never produce ``" "`` or ``""``."""
+    should never produce ``" "`` or ``""``. Strip first so a single space
+    or all-whitespace value (which would still pass a plain truthiness
+    check) is also rejected."""
 
     assert isinstance(agent_receipts.VERSION, str)
-    assert agent_receipts.VERSION  # truthy / non-empty
+    assert agent_receipts.VERSION.strip()
 
 
-def test_version_is_pep440_shaped() -> None:
+def test_version_matches_project_release_shape() -> None:
     """Catch a future regression where VERSION starts containing arbitrary
-    text. PEP 440 + the project's ``0.0.0+unknown`` fallback covers every
-    string we should ever surface."""
+    text. This isn't a full PEP 440 validator (it doesn't accept epochs,
+    post releases, or dev releases) — the project deliberately only ever
+    ships standard / pre-release semver + the ``0.0.0+unknown`` fallback,
+    so the regex is intentionally narrow. If the project starts shipping
+    `.postN` or `.devN` builds, broaden the pattern at that point."""
 
-    pep440_or_fallback = re.compile(
+    project_release_shape = re.compile(
         r"""
         ^                    # full match
         \d+(\.\d+)*          # release segment (e.g. 0.8.0)
@@ -45,8 +50,9 @@ def test_version_is_pep440_shaped() -> None:
         """,
         re.VERBOSE,
     )
-    assert pep440_or_fallback.match(agent_receipts.VERSION), (
-        f"VERSION {agent_receipts.VERSION!r} does not look like a PEP 440 version"
+    assert project_release_shape.match(agent_receipts.VERSION), (
+        f"VERSION {agent_receipts.VERSION!r} does not match the shapes this "
+        "project releases (semver + optional aN/bN/rcN + optional +local)"
     )
 
 
@@ -59,9 +65,15 @@ def test_version_is_distinct_from_receipt_schema_version() -> None:
     # Both exist and are independently exported.
     assert agent_receipts.VERSION
     assert agent_receipts.RECEIPT_VERSION
-    # Sanity: schema version stays at 0.2.x range (per receipt/types.py).
-    # If this ever fails, the schema bumped — review whether the test
-    # still expresses the right invariant.
+    # The headline invariant the test name promises: package version and
+    # schema version are separate values from separate sources.
+    assert agent_receipts.VERSION != agent_receipts.RECEIPT_VERSION, (
+        "package VERSION and RECEIPT_VERSION converged — "
+        "if intentional, drop this test; otherwise one of the constants drifted"
+    )
+    # Belt-and-braces: schema version stays in the 0.2.x range
+    # (per receipt/types.py). If this ever fails, the schema bumped —
+    # review whether the test still expresses the right invariant.
     schema = agent_receipts.RECEIPT_VERSION
     assert schema.startswith("0.2."), (
         f"receipt schema version moved past 0.2.x ({schema!r}); "
