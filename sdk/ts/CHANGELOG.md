@@ -9,6 +9,22 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.8.0-alpha.2] - 2026-05-10
+
+### Changed
+
+- No SDK code changes; version bump to maintain lockstep across the coordinated
+  release (daemon process separation cutover). Releases as part of the daemon
+  refactor work (ADR-0010, [#236](https://github.com/agent-receipts/ar/issues/236)).
+
+## [0.8.0-alpha.1] - 2026-05-09
+
+### Added
+
+- Fire-and-forget emitter for forwarding tool-call events to the
+  `agent-receipts-daemon` Unix socket (ADR-0010, [#236](https://github.com/agent-receipts/ar/issues/236)).
+  No crypto, no canonicalisation — the daemon handles those operations.
+
 ## [0.6.0] - 2026-05-01
 
 ### Breaking Changes
