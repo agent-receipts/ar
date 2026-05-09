@@ -19,6 +19,7 @@ import (
 	"github.com/agent-receipts/ar/daemon/internal/keysource"
 	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/daemon/internal/socket"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
@@ -121,6 +122,56 @@ func DefaultPublicKeyPath(keyPath string) string {
 		return ""
 	}
 	return keyPath + ".pub"
+}
+
+// GenerateKey creates a new Ed25519 key pair and saves the private key to keyPath
+// (mode 0600) and public key to publicKeyPath (mode 0644). Fails if either file
+// already exists. Use this explicitly via --init; do not call silently.
+func GenerateKey(keyPath, publicKeyPath string) error {
+	if keyPath == "" {
+		return errors.New("keyPath is required")
+	}
+	if publicKeyPath == "" {
+		publicKeyPath = DefaultPublicKeyPath(keyPath)
+	}
+
+	// Check that neither file exists.
+	if _, err := os.Stat(keyPath); err == nil {
+		return fmt.Errorf("key file already exists: %s", keyPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat key path: %w", err)
+	}
+
+	if _, err := os.Stat(publicKeyPath); err == nil {
+		return fmt.Errorf("public key file already exists: %s", publicKeyPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat public key path: %w", err)
+	}
+
+	// Create key directory if needed.
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
+		return fmt.Errorf("create key dir: %w", err)
+	}
+
+	// Generate key pair.
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		return fmt.Errorf("generate key pair: %w", err)
+	}
+
+	// Write private key with mode 0600.
+	if err := os.WriteFile(keyPath, []byte(kp.PrivateKey), 0o600); err != nil {
+		return fmt.Errorf("write private key: %w", err)
+	}
+
+	// Write public key with mode 0644.
+	if err := os.WriteFile(publicKeyPath, []byte(kp.PublicKey), 0o644); err != nil {
+		// Clean up private key on failure.
+		_ = os.Remove(keyPath)
+		return fmt.Errorf("write public key: %w", err)
+	}
+
+	return nil
 }
 
 // Run starts the daemon and blocks until ctx is cancelled. It returns the

@@ -32,6 +32,7 @@ func main() {
 		VerificationMethodID: envOrDefault("AGENTRECEIPTS_VERIFICATION_METHOD", "did:agent-receipts-daemon:local#k1"),
 	}
 
+	initKeys := flag.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
 	flag.StringVar(&cfg.SocketPath, "socket", cfg.SocketPath, "Unix-domain socket path (env: AGENTRECEIPTS_SOCKET)")
 	flag.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	flag.StringVar(&cfg.KeyPath, "key", cfg.KeyPath, "Ed25519 PEM private key path, mode 0600 (env: AGENTRECEIPTS_KEY)")
@@ -40,6 +41,19 @@ func main() {
 	flag.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	flag.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
 	flag.Parse()
+
+	if *initKeys {
+		if cfg.PublicKeyPath == "" {
+			cfg.PublicKeyPath = daemon.DefaultPublicKeyPath(cfg.KeyPath)
+		}
+		if err := daemon.GenerateKey(cfg.KeyPath, cfg.PublicKeyPath); err != nil {
+			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --init: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("generated signing key: %s\n", cfg.KeyPath)
+		fmt.Printf("public key: %s\n", cfg.PublicKeyPath)
+		return
+	}
 
 	// Apply the <--key>.pub default now that flag.Parse has finalised KeyPath.
 	// daemon.validateConfig also covers this path for library callers; doing
