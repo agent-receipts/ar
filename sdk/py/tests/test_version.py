@@ -34,15 +34,24 @@ def test_version_is_non_empty() -> None:
 
 def test_version_matches_project_release_shape() -> None:
     """Catch a future regression where VERSION starts containing arbitrary
-    text. The pattern mirrors ``scripts/release.sh``'s ``SEMVER_RE`` and
-    ``PEP440_PRE_RE`` — strict ``X.Y.Z`` (no leading zeros, no two-part or
-    four-part variants), an optional PEP 440 pre-release suffix, plus a
-    SemVer ``+local`` tail to cover the ``0.0.0+unknown`` fallback. If the
-    release tooling ever broadens to accept ``.postN`` / ``.devN`` /
-    epochs, broaden this regex at the same time so the two stay in sync."""
+    text.
 
-    # Mirrors release.sh's PEP440_PRE_RE / SEMVER_RE numeric component
-    # rule: zero, or any positive int with no leading zeros.
+    Scope: this test enforces the Python-package version policy
+    specifically — strict ``X.Y.Z`` (no leading zeros, no two-part or
+    four-part variants), with an optional PEP 440 pre-release suffix
+    (``aN`` / ``bN`` / ``rcN``), plus a ``+local`` tail to cover the
+    ``0.0.0+unknown`` PackageNotFoundError fallback. PEP 440 disallows
+    the SemVer ``-beta.1`` hyphen form that ``scripts/release.sh``'s
+    ``SEMVER_RE`` accepts for the Go/TS components, so the policies
+    differ on purpose; this test deliberately doesn't try to mirror
+    ``release.sh`` for non-Python release shapes.
+
+    If sdk/py ever ships ``.postN`` / ``.devN`` / epoch versions,
+    broaden this regex (and update PyPI uploads accordingly)."""
+
+    # Numeric components: zero or any positive int with no leading
+    # zeros — matches the same rule release.sh's PEP440_PRE_RE applies
+    # to Python pre-release numerics.
     component = r"(0|[1-9]\d*)"
     project_release_shape = re.compile(
         rf"""
@@ -55,9 +64,9 @@ def test_version_matches_project_release_shape() -> None:
         re.VERBOSE,
     )
     assert project_release_shape.match(agent_receipts.VERSION), (
-        f"VERSION {agent_receipts.VERSION!r} does not match the strict X.Y.Z "
-        "shape that scripts/release.sh accepts (no two-part / four-part / "
-        "leading-zero variants; pre-release must be aN/bN/rcN)"
+        f"VERSION {agent_receipts.VERSION!r} does not match sdk/py's "
+        "release-version policy (strict X.Y.Z, optional PEP 440 aN/bN/rcN, "
+        "optional +local)"
     )
 
 
