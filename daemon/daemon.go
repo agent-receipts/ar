@@ -85,21 +85,31 @@ func DefaultSocketPath() string {
 }
 
 // DefaultDBPath returns the per-user SQLite path used when AGENTRECEIPTS_DB
-// is not set.
+// is not set. Uses XDG_DATA_HOME (defaults to ~/.local/share on Linux/macOS).
 func DefaultDBPath() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".agent-receipts", "receipts.db")
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			dataHome = filepath.Join(home, ".local", "share")
+		} else {
+			return ""
+		}
 	}
-	return ""
+	return filepath.Join(dataHome, "agent-receipts", "receipts.db")
 }
 
 // DefaultKeyPath returns the per-user signing-key path used when
-// AGENTRECEIPTS_KEY is not set.
+// AGENTRECEIPTS_KEY is not set. Uses XDG_DATA_HOME (defaults to ~/.local/share on Linux/macOS).
 func DefaultKeyPath() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".agent-receipts", "signing.key")
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			dataHome = filepath.Join(home, ".local", "share")
+		} else {
+			return ""
+		}
 	}
-	return ""
+	return filepath.Join(dataHome, "agent-receipts", "signing.key")
 }
 
 // DefaultPublicKeyPath returns the default published public-key path: the
