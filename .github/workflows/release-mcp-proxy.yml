@@ -54,8 +54,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Mark pre-release tags (e.g. v0.8.0-alpha.1) so they don't show
+          # up as "latest" on the GitHub Releases page.
+          PRERELEASE_ARG=()
+          if [[ "${MCP_PROXY_VERSION}" == *-* ]]; then
+            PRERELEASE_ARG+=(--prerelease)
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --title "mcp-proxy ${MCP_PROXY_VERSION}" \
             --generate-notes \
+            "${PRERELEASE_ARG[@]}" \
             mcp-proxy/dist/*.tar.gz \
             mcp-proxy/dist/checksums.txt
