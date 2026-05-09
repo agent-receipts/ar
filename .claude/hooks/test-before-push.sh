@@ -19,6 +19,12 @@
 
 set -euo pipefail
 
+# Claude Code launches PreToolUse hooks in a minimal-PATH shell that doesn't
+# include user-installed binaries like `uv` (~/.local/bin/uv). Prepend the
+# common user-bin locations so `uv run pytest` resolves without each Python
+# push needing to remember a manual PATH prefix.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 # --- Filter: only run for `git push` -----------------------------------------
 
 extract_command() {
