@@ -57,9 +57,14 @@ done
 MODULE="${ARGS[0]}"
 VERSION="${ARGS[1]}"
 
-# Validate version format
-[[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]] || \
-  fail "invalid version '$VERSION' — expected semver (e.g. 0.2.0, 1.0.0-beta.1)"
+# Validate version format. Accepts SemVer (used by sdk-go, sdk-ts,
+# mcp-proxy, daemon) or PEP 440 pre-release form (used by sdk-py — PyPI
+# rejects SemVer-style hyphenated pre-releases, so the canonical form is
+# 0.8.0a1, 0.8.0b2, 0.8.0rc1).
+SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+PEP440_PRE_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(a|b|rc)[0-9]+$'
+[[ "$VERSION" =~ $SEMVER_RE ]] || [[ "$VERSION" =~ $PEP440_PRE_RE ]] || \
+  fail "invalid version '$VERSION' — expected SemVer (e.g. 0.2.0, 1.0.0-beta.1) or PEP 440 pre-release for sdk-py (e.g. 0.8.0a1)"
 
 # Ensure we're on main and up to date
 BRANCH=$(git branch --show-current)
@@ -168,9 +173,12 @@ echo ""
 PRERELEASE=false
 # Strip SemVer build metadata before detecting pre-release: build metadata
 # (anything after '+') can legally contain '-', so a naive *-* glob would
-# misclassify e.g. 1.2.3+build-4 as a pre-release.
+# misclassify e.g. 1.2.3+build-4 as a pre-release. Also flag PEP 440
+# pre-release suffixes (e.g. 0.8.0a1) which use no '-' separator.
 CORE_VERSION="${VERSION%%+*}"
-[[ "$CORE_VERSION" == *-* ]] && PRERELEASE=true
+if [[ "$CORE_VERSION" == *-* ]] || [[ "$CORE_VERSION" =~ [0-9]+(a|b|rc)[0-9]+$ ]]; then
+  PRERELEASE=true
+fi
 
 echo "Will create release:"
 echo "  Tag:         $TAG"
