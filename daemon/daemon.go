@@ -85,32 +85,45 @@ func DefaultSocketPath() string {
 	}
 }
 
+// xdgDataHome returns the XDG_DATA_HOME directory or its default
+// ($HOME/.local/share). Returns "" when XDG_DATA_HOME is unset and the
+// user's home directory cannot be determined.
+//
+// Per the XDG Base Directory spec, $XDG_DATA_HOME must be an absolute path;
+// a relative value is treated as invalid and ignored, falling back to the
+// $HOME/.local/share default. This protects against a misconfigured
+// environment silently relocating the receipt store under the working
+// directory of whichever process happened to start the daemon.
+func xdgDataHome() string {
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome != "" && filepath.IsAbs(dataHome) {
+		return dataHome
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share")
+}
+
 // DefaultDBPath returns the per-user SQLite path used when AGENTRECEIPTS_DB
 // is not set. Uses XDG_DATA_HOME (defaults to ~/.local/share on Linux/macOS).
 func DefaultDBPath() string {
-	dataHome := os.Getenv("XDG_DATA_HOME")
-	if dataHome == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			dataHome = filepath.Join(home, ".local", "share")
-		} else {
-			return ""
-		}
+	dh := xdgDataHome()
+	if dh == "" {
+		return ""
 	}
-	return filepath.Join(dataHome, "agent-receipts", "receipts.db")
+	return filepath.Join(dh, "agent-receipts", "receipts.db")
 }
 
 // DefaultKeyPath returns the per-user signing-key path used when
 // AGENTRECEIPTS_KEY is not set. Uses XDG_DATA_HOME (defaults to ~/.local/share on Linux/macOS).
 func DefaultKeyPath() string {
-	dataHome := os.Getenv("XDG_DATA_HOME")
-	if dataHome == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			dataHome = filepath.Join(home, ".local", "share")
-		} else {
-			return ""
-		}
+	dh := xdgDataHome()
+	if dh == "" {
+		return ""
 	}
-	return filepath.Join(dataHome, "agent-receipts", "signing.key")
+	return filepath.Join(dh, "agent-receipts", "signing.key")
 }
 
 // DefaultPublicKeyPath returns the default published public-key path: the
