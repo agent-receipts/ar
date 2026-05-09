@@ -184,6 +184,14 @@ func TestGenerateKey_RefusesExistingPublicKey(t *testing.T) {
 // through that symlink to a target file (e.g. the user's authorized_keys).
 // O_NOFOLLOW + O_EXCL is what closes the window.
 func TestGenerateKey_RefusesSymlinkAtPrivateKeyPath(t *testing.T) {
+	// On platforms where oNoFollow is a no-op (non-unix builds, see
+	// nofollow_other.go) the OpenFile would silently follow the symlink
+	// and the assertion below would fail. The daemon refuses to start
+	// outside Linux/macOS at runtime anyway — mirror keysource/file_test.go's
+	// skip rather than assert what the platform can't enforce.
+	if oNoFollow == 0 {
+		t.Skip("O_NOFOLLOW is a no-op on this platform; symlink rejection cannot be enforced")
+	}
 	dir := t.TempDir()
 	target := filepath.Join(dir, "attacker-target")
 	if err := os.WriteFile(target, []byte("victim"), 0o600); err != nil {
@@ -217,6 +225,9 @@ func TestGenerateKey_RefusesSymlinkAtPrivateKeyPath(t *testing.T) {
 // second write, the existing private-key cleanup must still leave a
 // clean state.
 func TestGenerateKey_RefusesSymlinkAtPublicKeyPath(t *testing.T) {
+	if oNoFollow == 0 {
+		t.Skip("O_NOFOLLOW is a no-op on this platform; symlink rejection cannot be enforced")
+	}
 	dir := t.TempDir()
 	target := filepath.Join(dir, "attacker-target")
 	if err := os.WriteFile(target, []byte("victim"), 0o644); err != nil {

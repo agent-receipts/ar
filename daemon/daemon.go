@@ -173,13 +173,16 @@ func GenerateKey(keyPath, publicKeyPath string) error {
 		return fmt.Errorf("generate key pair: %w", err)
 	}
 
-	// Create both parent directories. The private-key dir uses 0o750
-	// because the key inside is operator-only; the public-key dir uses
-	// 0o755 because the key inside is meant to be readable by verifiers.
+	// Create both parent directories at 0o750, matching publishPublicKey's
+	// dir mode (daemon.go's existing convention). Default deployments place
+	// the public key alongside the private key, so the second MkdirAll is
+	// usually a no-op against the dir we just made; we still call it so an
+	// operator who passes --public-key /elsewhere doesn't see a bare ENOENT
+	// from the OpenFile below.
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
 		return fmt.Errorf("create key dir: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(publicKeyPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(publicKeyPath), 0o750); err != nil {
 		return fmt.Errorf("create public-key dir: %w", err)
 	}
 
