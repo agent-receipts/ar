@@ -49,14 +49,28 @@ jobs:
       - run: pnpm run build
 
       # Pre-release versions go to a non-default dist-tag so they don't
-      # clobber `latest` for users on the stable line. Extracts the
-      # pre-release identifier from semver (alpha/beta/rc/...).
+      # clobber `latest` for users on the stable line. Two-phase logic:
+      #   1. Strip SemVer build metadata (after '+'); if a '-' remains
+      #      anywhere in the core version, this is a pre-release.
+      #   2. Extract a leading [A-Za-z]+ identifier from the pre-release
+      #      portion (lowercased). Falls back to `prerelease` if the
+      #      identifier is purely numeric or otherwise unparseable —
+      #      never falls through to `latest`, which would defeat the
+      #      whole purpose.
       - name: Determine npm dist-tag
         id: dist_tag
+        shell: bash
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
-          if [[ "$PKG_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-([a-z]+) ]]; then
-            echo "tag=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          CORE="${PKG_VERSION%%+*}"
+          if [[ "$CORE" == *-* ]]; then
+            PRE="${CORE#*-}"
+            if [[ "$PRE" =~ ^([A-Za-z]+) ]]; then
+              TAG_NAME="${BASH_REMATCH[1],,}"
+            else
+              TAG_NAME="prerelease"
+            fi
+            echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi

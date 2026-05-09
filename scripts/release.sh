@@ -166,7 +166,11 @@ echo "--- All checks passed"
 echo ""
 
 PRERELEASE=false
-[[ "$VERSION" == *-* ]] && PRERELEASE=true
+# Strip SemVer build metadata before detecting pre-release: build metadata
+# (anything after '+') can legally contain '-', so a naive *-* glob would
+# misclassify e.g. 1.2.3+build-4 as a pre-release.
+CORE_VERSION="${VERSION%%+*}"
+[[ "$CORE_VERSION" == *-* ]] && PRERELEASE=true
 
 echo "Will create release:"
 echo "  Tag:         $TAG"
