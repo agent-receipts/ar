@@ -5,6 +5,12 @@
 
 set -euo pipefail
 
+# Claude Code launches PostToolUse hooks in a minimal-PATH shell that doesn't
+# include user-installed binaries like `uv` (~/.local/bin/uv). Prepend the
+# common user-bin locations so `uv run ruff` resolves without each Python
+# edit needing to remember a manual PATH prefix.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "lint-on-edit: jq is not installed; skipping lint hook" >&2
   exit 0
