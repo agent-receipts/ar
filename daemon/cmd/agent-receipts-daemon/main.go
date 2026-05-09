@@ -11,10 +11,28 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/agent-receipts/ar/daemon"
 )
+
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z".
+// Falls back to the module version from Go's build info (set automatically
+// for binaries installed with `go install`), then to "dev". Mirrors the
+// resolveVersion pattern in mcp-proxy/cmd/mcp-proxy/main.go so operators
+// see a useful string from `--version` in any install scenario.
+var version string
+
+func resolveVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
 
 func main() {
 	cfg := daemon.Config{
@@ -33,6 +51,7 @@ func main() {
 	}
 
 	initKeys := flag.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.StringVar(&cfg.SocketPath, "socket", cfg.SocketPath, "Unix-domain socket path (env: AGENTRECEIPTS_SOCKET)")
 	flag.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	flag.StringVar(&cfg.KeyPath, "key", cfg.KeyPath, "Ed25519 PEM private key path, mode 0600 (env: AGENTRECEIPTS_KEY)")
@@ -41,6 +60,11 @@ func main() {
 	flag.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	flag.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("agent-receipts-daemon %s\n", resolveVersion())
+		return
+	}
 
 	if *initKeys {
 		if cfg.PublicKeyPath == "" {
