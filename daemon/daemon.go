@@ -19,6 +19,7 @@ import (
 	"github.com/agent-receipts/ar/daemon/internal/keysource"
 	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/daemon/internal/socket"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
@@ -84,22 +85,45 @@ func DefaultSocketPath() string {
 	}
 }
 
-// DefaultDBPath returns the per-user SQLite path used when AGENTRECEIPTS_DB
-// is not set.
-func DefaultDBPath() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".agent-receipts", "receipts.db")
+// xdgDataHome returns the XDG_DATA_HOME directory or its default
+// ($HOME/.local/share). Returns "" when XDG_DATA_HOME is unset and the
+// user's home directory cannot be determined.
+//
+// Per the XDG Base Directory spec, $XDG_DATA_HOME must be an absolute path;
+// a relative value is treated as invalid and ignored, falling back to the
+// $HOME/.local/share default. This protects against a misconfigured
+// environment silently relocating the receipt store under the working
+// directory of whichever process happened to start the daemon.
+func xdgDataHome() string {
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome != "" && filepath.IsAbs(dataHome) {
+		return dataHome
 	}
-	return ""
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share")
+}
+
+// DefaultDBPath returns the per-user SQLite path used when AGENTRECEIPTS_DB
+// is not set. Uses XDG_DATA_HOME (defaults to ~/.local/share on Linux/macOS).
+func DefaultDBPath() string {
+	dh := xdgDataHome()
+	if dh == "" {
+		return ""
+	}
+	return filepath.Join(dh, "agent-receipts", "receipts.db")
 }
 
 // DefaultKeyPath returns the per-user signing-key path used when
-// AGENTRECEIPTS_KEY is not set.
+// AGENTRECEIPTS_KEY is not set. Uses XDG_DATA_HOME (defaults to ~/.local/share on Linux/macOS).
 func DefaultKeyPath() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".agent-receipts", "signing.key")
+	dh := xdgDataHome()
+	if dh == "" {
+		return ""
 	}
-	return ""
+	return filepath.Join(dh, "agent-receipts", "signing.key")
 }
 
 // DefaultPublicKeyPath returns the default published public-key path: the
@@ -111,6 +135,115 @@ func DefaultPublicKeyPath(keyPath string) string {
 		return ""
 	}
 	return keyPath + ".pub"
+}
+
+// GenerateKey creates a new Ed25519 key pair and saves the private key to
+// keyPath (mode 0600) and public key to publicKeyPath (mode 0644). Refuses
+// to overwrite an existing file at either path, and refuses to follow a
+// symlink at either path. Use this explicitly via --init; never call it as
+// a side-effect of starting the daemon — silently regenerating a missing
+// key would invalidate every receipt previously signed by the operator's
+// real key.
+//
+// Atomicity: both files are created with O_CREATE|O_EXCL|O_NOFOLLOW so an
+// attacker who plants a symlink (or any other dirent) at either path
+// between the directory creation and the file open trips O_EXCL — we never
+// write through the symlink target. If the public-key write fails after
+// the private-key write succeeded, the private-key file is removed so the
+// caller doesn't end up with a half-initialised on-disk state.
+//
+// The mode passed to OpenFile may be narrowed by the process umask; an
+// explicit fchmod after open ensures the on-disk mode matches what the
+// caller asked for.
+func GenerateKey(keyPath, publicKeyPath string) error {
+	if keyPath == "" {
+		return errors.New("keyPath is required")
+	}
+	if publicKeyPath == "" {
+		publicKeyPath = DefaultPublicKeyPath(keyPath)
+	}
+	if keyPath == publicKeyPath {
+		return fmt.Errorf("keyPath and publicKeyPath must differ; both are %s", keyPath)
+	}
+
+	// Generate the key pair before touching the filesystem so a generation
+	// failure leaves no half-state behind.
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		return fmt.Errorf("generate key pair: %w", err)
+	}
+
+	// Create both parent directories at 0o750, matching publishPublicKey's
+	// dir mode (daemon.go's existing convention). Default deployments place
+	// the public key alongside the private key, so the second MkdirAll is
+	// usually a no-op against the dir we just made; we still call it so an
+	// operator who passes --public-key /elsewhere doesn't see a bare ENOENT
+	// from the OpenFile below.
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
+		return fmt.Errorf("create key dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(publicKeyPath), 0o750); err != nil {
+		return fmt.Errorf("create public-key dir: %w", err)
+	}
+
+	if err := writeNewSecretFile(keyPath, []byte(kp.PrivateKey), 0o600); err != nil {
+		return fmt.Errorf("write private key %s: %w", keyPath, err)
+	}
+
+	if err := writeNewSecretFile(publicKeyPath, []byte(kp.PublicKey), 0o644); err != nil {
+		// Roll back so the operator can re-run --init from a clean state
+		// instead of being stuck with a private key whose public half is
+		// missing or wrong.
+		_ = os.Remove(keyPath)
+		return fmt.Errorf("write public key %s: %w", publicKeyPath, err)
+	}
+
+	return nil
+}
+
+// writeNewSecretFile creates a file at path containing data with the given
+// mode. It refuses to overwrite an existing file (O_EXCL) and refuses to
+// follow a symlink at the path (O_NOFOLLOW), closing the TOCTOU window
+// where a Stat-then-Write pair could be tricked into writing through a
+// symlink an attacker plants between the two syscalls.
+//
+// fchmod after the write ensures the on-disk permissions match mode even
+// when the process umask would otherwise narrow them; on failure the
+// partially-written file is removed so a retry sees a clean slate.
+func writeNewSecretFile(path string, data []byte, mode os.FileMode) error {
+	fh, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|oNoFollow, mode)
+	if err != nil {
+		if isSymlinkLoop(err) {
+			return fmt.Errorf("refusing to follow symlink at %s", path)
+		}
+		return err
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			_ = fh.Close()
+			_ = os.Remove(path)
+		}
+	}()
+
+	if _, err := fh.Write(data); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	// fchmod via the open fd, not path-based Chmod, so the mode applies to
+	// the inode we just created — no symlink-target chmod risk even if the
+	// directory entry is replaced after we write.
+	if err := fh.Chmod(mode); err != nil {
+		return fmt.Errorf("chmod %o: %w", mode, err)
+	}
+	closed = true
+	if err := fh.Close(); err != nil {
+		// Close-time errors (NFS commit failure, disk-full, quota
+		// exceeded) can lose data we just "wrote". Remove the file so the
+		// caller can retry from a clean state.
+		_ = os.Remove(path)
+		return fmt.Errorf("close: %w", err)
+	}
+	return nil
 }
 
 // Run starts the daemon and blocks until ctx is cancelled. It returns the
