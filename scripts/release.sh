@@ -57,14 +57,26 @@ done
 MODULE="${ARGS[0]}"
 VERSION="${ARGS[1]}"
 
-# Validate version format. Accepts SemVer (used by sdk-go, sdk-ts,
-# mcp-proxy, daemon) or PEP 440 pre-release form (used by sdk-py — PyPI
-# rejects SemVer-style hyphenated pre-releases, so the canonical form is
-# 0.8.0a1, 0.8.0b2, 0.8.0rc1).
+# Validate version format. PEP 440 pre-release form (e.g. 0.8.0a1) is
+# accepted only for sdk-py because PyPI rejects SemVer-style hyphenated
+# pre-releases. Go modules (sdk-go, mcp-proxy, daemon) and the npm
+# module (sdk-ts) require SemVer; accepting PEP 440 there would silently
+# create tags that go.mod / npm cannot resolve.
 SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
 PEP440_PRE_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(a|b|rc)[0-9]+$'
-[[ "$VERSION" =~ $SEMVER_RE ]] || [[ "$VERSION" =~ $PEP440_PRE_RE ]] || \
-  fail "invalid version '$VERSION' — expected SemVer (e.g. 0.2.0, 1.0.0-beta.1) or PEP 440 pre-release for sdk-py (e.g. 0.8.0a1)"
+case "$MODULE" in
+  sdk-py)
+    [[ "$VERSION" =~ $SEMVER_RE ]] || [[ "$VERSION" =~ $PEP440_PRE_RE ]] || \
+      fail "invalid version '$VERSION' for sdk-py — expected SemVer (e.g. 0.5.0, 1.0.0-beta.1) or PEP 440 pre-release (e.g. 0.8.0a1)"
+    ;;
+  sdk-go|sdk-ts|mcp-proxy|daemon)
+    [[ "$VERSION" =~ $SEMVER_RE ]] || \
+      fail "invalid version '$VERSION' for $MODULE — expected SemVer (e.g. 0.2.0, 1.0.0-beta.1). PEP 440 form (e.g. 0.8.0a1) is accepted only for sdk-py."
+    ;;
+  *)
+    fail "unknown module '$MODULE' — run with no args for usage"
+    ;;
+esac
 
 # Ensure we're on main and up to date
 BRANCH=$(git branch --show-current)
@@ -183,7 +195,7 @@ fi
 echo "Will create release:"
 echo "  Tag:         $TAG"
 echo "  Title:       $MODULE v$VERSION"
-[[ "$PRERELEASE" == "true" ]] && echo "  Pre-release: yes (version contains '-')"
+[[ "$PRERELEASE" == "true" ]] && echo "  Pre-release: yes"
 if [[ "$MODULE" == "mcp-proxy" ]]; then
   echo "  Action:      push tag only; release-mcp-proxy.yml builds binaries and creates the GitHub Release"
 else
