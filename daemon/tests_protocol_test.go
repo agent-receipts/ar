@@ -151,6 +151,15 @@ func TestMalformedFrameDoesNotAdvanceChain(t *testing.T) {
 				t.Errorf("daemon did not recover: expected 1 receipt after valid frame, got %d",
 					len(receipts))
 			}
+			// Verify malformed frame didn't consume a sequence number
+			if receipts[0].CredentialSubject.Chain.Sequence != 1 {
+				t.Errorf("expected sequence 1, got %d (malformed frame consumed sequence)",
+					receipts[0].CredentialSubject.Chain.Sequence)
+			}
+			if receipts[0].CredentialSubject.Chain.PreviousReceiptHash != nil {
+				t.Errorf("expected prev_hash nil, got %v (first receipt in chain)",
+					receipts[0].CredentialSubject.Chain.PreviousReceiptHash)
+			}
 		})
 	}
 }
@@ -183,6 +192,15 @@ func TestOversizedFrameHeader(t *testing.T) {
 	receipts := fix.WaitForReceiptCount(t, 1, 2*time.Second)
 	if len(receipts) != 1 {
 		t.Errorf("daemon did not recover from oversized frame: got %d receipts", len(receipts))
+	}
+	// Verify oversized frame didn't consume a sequence number
+	if receipts[0].CredentialSubject.Chain.Sequence != 1 {
+		t.Errorf("expected sequence 1, got %d (oversized frame consumed sequence)",
+			receipts[0].CredentialSubject.Chain.Sequence)
+	}
+	if receipts[0].CredentialSubject.Chain.PreviousReceiptHash != nil {
+		t.Errorf("expected prev_hash nil, got %v (first receipt in chain)",
+			receipts[0].CredentialSubject.Chain.PreviousReceiptHash)
 	}
 }
 
@@ -300,6 +318,12 @@ func TestDecisionVariants(t *testing.T) {
 			decision:       "pending",
 			errorStr:       "",
 			expectedStatus: receipt.StatusPending,
+		},
+		{
+			name:           "allowed",
+			decision:       "allowed",
+			errorStr:       "",
+			expectedStatus: receipt.StatusSuccess,
 		},
 		{
 			name:           "allowed_with_error",
