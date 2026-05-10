@@ -3,10 +3,6 @@
 package daemon
 
 import (
-	"crypto/ed25519"
-	"crypto/x509"
-	"encoding/pem"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -97,7 +93,7 @@ func TestResumesChainAfterUncleanShutdown(t *testing.T) {
 	pubPEM := fix1.PublicKey
 	cfg := fix1.Config
 
-	// Immediate cancel without waiting (simulates kill -9)
+	// Immediate cancel without waiting (simulates process termination without graceful shutdown)
 	fix1.cancel()
 	// Wait briefly for the daemon to finish (it should have durable commits via WAL)
 	select {
@@ -232,30 +228,4 @@ func TestResumesWithConcurrentEmittersOnRestart(t *testing.T) {
 				i+1, expectedHash, *actualHash)
 		}
 	}
-}
-
-// writeLiveKey writes a test Ed25519 private key to keyPath and returns the PEM-encoded public key.
-// This is used to provide a consistent key for restart tests that need to reuse the same key.
-func writeLiveKey(t *testing.T, keyPath string) string {
-	t.Helper()
-
-	_, priv, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	der, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-	if err := os.WriteFile(keyPath, pemBytes, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	pub := priv.Public().(ed25519.PublicKey)
-	pubDER, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 }

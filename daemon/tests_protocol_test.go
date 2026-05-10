@@ -13,8 +13,39 @@ import (
 	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/daemon/internal/socket"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
-	receiptpkg "github.com/agent-receipts/ar/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/store"
 )
+
+// assertReceiptCountStays0 polls the store repeatedly for the duration and fails if receipts appear.
+// Unlike WaitForReceiptCount(t, 0, timeout) which returns immediately on 0 receipts,
+// this actively waits to catch any receipts created during the timeout period.
+func assertReceiptCountStays0(t *testing.T, f *DaemonFixture, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s, err := store.OpenReadOnly(f.Config.DBPath)
+			if err != nil {
+				t.Fatalf("open store: %v", err)
+			}
+			got, err := s.GetChain(f.Config.ChainID)
+			s.Close()
+
+			if err == nil && len(got) > 0 {
+				t.Errorf("expected no receipts but got %d (trace:\n%s)", len(got), f.Trace())
+				return
+			}
+
+			if time.Now().After(deadline) {
+				return
+			}
+		}
+	}
+}
 
 // writeRaw dials the socket and writes raw bytes without framing.
 // Used to test malformed frame headers and other protocol violations.
@@ -103,11 +134,7 @@ func TestMalformedFrameDoesNotAdvanceChain(t *testing.T) {
 			emitFrameRaw(t, fix.Config.SocketPath, tc.frame)
 
 			// Verify no receipt was created
-			receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
-			if len(receipts) != 0 {
-				t.Errorf("expected no receipts after malformed frame, got %d\ntrace:\n%s",
-					len(receipts), fix.Trace())
-			}
+			assertReceiptCountStays0(t, fix, 500*time.Millisecond)
 
 			// Confirm daemon is still live: send a valid frame and wait for it
 			validFrame := pipeline.EmitterFrame{
@@ -119,7 +146,7 @@ func TestMalformedFrameDoesNotAdvanceChain(t *testing.T) {
 				Decision:  "allowed",
 			}
 			emitFrameRaw(t, fix.Config.SocketPath, validFrame)
-			receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+			receipts := fix.WaitForReceiptCount(t, 1, 2*time.Second)
 			if len(receipts) != 1 {
 				t.Errorf("daemon did not recover: expected 1 receipt after valid frame, got %d",
 					len(receipts))
@@ -141,10 +168,7 @@ func TestOversizedFrameHeader(t *testing.T) {
 	writeRaw(t, fix.Config.SocketPath, hdr)
 
 	// No receipt should be created
-	receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
-	if len(receipts) != 0 {
-		t.Errorf("expected no receipts after oversized frame, got %d", len(receipts))
-	}
+	assertReceiptCountStays0(t, fix, 500*time.Millisecond)
 
 	// Daemon still alive: send valid frame
 	validFrame := pipeline.EmitterFrame{
@@ -156,7 +180,7 @@ func TestOversizedFrameHeader(t *testing.T) {
 		Decision:  "allowed",
 	}
 	emitFrameRaw(t, fix.Config.SocketPath, validFrame)
-	receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+	receipts := fix.WaitForReceiptCount(t, 1, 2*time.Second)
 	if len(receipts) != 1 {
 		t.Errorf("daemon did not recover from oversized frame: got %d receipts", len(receipts))
 	}
@@ -170,10 +194,7 @@ func TestZeroLengthFrameHeader(t *testing.T) {
 	writeRaw(t, fix.Config.SocketPath, make([]byte, 4))
 
 	// No receipt created
-	receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
-	if len(receipts) != 0 {
-		t.Errorf("expected no receipts after zero-length header, got %d", len(receipts))
-	}
+	assertReceiptCountStays0(t, fix, 500*time.Millisecond)
 
 	// Daemon still alive
 	validFrame := pipeline.EmitterFrame{
@@ -185,7 +206,7 @@ func TestZeroLengthFrameHeader(t *testing.T) {
 		Decision:  "allowed",
 	}
 	emitFrameRaw(t, fix.Config.SocketPath, validFrame)
-	receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+	receipts := fix.WaitForReceiptCount(t, 1, 2*time.Second)
 	if len(receipts) != 1 {
 		t.Errorf("daemon did not recover: got %d receipts", len(receipts))
 	}
@@ -200,10 +221,7 @@ func TestPartialHeaderDrop(t *testing.T) {
 	writeRaw(t, fix.Config.SocketPath, []byte{0x00, 0x00})
 
 	// No receipt created
-	receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
-	if len(receipts) != 0 {
-		t.Errorf("expected no receipts after partial header drop, got %d", len(receipts))
-	}
+	assertReceiptCountStays0(t, fix, 500*time.Millisecond)
 
 	// Daemon still alive: new connection with valid frame
 	validFrame := pipeline.EmitterFrame{
@@ -215,7 +233,7 @@ func TestPartialHeaderDrop(t *testing.T) {
 		Decision:  "allowed",
 	}
 	emitFrameRaw(t, fix.Config.SocketPath, validFrame)
-	receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+	receipts := fix.WaitForReceiptCount(t, 1, 2*time.Second)
 	if len(receipts) != 1 {
 		t.Errorf("daemon did not recover: got %d receipts", len(receipts))
 	}
@@ -244,10 +262,7 @@ func TestPartialBodyDrop(t *testing.T) {
 	conn.Close()
 
 	// No receipt created
-	receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
-	if len(receipts) != 0 {
-		t.Errorf("expected no receipts after partial body drop, got %d", len(receipts))
-	}
+	assertReceiptCountStays0(t, fix, 500*time.Millisecond)
 
 	// Daemon still alive
 	validFrame := pipeline.EmitterFrame{
@@ -259,7 +274,7 @@ func TestPartialBodyDrop(t *testing.T) {
 		Decision:  "allowed",
 	}
 	emitFrameRaw(t, fix.Config.SocketPath, validFrame)
-	receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+	receipts := fix.WaitForReceiptCount(t, 1, 2*time.Second)
 	if len(receipts) != 1 {
 		t.Errorf("daemon did not recover: got %d receipts", len(receipts))
 	}
@@ -272,25 +287,25 @@ func TestDecisionVariants(t *testing.T) {
 		name           string
 		decision       string
 		errorStr       string
-		expectedStatus receiptpkg.OutcomeStatus
+		expectedStatus receipt.OutcomeStatus
 	}{
 		{
 			name:           "denied",
 			decision:       "denied",
 			errorStr:       "",
-			expectedStatus: receiptpkg.StatusFailure,
+			expectedStatus: receipt.StatusFailure,
 		},
 		{
 			name:           "pending",
 			decision:       "pending",
 			errorStr:       "",
-			expectedStatus: receiptpkg.StatusPending,
+			expectedStatus: receipt.StatusPending,
 		},
 		{
 			name:           "allowed_with_error",
 			decision:       "allowed",
 			errorStr:       "some error occurred",
-			expectedStatus: receiptpkg.StatusFailure,
+			expectedStatus: receipt.StatusFailure,
 		},
 	}
 

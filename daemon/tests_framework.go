@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,15 +133,17 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 		close(fix.done)
 	}()
 
-	// Wait for socket
+	// Wait for socket to be ready (active listener, not just file presence)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if _, err := os.Stat(cfg.SocketPath); err == nil {
+		conn, err := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
 			break
 		}
 		if time.Now().After(deadline) {
 			cancel()
-			t.Fatalf("daemon socket %s did not appear within 2s", cfg.SocketPath)
+			t.Fatalf("daemon socket %s did not become ready within 2s", cfg.SocketPath)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -171,28 +174,38 @@ func StartDaemonFromConfig(t *testing.T, cfg Config, pubPEM string) *DaemonFixtu
 	traceBuf := &syncBuffer{}
 	cfg.TraceLog = traceBuf
 
+	// Resolve paths needed by emitter helpers
+	repoRoot := findSDKRoot(t)
+	emitTSPath := findHelperScript(t, "emit_ts.mjs")
+	emitPyPath := findHelperScript(t, "emit_py.py")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	fix := &DaemonFixture{
-		Config:    cfg,
-		PublicKey: pubPEM,
-		cancel:    cancel,
-		done:      make(chan struct{}),
-		traceBuf:  traceBuf,
+		Config:     cfg,
+		PublicKey:  pubPEM,
+		cancel:     cancel,
+		done:       make(chan struct{}),
+		traceBuf:   traceBuf,
+		repoRoot:   repoRoot,
+		emitTSPath: emitTSPath,
+		emitPyPath: emitPyPath,
 	}
 	go func() {
 		fix.daemonErr = Run(ctx, cfg)
 		close(fix.done)
 	}()
 
-	// Wait for socket to appear
+	// Wait for socket to be ready (active listener, not just file presence)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if _, err := os.Stat(cfg.SocketPath); err == nil {
+		conn, err := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
 			break
 		}
 		if time.Now().After(deadline) {
 			cancel()
-			t.Fatalf("daemon socket %s did not appear within 2s", cfg.SocketPath)
+			t.Fatalf("daemon socket %s did not become ready within 2s", cfg.SocketPath)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -243,12 +256,6 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 // Returns an error if the operation fails, allowing safe use from goroutines.
 func (f *DaemonFixture) EmitGoFrameFull(t *testing.T, sessionID string, event emitter.Event) error {
 	t.Helper()
-
-	// Inject session ID and socket path if not already set
-	if sessionID != "" && sessionID != "generated" {
-		// emitter.WithSessionID sets the session for the lifetime of the Emitter
-		// We need to create an Emitter with the session already set
-	}
 
 	em, err := emitter.New(
 		emitter.WithSocketPath(f.Config.SocketPath),
