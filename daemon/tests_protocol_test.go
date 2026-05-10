@@ -30,10 +30,12 @@ func assertReceiptCountStays0(t *testing.T, f *DaemonFixture, timeout time.Durat
 		case <-ticker.C:
 			s, err := store.OpenReadOnly(f.Config.DBPath)
 			if err != nil {
-				t.Fatalf("open store: %v", err)
+				t.Fatalf("open store: %v\ntrace:\n%s", err, f.Trace())
 			}
 			got, err := s.GetChain(f.Config.ChainID)
-			s.Close()
+			if closeErr := s.Close(); closeErr != nil {
+				t.Logf("close store: %v", closeErr)
+			}
 
 			if err == nil && len(got) > 0 {
 				t.Errorf("expected no receipts but got %d (trace:\n%s)", len(got), f.Trace())

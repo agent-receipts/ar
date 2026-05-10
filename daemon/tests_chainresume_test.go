@@ -166,7 +166,7 @@ func TestResumesWithConcurrentEmittersOnRestart(t *testing.T) {
 	// 3 goroutines, 5 frames each = 15 more frames (20 total)
 	errCh := make(chan error, 3)
 	for g := 0; g < 3; g++ {
-		go func(goroutine int) {
+		go func(_ int) {
 			for i := 0; i < 5; i++ {
 				err := fix2.EmitGoFrame(t, "concurrent-test", "sdk", "test-tool", "", "allowed")
 				if err != nil {

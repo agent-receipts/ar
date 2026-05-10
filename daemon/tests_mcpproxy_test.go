@@ -119,7 +119,7 @@ func TestMCPProxyConcurrentWithSDKEmitters(t *testing.T) {
 	// 2 mcp_proxy emitters
 	for g := 0; g < 2; g++ {
 		wg.Add(1)
-		go func(goroutine int) {
+		go func(_ int) {
 			defer wg.Done()
 			for i := 0; i < 10; i++ {
 				err := fix.EmitGoFrame(t, sessionID, "mcp_proxy", "tool_a", "server_x", "allowed")
