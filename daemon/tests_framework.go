@@ -136,6 +136,13 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 	// Wait for socket to be ready (active listener, not just file presence)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
+		// Check if daemon exited early before trying to connect
+		select {
+		case <-fix.done:
+			t.Fatalf("daemon exited early: %v\ntrace:\n%s", fix.daemonErr, fix.Trace())
+		default:
+		}
+
 		conn, err := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
 		if err == nil {
 			conn.Close()
@@ -198,6 +205,13 @@ func StartDaemonFromConfig(t *testing.T, cfg Config, pubPEM string) *DaemonFixtu
 	// Wait for socket to be ready (active listener, not just file presence)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
+		// Check if daemon exited early before trying to connect
+		select {
+		case <-fix.done:
+			t.Fatalf("daemon exited early: %v\ntrace:\n%s", fix.daemonErr, fix.Trace())
+		default:
+		}
+
 		conn, err := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
 		if err == nil {
 			conn.Close()

@@ -93,16 +93,16 @@ func TestResumesChainAfterUncleanShutdown(t *testing.T) {
 	pubPEM := fix1.PublicKey
 	cfg := fix1.Config
 
-	// Immediate cancel without waiting (simulates process termination without graceful shutdown)
+	// Cancel context immediately without waiting (tests restart after graceful shutdown;
+	// SQLite WAL mode ensures prior commits are durable even if shutdown isn't observed).
 	fix1.cancel()
-	// Wait briefly for the daemon to finish (it should have durable commits via WAL)
 	select {
 	case <-fix1.done:
 		if fix1.daemonErr != nil {
 			t.Logf("daemon error after cancel: %v", fix1.daemonErr)
 		}
 	case <-time.After(1 * time.Second):
-		// Daemon didn't shut down cleanly, but WAL commits should be durable
+		// Daemon is still shutting down, but WAL commits are already durable
 	}
 
 	// Small delay to ensure database file handles are released
@@ -115,8 +115,8 @@ func TestResumesChainAfterUncleanShutdown(t *testing.T) {
 	}
 
 	receipts2 := fix2.WaitForReceiptCount(t, 4, 5*time.Second)
-	if len(receipts2) < 4 {
-		t.Fatalf("second run: expected at least 4 receipts, got %d", len(receipts2))
+	if len(receipts2) != 4 {
+		t.Fatalf("second run: expected 4 receipts, got %d", len(receipts2))
 	}
 
 	// Verify no gaps in the sequence (SQLite WAL commits are durable)
