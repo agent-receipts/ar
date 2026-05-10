@@ -20,6 +20,9 @@ if (!socketPath || !sessionId || !channel || !toolName || !decision) {
 const emitter = new Emitter({
   socketPath,
   sessionId,
+  debugLog: (message, attrs) => {
+    console.error(`${message}:`, attrs);
+  },
 });
 
 const result = await emitter.emit({
@@ -28,4 +31,9 @@ const result = await emitter.emit({
   decision,
 });
 
-process.exit(result ? 0 : 1);
+if (result instanceof Error) {
+  console.error(`Emit failed: ${result.message}`);
+  process.exit(1);
+}
+
+process.exit(0);
