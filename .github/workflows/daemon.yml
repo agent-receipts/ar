@@ -26,9 +26,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: daemon
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -66,12 +63,15 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
 
       - name: Vet
+        working-directory: daemon
         run: go vet ./...
 
       - name: Build
+        working-directory: daemon
         run: go build ./cmd/...
 
       - name: Test
+        working-directory: daemon
         # Single tagged run covers unit + integration tests; the
         # `integration` build tag only adds files (it does not exclude
         # untagged ones), so this matches the coverage of running
