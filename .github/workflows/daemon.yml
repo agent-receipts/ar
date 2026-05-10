@@ -43,13 +43,15 @@ jobs:
       # `pnpm build`, so we need a Node toolchain and a TS build before
       # the Go integration test job runs. Corepack + pnpm version pin
       # mirrors .github/workflows/sdk-ts.yml.
+      # Note: corepack must be enabled before setup-node's cache restoration,
+      # so we call it in a separate step first.
+      - run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24"
           cache: "pnpm"
           cache-dependency-path: sdk/ts/pnpm-lock.yaml
-
-      - run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Build TypeScript SDK
         working-directory: sdk/ts
