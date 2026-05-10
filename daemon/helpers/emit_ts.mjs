@@ -22,32 +22,35 @@ if (!existsSync(distPath)) {
   process.exit(1);
 }
 
-import { Emitter } from "../../sdk/ts/dist/emitter.js";
+// Wrap in async IIFE so we can use await before dynamic import attempts to load
+(async () => {
+  const { Emitter } = await import("../../sdk/ts/dist/emitter.js");
 
-const [socketPath, sessionId, channel, toolName, decision] = process.argv.slice(2);
+  const [socketPath, sessionId, channel, toolName, decision] = process.argv.slice(2);
 
-if (!socketPath || !sessionId || !channel || !toolName || !decision) {
-  console.error("Usage: emit_ts.mjs <socket> <session> <channel> <tool> <decision>");
-  process.exit(1);
-}
+  if (!socketPath || !sessionId || !channel || !toolName || !decision) {
+    console.error("Usage: emit_ts.mjs <socket> <session> <channel> <tool> <decision>");
+    process.exit(1);
+  }
 
-const emitter = new Emitter({
-  socketPath,
-  sessionId,
-  debugLog: (message, attrs) => {
-    console.error(`${message}:`, attrs);
-  },
-});
+  const emitter = new Emitter({
+    socketPath,
+    sessionId,
+    debugLog: (message, attrs) => {
+      console.error(`${message}:`, attrs);
+    },
+  });
 
-const result = await emitter.emit({
-  channel,
-  tool: { name: toolName },
-  decision,
-});
+  const result = await emitter.emit({
+    channel,
+    tool: { name: toolName },
+    decision,
+  });
 
-if (result instanceof Error) {
-  console.error(`Emit failed: ${result.message}`);
-  process.exit(1);
-}
+  if (result instanceof Error) {
+    console.error(`Emit failed: ${result.message}`);
+    process.exit(1);
+  }
 
-process.exit(0);
+  process.exit(0);
+})();
