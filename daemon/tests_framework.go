@@ -176,7 +176,7 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 	}
 	defer em.Close()
 
-	return em.Emit(context.Background(), emitter.Event{
+	err = em.Emit(context.Background(), emitter.Event{
 		Channel: channel,
 		Tool: emitter.Tool{
 			Name:   toolName,
@@ -184,6 +184,7 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 		},
 		Decision: decision,
 	})
+	return err
 }
 
 // EmitTSFrame spawns a Node.js subprocess to emit a frame via the TS SDK.
@@ -240,7 +241,9 @@ func (f *DaemonFixture) WaitForReceiptCount(t *testing.T, count int, timeout tim
 			t.Fatalf("open store: %v\ntrace:\n%s", err, f.Trace())
 		}
 		got, err := s.GetChain(f.Config.ChainID)
-		s.Close()
+		if closeErr := s.Close(); closeErr != nil {
+			t.Logf("close store: %v", closeErr)
+		}
 
 		if err == nil && len(got) >= count {
 			return got

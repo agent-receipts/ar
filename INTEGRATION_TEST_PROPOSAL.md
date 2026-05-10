@@ -276,7 +276,7 @@ import (
 // TestTSEmitterSingleFrame verifies the TypeScript SDK emitter can send
 // one valid frame to the daemon and produce a stored receipt. This is the
 // regression test for v0.8.0-alpha.2 where the TS emitter was silently
-// dropping frames (issue #XXX).
+// dropping frames (ADR-0010).
 func TestTSEmitterSingleFrame(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping emitter integration test in short mode")
@@ -525,10 +525,9 @@ main();
 
 ## Open Questions for Discussion
 
-1. **Should Phase 1 include TraceLog implementation in daemon.go, or defer observability to a later PR?**
-   - Pro defer: Simpler Phase 1, focus on tests.
-   - Pro include: Allows tests to self-diagnose failures (inspect trace when receipts missing).
-   - Recommendation: Defer. Phase 1 tests can detect failures (missing receipts) without root cause. If root cause is needed, add TraceLog in a follow-up.
+1. **Phase 1 includes TraceLog implementation for test observability** (implemented in daemon.go and pipeline/build.go).
+   - Allows tests to self-diagnose failures by inspecting daemon trace output on failure.
+   - Tests capture and display trace output only when receipt count expectations are not met.
 
 2. **Should subprocess emitters be built and committed, or compiled at test time?**
    - Pro build: Faster tests (no compile), simpler debugging.
