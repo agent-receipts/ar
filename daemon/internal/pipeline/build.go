@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"time"
@@ -66,6 +67,7 @@ type Pipeline struct {
 	Store     store.ReceiptStore
 	IssuerID  string // e.g. "did:agent-receipts-daemon:<host>"
 	Now       func() time.Time
+	TraceLog  io.Writer // Optional trace log for testing; nil = silent
 }
 
 // New returns a Pipeline. Callers configure IssuerID; Now defaults to
@@ -77,6 +79,7 @@ func New(s *chain.State, ks keysource.KeySource, store store.ReceiptStore, issue
 		Store:    store,
 		IssuerID: issuerID,
 		Now:      func() time.Time { return time.Now().UTC() },
+		TraceLog: nil,
 	}
 }
 
@@ -99,6 +102,8 @@ func (p *Pipeline) Process(f socket.Frame) error {
 		return fmt.Errorf("invalid emitter frame: %w", err)
 	}
 
+	p.trace("frame received: session=%s channel=%s tool=%s", frame.SessionID, frame.Channel, frame.Tool.Name)
+
 	alloc := p.State.Allocate()
 	defer alloc.Rollback()
 
@@ -106,11 +111,22 @@ func (p *Pipeline) Process(f socket.Frame) error {
 	if err != nil {
 		return err
 	}
+	p.trace("receipt signed: seq=%d hash=%s", alloc.Sequence, hash)
+
 	if err := p.Store.Insert(signed, hash); err != nil {
 		return fmt.Errorf("insert receipt: %w", err)
 	}
+	p.trace("receipt stored: seq=%d", alloc.Sequence)
+
 	alloc.Commit(hash)
 	return nil
+}
+
+// trace writes a trace line to TraceLog if it's not nil.
+func (p *Pipeline) trace(format string, args ...interface{}) {
+	if p.TraceLog != nil {
+		fmt.Fprintf(p.TraceLog, format+"\n", args...)
+	}
 }
 
 func validateFrame(f *EmitterFrame) error {
