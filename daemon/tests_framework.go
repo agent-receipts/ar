@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,13 +29,39 @@ import (
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
+// syncBuffer wraps bytes.Buffer with a mutex so daemon goroutines can write
+// while the test goroutine reads via Trace(). The Pipeline-side traceMu
+// already serialises concurrent daemon writes, but the test's read is on a
+// separate goroutine and would race the writer without its own lock.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // DaemonFixture holds a running daemon instance and its configuration.
+//
+// daemonErr is written before done is closed (one writer goroutine), so any
+// reader observing a closed done can read daemonErr without further
+// synchronisation.
 type DaemonFixture struct {
 	Config    Config
 	PublicKey string // PEM-encoded public key
 	cancel    func()
-	done      chan error
-	traceBuf  *bytes.Buffer
+	done      chan struct{} // closed when daemon Run returns
+	daemonErr error         // result of Run; read only after done is closed
+	traceBuf  *syncBuffer
 }
 
 // StartDaemon starts a test daemon and returns a fixture with cleanup.
@@ -75,13 +102,22 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 
 	// Set up trace log for debugging
-	traceBuf := &bytes.Buffer{}
+	traceBuf := &syncBuffer{}
 	cfg.TraceLog = traceBuf
 
 	// Start daemon
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- Run(ctx, cfg) }()
+	fix := &DaemonFixture{
+		Config:    cfg,
+		PublicKey: pubPEM,
+		cancel:    cancel,
+		done:      make(chan struct{}),
+		traceBuf:  traceBuf,
+	}
+	go func() {
+		fix.daemonErr = Run(ctx, cfg)
+		close(fix.done)
+	}()
 
 	// Wait for socket
 	deadline := time.Now().Add(2 * time.Second)
@@ -96,21 +132,13 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	fix := &DaemonFixture{
-		Config:    cfg,
-		PublicKey: pubPEM,
-		cancel:    cancel,
-		done:      done,
-		traceBuf:  traceBuf,
-	}
-
 	// Cleanup on test end
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case err := <-done:
-			if err != nil {
-				t.Logf("daemon Run returned: %v", err)
+		case <-fix.done:
+			if fix.daemonErr != nil {
+				t.Logf("daemon Run returned: %v", fix.daemonErr)
 			}
 		case <-time.After(3 * time.Second):
 			t.Error("daemon did not shut down within 3s")
@@ -157,14 +185,11 @@ func (f *DaemonFixture) EmitTSFrame(t *testing.T, sessionID, channel string, too
 	repoRoot := findSDKRoot(t)
 
 	cmd := exec.Command("node", helperPath, f.Config.SocketPath, sessionID, channel, toolName, decision)
-	cmd.Env = append(os.Environ())
 	cmd.Dir = repoRoot
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Logf("TS emitter output:\n%s", out)
-		// TS frame failure is expected to be caught by the test assertion
-		return
+		t.Errorf("TS emitter exited non-zero: %v\noutput:\n%s", err, out)
 	}
 }
 
@@ -179,22 +204,30 @@ func (f *DaemonFixture) EmitPythonFrame(t *testing.T, sessionID, channel string,
 	// Use uv run from the sdk/py directory (where pyproject.toml is)
 	cmd := exec.Command("uv", "run", "--", "python", helperPath, f.Config.SocketPath, sessionID, channel, toolName, decision)
 	cmd.Dir = filepath.Join(repoRoot, "sdk", "py")
-	cmd.Env = append(os.Environ())
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Logf("Python emitter output:\n%s", out)
-		// Python frame failure is expected to be caught by the test assertion
-		return
+		t.Errorf("Python emitter exited non-zero: %v\noutput:\n%s", err, out)
 	}
 }
 
 // WaitForReceiptCount polls the store until at least `count` receipts exist
-// or the timeout is exceeded.
+// or the timeout is exceeded. Surfaces early daemon exit instead of silently
+// timing out — without this, a daemon that crashes mid-test would just look
+// like a slow test.
 func (f *DaemonFixture) WaitForReceiptCount(t *testing.T, count int, timeout time.Duration) []receipt.AgentReceipt {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for {
+		// Detect daemon early exit before another store poll. f.done only
+		// closes when Run returns; during the test that means the daemon
+		// crashed (cleanup hasn't called cancel yet).
+		select {
+		case <-f.done:
+			t.Fatalf("daemon exited early: %v", f.daemonErr)
+		default:
+		}
+
 		s, err := store.Open(f.Config.DBPath)
 		if err != nil {
 			t.Fatalf("open store: %v", err)
@@ -229,11 +262,12 @@ func syncWithDaemon(conn net.Conn) {
 	_, _ = io.Copy(io.Discard, conn)
 }
 
-// findSDKRoot locates the repo root by finding the daemon package's parent.
-// Used to construct SDK paths for subprocess emitters.
+// findSDKRoot locates the repo root by walking up from the current working
+// directory until it finds the repo-root go.work file. The monorepo always
+// has a committed go.work (see /AGENTS.md "Go workspace"), so falling back
+// to a bare sdk/ directory match would only mask a misconfigured checkout.
 func findSDKRoot(t *testing.T) string {
 	t.Helper()
-	// Walk up from the current test file directory to find go.work or agent-receipts root
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("os.Getwd: %v", err)
@@ -243,12 +277,9 @@ func findSDKRoot(t *testing.T) string {
 		if _, err := os.Stat(filepath.Join(dir, "go.work")); err == nil {
 			return dir
 		}
-		if _, err := os.Stat(filepath.Join(dir, "sdk")); err == nil {
-			return dir
-		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatal("could not find repo root (go.work or sdk/ not found)")
+			t.Fatal("could not find repo root (go.work not found in any parent)")
 		}
 		dir = parent
 	}

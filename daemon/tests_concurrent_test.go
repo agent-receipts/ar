@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -60,16 +61,41 @@ func TestConcurrentSDKEmitters(t *testing.T) {
 		t.Logf("trace:\n%s", f.Trace())
 	}
 
-	// Verify chain has no gaps
+	// store.GetChain orders by insert id, which under concurrent emitters does
+	// not necessarily match Chain.Sequence (frame-receive order vs.
+	// chain-allocation order). Sort by Sequence so the prev_hash walk and the
+	// "no gaps" check below operate on chain-canonical order. Without this,
+	// a perfectly valid chain could fail prev_hash assertions purely because
+	// receipts arrived back from the store in a different order than the
+	// daemon allocated them.
+	sort.Slice(receipts, func(i, j int) bool {
+		return receipts[i].CredentialSubject.Chain.Sequence < receipts[j].CredentialSubject.Chain.Sequence
+	})
+
+	// Duplicate-sequence check first: a duplicate would also break the
+	// prev_hash walk, but with a misleading "wrong prev_hash" error rather
+	// than the real cause.
 	seen := make(map[int]bool, len(receipts))
-	for i, r := range receipts {
+	for _, r := range receipts {
 		seq := r.CredentialSubject.Chain.Sequence
 		if seen[seq] {
 			t.Errorf("seq %d allocated twice", seq)
 		}
 		seen[seq] = true
+	}
 
-		// Verify previous hash chain
+	// Sequence assertion: receipts are now sorted ascending, so seq[i] must
+	// equal i+1 (chain sequences are 1-indexed). This catches both gaps and
+	// off-by-one errors in a single check.
+	for i, r := range receipts {
+		got := r.CredentialSubject.Chain.Sequence
+		if got != i+1 {
+			t.Errorf("receipts[%d].Sequence = %d, want %d (gap or duplicate)", i, got, i+1)
+		}
+	}
+
+	// Prev-hash walk + signature verification on the now-sorted chain.
+	for i, r := range receipts {
 		if i == 0 {
 			if r.CredentialSubject.Chain.PreviousReceiptHash != nil {
 				t.Errorf("first receipt prev_hash = %v, want nil", r.CredentialSubject.Chain.PreviousReceiptHash)
@@ -85,17 +111,9 @@ func TestConcurrentSDKEmitters(t *testing.T) {
 			}
 		}
 
-		// Verify signature
 		ok, err := receipt.Verify(r, f.PublicKey)
 		if err != nil || !ok {
 			t.Errorf("receipt %d: verify ok=%v err=%v", i, ok, err)
-		}
-	}
-
-	// Verify no gaps in sequence (1, 2, 3, ..., len(receipts))
-	for seq := 1; seq <= len(receipts); seq++ {
-		if !seen[seq] {
-			t.Errorf("sequence %d missing (gap in chain)", seq)
 		}
 	}
 }
