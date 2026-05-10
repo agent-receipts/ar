@@ -9,32 +9,6 @@ This file starts at 0.6.2; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
-## [0.8.0-alpha.2] - 2026-05-10
-
-### Added
-
-- **Fire-and-forget daemon emitter integration** (ADR-0010, [#236](https://github.com/agent-receipts/ar/issues/236)):
-  Tool-call events are now forwarded to the `agent-receipts-daemon` Unix socket
-  for signature, canonicalisation, and chain management. New `--socket` flag
-  (default: `AGENTRECEIPTS_SOCKET` env / OS default path; empty string disables
-  daemon forwarding for backwards-compatible deployments). Existing in-process
-  receipt path remains active during alpha for dual verification. Fire-and-forget
-  design ensures tool calls complete within 250ms even if the daemon is absent
-  (commits `f1af054` and prior daemon work).
-
-### Dependencies
-
-- Bump `github.com/agent-receipts/ar/sdk/go` from `v0.6.0` to `v0.8.0-alpha.2`,
-  picking up the fire-and-forget emitter.
-- Add `github.com/agent-receipts/ar/daemon` dependency at `v0.8.0-alpha.2`,
-  wired into the receipt event pipeline.
-
-### Tests
-
-- 5 new end-to-end integration tests against an in-process daemon covering
-  allowed/denied tool calls, event sequencing, fire-and-forget latency, and
-  nil-input safety (commit `f1af054`).
-
 ## [0.8.0-alpha.1] - 2026-05-09
 
 ### Dependencies

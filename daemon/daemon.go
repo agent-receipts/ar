@@ -54,6 +54,11 @@ type Config struct {
 
 	// Logger receives daemon log lines. Defaults to log.Default().
 	Logger *log.Logger
+
+	// TraceLog optionally receives daemon trace lines for test debugging.
+	// When nil, tracing is silent. Tests can pass a buffer to inspect
+	// what frames were received, receipts signed, etc.
+	TraceLog io.Writer
 }
 
 // DefaultSocketPath returns the per-OS default socket path. Phase 1 resolves
@@ -311,6 +316,7 @@ func Run(ctx context.Context, cfg Config) error {
 	cfg.Logger.Printf("loaded chain %s, next seq=%d", cfg.ChainID, state.NextSeq())
 
 	pp := pipeline.New(state, ks, st, cfg.IssuerID)
+	pp.TraceLog = cfg.TraceLog
 
 	ln, err := socket.Listen(socket.Options{
 		Path:     cfg.SocketPath,
