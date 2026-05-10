@@ -43,7 +43,13 @@ builds:
       - -s -w
 
 archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - # Explicitly bundle both binaries into one archive per platform so the
+    # Homebrew formula can install both agent-receipts-daemon and agent-receipts
+    # from a single download.
+    ids:
+      - agent-receipts-daemon
+      - agent-receipts
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     files:
       - README.md
