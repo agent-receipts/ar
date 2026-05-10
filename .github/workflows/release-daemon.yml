@@ -1,0 +1,71 @@
+name: "Release: daemon"
+
+on:
+  push:
+    tags:
+      - "daemon/v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Deployment environment lets you attach protection rules (required
+    # reviewers, wait timer, branch restrictions) to gate who can trigger
+    # a release and push to the Homebrew tap. Configure at:
+    # https://github.com/agent-receipts/ar/settings/environments
+    environment: release-daemon
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.26"
+
+      # GoReleaser can't parse the prefixed tag `daemon/vX.Y.Z` as semver.
+      # Create a local lightweight `vX.Y.Z` tag at the same commit so
+      # GoReleaser computes a clean .Version; this tag is never pushed.
+      - name: Prepare version
+        run: |
+          VERSION="${GITHUB_REF_NAME#daemon/}"
+          echo "DAEMON_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          git tag "${VERSION}" HEAD
+
+      # Single GoReleaser run: builds, archives, pushes Homebrew formula.
+      # Release creation + binary upload happen in the next step with `gh`
+      # so the same dist/ artifacts (and therefore matching SHA256s) are
+      # used for both the formula and the release assets — re-running
+      # GoReleaser would produce different tar hashes.
+      - name: Build and publish Homebrew formula
+        uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --skip=validate,announce
+          workdir: daemon
+        env:
+          GORELEASER_CURRENT_TAG: ${{ env.DAEMON_VERSION }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Disable the Go workspace so builds resolve from daemon/go.mod
+          # (published sdk/go) rather than the in-tree ./sdk/go module.
+          GOWORK: off
+
+      - name: Create GitHub release with binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Mark pre-release tags (e.g. v0.8.0-alpha.1) so they don't show
+          # up as "latest" on the GitHub Releases page.
+          PRERELEASE_ARG=()
+          if [[ "${DAEMON_VERSION}" == *-* ]]; then
+            PRERELEASE_ARG+=(--prerelease)
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "daemon ${DAEMON_VERSION}" \
+            --generate-notes \
+            "${PRERELEASE_ARG[@]}" \
+            daemon/dist/*.tar.gz \
+            daemon/dist/checksums.txt
