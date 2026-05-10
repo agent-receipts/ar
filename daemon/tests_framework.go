@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,15 +133,93 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 		close(fix.done)
 	}()
 
-	// Wait for socket
+	// Wait for socket to be ready (active listener, not just file presence)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if _, err := os.Stat(cfg.SocketPath); err == nil {
+		// Check if daemon exited early before trying to connect
+		select {
+		case <-fix.done:
+			t.Fatalf("daemon exited early: %v\ntrace:\n%s", fix.daemonErr, fix.Trace())
+		default:
+		}
+
+		conn, err := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
 			break
 		}
 		if time.Now().After(deadline) {
 			cancel()
-			t.Fatalf("daemon socket %s did not appear within 2s", cfg.SocketPath)
+			t.Fatalf("daemon socket %s did not become ready within 2s", cfg.SocketPath)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Cleanup on test end
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-fix.done:
+			if fix.daemonErr != nil {
+				t.Logf("daemon Run returned: %v", fix.daemonErr)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("daemon did not shut down within 3s")
+		}
+	})
+
+	return fix
+}
+
+// StartDaemonFromConfig starts a daemon with an existing config (e.g., for restart tests).
+// Unlike StartDaemon, this reuses the same DB/key/socket paths instead of generating new ones,
+// allowing a second daemon to resume the same chain from where the first left off.
+func StartDaemonFromConfig(t *testing.T, cfg Config, pubPEM string) *DaemonFixture {
+	t.Helper()
+
+	// Reuse the provided config directly; paths and key have been pre-established.
+	traceBuf := &syncBuffer{}
+	cfg.TraceLog = traceBuf
+
+	// Resolve paths needed by emitter helpers
+	repoRoot := findSDKRoot(t)
+	emitTSPath := findHelperScript(t, "emit_ts.mjs")
+	emitPyPath := findHelperScript(t, "emit_py.py")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	fix := &DaemonFixture{
+		Config:     cfg,
+		PublicKey:  pubPEM,
+		cancel:     cancel,
+		done:       make(chan struct{}),
+		traceBuf:   traceBuf,
+		repoRoot:   repoRoot,
+		emitTSPath: emitTSPath,
+		emitPyPath: emitPyPath,
+	}
+	go func() {
+		fix.daemonErr = Run(ctx, cfg)
+		close(fix.done)
+	}()
+
+	// Wait for socket to be ready (active listener, not just file presence)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		// Check if daemon exited early before trying to connect
+		select {
+		case <-fix.done:
+			t.Fatalf("daemon exited early: %v\ntrace:\n%s", fix.daemonErr, fix.Trace())
+		default:
+		}
+
+		conn, err := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatalf("daemon socket %s did not become ready within 2s", cfg.SocketPath)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -184,6 +263,25 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 		},
 		Decision: decision,
 	})
+	return err
+}
+
+// EmitGoFrameFull emits a frame using the Go SDK with full Event fields (Input, Output, Error).
+// Returns an error if the operation fails, allowing safe use from goroutines.
+func (f *DaemonFixture) EmitGoFrameFull(t *testing.T, sessionID string, event emitter.Event) error {
+	t.Helper()
+
+	em, err := emitter.New(
+		emitter.WithSocketPath(f.Config.SocketPath),
+		emitter.WithSessionID(sessionID),
+		emitter.WithLogger(slog.Default()),
+	)
+	if err != nil {
+		return fmt.Errorf("create emitter: %w", err)
+	}
+	defer em.Close()
+
+	err = em.Emit(context.Background(), event)
 	return err
 }
 
