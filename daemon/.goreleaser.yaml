@@ -1,0 +1,102 @@
+version: 2
+
+project_name: daemon
+
+before:
+  hooks:
+    - go mod download
+    - sh -c "cp ../LICENSE LICENSE"
+
+builds:
+  - id: agent-receipts-daemon
+    main: ./cmd/agent-receipts-daemon
+    binary: agent-receipts-daemon
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version=v{{.Version}}
+
+  - id: agent-receipts
+    main: ./cmd/agent-receipts
+    binary: agent-receipts
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+# GitHub release is created outside GoReleaser (against the prefixed tag
+# `daemon/vX.Y.Z`). GoReleaser only builds archives and publishes the
+# Homebrew formula; the workflow uploads binaries with `gh`.
+release:
+  disable: true
+
+brews:
+  - name: agent-receipts-daemon
+    # `auto` skips the formula bump PR when the release version contains a
+    # pre-release suffix (e.g. v0.8.0-alpha.1). The Homebrew tap stays
+    # locked to the latest stable daemon until a non-pre-release tag is cut,
+    # so `brew install agent-receipts/tap/agent-receipts-daemon` keeps giving
+    # users a stable build during alpha/beta soak periods.
+    skip_upload: auto
+    repository:
+      owner: agent-receipts
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      # Push the formula to a feature branch, then open a PR against
+      # main. Without an explicit branch, GoReleaser pushes to the
+      # default branch (main) and tries to open a main→main PR, which
+      # the GitHub API rejects — so the formula sneaks onto main and
+      # skips the `brew audit` gate.
+      branch: "bump-{{.ProjectName}}-{{.Version}}"
+      pull_request:
+        enabled: true
+        base:
+          branch: main
+    directory: Formula
+    url_template: "https://github.com/agent-receipts/ar/releases/download/daemon%2Fv{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/agent-receipts/ar/tree/main/daemon"
+    description: "Agent Receipts daemon and companion verify CLI"
+    license: "Apache-2.0"
+    commit_author:
+      name: agent-receipts-bot
+      email: bot@agentreceipts.ai
+    commit_msg_template: "chore(daemon): bump to v{{ .Version }}"
+    install: |
+      bin.install "agent-receipts-daemon"
+      bin.install "agent-receipts"
+    test: |
+      system "#{bin}/agent-receipts-daemon", "--version"
+      system "#{bin}/agent-receipts", "--help"
+    # `brew outdated` and `brew livecheck` use this to detect new releases.
+    # The `ar` repo ships multiple taggable components, so we can't use
+    # `:github_latest` (which returns repo-wide latest). `:github_releases`
+    # scans all releases; regex extracts version from the `daemon/vX.Y.Z`
+    # tag prefix.
+    custom_block: |
+      livecheck do
+        url "https://github.com/agent-receipts/ar"
+        strategy :github_releases
+        regex(/^daemon\/v?(\d+(?:\.\d+)+)$/i)
+      end

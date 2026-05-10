@@ -21,9 +21,9 @@ Flags:
 Notes:
   - Pre-release versions (e.g. 0.8.0-alpha.1) are automatically marked
     as GitHub pre-releases.
-  - mcp-proxy pushes the tag only and lets release-mcp-proxy.yml build
-    binaries and create the GitHub Release. Other modules use
-    'gh release create' directly.
+  - mcp-proxy and daemon push the tag only and let release-mcp-proxy.yml /
+    release-daemon.yml build binaries and create the GitHub Release. Other
+    modules use 'gh release create' directly.
 
 Examples:
   $(basename "$0") sdk-go 0.2.0
@@ -148,6 +148,10 @@ case "$MODULE" in
     ;;
   daemon)
     command -v go >/dev/null 2>&1 || fail "go is not installed"
+    echo "--- Checking for replace directive in $DIR/go.mod"
+    if grep -Eq '^[[:space:]]*replace[[:space:]]' "$DIR/go.mod"; then
+      fail "$DIR/go.mod contains a replace directive — remove it and point to a published sdk/go version before releasing"
+    fi
     echo "--- Running Go checks in $DIR (matches daemon.yml: -race -tags=integration)"
     (cd "$DIR" && go vet ./... && go test -race -tags=integration ./...)
     ;;
@@ -198,6 +202,8 @@ echo "  Title:       $MODULE v$VERSION"
 [[ "$PRERELEASE" == "true" ]] && echo "  Pre-release: yes"
 if [[ "$MODULE" == "mcp-proxy" ]]; then
   echo "  Action:      push tag only; release-mcp-proxy.yml builds binaries and creates the GitHub Release"
+elif [[ "$MODULE" == "daemon" ]]; then
+  echo "  Action:      push tag only; release-daemon.yml builds binaries and creates the GitHub Release"
 else
   echo "  Action:      gh release create"
 fi
@@ -213,16 +219,20 @@ read -rp "Proceed? [y/N] " confirm
 
 REPO_URL=$(gh repo view --json url -q '.url')
 
-if [[ "$MODULE" == "mcp-proxy" ]]; then
-  # release-mcp-proxy.yml owns release creation; we only push the tag.
-  # Avoids "release already exists" conflict between this script and the
-  # workflow when both call gh release create against the same tag.
+if [[ "$MODULE" == "mcp-proxy" || "$MODULE" == "daemon" ]]; then
+  # release-mcp-proxy.yml / release-daemon.yml owns release creation; we only
+  # push the tag. Avoids "release already exists" conflict between this script
+  # and the workflow when both call gh release create against the same tag.
+  case "$MODULE" in
+    mcp-proxy) WORKFLOW="release-mcp-proxy.yml" ;;
+    daemon)    WORKFLOW="release-daemon.yml" ;;
+  esac
   git tag "$TAG"
   git push origin "$TAG"
   echo ""
   echo "==> Pushed tag $TAG"
-  echo "    release-mcp-proxy.yml builds binaries and creates the GitHub Release."
-  echo "    ${REPO_URL}/actions/workflows/release-mcp-proxy.yml"
+  echo "    ${WORKFLOW} builds binaries and creates the GitHub Release."
+  echo "    ${REPO_URL}/actions/workflows/${WORKFLOW}"
 else
   PRERELEASE_FLAG=()
   [[ "$PRERELEASE" == "true" ]] && PRERELEASE_FLAG=("--prerelease")
