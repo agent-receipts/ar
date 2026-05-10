@@ -42,6 +42,10 @@ func TestTwoMCPProxySessionsConcurrent(t *testing.T) {
 
 	for i := 0; i < sessions; i++ {
 		go func(session int) {
+			// Per-goroutine rand source seeded from session index: reproducible per
+			// session and avoids contention on the global source.
+			rng := rand.New(rand.NewSource(int64(session)))
+
 			// One persistent emitter per session — models a long-lived mcp-proxy process
 			// that keeps one connection open across multiple tool calls.
 			em, err := emitter.New(
@@ -70,7 +74,7 @@ func TestTwoMCPProxySessionsConcurrent(t *testing.T) {
 				// Occasional jitter widens the concurrent-write window to increase
 				// the chance of catching a sequence-allocation race.
 				if j%10 == 9 {
-					time.Sleep(time.Duration(rand.Intn(500)) * time.Microsecond)
+					time.Sleep(time.Duration(rng.Intn(500)) * time.Microsecond)
 				}
 			}
 			errCh <- nil
