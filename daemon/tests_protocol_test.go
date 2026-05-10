@@ -37,7 +37,10 @@ func assertReceiptCountStays0(t *testing.T, f *DaemonFixture, timeout time.Durat
 				t.Logf("close store: %v", closeErr)
 			}
 
-			if err == nil && len(got) > 0 {
+			if err != nil {
+				t.Fatalf("get chain: %v\ntrace:\n%s", err, f.Trace())
+			}
+			if len(got) > 0 {
 				t.Errorf("expected no receipts but got %d (trace:\n%s)", len(got), f.Trace())
 				return
 			}
@@ -171,7 +174,7 @@ func TestMalformedFrameDoesNotAdvanceChain(t *testing.T) {
 func TestOversizedFrameHeader(t *testing.T) {
 	fix := StartDaemon(t)
 
-	// Write a header claiming MaxFrameSize + 1 bytes, followed by garbage
+	// Write a header claiming MaxFrameSize + 1 bytes (daemon will reject as too large)
 	oversizeBytes := socket.MaxFrameSize + 1
 	hdr := make([]byte, 4)
 	binary.BigEndian.PutUint32(hdr, uint32(oversizeBytes))

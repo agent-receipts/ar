@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"net"
 	"sort"
 	"testing"
 	"time"
@@ -107,6 +108,20 @@ func TestResumesChainAfterUncleanShutdown(t *testing.T) {
 
 	// Small delay to ensure database file handles are released
 	time.Sleep(100 * time.Millisecond)
+
+	// Wait for first daemon's socket to become unconnectable before restarting
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		conn, err := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
+		if err != nil {
+			break // Socket is unconnectable, safe to restart
+		}
+		conn.Close()
+		if time.Now().After(deadline) {
+			t.Fatalf("first daemon socket still listening after 2s, restart would conflict")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// Second run: restart and emit more
 	fix2 := StartDaemonFromConfig(t, cfg, pubPEM)
