@@ -152,10 +152,13 @@ case "$MODULE" in
     if grep -Eq '^[[:space:]]*replace[[:space:]]' "$DIR/go.mod"; then
       fail "$DIR/go.mod contains a replace directive — remove it and point to a published sdk/go version before releasing"
     fi
-    echo "--- Running Go checks in $DIR (matches daemon.yml: -race -tags=integration)"
+    echo "--- Running Go checks in $DIR"
     # GOWORK=off ensures vet/test resolve from daemon/go.mod (published sdk/go)
     # rather than the in-tree ./sdk/go wired up by the repo-root go.work.
-    (cd "$DIR" && GOWORK=off go vet ./... && GOWORK=off go test -race -tags=integration ./...)
+    # -tags=integration is intentionally omitted: integration tests spawn node
+    # and uv subprocess emitters that require the full TS/Python SDK setup,
+    # which is not guaranteed on a release operator's machine. CI covers those.
+    (cd "$DIR" && GOWORK=off go vet ./... && GOWORK=off go test -race ./...)
     ;;
   sdk-ts)
     command -v node >/dev/null 2>&1 || fail "node is not installed"
