@@ -74,7 +74,8 @@ type Pipeline struct {
 	// from the listener accept loop, so unguarded fmt.Fprintf calls would
 	// interleave bytes from different frames in the buffer (and race the
 	// underlying io.Writer state). The mutex is independent of State's
-	// chain-allocation lock so tracing never blocks frame processing.
+	// chain-allocation lock, so tracing doesn't contend with sequence
+	// allocation; however it does block the processing of that frame.
 	traceMu sync.Mutex
 }
 

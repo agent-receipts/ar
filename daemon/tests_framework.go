@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -98,7 +99,10 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 	}
 
 	pub := priv.Public().(ed25519.PublicKey)
-	pubDER, _ := x509.MarshalPKIXPublicKey(pub)
+	pubDER, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
 	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 
 	// Set up trace log for debugging
@@ -149,11 +153,12 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 }
 
 // EmitGoFrame emits a frame using the Go SDK's direct socket connection.
-func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, tool pipeline.EmitterTool, decision string) {
+// Returns an error if the operation fails, allowing safe use from goroutines.
+func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, tool pipeline.EmitterTool, decision string) error {
 	t.Helper()
 	conn, err := net.Dial("unix", f.Config.SocketPath)
 	if err != nil {
-		t.Fatalf("dial %s: %v", f.Config.SocketPath, err)
+		return fmt.Errorf("dial %s: %w", f.Config.SocketPath, err)
 	}
 	defer conn.Close()
 
@@ -166,19 +171,21 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 		Decision:  decision,
 	})
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 
 	if err := socket.WriteFrame(conn, body); err != nil {
-		t.Fatalf("write frame: %v", err)
+		return fmt.Errorf("write frame: %w", err)
 	}
 
 	// Sync with daemon to ensure frame is fully processed
 	syncWithDaemon(conn)
+	return nil
 }
 
 // EmitTSFrame spawns a Node.js subprocess to emit a frame via the TS SDK.
-func (f *DaemonFixture) EmitTSFrame(t *testing.T, sessionID, channel string, toolName string, decision string) {
+// Returns an error if the operation fails, allowing safe use from goroutines.
+func (f *DaemonFixture) EmitTSFrame(t *testing.T, sessionID, channel string, toolName string, decision string) error {
 	t.Helper()
 
 	helperPath := findHelperScript(t, "emit_ts.mjs")
@@ -189,13 +196,15 @@ func (f *DaemonFixture) EmitTSFrame(t *testing.T, sessionID, channel string, too
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Errorf("TS emitter exited non-zero: %v\noutput:\n%s", err, out)
+		return fmt.Errorf("TS emitter exited non-zero: %w\noutput:\n%s", err, out)
 	}
+	return nil
 }
 
 // EmitPythonFrame spawns a Python subprocess to emit a frame via the Python SDK.
 // Uses uv run to manage dependencies in the sdk/py directory.
-func (f *DaemonFixture) EmitPythonFrame(t *testing.T, sessionID, channel string, toolName string, decision string) {
+// Returns an error if the operation fails, allowing safe use from goroutines.
+func (f *DaemonFixture) EmitPythonFrame(t *testing.T, sessionID, channel string, toolName string, decision string) error {
 	t.Helper()
 
 	helperPath := findHelperScript(t, "emit_py.py")
@@ -207,8 +216,9 @@ func (f *DaemonFixture) EmitPythonFrame(t *testing.T, sessionID, channel string,
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Errorf("Python emitter exited non-zero: %v\noutput:\n%s", err, out)
+		return fmt.Errorf("Python emitter exited non-zero: %w\noutput:\n%s", err, out)
 	}
+	return nil
 }
 
 // WaitForReceiptCount polls the store until at least `count` receipts exist
@@ -228,7 +238,7 @@ func (f *DaemonFixture) WaitForReceiptCount(t *testing.T, count int, timeout tim
 		default:
 		}
 
-		s, err := store.Open(f.Config.DBPath)
+		s, err := store.OpenReadOnly(f.Config.DBPath)
 		if err != nil {
 			t.Fatalf("open store: %v", err)
 		}

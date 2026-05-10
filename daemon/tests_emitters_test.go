@@ -20,27 +20,27 @@ func TestSDKEmitterSingleFrame(t *testing.T) {
 	cases := []struct {
 		name      string
 		sessionID string
-		emit      func(t *testing.T, f *DaemonFixture)
+		emit      func(t *testing.T, f *DaemonFixture) error
 	}{
 		{
 			name:      "go",
 			sessionID: "go-test-session",
-			emit: func(t *testing.T, f *DaemonFixture) {
-				f.EmitGoFrame(t, "go-test-session", "sdk", pipeline.EmitterTool{Name: "test-tool"}, "allowed")
+			emit: func(t *testing.T, f *DaemonFixture) error {
+				return f.EmitGoFrame(t, "go-test-session", "sdk", pipeline.EmitterTool{Name: "test-tool"}, "allowed")
 			},
 		},
 		{
 			name:      "ts",
 			sessionID: "ts-test-session",
-			emit: func(t *testing.T, f *DaemonFixture) {
-				f.EmitTSFrame(t, "ts-test-session", "sdk", "test-tool", "allowed")
+			emit: func(t *testing.T, f *DaemonFixture) error {
+				return f.EmitTSFrame(t, "ts-test-session", "sdk", "test-tool", "allowed")
 			},
 		},
 		{
 			name:      "python",
 			sessionID: "py-test-session",
-			emit: func(t *testing.T, f *DaemonFixture) {
-				f.EmitPythonFrame(t, "py-test-session", "sdk", "test-tool", "allowed")
+			emit: func(t *testing.T, f *DaemonFixture) error {
+				return f.EmitPythonFrame(t, "py-test-session", "sdk", "test-tool", "allowed")
 			},
 		},
 	}
@@ -49,7 +49,9 @@ func TestSDKEmitterSingleFrame(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := StartDaemon(t)
 
-			tc.emit(t, f)
+			if err := tc.emit(t, f); err != nil {
+				t.Fatalf("emit failed: %v", err)
+			}
 
 			receipts := f.WaitForReceiptCount(t, 1, 5*time.Second)
 

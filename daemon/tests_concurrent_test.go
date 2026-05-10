@@ -22,23 +22,30 @@ func TestConcurrentSDKEmitters(t *testing.T) {
 	const totalFrames = 3 * framesPerEmitter
 
 	var wg sync.WaitGroup
+	errCh := make(chan error, 3)
 
 	// Go emitter: 10 frames
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < framesPerEmitter; i++ {
-			f.EmitGoFrame(t, "go-concurrent", "sdk",
-				pipeline.EmitterTool{Name: "concurrent-tool"}, "allowed")
+			if err := f.EmitGoFrame(t, "go-concurrent", "sdk",
+				pipeline.EmitterTool{Name: "concurrent-tool"}, "allowed"); err != nil {
+				errCh <- err
+				return
+			}
 		}
 	}()
 
-	// TypeScript emitter: 10 frames (may fail on alpha.2, but still concurrent)
+	// TypeScript emitter: 10 frames
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < framesPerEmitter; i++ {
-			f.EmitTSFrame(t, "ts-concurrent", "sdk", "concurrent-tool", "allowed")
+			if err := f.EmitTSFrame(t, "ts-concurrent", "sdk", "concurrent-tool", "allowed"); err != nil {
+				errCh <- err
+				return
+			}
 		}
 	}()
 
@@ -47,19 +54,23 @@ func TestConcurrentSDKEmitters(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < framesPerEmitter; i++ {
-			f.EmitPythonFrame(t, "py-concurrent", "sdk", "concurrent-tool", "allowed")
+			if err := f.EmitPythonFrame(t, "py-concurrent", "sdk", "concurrent-tool", "allowed"); err != nil {
+				errCh <- err
+				return
+			}
 		}
 	}()
 
 	wg.Wait()
+	close(errCh)
 
-	// Wait for all receipts (30 total, or fewer if TS fails on alpha.2)
-	receipts := f.WaitForReceiptCount(t, totalFrames, 10*time.Second)
-
-	if len(receipts) != totalFrames {
-		t.Logf("expected %d receipts, got %d (some emitters may have failed on alpha.2)", totalFrames, len(receipts))
-		t.Logf("trace:\n%s", f.Trace())
+	// Check for emitter errors
+	for err := range errCh {
+		t.Fatalf("emitter failed: %v", err)
 	}
+
+	// Wait for all receipts (30 total)
+	receipts := f.WaitForReceiptCount(t, totalFrames, 10*time.Second)
 
 	// store.GetChain orders by insert id, which under concurrent emitters does
 	// not necessarily match Chain.Sequence (frame-receive order vs.
