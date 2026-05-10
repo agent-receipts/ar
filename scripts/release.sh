@@ -153,7 +153,9 @@ case "$MODULE" in
       fail "$DIR/go.mod contains a replace directive — remove it and point to a published sdk/go version before releasing"
     fi
     echo "--- Running Go checks in $DIR (matches daemon.yml: -race -tags=integration)"
-    (cd "$DIR" && go vet ./... && go test -race -tags=integration ./...)
+    # GOWORK=off ensures vet/test resolve from daemon/go.mod (published sdk/go)
+    # rather than the in-tree ./sdk/go wired up by the repo-root go.work.
+    (cd "$DIR" && GOWORK=off go vet ./... && GOWORK=off go test -race -tags=integration ./...)
     ;;
   sdk-ts)
     command -v node >/dev/null 2>&1 || fail "node is not installed"

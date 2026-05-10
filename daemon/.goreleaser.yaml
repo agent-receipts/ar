@@ -2,6 +2,12 @@ version: 2
 
 project_name: daemon
 
+# Disable the Go workspace so GoReleaser resolves dependencies strictly from
+# daemon/go.mod (published versions) rather than the in-tree ./sdk/go module
+# wired up by the repo-root go.work.
+env:
+  - GOWORK=off
+
 before:
   hooks:
     - go mod download

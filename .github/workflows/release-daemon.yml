@@ -49,6 +49,9 @@ jobs:
         env:
           GORELEASER_CURRENT_TAG: ${{ env.DAEMON_VERSION }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Disable the Go workspace so builds resolve from daemon/go.mod
+          # (published sdk/go) rather than the in-tree ./sdk/go module.
+          GOWORK: off
 
       - name: Create GitHub release with binaries
         env:
