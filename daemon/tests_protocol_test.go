@@ -1,0 +1,330 @@
+//go:build integration && (linux || darwin)
+
+package daemon
+
+import (
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
+	"testing"
+	"time"
+
+	"github.com/agent-receipts/ar/daemon/internal/pipeline"
+	"github.com/agent-receipts/ar/daemon/internal/socket"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
+	receiptpkg "github.com/agent-receipts/ar/sdk/go/receipt"
+)
+
+// writeRaw dials the socket and writes raw bytes without framing.
+// Used to test malformed frame headers and other protocol violations.
+func writeRaw(t *testing.T, socketPath string, data []byte) {
+	t.Helper()
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("dial %s: %v", socketPath, err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write(data); err != nil {
+		t.Fatalf("write raw: %v", err)
+	}
+}
+
+// emitFrameRaw marshals a pipeline.EmitterFrame, writes it via socket.WriteFrame,
+// and synchronizes with the daemon. Mirrors integration_test.go's emitFrame pattern.
+func emitFrameRaw(t *testing.T, socketPath string, frame pipeline.EmitterFrame) {
+	t.Helper()
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("dial %s: %v", socketPath, err)
+	}
+	defer conn.Close()
+	body, err := json.Marshal(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := socket.WriteFrame(conn, body); err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+	// Sync: half-close write and drain to ensure daemon finished processing
+	if uc, ok := conn.(*net.UnixConn); ok {
+		_ = uc.CloseWrite()
+	}
+	_, _ = io.Copy(io.Discard, conn)
+}
+
+// TestMalformedFrameDoesNotAdvanceChain verifies that each invalid frame variant
+// is rejected and does not advance the chain. After each rejection, a valid frame
+// confirms the daemon is still live.
+func TestMalformedFrameDoesNotAdvanceChain(t *testing.T) {
+	cases := []struct {
+		name  string
+		frame pipeline.EmitterFrame
+	}{
+		{
+			name:  "missing_v",
+			frame: pipeline.EmitterFrame{TsEmit: "2026-05-03T00:00:00Z", SessionID: "s", Channel: "sdk", Tool: pipeline.EmitterTool{Name: "t"}, Decision: "allowed"},
+		},
+		{
+			name: "unsupported_v",
+			frame: pipeline.EmitterFrame{Version: "2", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s", Channel: "sdk", Tool: pipeline.EmitterTool{Name: "t"}, Decision: "allowed"},
+		},
+		{
+			name:  "missing_session_id",
+			frame: pipeline.EmitterFrame{Version: "1", TsEmit: "2026-05-03T00:00:00Z", Channel: "sdk", Tool: pipeline.EmitterTool{Name: "t"}, Decision: "allowed"},
+		},
+		{
+			name:  "missing_ts_emit",
+			frame: pipeline.EmitterFrame{Version: "1", SessionID: "s", Channel: "sdk", Tool: pipeline.EmitterTool{Name: "t"}, Decision: "allowed"},
+		},
+		{
+			name:  "bad_ts_emit",
+			frame: pipeline.EmitterFrame{Version: "1", TsEmit: "not-a-timestamp", SessionID: "s", Channel: "sdk", Tool: pipeline.EmitterTool{Name: "t"}, Decision: "allowed"},
+		},
+		{
+			name:  "missing_tool_name",
+			frame: pipeline.EmitterFrame{Version: "1", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s", Channel: "sdk", Tool: pipeline.EmitterTool{}, Decision: "allowed"},
+		},
+		{
+			name:  "missing_decision",
+			frame: pipeline.EmitterFrame{Version: "1", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s", Channel: "sdk", Tool: pipeline.EmitterTool{Name: "t"}},
+		},
+		{
+			name:  "unknown_decision",
+			frame: pipeline.EmitterFrame{Version: "1", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s", Channel: "sdk", Tool: pipeline.EmitterTool{Name: "t"}, Decision: "maybe"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fix := StartDaemon(t)
+
+			// Send malformed frame; should not create any receipt
+			emitFrameRaw(t, fix.Config.SocketPath, tc.frame)
+
+			// Verify no receipt was created
+			receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
+			if len(receipts) != 0 {
+				t.Errorf("expected no receipts after malformed frame, got %d\ntrace:\n%s",
+					len(receipts), fix.Trace())
+			}
+
+			// Confirm daemon is still live: send a valid frame and wait for it
+			validFrame := pipeline.EmitterFrame{
+				Version:   "1",
+				TsEmit:    "2026-05-03T00:00:00Z",
+				SessionID: "s",
+				Channel:   "sdk",
+				Tool:      pipeline.EmitterTool{Name: "test-tool"},
+				Decision:  "allowed",
+			}
+			emitFrameRaw(t, fix.Config.SocketPath, validFrame)
+			receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+			if len(receipts) != 1 {
+				t.Errorf("daemon did not recover: expected 1 receipt after valid frame, got %d",
+					len(receipts))
+			}
+		})
+	}
+}
+
+// TestOversizedFrameHeader verifies that a frame header claiming more than
+// MaxFrameSize bytes is rejected and the daemon stays live.
+func TestOversizedFrameHeader(t *testing.T) {
+	fix := StartDaemon(t)
+
+	// Write a header claiming MaxFrameSize + 1 bytes, followed by garbage
+	oversizeBytes := socket.MaxFrameSize + 1
+	hdr := make([]byte, 4)
+	binary.BigEndian.PutUint32(hdr, uint32(oversizeBytes))
+
+	writeRaw(t, fix.Config.SocketPath, hdr)
+
+	// No receipt should be created
+	receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
+	if len(receipts) != 0 {
+		t.Errorf("expected no receipts after oversized frame, got %d", len(receipts))
+	}
+
+	// Daemon still alive: send valid frame
+	validFrame := pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "test-tool"},
+		Decision:  "allowed",
+	}
+	emitFrameRaw(t, fix.Config.SocketPath, validFrame)
+	receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+	if len(receipts) != 1 {
+		t.Errorf("daemon did not recover from oversized frame: got %d receipts", len(receipts))
+	}
+}
+
+// TestZeroLengthFrameHeader verifies that a frame header of all zeros is rejected.
+func TestZeroLengthFrameHeader(t *testing.T) {
+	fix := StartDaemon(t)
+
+	// Write 4 zero bytes
+	writeRaw(t, fix.Config.SocketPath, make([]byte, 4))
+
+	// No receipt created
+	receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
+	if len(receipts) != 0 {
+		t.Errorf("expected no receipts after zero-length header, got %d", len(receipts))
+	}
+
+	// Daemon still alive
+	validFrame := pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "test-tool"},
+		Decision:  "allowed",
+	}
+	emitFrameRaw(t, fix.Config.SocketPath, validFrame)
+	receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+	if len(receipts) != 1 {
+		t.Errorf("daemon did not recover: got %d receipts", len(receipts))
+	}
+}
+
+// TestPartialHeaderDrop verifies that a partial frame header (fewer than 4 bytes)
+// causes the connection to close without advancing the chain.
+func TestPartialHeaderDrop(t *testing.T) {
+	fix := StartDaemon(t)
+
+	// Write only 2 bytes of the 4-byte header, then close
+	writeRaw(t, fix.Config.SocketPath, []byte{0x00, 0x00})
+
+	// No receipt created
+	receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
+	if len(receipts) != 0 {
+		t.Errorf("expected no receipts after partial header drop, got %d", len(receipts))
+	}
+
+	// Daemon still alive: new connection with valid frame
+	validFrame := pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "test-tool"},
+		Decision:  "allowed",
+	}
+	emitFrameRaw(t, fix.Config.SocketPath, validFrame)
+	receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+	if len(receipts) != 1 {
+		t.Errorf("daemon did not recover: got %d receipts", len(receipts))
+	}
+}
+
+// TestPartialBodyDrop verifies that a frame header claiming N bytes but providing
+// fewer causes the daemon to close the connection without advancing the chain.
+func TestPartialBodyDrop(t *testing.T) {
+	fix := StartDaemon(t)
+
+	conn, err := net.Dial("unix", fix.Config.SocketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Write header claiming 100 bytes, then only 50 bytes of body
+	hdr := make([]byte, 4)
+	binary.BigEndian.PutUint32(hdr, 100)
+	if _, err := conn.Write(hdr); err != nil {
+		t.Fatalf("write header: %v", err)
+	}
+	if _, err := conn.Write(make([]byte, 50)); err != nil {
+		t.Fatalf("write partial body: %v", err)
+	}
+	conn.Close()
+
+	// No receipt created
+	receipts := fix.WaitForReceiptCount(t, 0, 500*time.Millisecond)
+	if len(receipts) != 0 {
+		t.Errorf("expected no receipts after partial body drop, got %d", len(receipts))
+	}
+
+	// Daemon still alive
+	validFrame := pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "test-tool"},
+		Decision:  "allowed",
+	}
+	emitFrameRaw(t, fix.Config.SocketPath, validFrame)
+	receipts = fix.WaitForReceiptCount(t, 1, 2*time.Second)
+	if len(receipts) != 1 {
+		t.Errorf("daemon did not recover: got %d receipts", len(receipts))
+	}
+}
+
+// TestDecisionVariants verifies that all three decision values produce receipts
+// with the correct outcome status (denied and allowed+error → Failure, pending → Pending, allowed → Success).
+func TestDecisionVariants(t *testing.T) {
+	cases := []struct {
+		name           string
+		decision       string
+		errorStr       string
+		expectedStatus receiptpkg.OutcomeStatus
+	}{
+		{
+			name:           "denied",
+			decision:       "denied",
+			errorStr:       "",
+			expectedStatus: receiptpkg.StatusFailure,
+		},
+		{
+			name:           "pending",
+			decision:       "pending",
+			errorStr:       "",
+			expectedStatus: receiptpkg.StatusPending,
+		},
+		{
+			name:           "allowed_with_error",
+			decision:       "allowed",
+			errorStr:       "some error occurred",
+			expectedStatus: receiptpkg.StatusFailure,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fix := StartDaemon(t)
+
+			frame := pipeline.EmitterFrame{
+				Version:   "1",
+				TsEmit:    "2026-05-03T00:00:00Z",
+				SessionID: "s",
+				Channel:   "sdk",
+				Tool:      pipeline.EmitterTool{Name: "test-tool"},
+				Decision:  tc.decision,
+				Error:     tc.errorStr,
+			}
+			emitFrameRaw(t, fix.Config.SocketPath, frame)
+
+			receipts := fix.WaitForReceiptCount(t, 1, 2*time.Second)
+			if len(receipts) != 1 {
+				t.Fatalf("expected 1 receipt, got %d", len(receipts))
+			}
+
+			r := receipts[0]
+			ok, err := receipt.Verify(r, fix.PublicKey)
+			if !ok || err != nil {
+				t.Errorf("verify failed: ok=%v err=%v", ok, err)
+			}
+
+			// Check outcome status
+			if r.CredentialSubject.Outcome.Status != tc.expectedStatus {
+				t.Errorf("expected status %s, got %s",
+					tc.expectedStatus, r.CredentialSubject.Outcome.Status)
+			}
+		})
+	}
+}
