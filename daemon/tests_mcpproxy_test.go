@@ -83,19 +83,42 @@ func TestMCPProxyWithInputOutput(t *testing.T) {
 
 	r := receipts[0]
 
-	// Verify parameters_hash is populated (non-empty)
-	if r.CredentialSubject.Action.ParametersHash == "" {
-		t.Errorf("parameters_hash is empty, expected a hash value")
+	// Compute expected hashes using RFC 8785 canonical JSON
+	var inputMap interface{}
+	if err := json.Unmarshal(inputData, &inputMap); err != nil {
+		t.Fatalf("unmarshal input: %v", err)
+	}
+	expectedInputCanonical, err := receipt.Canonicalize(inputMap)
+	if err != nil {
+		t.Fatalf("canonicalize input: %v", err)
+	}
+	expectedInputHash := receipt.SHA256Hash(expectedInputCanonical)
+
+	var outputMap interface{}
+	if err := json.Unmarshal(outputData, &outputMap); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	expectedOutputCanonical, err := receipt.Canonicalize(outputMap)
+	if err != nil {
+		t.Fatalf("canonicalize output: %v", err)
+	}
+	expectedOutputHash := receipt.SHA256Hash(expectedOutputCanonical)
+
+	// Verify parameters_hash matches expected hash
+	if r.CredentialSubject.Action.ParametersHash != expectedInputHash {
+		t.Errorf("parameters_hash mismatch: got %s, want %s",
+			r.CredentialSubject.Action.ParametersHash, expectedInputHash)
 	}
 
-	// Verify response_hash is populated (on Outcome, not Action)
-	if r.CredentialSubject.Outcome.ResponseHash == "" {
-		t.Errorf("response_hash is empty, expected a hash value")
+	// Verify response_hash matches expected hash (on Outcome, not Action)
+	if r.CredentialSubject.Outcome.ResponseHash != expectedOutputHash {
+		t.Errorf("response_hash mismatch: got %s, want %s",
+			r.CredentialSubject.Outcome.ResponseHash, expectedOutputHash)
 	}
 
 	// Hashes should be different (different payloads)
-	if r.CredentialSubject.Action.ParametersHash == r.CredentialSubject.Outcome.ResponseHash {
-		t.Errorf("parameters_hash and response_hash should differ")
+	if expectedInputHash == expectedOutputHash {
+		t.Errorf("input and output hashes should differ")
 	}
 
 	// Verify signature
