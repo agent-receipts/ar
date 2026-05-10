@@ -17,11 +17,6 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
   release (daemon process separation cutover). Releases as part of the daemon
   refactor work (ADR-0010, [#236](https://github.com/agent-receipts/ar/issues/236)).
 
-### Dependencies
-
-- Bump `daemon` to `v0.8.0-alpha.2` and `mcp-proxy` to `v0.8.0-alpha.2` for
-  consumers that depend on the daemon module.
-
 ## [0.8.0-alpha.1] - 2026-05-09
 
 ### Added

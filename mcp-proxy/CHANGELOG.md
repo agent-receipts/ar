@@ -24,9 +24,9 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Dependencies
 
-- Bump `github.com/agent-receipts/ar/sdk/go` from `v0.6.0` to `v0.8.0-alpha.2`,
+- Bump `github.com/agent-receipts/ar/sdk/go` from `v0.6.0` to `v0.8.0-alpha.1`,
   picking up the fire-and-forget emitter.
-- Add `github.com/agent-receipts/ar/daemon` dependency at `v0.8.0-alpha.2`,
+- Add `github.com/agent-receipts/ar/daemon` dependency at `v0.8.0-alpha.1`,
   wired into the receipt event pipeline.
 
 ### Tests

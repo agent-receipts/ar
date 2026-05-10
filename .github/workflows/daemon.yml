@@ -6,11 +6,15 @@ on:
     paths:
       - "daemon/**"
       - "sdk/go/**"
+      - "sdk/ts/**"
+      - "sdk/py/**"
   pull_request:
     branches: [main]
     paths:
       - "daemon/**"
       - "sdk/go/**"
+      - "sdk/ts/**"
+      - "sdk/py/**"
 
 permissions:
   contents: read

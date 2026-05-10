@@ -4,11 +4,25 @@
  * Test helper: Emit a frame using the TypeScript SDK.
  * Usage: node emit_ts.mjs <socket_path> <session_id> <channel> <tool_name> <decision>
  *
- * Must be run from the repo root.
+ * Must be run from the repo root with sdk/ts built (run: pnpm -C sdk/ts build).
  */
 
-import { Emitter } from "../../sdk/ts/dist/emitter.js";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { existsSync } from "fs";
 import process from "process";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const distPath = join(__dirname, "..", "..", "sdk", "ts", "dist", "emitter.js");
+
+if (!existsSync(distPath)) {
+  console.error(
+    `TypeScript SDK dist/ not found at ${distPath}. Run: pnpm -C sdk/ts build`
+  );
+  process.exit(1);
+}
+
+import { Emitter } from "../../sdk/ts/dist/emitter.js";
 
 const [socketPath, sessionId, channel, toolName, decision] = process.argv.slice(2);
 
