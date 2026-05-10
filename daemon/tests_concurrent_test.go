@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 )
 
@@ -29,8 +28,7 @@ func TestConcurrentSDKEmitters(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < framesPerEmitter; i++ {
-			if err := f.EmitGoFrame(t, "go-concurrent", "sdk",
-				pipeline.EmitterTool{Name: "concurrent-tool"}, "allowed"); err != nil {
+			if err := f.EmitGoFrame(t, "go-concurrent", "sdk", "concurrent-tool", "", "allowed"); err != nil {
 				errCh <- err
 				return
 			}

@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 )
 
 // TestSDKEmitterSingleFrame verifies the daemon processes a single frame
-// from each SDK emitter (Go direct, TS subprocess, Python subprocess) and
-// produces a verifiable receipt at sequence 1. The cases are run as
-// subtests of one parent so each emitter still gets a fresh daemon (no
-// cross-emitter chain interference) and reports independently in test
-// output.
+// from each Phase 1 SDK emitter (Go, TypeScript, Python) and produces a
+// verifiable receipt at sequence 1. The cases are run as subtests of one
+// parent so each emitter still gets a fresh daemon (no cross-emitter chain
+// interference) and reports independently in test output. Phase 1 covers Go,
+// TS, and Python SDKs only; mcp-proxy and openclaw emitters are covered in
+// Phase 2+ tests.
 func TestSDKEmitterSingleFrame(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -26,7 +26,7 @@ func TestSDKEmitterSingleFrame(t *testing.T) {
 			name:      "go",
 			sessionID: "go-test-session",
 			emit: func(t *testing.T, f *DaemonFixture) error {
-				return f.EmitGoFrame(t, "go-test-session", "sdk", pipeline.EmitterTool{Name: "test-tool"}, "allowed")
+				return f.EmitGoFrame(t, "go-test-session", "sdk", "test-tool", "", "allowed")
 			},
 		},
 		{

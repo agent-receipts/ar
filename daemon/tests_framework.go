@@ -10,12 +10,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
-	"net"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,9 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-receipts/ar/daemon/internal/pipeline"
-	"github.com/agent-receipts/ar/daemon/internal/socket"
 	"github.com/agent-receipts/ar/daemon/internal/sockettest"
+	"github.com/agent-receipts/ar/sdk/go/emitter"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
@@ -63,6 +61,9 @@ type DaemonFixture struct {
 	done      chan struct{} // closed when daemon Run returns
 	daemonErr error         // result of Run; read only after done is closed
 	traceBuf  *syncBuffer
+	repoRoot  string
+	emitTSPath string
+	emitPyPath string
 }
 
 // StartDaemon starts a test daemon and returns a fixture with cleanup.
@@ -109,14 +110,22 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 	traceBuf := &syncBuffer{}
 	cfg.TraceLog = traceBuf
 
+	// Resolve paths needed by emitter helpers (before goroutines use them)
+	repoRoot := findSDKRoot(t)
+	emitTSPath := findHelperScript(t, "emit_ts.mjs")
+	emitPyPath := findHelperScript(t, "emit_py.py")
+
 	// Start daemon
 	ctx, cancel := context.WithCancel(context.Background())
 	fix := &DaemonFixture{
-		Config:    cfg,
-		PublicKey: pubPEM,
-		cancel:    cancel,
-		done:      make(chan struct{}),
-		traceBuf:  traceBuf,
+		Config:     cfg,
+		PublicKey:  pubPEM,
+		cancel:     cancel,
+		done:       make(chan struct{}),
+		traceBuf:   traceBuf,
+		repoRoot:   repoRoot,
+		emitTSPath: emitTSPath,
+		emitPyPath: emitPyPath,
 	}
 	go func() {
 		fix.daemonErr = Run(ctx, cfg)
@@ -152,35 +161,29 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 	return fix
 }
 
-// EmitGoFrame emits a frame using the Go SDK's direct socket connection.
+// EmitGoFrame emits a frame using the Go SDK's emitter.
 // Returns an error if the operation fails, allowing safe use from goroutines.
-func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, tool pipeline.EmitterTool, decision string) error {
+func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, toolName, toolServer, decision string) error {
 	t.Helper()
-	conn, err := net.Dial("unix", f.Config.SocketPath)
-	if err != nil {
-		return fmt.Errorf("dial %s: %w", f.Config.SocketPath, err)
-	}
-	defer conn.Close()
 
-	body, err := json.Marshal(pipeline.EmitterFrame{
-		Version:   "1",
-		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
-		SessionID: sessionID,
-		Channel:   channel,
-		Tool:      tool,
-		Decision:  decision,
+	em, err := emitter.New(
+		emitter.WithSocketPath(f.Config.SocketPath),
+		emitter.WithSessionID(sessionID),
+		emitter.WithLogger(slog.Default()),
+	)
+	if err != nil {
+		return fmt.Errorf("create emitter: %w", err)
+	}
+	defer em.Close()
+
+	return em.Emit(context.Background(), emitter.Event{
+		Channel: channel,
+		Tool: emitter.Tool{
+			Name:   toolName,
+			Server: toolServer,
+		},
+		Decision: decision,
 	})
-	if err != nil {
-		return err
-	}
-
-	if err := socket.WriteFrame(conn, body); err != nil {
-		return fmt.Errorf("write frame: %w", err)
-	}
-
-	// Sync with daemon to ensure frame is fully processed
-	syncWithDaemon(conn)
-	return nil
 }
 
 // EmitTSFrame spawns a Node.js subprocess to emit a frame via the TS SDK.
@@ -188,11 +191,8 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 func (f *DaemonFixture) EmitTSFrame(t *testing.T, sessionID, channel string, toolName string, decision string) error {
 	t.Helper()
 
-	helperPath := findHelperScript(t, "emit_ts.mjs")
-	repoRoot := findSDKRoot(t)
-
-	cmd := exec.Command("node", helperPath, f.Config.SocketPath, sessionID, channel, toolName, decision)
-	cmd.Dir = repoRoot
+	cmd := exec.Command("node", f.emitTSPath, f.Config.SocketPath, sessionID, channel, toolName, decision)
+	cmd.Dir = f.repoRoot
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -207,12 +207,9 @@ func (f *DaemonFixture) EmitTSFrame(t *testing.T, sessionID, channel string, too
 func (f *DaemonFixture) EmitPythonFrame(t *testing.T, sessionID, channel string, toolName string, decision string) error {
 	t.Helper()
 
-	helperPath := findHelperScript(t, "emit_py.py")
-	repoRoot := findSDKRoot(t)
-
 	// Use uv run from the sdk/py directory (where pyproject.toml is)
-	cmd := exec.Command("uv", "run", "--", "python", helperPath, f.Config.SocketPath, sessionID, channel, toolName, decision)
-	cmd.Dir = filepath.Join(repoRoot, "sdk", "py")
+	cmd := exec.Command("uv", "run", "--", "python", f.emitPyPath, f.Config.SocketPath, sessionID, channel, toolName, decision)
+	cmd.Dir = filepath.Join(f.repoRoot, "sdk", "py")
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -234,13 +231,13 @@ func (f *DaemonFixture) WaitForReceiptCount(t *testing.T, count int, timeout tim
 		// crashed (cleanup hasn't called cancel yet).
 		select {
 		case <-f.done:
-			t.Fatalf("daemon exited early: %v", f.daemonErr)
+			t.Fatalf("daemon exited early: %v\ntrace:\n%s", f.daemonErr, f.Trace())
 		default:
 		}
 
 		s, err := store.OpenReadOnly(f.Config.DBPath)
 		if err != nil {
-			t.Fatalf("open store: %v", err)
+			t.Fatalf("open store: %v\ntrace:\n%s", err, f.Trace())
 		}
 		got, err := s.GetChain(f.Config.ChainID)
 		s.Close()
@@ -249,8 +246,8 @@ func (f *DaemonFixture) WaitForReceiptCount(t *testing.T, count int, timeout tim
 			return got
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %d receipts in chain %s; got %d (err=%v)",
-				count, f.Config.ChainID, len(got), err)
+			t.Fatalf("timed out waiting for %d receipts in chain %s; got %d (err=%v)\ntrace:\n%s",
+				count, f.Config.ChainID, len(got), err, f.Trace())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -259,17 +256,6 @@ func (f *DaemonFixture) WaitForReceiptCount(t *testing.T, count int, timeout tim
 // Trace returns the daemon's trace log output for debugging test failures.
 func (f *DaemonFixture) Trace() string {
 	return f.traceBuf.String()
-}
-
-// syncWithDaemon half-closes the write side of conn and reads until the daemon
-// closes its end. This guarantees the daemon has finished processing the frame.
-// Without this sync, rapid connect→write→close races the daemon's accept-loop
-// processing, especially on macOS.
-func syncWithDaemon(conn net.Conn) {
-	if uc, ok := conn.(*net.UnixConn); ok {
-		_ = uc.CloseWrite()
-	}
-	_, _ = io.Copy(io.Discard, conn)
 }
 
 // findSDKRoot locates the repo root by walking up from the current working
