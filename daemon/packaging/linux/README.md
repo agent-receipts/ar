@@ -37,8 +37,10 @@ agent-receipts-daemon -init
 
 This creates `~/.local/share/agent-receipts/signing.key` (0600) and
 `~/.local/share/agent-receipts/signing.key.pub` (0644). The daemon refuses to
-start without a key. Run `-init` only once; re-running it overwrites the key
-and invalidates any existing receipt chain.
+start without a key. Run `-init` only once — if the key files already exist,
+`-init` will fail with an error rather than overwrite them. To rotate keys,
+remove the existing key files first, then re-run `-init` (this invalidates the
+existing receipt chain).
 
 > **Note:** the default key and database paths have recently moved to
 > `~/.local/share/agent-receipts/` (XDG Base Directory). If you ran an earlier

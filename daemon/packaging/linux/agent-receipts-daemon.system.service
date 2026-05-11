@@ -16,14 +16,14 @@ ExecStart=/usr/local/bin/agent-receipts-daemon \
   -key /etc/agent-receipts/signing.key \
   -socket /run/agentreceipts/events.sock
 
-# Directories managed by systemd (created before ExecStart, removed on stop).
-# RuntimeDirectory creates /run/agentreceipts — the socket lives here.
+# Directories managed by systemd (created before ExecStart).
+# RuntimeDirectory is ephemeral: /run/agentreceipts is removed on stop.
 RuntimeDirectory=agentreceipts
 RuntimeDirectoryMode=0750
-# StateDirectory creates /var/lib/agent-receipts — the SQLite receipt store.
+# StateDirectory is persistent: /var/lib/agent-receipts survives stop/restart.
 StateDirectory=agent-receipts
 StateDirectoryMode=0750
-# ConfigurationDirectory creates /etc/agent-receipts — the signing key.
+# ConfigurationDirectory is persistent: /etc/agent-receipts survives stop/restart.
 ConfigurationDirectory=agent-receipts
 ConfigurationDirectoryMode=0750
 
