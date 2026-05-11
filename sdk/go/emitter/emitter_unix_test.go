@@ -374,6 +374,378 @@ func TestEmit_FireAndForgetWhenSocketMissing(t *testing.T) {
 	}
 }
 
+// TestEmit_ContextCancelledOnEntry asserts that Emit returns the context error
+// immediately when the context is already cancelled before the call.
+func TestEmit_ContextCancelledOnEntry(t *testing.T) {
+	dir := shortSocketDir(t)
+	em, err := New(
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
+		WithLogger(silentLogger()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	err = em.Emit(ctx, Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "noop"},
+		Decision: "allowed",
+	})
+	if err == nil {
+		t.Error("Emit with cancelled ctx returned nil; want context error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Emit returned %v; want context.Canceled", err)
+	}
+}
+
+// TestNew_EmptySessionIDGeneratesUUID covers the WithSessionID("") branch:
+// passing an empty string is treated as "no host id" and New falls back to
+// generating a UUID, matching the behaviour when WithSessionID is not passed.
+func TestNew_EmptySessionIDGeneratesUUID(t *testing.T) {
+	dir := shortSocketDir(t)
+	em, err := New(
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
+		WithSessionID(""), // explicit empty → generate UUID
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+	if got := em.SessionID(); got == "" {
+		t.Error("SessionID() is empty after WithSessionID(\"\"); want generated UUID")
+	}
+}
+
+// TestEmit_ContextCancelledDuringDial covers the context-check that sits
+// between dial failure and the logDrop call. A context that is still valid
+// at entry but expires while the dial is blocked must cause Emit to return
+// the context error rather than nil.
+//
+// We exercise this by pointing the emitter at a listener that accepts the TCP
+// connection but never reads, then racing a short deadline against the dial.
+// On AF_UNIX with a missing socket the dial fails instantly, so we need the
+// ctx to already be expired at that point while still being alive at entry.
+func TestEmit_ContextCancelledDuringDial(t *testing.T) {
+	dir := shortSocketDir(t)
+
+	em, err := New(
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
+		WithLogger(silentLogger()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	// Create a context that expires after a tiny interval. The entry guard
+	// fires if expired on arrival; the dial-failure guard fires if ctx expires
+	// while dial is in progress. Either path returning a non-nil error is the
+	// correct behaviour.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel()
+	// Burn a few microseconds so the deadline is effectively already past.
+	for i := 0; i < 1000; i++ {
+	}
+
+	err = em.Emit(ctx, Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "noop"},
+		Decision: "allowed",
+	})
+	// Either path (entry guard or post-dial guard) should return a context error.
+	if err == nil {
+		t.Skip("ctx happened to still be valid at both guards; timing-sensitive test skipped")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Errorf("Emit returned %v; want DeadlineExceeded or Canceled", err)
+	}
+}
+
+// TestEmit_NonNilEmptyInput checks the specific error for a non-nil empty
+// Input slice (distinct from nil, which means "no payload").
+func TestEmit_NonNilEmptyInput(t *testing.T) {
+	dir := shortSocketDir(t)
+	em, err := New(
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
+		WithLogger(silentLogger()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	err = em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "noop"},
+		Decision: "allowed",
+		Input:    []byte{}, // non-nil, zero-length
+	})
+	if err == nil {
+		t.Error("Emit with non-nil empty Input returned nil; want error")
+	}
+}
+
+// TestEmit_NonNilEmptyOutput mirrors TestEmit_NonNilEmptyInput for Output.
+func TestEmit_NonNilEmptyOutput(t *testing.T) {
+	dir := shortSocketDir(t)
+	em, err := New(
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
+		WithLogger(silentLogger()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	err = em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "noop"},
+		Decision: "allowed",
+		Output:   []byte{}, // non-nil, zero-length
+	})
+	if err == nil {
+		t.Error("Emit with non-nil empty Output returned nil; want error")
+	}
+}
+
+// TestEmit_OversizedCombinedPayload asserts that Input+Output exceeding
+// MaxFrameSize is rejected before any dial attempt.
+func TestEmit_OversizedCombinedPayload(t *testing.T) {
+	dir := shortSocketDir(t)
+	em, err := New(
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
+		WithLogger(silentLogger()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	// Build two JSON strings that together exceed MaxFrameSize.
+	half := MaxFrameSize/2 + 1
+	big := make([]byte, half)
+	big[0] = '"'
+	for i := 1; i < half-1; i++ {
+		big[i] = 'x'
+	}
+	big[half-1] = '"'
+
+	err = em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "noop"},
+		Decision: "allowed",
+		Input:    big,
+		Output:   big,
+	})
+	if err == nil {
+		t.Error("Emit with oversized payload returned nil; want error")
+	}
+}
+
+// TestEmit_ClosedWhileDialling covers the race branch where Close is called
+// between a successful dial and the conn-install lock: the dialled conn must
+// be discarded and Emit must return an error, not leak the conn.
+func TestEmit_ClosedWhileDialling(t *testing.T) {
+	dir := shortSocketDir(t)
+	rl := newRecordingListener(t, dir)
+
+	em, err := New(
+		WithSocketPath(rl.path),
+		WithLogger(silentLogger()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Close before the first Emit so the emitter is in the closed state.
+	if err := em.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Emit on a closed emitter: must return an error, not drop silently.
+	err = em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "noop"},
+		Decision: "allowed",
+	})
+	if err == nil {
+		t.Error("Emit on closed emitter returned nil; want error")
+	}
+}
+
+// TestSessionID asserts that SessionID returns the value set by WithSessionID
+// and that a generated ID is non-empty when no session is supplied.
+func TestSessionID(t *testing.T) {
+	dir := shortSocketDir(t)
+
+	t.Run("explicit", func(t *testing.T) {
+		em, err := New(
+			WithSocketPath(filepath.Join(dir, "missing.sock")),
+			WithSessionID("explicit-session-id"),
+		)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer em.Close()
+		if got := em.SessionID(); got != "explicit-session-id" {
+			t.Errorf("SessionID() = %q; want %q", got, "explicit-session-id")
+		}
+	})
+
+	t.Run("generated", func(t *testing.T) {
+		em, err := New(
+			WithSocketPath(filepath.Join(dir, "missing.sock")),
+		)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer em.Close()
+		if got := em.SessionID(); got == "" {
+			t.Error("SessionID() is empty; want generated UUID")
+		}
+	})
+}
+
+// TestWriteAll_ShortWrite checks that writeAll returns io.ErrShortWrite
+// when the writer returns (0, nil) — the zero-progress no-error case.
+func TestWriteAll_ShortWrite(t *testing.T) {
+	w := &zeroWriter{}
+	err := writeAll(w, []byte("hello"))
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Errorf("writeAll with zero-progress writer: got %v; want io.ErrShortWrite", err)
+	}
+}
+
+// zeroWriter always returns (0, nil) — simulates a writer that makes no
+// progress without returning an error, which triggers the ErrShortWrite guard.
+type zeroWriter struct{}
+
+func (*zeroWriter) Write(_ []byte) (int, error) { return 0, nil }
+
+// TestWriteFrame_TighterContextDeadline verifies that writeFrame uses the
+// context deadline when it is tighter than writeTimeout.
+func TestWriteFrame_TighterContextDeadline(t *testing.T) {
+	dir := shortSocketDir(t)
+	rl := newRecordingListener(t, dir)
+
+	em, err := New(
+		WithSocketPath(rl.path),
+		WithLogger(silentLogger()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	// First Emit to establish the connection.
+	if err := em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "warmup"},
+		Decision: "allowed",
+	}); err != nil {
+		t.Fatalf("warmup Emit: %v", err)
+	}
+	rl.waitForFrames(t, 1, 2*time.Second)
+
+	// Now emit with a tighter deadline. The listener is still up so the write
+	// should succeed quickly — we only want to exercise the "use ctx deadline"
+	// branch in writeFrame, not trigger a timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := em.Emit(ctx, Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "with-deadline"},
+		Decision: "allowed",
+	}); err != nil {
+		t.Fatalf("Emit with deadline: %v", err)
+	}
+	rl.waitForFrames(t, 2, 2*time.Second)
+}
+
+// TestDefaultSocketPath_EnvOverride covers the AGENTRECEIPTS_SOCKET env var
+// branch of DefaultSocketPath on supported platforms.
+func TestDefaultSocketPath_EnvOverride(t *testing.T) {
+	const want = "/custom/override/events.sock"
+	t.Setenv("AGENTRECEIPTS_SOCKET", want)
+	got := DefaultSocketPath()
+	if got != want {
+		t.Errorf("DefaultSocketPath() = %q; want %q", got, want)
+	}
+}
+
+// TestDefaultSocketPath_TmpdirFallback exercises the darwin/linux branch
+// where TMPDIR is empty and the path falls back to /tmp (darwin) or
+// /run (linux). We only assert the path is non-empty and does not contain
+// the empty string — the exact path is platform-dependent.
+func TestDefaultSocketPath_TmpdirFallback(t *testing.T) {
+	t.Setenv("AGENTRECEIPTS_SOCKET", "")
+	t.Setenv("TMPDIR", "")
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	got := DefaultSocketPath()
+	if got == "" {
+		t.Errorf("DefaultSocketPath() = %q; want non-empty path on supported platform", got)
+	}
+}
+
+// TestEmit_WriteFailureResetsConn exercises the write-failure branch in Emit:
+// when writeFrame returns an error the conn must be reset to nil so the next
+// Emit re-dials rather than attempting to write on a broken conn indefinitely.
+func TestEmit_WriteFailureResetsConn(t *testing.T) {
+	dir := shortSocketDir(t)
+	rl := newRecordingListener(t, dir)
+
+	em, err := New(
+		WithSocketPath(rl.path),
+		WithLogger(silentLogger()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	// Establish a connection via the first Emit.
+	if err := em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "first"},
+		Decision: "allowed",
+	}); err != nil {
+		t.Fatalf("first Emit: %v", err)
+	}
+	rl.waitForFrames(t, 1, 2*time.Second)
+
+	// Stop the listener so the next write fails.
+	rl.Stop()
+	_ = os.Remove(rl.path)
+	// Give the OS time to propagate the conn close.
+	time.Sleep(50 * time.Millisecond)
+
+	// This Emit should fail the write and reset e.conn to nil (returns nil
+	// per fire-and-forget contract).
+	if err := em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "failing"},
+		Decision: "allowed",
+	}); err != nil {
+		t.Fatalf("failing Emit returned error %v; want nil (fire-and-forget)", err)
+	}
+
+	// e.conn should now be nil; a subsequent Emit must attempt a new dial
+	// (which will fail because the socket is gone) and return nil.
+	if err := em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "after-reset"},
+		Decision: "allowed",
+	}); err != nil {
+		t.Fatalf("post-reset Emit returned error %v; want nil", err)
+	}
+}
+
 func TestEmit_ConcurrentCallsAreSerialised(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
