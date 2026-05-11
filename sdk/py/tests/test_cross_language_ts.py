@@ -1,9 +1,12 @@
-"""Cross-language compatibility tests.
+"""Cross-language compatibility tests: TypeScript SDK.
 
-Verifies that the Python SDK produces identical outputs to the TypeScript SDK:
-- Canonical JSON is byte-identical
-- SHA-256 hashes match
-- Signatures produced by TS can be verified by Python
+Verifies that the Python SDK can verify receipts signed by the TypeScript SDK
+and produces identical canonicalization and hashing outputs.
+
+This file is narrower than ``test_cross_language_go.py`` because
+``ts_vectors.json`` predates v0.2.0 and does not carry response_hash,
+chain.terminal, or parameters_disclosure fields. Extending the TS vector
+generator to v0.2.0 is tracked separately.
 """
 
 from __future__ import annotations
@@ -12,19 +15,19 @@ import json
 from pathlib import Path
 
 from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
-from agent_receipts.receipt.signing import verify_receipt
+from agent_receipts.receipt.signing import generate_key_pair, verify_receipt
 from agent_receipts.receipt.types import AgentReceipt
 
-FIXTURES = Path(__file__).parent / "fixtures"
+VECTORS = Path(__file__).parent / "fixtures" / "ts_vectors.json"
 
 
 def _load_vectors() -> dict:
-    with open(FIXTURES / "ts_vectors.json") as f:
+    with open(VECTORS) as f:
         return json.load(f)
 
 
 class TestCanonicalizeMatchesTS:
-    """Verify RFC 8785 canonicalization matches TypeScript output."""
+    """Verify RFC 8785 canonicalization matches TypeScript SDK output."""
 
     def test_simple_object(self) -> None:
         vectors = _load_vectors()
@@ -40,7 +43,7 @@ class TestCanonicalizeMatchesTS:
 
 
 class TestSha256MatchesTS:
-    """Verify SHA-256 hashing matches TypeScript output."""
+    """Verify SHA-256 hashing matches TypeScript SDK output."""
 
     def test_simple_string(self) -> None:
         vectors = _load_vectors()
@@ -70,8 +73,6 @@ class TestVerifyTSSignature:
         vectors = _load_vectors()
         signed_data = vectors["signing"]["signed"]
         receipt = AgentReceipt(**signed_data)
-        from agent_receipts.receipt.signing import generate_key_pair
-
         other_keys = generate_key_pair()
         assert verify_receipt(receipt, other_keys.public_key) is False
 
