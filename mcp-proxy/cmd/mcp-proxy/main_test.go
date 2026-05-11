@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +19,8 @@ import (
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
 func TestBuildApprovalDeniedMessageTimeout(t *testing.T) {
@@ -507,5 +514,513 @@ func TestCheckOpenFilePermissions0666Warns(t *testing.T) {
 	defer f.Close()
 	if got := checkOpenFilePermissions(f); got == "" {
 		t.Errorf("expected warning for 0666, got empty string")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// resolveVersion
+// ---------------------------------------------------------------------------
+
+func TestResolveVersionFallback(t *testing.T) {
+	// version is the package-level var set by ldflags. Save and restore it.
+	orig := version
+	version = ""
+	t.Cleanup(func() { version = orig })
+
+	// When no ldflags version is set and this runs under `go test` (devel),
+	// resolveVersion must return a non-empty string — either the module
+	// version or "dev".
+	got := resolveVersion()
+	if got == "" {
+		t.Error("resolveVersion() returned empty string")
+	}
+}
+
+func TestResolveVersionLDFlags(t *testing.T) {
+	orig := version
+	version = "v1.2.3"
+	t.Cleanup(func() { version = orig })
+
+	if got := resolveVersion(); got != "v1.2.3" {
+		t.Errorf("resolveVersion() = %q, want %q", got, "v1.2.3")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// generateToken
+// ---------------------------------------------------------------------------
+
+func TestGenerateTokenLength(t *testing.T) {
+	tok := generateToken(16)
+	// 16 bytes → 32 hex chars.
+	if len(tok) != 32 {
+		t.Errorf("generateToken(16) len = %d, want 32", len(tok))
+	}
+}
+
+func TestGenerateTokenUnique(t *testing.T) {
+	a, b := generateToken(16), generateToken(16)
+	if a == b {
+		t.Errorf("generateToken produced identical tokens: %s", a)
+	}
+}
+
+func TestGenerateTokenHexCharset(t *testing.T) {
+	tok := generateToken(32)
+	for _, c := range tok {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			t.Errorf("generateToken returned non-hex character %q in %q", c, tok)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// emitPolicyEvent
+// ---------------------------------------------------------------------------
+
+func TestEmitPolicyEventLogsStructuredLine(t *testing.T) {
+	out := captureStderr(t, func() {
+		emitPolicyEvent("create_pr", "pause_high_risk", 75, "pause", "http://127.0.0.1:7778", "approved", 120)
+	})
+
+	for _, want := range []string{
+		`tool="create_pr"`,
+		`rule="pause_high_risk"`,
+		`risk=75`,
+		`action="pause"`,
+		`approver="http://127.0.0.1:7778"`,
+		`outcome="approved"`,
+		`duration_ms=120`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("emitPolicyEvent output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestEmitPolicyEventNoApproverShowsNONE(t *testing.T) {
+	out := captureStderr(t, func() {
+		emitPolicyEvent("delete_file", "block_deletes", 90, "block", "", "blocked", 0)
+	})
+	if !strings.Contains(out, `approver="NONE"`) {
+		t.Errorf("expected approver=NONE when URL is empty, got:\n%s", out)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildApprovalDeniedMessage — default (unknown status) branch
+// ---------------------------------------------------------------------------
+
+func TestBuildApprovalDeniedMessageDefaultBranch(t *testing.T) {
+	// Use an ApprovalStatus value that doesn't match Denied, TimedOut or NoApprover.
+	got := buildApprovalDeniedMessage("tool", "rule", 50, "id", audit.ApprovalStatus("unknown"), time.Second)
+	if !strings.Contains(got, "denied by approval workflow") {
+		t.Errorf("default branch should contain 'denied by approval workflow', got %q", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// startHTTPServer approval handler
+// ---------------------------------------------------------------------------
+
+// newApprovalTestServer starts an in-process HTTP server using startHTTPServer
+// and returns the server URL and the approval manager.
+func newApprovalTestServer(t *testing.T) (string, *audit.ApprovalManager, string) {
+	t.Helper()
+	token := generateToken(16)
+	approvals := audit.NewApprovalManager()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	go startHTTPServer(ln, approvals, token)
+	return "http://" + ln.Addr().String(), approvals, token
+}
+
+func TestStartHTTPServerApproveFlow(t *testing.T) {
+	baseURL, approvals, token := newApprovalTestServer(t)
+	approvalID := generateToken(8)
+
+	// Start a waiter that will receive the approval.
+	result := make(chan audit.ApprovalStatus, 1)
+	go func() {
+		result <- approvals.WaitForApproval(approvalID, 3*time.Second)
+	}()
+
+	// Send the POST /approve request.
+	url := fmt.Sprintf("%s/api/tool-calls/%s/approve", baseURL, approvalID)
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST approve: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("approve: status = %d, want 200", resp.StatusCode)
+	}
+
+	var body map[string]string
+	json.NewDecoder(resp.Body).Decode(&body)
+	if body["status"] != "approved" {
+		t.Errorf("approve response body = %v, want status=approved", body)
+	}
+
+	select {
+	case status := <-result:
+		if status != audit.ApprovalApproved {
+			t.Errorf("WaitForApproval = %s, want approved", status)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for approval status")
+	}
+}
+
+func TestStartHTTPServerDenyFlow(t *testing.T) {
+	baseURL, approvals, token := newApprovalTestServer(t)
+	approvalID := generateToken(8)
+
+	result := make(chan audit.ApprovalStatus, 1)
+	go func() {
+		result <- approvals.WaitForApproval(approvalID, 3*time.Second)
+	}()
+
+	url := fmt.Sprintf("%s/api/tool-calls/%s/deny", baseURL, approvalID)
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST deny: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("deny: status = %d, want 200", resp.StatusCode)
+	}
+
+	select {
+	case status := <-result:
+		if status != audit.ApprovalDenied {
+			t.Errorf("WaitForApproval = %s, want denied", status)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for denial status")
+	}
+}
+
+func TestStartHTTPServerUnauthorized(t *testing.T) {
+	baseURL, _, token := newApprovalTestServer(t)
+
+	url := fmt.Sprintf("%s/api/tool-calls/someid/approve", baseURL)
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer wrong-"+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("wrong token: status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestStartHTTPServerInvalidPath(t *testing.T) {
+	baseURL, _, token := newApprovalTestServer(t)
+
+	url := fmt.Sprintf("%s/api/tool-calls/approve", baseURL) // missing action segment
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("short path: status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestStartHTTPServerNotFound(t *testing.T) {
+	baseURL, _, token := newApprovalTestServer(t)
+
+	// No pending approval with this ID, so Approve returns false.
+	url := fmt.Sprintf("%s/api/tool-calls/nonexistent-id/approve", baseURL)
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("no pending: status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestStartHTTPServerUnknownAction(t *testing.T) {
+	baseURL, _, token := newApprovalTestServer(t)
+
+	url := fmt.Sprintf("%s/api/tool-calls/someid/unknown-action", baseURL)
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown action: status = %d, want 404", resp.StatusCode)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DiagnoseConfig with rules file
+// ---------------------------------------------------------------------------
+
+func TestDiagnoseConfigWithRulesFile(t *testing.T) {
+	dir := t.TempDir()
+	rulesPath := dir + "/rules.yaml"
+	if err := os.WriteFile(rulesPath, []byte(`rules:
+  - name: flag_all
+    enabled: true
+    action: flag
+`), 0o600); err != nil {
+		t.Fatalf("write rules: %v", err)
+	}
+
+	report, healthy := DiagnoseConfig(rulesPath, "", func(url string) (string, error) {
+		return "", nil
+	})
+
+	// flag_all has no pause rules, so no approver issues.
+	if !healthy {
+		t.Errorf("expected healthy for flag-only ruleset, got issues: %v", report.Issues)
+	}
+	if report.RulesPath != rulesPath {
+		t.Errorf("RulesPath = %q, want %q", report.RulesPath, rulesPath)
+	}
+	if len(report.FlagRules) == 0 {
+		t.Errorf("expected at least one flag rule in FlagRules")
+	}
+}
+
+func TestDiagnoseConfigBadRulesFile(t *testing.T) {
+	report, healthy := DiagnoseConfig("/nonexistent/rules.yaml", "", func(url string) (string, error) {
+		return "", nil
+	})
+	if healthy {
+		t.Errorf("expected unhealthy for missing rules file")
+	}
+	if len(report.Issues) == 0 {
+		t.Errorf("expected issues for bad rules file")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// recordRejectedToolCall with approvalWaitUs
+// ---------------------------------------------------------------------------
+
+func TestRecordRejectedToolCallWithApprovalWait(t *testing.T) {
+	db, err := audit.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	sessionID := "sess-approval-wait"
+	if err := db.CreateSession(sessionID, "srv", "cmd"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	recordRejectedToolCall(db, sessionID, rejectedCall{
+		toolName:       "push_to_prod",
+		policyAction:   "rejected",
+		opType:         "execute",
+		riskScore:      80,
+		requestedAt:    time.Now(),
+		approvalWaitUs: 5000000, // 5 seconds
+	})
+
+	st, err := db.TimingStats(sessionID, 10)
+	if err != nil {
+		t.Fatalf("TimingStats: %v", err)
+	}
+	if len(st.PolicyActions) != 1 {
+		t.Fatalf("expected 1 policy-action row, got %d", len(st.PolicyActions))
+	}
+	if st.PolicyActions[0].ToolName != "push_to_prod" {
+		t.Errorf("tool name = %q", st.PolicyActions[0].ToolName)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runFollowLoop — JSON output path
+// ---------------------------------------------------------------------------
+
+func TestRunFollowLoopJSONOutput(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	startRowID, err := s.MaxRowID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newNotifyWriter()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runFollowLoop(ctx, s, startRowID, store.Query{}, 10*time.Millisecond, true, w)
+	}()
+
+	storeFollowReceipt(t, s, kp, 1, "chain-json-follow", nil)
+
+	// Wait for the JSON line to appear.
+	deadline := time.Now().Add(3 * time.Second)
+	var out string
+	for time.Now().Before(deadline) {
+		out = w.waitForWrite(t, 3*time.Second)
+		if strings.Contains(out, "chain-json-follow") {
+			break
+		}
+	}
+	if !strings.Contains(out, "chain-json-follow") {
+		t.Fatalf("JSON follow output missing chain ID: %q", out)
+	}
+	// Must be valid NDJSON.
+	line := strings.TrimSpace(strings.Split(out, "\n")[0])
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(line), &parsed); err != nil {
+		t.Errorf("follow JSON output is not valid JSON: %v\nline: %q", err, line)
+	}
+	cancel()
+	<-done
+}
+
+// ---------------------------------------------------------------------------
+// httptest-based handler unit test (tests mux without a real listener)
+// ---------------------------------------------------------------------------
+
+func TestApprovalHTTPHandlerDirectly(t *testing.T) {
+	token := "test-token-direct"
+	approvals := audit.NewApprovalManager()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tool-calls/", func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) < 5 {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+		id := parts[3]
+		action := parts[4]
+		switch {
+		case r.Method == "POST" && action == "approve":
+			if approvals.Approve(id) {
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprintf(w, `{"status":"approved"}`)
+			} else {
+				http.Error(w, "no pending approval", http.StatusNotFound)
+			}
+		case r.Method == "POST" && action == "deny":
+			if approvals.Deny(id) {
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprintf(w, `{"status":"denied"}`)
+			} else {
+				http.Error(w, "no pending approval", http.StatusNotFound)
+			}
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	})
+
+	// GET method (unsupported) should return 404.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/tool-calls/id/approve", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("GET approve: status = %d, want 404", rec.Code)
+	}
+
+	// No token → 401.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/api/tool-calls/id/approve", nil)
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusUnauthorized {
+		t.Errorf("no token: status = %d, want 401", rec2.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ensureDir (non-ensureDBDir variant)
+// ---------------------------------------------------------------------------
+
+func TestEnsureDir(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "a", "b", "file.txt")
+	if err := ensureDir(target); err != nil {
+		t.Fatalf("ensureDir: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(root, "a", "b"))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if !info.IsDir() {
+		t.Error("ensureDir did not create directory")
+	}
+}
+
+func TestEnsureDirBareFilename(t *testing.T) {
+	// dir component is "." — should be a no-op.
+	if err := ensureDir("file.db"); err != nil {
+		t.Fatalf("ensureDir for bare filename should be no-op: %v", err)
 	}
 }
