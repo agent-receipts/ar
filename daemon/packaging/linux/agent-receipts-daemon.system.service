@@ -1,0 +1,54 @@
+[Unit]
+Description=Agent Receipts signing daemon
+Documentation=https://github.com/agent-receipts/ar/tree/main/daemon
+
+[Service]
+Type=simple
+User=agentreceipts
+Group=agentreceipts
+
+# Run once before enabling the service to generate the signing key:
+#   sudo -u agentreceipts agent-receipts-daemon -init \
+#     -key /etc/agent-receipts/signing.key \
+#     -db /var/lib/agent-receipts/receipts.db
+ExecStart=/usr/local/bin/agent-receipts-daemon \
+  -db /var/lib/agent-receipts/receipts.db \
+  -key /etc/agent-receipts/signing.key \
+  -socket /run/agentreceipts/events.sock
+
+# Directories managed by systemd (created before ExecStart, removed on stop).
+# RuntimeDirectory creates /run/agentreceipts — the socket lives here.
+RuntimeDirectory=agentreceipts
+RuntimeDirectoryMode=0750
+# StateDirectory creates /var/lib/agent-receipts — the SQLite receipt store.
+StateDirectory=agent-receipts
+StateDirectoryMode=0750
+# ConfigurationDirectory creates /etc/agent-receipts — the signing key.
+ConfigurationDirectory=agent-receipts
+ConfigurationDirectoryMode=0750
+
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+# MemoryDenyWriteExecute omitted: Go uses W+X memory internally and crashes with it.
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+# Allow writes to managed directories; /etc/agent-receipts is needed because the
+# daemon re-writes signing.key.pub on every startup.
+ReadWritePaths=/var/lib/agent-receipts /run/agentreceipts /etc/agent-receipts
+
+[Install]
+WantedBy=multi-user.target

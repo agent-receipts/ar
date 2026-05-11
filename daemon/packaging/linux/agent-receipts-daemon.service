@@ -1,0 +1,24 @@
+[Unit]
+Description=Agent Receipts signing daemon
+Documentation=https://github.com/agent-receipts/ar/tree/main/daemon
+
+[Service]
+Type=simple
+# Adjust ExecStart to wherever the binary is installed.
+# Common locations: %h/.local/bin/agent-receipts-daemon (per-user install)
+#                   /usr/local/bin/agent-receipts-daemon (system-wide install)
+#
+# Run once before enabling to generate the signing key:
+#   agent-receipts-daemon -init
+#
+# %t expands to $XDG_RUNTIME_DIR, ensuring the socket path is correct even when
+# the service is started outside a PAM session (where XDG_RUNTIME_DIR may be unset).
+ExecStart=%h/.local/bin/agent-receipts-daemon \
+  -socket %t/agentreceipts/events.sock
+Restart=on-failure
+RestartSec=5s
+
+# Logging — journal captures stderr automatically; no need to redirect.
+
+[Install]
+WantedBy=default.target
