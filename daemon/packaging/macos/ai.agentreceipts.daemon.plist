@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- User-level LaunchAgent for agent-receipts-daemon.
+
+     Install (macOS Monterey+):
+              cp ai.agentreceipts.daemon.plist ~/Library/LaunchAgents/
+              launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.agentreceipts.daemon.plist
+
+     One-time key initialisation (run before first load):
+              agent-receipts-daemon --init
+
+     Remove:  launchctl bootout gui/$(id -u)/ai.agentreceipts.daemon
+
+     Log location: managed by Homebrew's service block when installed via brew.
+     For manual installs, add StandardOutPath/StandardErrorPath keys with
+     absolute paths — launchd does not expand ~ or $HOME.
+
+     Binary path: /opt/homebrew/bin on Apple Silicon Macs; change to
+     /usr/local/bin on Intel Macs, or use the full path to your install. -->
+<dict>
+    <key>Label</key>
+    <string>ai.agentreceipts.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Apple Silicon Homebrew path. Intel: /usr/local/bin/agent-receipts-daemon -->
+        <string>/opt/homebrew/bin/agent-receipts-daemon</string>
+    </array>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
