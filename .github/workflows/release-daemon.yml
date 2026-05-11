@@ -63,9 +63,22 @@ jobs:
           if [[ "${DAEMON_VERSION}" == *-* ]]; then
             PRERELEASE_ARG+=(--prerelease)
           fi
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "daemon ${DAEMON_VERSION}" \
-            --generate-notes \
-            "${PRERELEASE_ARG[@]}" \
+          # Create the release if it doesn't already exist (e.g. pre-created
+          # for release notes), then upload assets either way.
+          # If it already exists, normalise title and prerelease flag — a
+          # pre-created release may be missing --prerelease, which would cause
+          # a pre-release tag to appear as the latest stable release.
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" \
+              --title "daemon ${DAEMON_VERSION}" \
+              "${PRERELEASE_ARG[@]}"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "daemon ${DAEMON_VERSION}" \
+              --generate-notes \
+              "${PRERELEASE_ARG[@]}"
+          fi
+          gh release upload "${GITHUB_REF_NAME}" \
             daemon/dist/*.tar.gz \
-            daemon/dist/checksums.txt
+            daemon/dist/checksums.txt \
+            --clobber
