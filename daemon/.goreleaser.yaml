@@ -106,7 +106,36 @@ brews:
     # `:github_latest` (which returns repo-wide latest). `:github_releases`
     # scans all releases; regex extracts version from the `daemon/vX.Y.Z`
     # tag prefix.
+    #
+    # post_install, service, and caveats are also emitted here so they survive
+    # formula regeneration on each release (GoReleaser overwrites the formula
+    # file; anything not in custom_block or the named fields would be lost).
     custom_block: |
+      def post_install
+        (var/"log").mkpath
+      end
+
+      service do
+        run opt_bin/"agent-receipts-daemon"
+        keep_alive crashed: true
+        log_path var/"log/agent-receipts-daemon.log"
+        error_log_path var/"log/agent-receipts-daemon.log"
+        working_dir var
+      end
+
+      caveats <<~EOS
+        Before starting the service for the first time, generate your signing key:
+          agent-receipts-daemon --init
+
+        Then start the daemon:
+          brew services start agent-receipts/tap/agent-receipts-daemon
+
+        Receipts database: ~/.local/share/agent-receipts/receipts.db
+        Signing key:       ~/.local/share/agent-receipts/signing.key
+        Socket (macOS):    $TMPDIR/agentreceipts/events.sock
+        Socket (Linux):    $XDG_RUNTIME_DIR/agentreceipts/events.sock
+      EOS
+
       livecheck do
         url "https://github.com/agent-receipts/ar"
         strategy :github_releases
