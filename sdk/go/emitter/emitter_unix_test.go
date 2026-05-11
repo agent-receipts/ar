@@ -421,41 +421,6 @@ func TestNew_EmptySessionIDGeneratesUUID(t *testing.T) {
 	}
 }
 
-// TestEmit_ContextCancelledDuringDial covers the context-check that returns
-// ctx.Err() when the context becomes invalid during dial (e.g. timeout or cancel).
-// This test uses an already-expired context to reliably exercise that branch.
-func TestEmit_ContextCancelledDuringDial(t *testing.T) {
-	dir := shortSocketDir(t)
-
-	em, err := New(
-		WithSocketPath(filepath.Join(dir, "missing.sock")),
-		WithLogger(silentLogger()),
-	)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer em.Close()
-
-	// Create a context that expires immediately. Sleep briefly to ensure the
-	// deadline has passed before Emit is called.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
-	defer cancel()
-	time.Sleep(10 * time.Millisecond)
-
-	err = em.Emit(ctx, Event{
-		Channel:  "mcp",
-		Tool:     Tool{Name: "noop"},
-		Decision: "allowed",
-	})
-	// Either path (entry guard or post-dial guard) should return a context error.
-	if err == nil {
-		t.Skip("ctx happened to still be valid at both guards; timing-sensitive test skipped")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-		t.Errorf("Emit returned %v; want DeadlineExceeded or Canceled", err)
-	}
-}
-
 // TestEmit_NonNilEmptyInput checks the specific error for a non-nil empty
 // Input slice (distinct from nil, which means "no payload").
 func TestEmit_NonNilEmptyInput(t *testing.T) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -620,57 +619,13 @@ func TestBuildApprovalDeniedMessageDefaultBranch(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// approvalHTTPHandler — unit tests via httptest
-//
-// startHTTPServer calls log.Fatalf when http.Serve returns (e.g. on listener
-// close), so it cannot be called from tests. Instead we duplicate the
-// handler registration inline so we exercise the same logic paths (bearer
-// check, path parsing, approve/deny) without the Fatalf problem.
+// approvalHTTPHandler — unit tests via httptest using the production buildApprovalMux
 // ---------------------------------------------------------------------------
-
-// newApprovalMux builds the same http.ServeMux that startHTTPServer registers,
-// returning it for use with httptest.
-func newApprovalMux(approvals *audit.ApprovalManager, token string) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/tool-calls/", func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		parts := strings.Split(r.URL.Path, "/")
-		if len(parts) < 5 {
-			http.Error(w, "invalid path", http.StatusBadRequest)
-			return
-		}
-		id := parts[3]
-		action := parts[4]
-		switch {
-		case r.Method == "POST" && action == "approve":
-			if approvals.Approve(id) {
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprintf(w, `{"status":"approved"}`)
-			} else {
-				http.Error(w, "no pending approval", http.StatusNotFound)
-			}
-		case r.Method == "POST" && action == "deny":
-			if approvals.Deny(id) {
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprintf(w, `{"status":"denied"}`)
-			} else {
-				http.Error(w, "no pending approval", http.StatusNotFound)
-			}
-		default:
-			http.Error(w, "not found", http.StatusNotFound)
-		}
-	})
-	return mux
-}
 
 func TestApprovalHandlerApproveFlow(t *testing.T) {
 	token := generateToken(16)
 	approvals := audit.NewApprovalManager()
-	mux := newApprovalMux(approvals, token)
+	mux := buildApprovalMux(approvals, token)
 	approvalID := generateToken(8)
 
 	result := make(chan audit.ApprovalStatus, 1)
@@ -716,7 +671,7 @@ func TestApprovalHandlerApproveFlowHTTP(t *testing.T) {
 	// by registering a pending waiter first, then sending the approve request.
 	token := generateToken(16)
 	approvals := audit.NewApprovalManager()
-	mux := newApprovalMux(approvals, token)
+	mux := buildApprovalMux(approvals, token)
 	approvalID := generateToken(8)
 
 	// Register the waiter synchronously so it's definitely present before the HTTP call.
@@ -764,7 +719,7 @@ func TestApprovalHandlerApproveFlowHTTP(t *testing.T) {
 func TestApprovalHandlerDenyFlow(t *testing.T) {
 	token := generateToken(16)
 	approvals := audit.NewApprovalManager()
-	mux := newApprovalMux(approvals, token)
+	mux := buildApprovalMux(approvals, token)
 	approvalID := generateToken(8)
 
 	result := make(chan audit.ApprovalStatus, 1)
@@ -800,7 +755,7 @@ func TestApprovalHandlerDenyFlow(t *testing.T) {
 
 func TestApprovalHandlerWrongToken(t *testing.T) {
 	token := generateToken(16)
-	mux := newApprovalMux(audit.NewApprovalManager(), token)
+	mux := buildApprovalMux(audit.NewApprovalManager(), token)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tool-calls/id/approve", nil)
 	req.Header.Set("Authorization", "Bearer wrong-token")
@@ -814,7 +769,7 @@ func TestApprovalHandlerWrongToken(t *testing.T) {
 
 func TestApprovalHandlerShortPath(t *testing.T) {
 	token := generateToken(16)
-	mux := newApprovalMux(audit.NewApprovalManager(), token)
+	mux := buildApprovalMux(audit.NewApprovalManager(), token)
 
 	// /api/tool-calls/approve has only 4 path parts — missing the action segment.
 	req := httptest.NewRequest(http.MethodPost, "/api/tool-calls/approve", nil)
@@ -829,7 +784,7 @@ func TestApprovalHandlerShortPath(t *testing.T) {
 
 func TestApprovalHandlerNoPendingApproval(t *testing.T) {
 	token := generateToken(16)
-	mux := newApprovalMux(audit.NewApprovalManager(), token)
+	mux := buildApprovalMux(audit.NewApprovalManager(), token)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tool-calls/nonexistent/approve", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -843,7 +798,7 @@ func TestApprovalHandlerNoPendingApproval(t *testing.T) {
 
 func TestApprovalHandlerNoPendingDeny(t *testing.T) {
 	token := generateToken(16)
-	mux := newApprovalMux(audit.NewApprovalManager(), token)
+	mux := buildApprovalMux(audit.NewApprovalManager(), token)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tool-calls/nonexistent/deny", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -857,7 +812,7 @@ func TestApprovalHandlerNoPendingDeny(t *testing.T) {
 
 func TestApprovalHandlerUnknownAction(t *testing.T) {
 	token := generateToken(16)
-	mux := newApprovalMux(audit.NewApprovalManager(), token)
+	mux := buildApprovalMux(audit.NewApprovalManager(), token)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tool-calls/id/badaction", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -871,7 +826,7 @@ func TestApprovalHandlerUnknownAction(t *testing.T) {
 
 func TestApprovalHandlerGetMethodIsNotFound(t *testing.T) {
 	token := generateToken(16)
-	mux := newApprovalMux(audit.NewApprovalManager(), token)
+	mux := buildApprovalMux(audit.NewApprovalManager(), token)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tool-calls/id/approve", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -1014,7 +969,9 @@ func TestRunFollowLoopJSONOutput(t *testing.T) {
 		t.Errorf("follow JSON output is not valid JSON: %v\nline: %q", err, line)
 	}
 	cancel()
-	<-done
+	if err := <-done; err != nil {
+		t.Errorf("runFollowLoop returned unexpected error after cancel: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
