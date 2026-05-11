@@ -4,17 +4,21 @@
 <!-- User-level LaunchAgent for agent-receipts-daemon.
 
      Install (macOS Monterey+):
-              cp ai.agentreceipts.daemon.plist ~/Library/LaunchAgents/
-              launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.agentreceipts.daemon.plist
-
-     One-time key initialisation (run before first load):
+       1. Create the log directory:
+              mkdir -p ~/Library/Logs/agent-receipts
+       2. Copy the plist, substituting your actual username for YOUR_USERNAME:
+              sed "s/YOUR_USERNAME/$(whoami)/g" ai.agentreceipts.daemon.plist \
+                > ~/Library/LaunchAgents/ai.agentreceipts.daemon.plist
+       3. Run the one-time key initialisation:
               agent-receipts-daemon --init
+       4. Load the agent:
+              launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.agentreceipts.daemon.plist
 
      Remove:  launchctl bootout gui/$(id -u)/ai.agentreceipts.daemon
 
-     Log location: managed by Homebrew's service block when installed via brew.
-     For manual installs, add StandardOutPath/StandardErrorPath keys with
-     absolute paths — launchd does not expand ~ or $HOME.
+     Log location: ~/Library/Logs/agent-receipts/daemon.log (stdout + stderr).
+     launchd does not expand ~ or $HOME in path keys, so YOUR_USERNAME must be
+     substituted with your actual macOS username (step 2 above does this).
 
      Binary path: /opt/homebrew/bin on Apple Silicon Macs; change to
      /usr/local/bin on Intel Macs, or use the full path to your install. -->
@@ -28,6 +32,8 @@
         <string>/opt/homebrew/bin/agent-receipts-daemon</string>
     </array>
 
+    <!-- Restart on crash or non-zero exit; do not restart on clean exit.
+         This prevents restart loops when the daemon exits intentionally (e.g. --init). -->
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>
@@ -41,5 +47,11 @@
 
     <key>RunAtLoad</key>
     <true/>
+
+    <!-- launchd requires absolute paths; ~ and $HOME are not expanded. -->
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/agent-receipts/daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/agent-receipts/daemon.log</string>
 </dict>
 </plist>
