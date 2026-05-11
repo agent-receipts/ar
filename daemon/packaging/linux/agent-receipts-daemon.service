@@ -18,6 +18,10 @@ ExecStart=%h/.local/bin/agent-receipts-daemon \
 Restart=on-failure
 RestartSec=5s
 
+# Ensure %t/agentreceipts/ exists before the socket bind.
+RuntimeDirectory=agentreceipts
+RuntimeDirectoryMode=0700
+
 # Logging — journal captures stderr automatically; no need to redirect.
 
 [Install]
