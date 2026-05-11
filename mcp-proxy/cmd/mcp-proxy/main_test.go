@@ -1180,17 +1180,15 @@ func TestOpenAuditStoreValid(t *testing.T) {
 // DiagnoseConfig — healthy no-approver no-pause-rules case
 // ---------------------------------------------------------------------------
 
-func TestDiagnoseConfigNoApproverNoPauseRulesIsHealthy(t *testing.T) {
-	report, healthy := DiagnoseConfig("", "", func(url string) (string, error) {
+func TestDiagnoseConfigNoApproverReturnsNotConfigured(t *testing.T) {
+	report, _ := DiagnoseConfig("", "", func(url string) (string, error) {
 		t.Fatalf("probe should not be called when URL is empty")
 		return "", nil
 	})
-	// The default rules include pause rules, so this should actually be unhealthy.
-	// But it verifies the not_configured path is hit.
+	// When approver URL is empty, the diagnosis should report not_configured.
 	if report.ApproverReach != "not_configured" {
 		t.Errorf("approver reach = %q, want not_configured", report.ApproverReach)
 	}
-	_ = healthy // healthy or not depends on whether default rules have pause rules
 }
 
 // ---------------------------------------------------------------------------

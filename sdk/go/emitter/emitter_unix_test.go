@@ -421,15 +421,9 @@ func TestNew_EmptySessionIDGeneratesUUID(t *testing.T) {
 	}
 }
 
-// TestEmit_ContextCancelledDuringDial covers the context-check that sits
-// between dial failure and the logDrop call. A context that is still valid
-// at entry but expires while the dial is blocked must cause Emit to return
-// the context error rather than nil.
-//
-// We exercise this by pointing the emitter at a listener that accepts the TCP
-// connection but never reads, then racing a short deadline against the dial.
-// On AF_UNIX with a missing socket the dial fails instantly, so we need the
-// ctx to already be expired at that point while still being alive at entry.
+// TestEmit_ContextCancelledDuringDial covers the context-check that returns
+// ctx.Err() when the context becomes invalid during dial (e.g. timeout or cancel).
+// This test uses an already-expired context to reliably exercise that branch.
 func TestEmit_ContextCancelledDuringDial(t *testing.T) {
 	dir := shortSocketDir(t)
 
@@ -442,15 +436,11 @@ func TestEmit_ContextCancelledDuringDial(t *testing.T) {
 	}
 	defer em.Close()
 
-	// Create a context that expires after a tiny interval. The entry guard
-	// fires if expired on arrival; the dial-failure guard fires if ctx expires
-	// while dial is in progress. Either path returning a non-nil error is the
-	// correct behaviour.
+	// Create a context that expires immediately. Sleep briefly to ensure the
+	// deadline has passed before Emit is called.
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 	defer cancel()
-	// Burn a few microseconds so the deadline is effectively already past.
-	for i := 0; i < 1000; i++ {
-	}
+	time.Sleep(10 * time.Millisecond)
 
 	err = em.Emit(ctx, Event{
 		Channel:  "mcp",
@@ -547,10 +537,9 @@ func TestEmit_OversizedCombinedPayload(t *testing.T) {
 	}
 }
 
-// TestEmit_ClosedWhileDialling covers the race branch where Close is called
-// between a successful dial and the conn-install lock: the dialled conn must
-// be discarded and Emit must return an error, not leak the conn.
-func TestEmit_ClosedWhileDialling(t *testing.T) {
+// TestEmit_OnClosedEmitter verifies that Emit returns an error when called on
+// a closed emitter (after Close has been called).
+func TestEmit_OnClosedEmitter(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
@@ -562,7 +551,7 @@ func TestEmit_ClosedWhileDialling(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	// Close before the first Emit so the emitter is in the closed state.
+	// Close the emitter.
 	if err := em.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -628,7 +617,9 @@ type zeroWriter struct{}
 func (*zeroWriter) Write(_ []byte) (int, error) { return 0, nil }
 
 // TestWriteFrame_TighterContextDeadline verifies that writeFrame uses the
-// context deadline when it is tighter than writeTimeout.
+// context deadline when it is tighter than writeTimeout. This test sets a
+// 20ms deadline (tighter than the 100ms writeTimeout) and verifies the
+// write still succeeds on a responsive listener (using the tighter deadline).
 func TestWriteFrame_TighterContextDeadline(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
@@ -652,10 +643,9 @@ func TestWriteFrame_TighterContextDeadline(t *testing.T) {
 	}
 	rl.waitForFrames(t, 1, 2*time.Second)
 
-	// Now emit with a tighter deadline. The listener is still up so the write
-	// should succeed quickly — we only want to exercise the "use ctx deadline"
-	// branch in writeFrame, not trigger a timeout.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Now emit with a deadline tighter than writeTimeout (100ms).
+	// The listener is responsive so the write should complete within 20ms.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 
 	if err := em.Emit(ctx, Event{
@@ -663,7 +653,7 @@ func TestWriteFrame_TighterContextDeadline(t *testing.T) {
 		Tool:     Tool{Name: "with-deadline"},
 		Decision: "allowed",
 	}); err != nil {
-		t.Fatalf("Emit with deadline: %v", err)
+		t.Fatalf("Emit with tighter deadline: %v", err)
 	}
 	rl.waitForFrames(t, 2, 2*time.Second)
 }
