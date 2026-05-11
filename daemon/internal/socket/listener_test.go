@@ -511,6 +511,7 @@ func TestListener_ServeStopsOnContextCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer ln.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	serveDone := make(chan error, 1)

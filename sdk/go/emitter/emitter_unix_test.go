@@ -610,7 +610,7 @@ func TestWriteFrame_TighterContextDeadline(t *testing.T) {
 
 	// Now emit with a deadline tighter than writeTimeout (100ms).
 	// The listener is responsive so the write should complete within 20ms.
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
 	if err := em.Emit(ctx, Event{

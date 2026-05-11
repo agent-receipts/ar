@@ -622,7 +622,9 @@ func TestBuildApprovalDeniedMessageDefaultBranch(t *testing.T) {
 // approvalHTTPHandler — unit tests via httptest using the production buildApprovalMux
 // ---------------------------------------------------------------------------
 
-func TestApprovalHandlerApproveFlow(t *testing.T) {
+func TestApprovalHandlerApproveAfterConsumed(t *testing.T) {
+	// Verifies that the HTTP approve handler returns 404 when the approval ID
+	// has already been consumed (no pending waiter).
 	token := generateToken(16)
 	approvals := audit.NewApprovalManager()
 	mux := buildApprovalMux(approvals, token)
@@ -633,7 +635,7 @@ func TestApprovalHandlerApproveFlow(t *testing.T) {
 		result <- approvals.WaitForApproval(approvalID, 3*time.Second)
 	}()
 
-	// Spin until WaitForApproval has registered the channel.
+	// Spin until WaitForApproval has registered, consuming it via direct Approve.
 	deadline := time.Now().Add(2 * time.Second)
 	for !approvals.Approve(approvalID) {
 		if time.Now().After(deadline) {
@@ -642,20 +644,15 @@ func TestApprovalHandlerApproveFlow(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 
-	// At this point the waiter has been approved internally. Verify the HTTP
-	// handler itself by confirming that a request with a non-pending ID returns 404.
-	// (The channel was already consumed by our polling loop above.)
+	// The waiter was already consumed — HTTP handler should return 404.
 	req := httptest.NewRequest(http.MethodPost, "/api/tool-calls/"+approvalID+"/approve", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-
-	// The waiter was already consumed — handler should return 404.
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("post-consumed approve: status = %d, want 404", rec.Code)
 	}
 
-	// The goroutine should have received approved from our polling Approve call.
 	select {
 	case status := <-result:
 		if status != audit.ApprovalApproved {
@@ -683,19 +680,12 @@ func TestApprovalHandlerApproveFlowHTTP(t *testing.T) {
 		ch <- approvals.WaitForApproval(approvalID, 5*time.Second)
 	}()
 
-	// Spin until registered.
+	// Poll via HTTP until the waiter registers; 10ms between attempts to avoid CPU churn.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		// Peek without consuming: try Approve, un-doable. Use a separate trick:
-		// send a deny followed by a new registration. Instead, just spin with sleep.
-		time.Sleep(time.Millisecond)
-		// We cannot inspect the map directly; use a fresh approve to test.
-		// Use the real waiter: if Approve returns true, the goroutine is done.
-		// But we want to send via HTTP. So just wait a small fixed time.
 		if time.Now().After(deadline) {
 			t.Fatal("timed out waiting for waiter to register")
 		}
-		// Try to send HTTP approve request; if 200, done; if 404, not yet registered.
 		req := httptest.NewRequest(http.MethodPost, "/api/tool-calls/"+approvalID+"/approve", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		rec := httptest.NewRecorder()
@@ -703,7 +693,8 @@ func TestApprovalHandlerApproveFlowHTTP(t *testing.T) {
 		if rec.Code == http.StatusOK {
 			break
 		}
-		// 404 means not registered yet — keep spinning.
+		// 404 means not registered yet — back off briefly.
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	select {
