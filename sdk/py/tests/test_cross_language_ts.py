@@ -2,6 +2,11 @@
 
 Verifies that the Python SDK can verify receipts signed by the TypeScript SDK
 and produces identical canonicalization and hashing outputs.
+
+This file is narrower than ``test_cross_language_go.py`` because
+``ts_vectors.json`` predates v0.2.0 and does not carry response_hash,
+chain.terminal, or parameters_disclosure fields. Extending the TS vector
+generator to v0.2.0 is tracked separately.
 """
 
 from __future__ import annotations
