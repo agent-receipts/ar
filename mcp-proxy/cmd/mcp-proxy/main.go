@@ -1039,7 +1039,7 @@ func generateToken(n int) string {
 	return hex.EncodeToString(b)
 }
 
-func startHTTPServer(ln net.Listener, approvals *audit.ApprovalManager, token string) {
+func buildApprovalMux(approvals *audit.ApprovalManager, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/tool-calls/", func(w http.ResponseWriter, r *http.Request) {
 		// Validate bearer token.
@@ -1076,8 +1076,11 @@ func startHTTPServer(ln net.Listener, approvals *audit.ApprovalManager, token st
 			http.Error(w, "not found", http.StatusNotFound)
 		}
 	})
+	return mux
+}
 
-	if err := http.Serve(ln, mux); err != nil {
+func startHTTPServer(ln net.Listener, approvals *audit.ApprovalManager, token string) {
+	if err := http.Serve(ln, buildApprovalMux(approvals, token)); err != nil {
 		log.Fatalf("mcp-proxy: http server: %v", err)
 	}
 }
