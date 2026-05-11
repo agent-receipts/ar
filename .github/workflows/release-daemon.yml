@@ -65,7 +65,14 @@ jobs:
           fi
           # Create the release if it doesn't already exist (e.g. pre-created
           # for release notes), then upload assets either way.
-          if ! gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+          # If it already exists, normalise title and prerelease flag — a
+          # pre-created release may be missing --prerelease, which would cause
+          # a pre-release tag to appear as the latest stable release.
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" \
+              --title "daemon ${DAEMON_VERSION}" \
+              "${PRERELEASE_ARG[@]}"
+          else
             gh release create "${GITHUB_REF_NAME}" \
               --title "daemon ${DAEMON_VERSION}" \
               --generate-notes \
