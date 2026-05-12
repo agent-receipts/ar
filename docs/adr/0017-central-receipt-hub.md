@@ -77,6 +77,8 @@ Differences in `--ingest` mode versus default:
 
 Same storage layout (SQLite per ADR-0004, one logical chain per node DID), same canonicalisation, same signature scheme. A future operator who wants to verify a hub-stored chain uses the same `agent-receipts verify` CLI against the hub's database that they would use against a node's database.
 
+**Hub DID and key lifecycle.** The hub registers itself the same way a node does — `did:web` for production deployments, `did:key` for development per ADR-0007 — and rotates its signing key via the ADR-0015 rotation-event chain. The hub's DID is what signs anchored checkpoints (§7) and appears in its own trust store as the recognised checkpoint signer, distinct from the node DIDs it authorises for ingest. From the key-management perspective the hub is a node that happens to also accept inbound batches; there is no second key-lifecycle story to maintain.
+
 ### 7. External anchoring: S3 with object lock for per-node chain heads
 
 The hub periodically writes per-node chain heads to an S3 bucket with object lock enabled. Each anchor write is a `checkpoint` event as defined by ADR-0015: `(issuer.id, seq, tip_hash, public_key_fingerprint)`, RFC 8785-canonicalised, signed by the hub's own daemon key, written via the ADR-0015 `Write(event_type, payload bytes) → error` contract.
@@ -88,7 +90,7 @@ S3 object lock provides the two properties ADR-0015 demands of a sink:
 
 The S3 bucket — not the hub — is the trust root for the anchoring claim. Hub compromise is bounded: the attacker controls future receipts and future anchors but cannot rewrite previously-anchored checkpoints, so a verifier with S3 read access can detect any divergence between the hub's current view of a chain and the most recent anchored tip. State explicitly: the integrity property survives total hub compromise as long as the S3 bucket's object-lock configuration was set before the compromise and the attacker did not also compromise the AWS account holding the bucket.
 
-Anchor frequency proposal: per node, the more recent of (a) every 5 minutes of wall clock during which receipts were ingested, or (b) every 1000 receipts ingested. Quiet nodes do not generate empty anchors; busy nodes do not let the detection window grow unbounded. Both knobs are tunable; both have direct cost/coverage tradeoffs (see *Open Questions*).
+**Anchor frequency.** Per node, the more recent of (a) every 5 minutes of wall clock during which receipts were ingested, or (b) every 1000 receipts ingested. Quiet nodes do not emit empty anchors; busy nodes do not let the detection window grow unbounded. Both knobs are tunable. The 5min/1000 default is the midpoint between per-batch anchoring (strongest guarantee, highest S3 write cost, anchor latency on the critical path) and hourly anchoring (cheapest, leaves a 60-minute invisible window between truncation and detection). Operators with stricter audit posture shorten the cadence; operators with cost-sensitive sinks lengthen it.
 
 ### 8. Scope: single-tenant for v1
 
@@ -149,8 +151,6 @@ hub agent-receipts daemon (--ingest mode)
 ## Open questions
 
 - **JWS vs HTTP Message Signatures (RFC 9421).** Proposal above is JWS, justified in §4. Open for community input — primarily on whether deployments that put the hub behind an HTTP-aware gateway would prefer the gateway to sign at the HTTP layer rather than relaying a JWS. The two are not mutually exclusive; the question is the default.
-- **Anchor frequency to S3.** Proposal above is per-node, the more recent of (a) every 5 minutes of activity or (b) every 1000 ingested receipts. Tradeoff: smaller cadence shrinks the truncation-detection window (the gap between a receipt's ingestion and its appearance in an anchored checkpoint) but raises S3 write volume and cost. Per-batch anchoring is the strongest guarantee and the most expensive; per-hour is the cheapest and leaves the longest invisible window. The 5min/1000 default is a midpoint; deployments with stricter posture shorten it.
-- **Hub's own DID and key lifecycle.** The hub signs checkpoints, so it has its own DID and its own `KeySource`. Proposal: yes, the hub registers itself the same way nodes do — `did:web` for production, `did:key` for development (per ADR-0007) — and rotates via the same ADR-0015 rotation event chain. The hub's DID appears in its own trust list as the recognised signer of checkpoints, distinct from the node DIDs it authorises for ingest. Confirm and pin in the implementing PR.
 
 ## Related ADRs
 
