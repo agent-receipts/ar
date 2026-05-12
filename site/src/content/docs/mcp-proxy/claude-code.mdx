@@ -10,7 +10,7 @@ The default policy includes a `pause_high_risk` rule. When you generate a config
 :::
 
 :::danger[Never put secrets in the config file]
-Both `claude mcp add-json` and `.mcp.json` persist their content as plaintext on disk (`~/.claude.json` and committed project files respectively). **Never** paste a token, API key, or other credential as a literal string into either one. Reference secrets via `${VAR}` placeholders — Claude Code expands them at server-launch time — and keep the actual values in your shell environment or a secret manager. The snippets on this page follow that pattern; if you adapt them for other servers, preserve it.
+Both `claude mcp add-json` and `.mcp.json` persist their content as plaintext on disk (`~/.claude.json` and committed project files respectively). **Never** paste a token, API key, or other credential as a literal string into either one. Use a secret-manager wrapper (`op run`, `aws-vault exec`, …) to inject credentials at exec time — or reference them via `${VAR}` placeholders, which Claude Code expands at server-launch time from its environment. Both patterns are documented below.
 :::
 
 ## Prerequisites
@@ -37,7 +37,80 @@ Re-running `init` is safe — it warns and skips if the key already exists. Use 
 
 ## Register the proxy with Claude Code
 
-Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. Your shell resolves the proxy, key, and server paths at paste time. The token is referenced as `${GITHUB_PERSONAL_ACCESS_TOKEN}` — Claude Code expands that placeholder at server-launch time, so the secret stays in your environment (or a secret manager) rather than in the stored config.
+Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. Your shell resolves the proxy, key, and server paths at paste time.
+
+The token needs to reach `mcp-proxy`'s environment **without being written into the stored config**. Pick whichever pattern matches your secrets setup.
+
+### Recommended: secret manager (`op run`, `aws-vault exec`, …)
+
+Install the 1Password CLI (`brew install 1password-cli`), sign in (`op signin`), and create a referenced env file:
+
+```ini
+# ~/.agent-receipts/mcp.env  (chmod 600)
+GITHUB_PERSONAL_ACCESS_TOKEN=op://Personal/GitHub/token
+```
+
+Point Claude Code at `op run` — it resolves the `op://` reference at exec time and injects the value into `mcp-proxy`'s env. No `env` block is needed in the config. Find your `op` path with `which op`.
+
+**bash / zsh:**
+
+```bash
+# heredoc terminator (JSON) must be alone on its line; closing ) follows on the next
+JSON_BODY=$(cat <<JSON
+{
+  "command": "$(which op)",
+  "args": [
+    "run",
+    "--env-file=$HOME/.agent-receipts/mcp.env",
+    "--",
+    "$(which mcp-proxy)",
+    "-name", "github",
+    "-key", "$HOME/.agent-receipts/github-proxy.pem",
+    "-issuer-name", "Claude Code",
+    "-operator-id", "did:web:anthropic.com",
+    "-operator-name", "Anthropic",
+    "$(which github-mcp-server)", "stdio"
+  ]
+}
+JSON
+)
+
+claude mcp add-json github-audited --scope user "$JSON_BODY"
+```
+
+**fish:**
+
+```fish
+set OP (which op)
+set MCP_PROXY (which mcp-proxy)
+set GITHUB_MCP (which github-mcp-server)
+set KEY $HOME/.agent-receipts/github-proxy.pem
+set ENV_FILE $HOME/.agent-receipts/mcp.env
+
+set json (printf '{
+  "command": "%s",
+  "args": [
+    "run",
+    "--env-file=%s",
+    "--",
+    "%s",
+    "-name", "github",
+    "-key", "%s",
+    "-issuer-name", "Claude Code",
+    "-operator-id", "did:web:anthropic.com",
+    "-operator-name", "Anthropic",
+    "%s", "stdio"
+  ]
+}' $OP $ENV_FILE $MCP_PROXY $KEY $GITHUB_MCP | string collect)
+
+claude mcp add-json github-audited --scope user $json
+```
+
+`aws-vault exec`, `chamber exec` (AWS Parameter Store), and similar tools follow the same wrapping pattern — substitute whichever your team already deploys.
+
+### Alternative: shell environment (Claude Code only)
+
+Unlike Claude Desktop, Claude Code expands `${VAR}` placeholders in `env` blocks at server-launch time. This means you can keep the credential in your shell environment and reference it by name in the config.
 
 **bash / zsh** — `\$` escapes the placeholder so bash leaves it intact at paste time:
 
@@ -89,7 +162,7 @@ set json (printf '{
 claude mcp add-json github-audited --scope user $json
 ```
 
-Set `GITHUB_PERSONAL_ACCESS_TOKEN` in your shell rc (`~/.zshrc`, `~/.config/fish/config.fish`, etc.) — or fetch it on demand from a secret manager — before launching Claude Code. Verify the placeholder reached the stored config (and was *not* expanded at paste time) with `claude mcp get github-audited`.
+Set `GITHUB_PERSONAL_ACCESS_TOKEN` in your shell rc (`~/.zshrc`, `~/.config/fish/config.fish`, etc.) before launching Claude Code. Verify the placeholder reached the stored config (and was *not* expanded at paste time) with `claude mcp get github-audited`.
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
 
@@ -103,15 +176,45 @@ claude mcp list
 
 ## Project-scoped setup via .mcp.json
 
-For a shared team configuration, add a `.mcp.json` file at the project root. This is committed to version control — do not put tokens directly in it. Reference environment variables instead.
+For a shared team configuration, add a `.mcp.json` file at the project root. This is committed to version control — do not put tokens directly in it.
 
-Since JSON files can't shell-expand, print the absolute paths you need first and paste them into the template below:
+Since `.mcp.json` is a static JSON file, print the absolute paths you need first and paste them into the template below:
 
 ```bash
 echo "command: $(which mcp-proxy)"
 echo "key:     $HOME/.agent-receipts/github-proxy.pem"
 echo "server:  $(which github-mcp-server)"
 ```
+
+### Recommended: secret manager
+
+Point Claude Code at `op run`, same as the `claude mcp add-json` pattern above. Each developer needs `~/.agent-receipts/mcp.env` on their machine with their own `op://` reference (or whichever secret manager the team uses).
+
+```json
+{
+  "mcpServers": {
+    "github-audited": {
+      "command": "/opt/homebrew/bin/op",
+      "args": [
+        "run",
+        "--env-file=/Users/YOU/.agent-receipts/mcp.env",
+        "--",
+        "/Users/YOU/go/bin/mcp-proxy",
+        "-name", "github",
+        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-issuer-name", "Claude Code",
+        "-operator-id", "did:web:anthropic.com",
+        "-operator-name", "Anthropic",
+        "/opt/homebrew/bin/github-mcp-server", "stdio"
+      ]
+    }
+  }
+}
+```
+
+### Alternative: shell environment
+
+Claude Code expands `${VAR}` placeholders at server-launch time, so each developer can set `GITHUB_PERSONAL_ACCESS_TOKEN` in their shell environment and have it picked up automatically.
 
 ```json
 {
@@ -134,7 +237,7 @@ echo "server:  $(which github-mcp-server)"
 }
 ```
 
-Each developer sets `GITHUB_PERSONAL_ACCESS_TOKEN` in their shell environment. The proxy path and key path will need to be consistent across the team, or handled via a wrapper script.
+The proxy path and key path will need to be consistent across the team, or handled via a wrapper script.
 
 ## Verifying receipts
 
