@@ -757,6 +757,7 @@ func TestSessionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	defer em.Close()
 
 	got := em.SessionID()
 	if got != explicitSessionID {
@@ -773,6 +774,7 @@ func TestSessionIDGeneratedWhenNotProvided(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	defer em.Close()
 
 	got := em.SessionID()
 	if got == "" {
