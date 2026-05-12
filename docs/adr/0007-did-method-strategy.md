@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted (2026-05-12) — Phase A only. Phase B (`did:web` resolution) and the pluggable resolver interface are designed but not yet scheduled. See *Implementation phasing* below.
 
 ## Context
 
@@ -26,9 +26,7 @@ Related: #20 (parent issue), spec §9.6 (open question #6), ADR-0001 (key lifecy
 
 ## Decision
 
-*This ADR is in Proposed status. No decision has been made — community input is being sought.*
-
-The leading candidate is a tiered approach:
+A tiered approach:
 
 1. **`did:key` as the default.** All SDKs ship with built-in `did:key` generation and resolution. This is the zero-configuration path: generate an Ed25519 key pair, derive the `did:key` identifier, and start signing receipts. No external infrastructure required.
 
@@ -36,13 +34,19 @@ The leading candidate is a tiered approach:
 
 3. **Pluggable resolver interface for other methods.** SDKs expose a DID resolution interface that integrators can implement for any DID method. The protocol does not endorse or require any method beyond `did:key` and `did:web`, but does not prevent others.
 
-### Open questions for community input
+### Resolved questions
 
-- **Is `did:web` the right production-tier recommendation?** Its DNS dependency is a feature (organizational anchoring) and a liability (centralized trust anchor, domain expiry risk). Are there better options for agent identity specifically?
-- **Should the protocol mandate a minimum set of DID methods that conformant implementations must support?** Or is "must support `did:key`, should support `did:web`" sufficient?
-- **How should key rotation interact with receipt chains?** If an agent rotates its key, receipts signed with the old key must remain verifiable. `did:web` DID Documents can include historical keys, but the protocol needs to specify how verifiers handle key rotation during chain verification.
-- **Is `did:peer` useful for agent-to-agent delegation?** The delegation model (spec §7.6) links chains across agents. Could `did:peer` be appropriate for these pairwise relationships even if public-facing identity uses `did:key` or `did:web`?
-- **What about `did:tdw` (Trust DID Web)?** `did:tdw` adds a verifiable history to `did:web`, removing the "trust the web server" problem. Is the added complexity justified for agent audit trails?
+- **Production tier.** `did:web` is the recommended production method. Its DNS dependency is accepted as the cost of organizational anchoring; `did:tdw` is noted as a future upgrade path if the DNS-trust footprint becomes a blocker, but not adopted now (additional complexity, smaller adopter base).
+- **Conformance.** Conformant implementations MUST support `did:key` and SHOULD support `did:web`. Other methods are pluggable but not required for interop.
+- **Key rotation interaction.** Covered by [ADR-0015](./0015-key-rotation-byok-anchoring.md): `proof.verificationMethod` carries the issuer's stable DID URL across rotations; the rotation-event witness chain plus DID resolution together let verifiers recover the key valid at a receipt's `issuanceDate`. This ADR no longer holds the rotation-semantics question open.
+- **`did:peer` for delegation.** Deferred. The delegation model (spec §7.6) is not yet in scope for implementation; revisit when delegation lands.
+- **`did:tdw`.** Deferred as above — interesting if `did:web` trust assumptions prove inadequate in real deployments, not a v1 concern.
+
+## Implementation phasing
+
+- **Phase A (now).** All SDKs implement `did:key` generation and resolution as a built-in capability. Existing `did:agent:` / `did:user:` placeholders in examples and test vectors are replaced with `did:key` equivalents. The protocol's verification algorithm is updated to require `did:key` resolution as an explicit step.
+- **Phase B (deferred).** `did:web` resolution lands in all SDKs along with the pluggable resolver interface. Trigger conditions: (a) a production deployment needs organizational anchoring; (b) a verifier needs to validate receipts whose issuer has rotated keys (ADR-0015 Phase A reaches the daemon); (c) `did:web` is required for cross-org interoperability with a named consumer.
+- **Phase C (deferred).** Verifier-side DID Document caching/pinning, historical resolution for long-lived receipts, and `did:tdw` evaluation.
 
 ## Security Considerations
 
