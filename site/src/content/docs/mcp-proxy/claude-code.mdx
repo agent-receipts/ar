@@ -103,7 +103,7 @@ set json (printf '{
   ]
 }' $OP $ENV_FILE $MCP_PROXY $KEY $GITHUB_MCP | string collect)
 
-claude mcp add-json github-audited --scope user $json
+claude mcp add-json github-audited --scope user "$json"
 ```
 
 `aws-vault exec`, `chamber exec` (AWS Parameter Store), and similar tools follow the same wrapping pattern — substitute whichever your team already deploys.
@@ -159,7 +159,7 @@ set json (printf '{
   }
 }' $MCP_PROXY $KEY $GITHUB_MCP | string collect)
 
-claude mcp add-json github-audited --scope user $json
+claude mcp add-json github-audited --scope user "$json"
 ```
 
 Set `GITHUB_PERSONAL_ACCESS_TOKEN` in your shell rc (`~/.zshrc`, `~/.config/fish/config.fish`, etc.) before launching Claude Code. Verify the placeholder reached the stored config (and was *not* expanded at paste time) with `claude mcp get github-audited`.
