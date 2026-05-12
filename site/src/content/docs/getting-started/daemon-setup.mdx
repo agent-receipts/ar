@@ -72,7 +72,7 @@ On Linux, if `$XDG_RUNTIME_DIR` is not set, the daemon falls back to `/run/agent
 
 Start the daemon before launching any agent session. Emitters that cannot reach the socket drop events silently — they do not return an error, but `Emit` may block briefly for the dial timeout (25 ms) plus the write timeout (100 ms) before returning.
 
-To run as a persistent service, use the launchd plist (macOS) or systemd unit (Linux) files included in the release tarball and available in [`daemon/packaging/`](https://github.com/agent-receipts/ar/tree/main/daemon/packaging) on GitHub.
+To run as a persistent service on macOS, use the launchd plist available at [`daemon/packaging/macos/`](https://github.com/agent-receipts/ar/tree/main/daemon/packaging/macos) on GitHub and included in the release tarball. A Linux systemd unit is included in the release tarball but is not yet committed to the repository.
 
 ## Connect your emitters
 
