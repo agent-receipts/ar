@@ -57,6 +57,7 @@ export default defineConfig({
           items: [
             { label: "Introduction", slug: "" },
             { label: "Quick Start", slug: "getting-started/quick-start" },
+            { label: "Daemon Setup", slug: "getting-started/daemon-setup" },
           ],
         },
         {

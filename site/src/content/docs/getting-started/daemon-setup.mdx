@@ -1,0 +1,231 @@
+---
+title: Daemon Setup
+description: Set up the agent-receipts-daemon for v0.8.0 and connect your emitters.
+---
+
+Starting with v0.8.0, Agent Receipts moves from in-process signing — where each SDK or plugin owned its own Ed25519 key and SQLite database — to a daemon-backed architecture. A single `agent-receipts-daemon` process now holds the signing key and manages the receipt chain for all emitters on the machine. This centralisation is what makes the tamper-evidence guarantee meaningful: a compromised SDK process cannot silently rewrite the chain, because it never holds the key.
+
+## Prerequisites
+
+- `agent-receipts-daemon` v0.8.0 installed (see below)
+- Key initialised with `agent-receipts-daemon --init` (one-time, see below)
+- Emitter SDK or plugin at v0.8.0 or later (see [Connect your emitters](#connect-your-emitters))
+
+## Install and start
+
+### Install
+
+**macOS (Homebrew):**
+
+```bash
+brew install agent-receipts/tap/agent-receipts-daemon
+```
+
+Homebrew installs both the `agent-receipts-daemon` and `agent-receipts` (verify) binaries.
+
+**From source (macOS/Linux, requires Go 1.26.1+):**
+
+```bash
+go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@v0.8.0
+go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@v0.8.0
+```
+
+### Initialise (one-time)
+
+Generate the signing key pair before starting the daemon for the first time:
+
+```bash
+agent-receipts-daemon --init
+```
+
+Files created by `--init`:
+
+| File | Default path |
+|------|-------------|
+| Signing key | `$XDG_DATA_HOME/agent-receipts/signing.key` (falls back to `~/.local/share/agent-receipts/signing.key` when `$XDG_DATA_HOME` is unset or not an absolute path) |
+| Public key | `$XDG_DATA_HOME/agent-receipts/signing.key.pub` (same fallback) |
+
+Both `signing.key` and `signing.key.pub` are created together. The public key is needed by `agent-receipts verify` — keep it alongside the database when archiving.
+
+Override these paths with environment variables: `AGENTRECEIPTS_KEY` (signing key), `AGENTRECEIPTS_PUBLIC_KEY` (public key).
+
+The receipt database (`$XDG_DATA_HOME/agent-receipts/receipts.db`, falling back to `~/.local/share/agent-receipts/receipts.db`) is created automatically the first time the daemon starts, not by `--init`. Override with `AGENTRECEIPTS_DB`.
+
+`--init` refuses to overwrite an existing key and exits non-zero. Only run it once, or delete the old key first if rotating.
+
+### Start
+
+```bash
+agent-receipts-daemon
+```
+
+The daemon listens on a Unix domain socket. The socket path depends on platform:
+
+| Platform | Default socket path |
+|----------|---------------------|
+| macOS | `$TMPDIR/agentreceipts/events.sock` (falls back to `/tmp/agentreceipts/events.sock` when `$TMPDIR` is unset) |
+| Linux | `$XDG_RUNTIME_DIR/agentreceipts/events.sock`, falling back to `/run/agentreceipts/events.sock` |
+
+:::caution
+On Linux, if `$XDG_RUNTIME_DIR` is not set, the daemon falls back to `/run/agentreceipts/events.sock`, which requires elevated permissions to create. If you are running as a non-root user without `$XDG_RUNTIME_DIR`, set `AGENTRECEIPTS_SOCKET` to a user-writable path (for example `~/.local/run/agentreceipts/events.sock`) to avoid permission errors.
+:::
+
+Start the daemon before launching any agent session. Emitters that cannot reach the socket drop events silently — they do not return an error, but `Emit` may block briefly for the dial timeout (25 ms) plus the write timeout (100 ms) before returning.
+
+To run as a persistent service on macOS, use the launchd plist available at [`daemon/packaging/macos/`](https://github.com/agent-receipts/ar/tree/main/daemon/packaging/macos) on GitHub and included in the release tarball. A Linux systemd unit is included in the release tarball but is not yet committed to the repository.
+
+## Connect your emitters
+
+Point each SDK or plugin at the daemon socket. On macOS and Linux, all components resolve a platform default socket path automatically (see the table above). Set `AGENTRECEIPTS_SOCKET` to override that default on those platforms. On other platforms the Go SDK does not consult `AGENTRECEIPTS_SOCKET` — callers must pass an explicit `WithSocketPath` option; `New()` returns an error if no socket path is provided.
+
+There is no in-process fallback: if the daemon is unreachable, events are dropped silently (see [Start](#start) for timeout details).
+
+```bash
+export AGENTRECEIPTS_SOCKET=/path/to/events.sock   # overrides the platform default
+```
+
+### Go SDK (v0.8.0)
+
+**Option A: explicit socket path**
+
+```go
+import (
+	"log"
+	"github.com/agent-receipts/ar/sdk/go/emitter"
+)
+
+e, err := emitter.New(emitter.WithSocketPath("/path/to/events.sock"))
+if err != nil {
+	log.Fatal(err)
+}
+```
+
+**Option B: via environment variable (`AGENTRECEIPTS_SOCKET`)**
+
+```go
+import (
+	"log"
+	"github.com/agent-receipts/ar/sdk/go/emitter"
+)
+
+e, err := emitter.New()
+if err != nil {
+	log.Fatal(err)
+}
+```
+
+### TypeScript SDK (v0.8.0-alpha.2)
+
+Install the alpha release:
+
+```bash
+npm install @agnt-rcpt/sdk-ts@alpha
+```
+
+**Option A: explicit socket path**
+
+```typescript
+import { Emitter } from "@agnt-rcpt/sdk-ts";
+
+const e = new Emitter({ socketPath: "/path/to/events.sock" });
+```
+
+**Option B: via environment variable (`AGENTRECEIPTS_SOCKET`)**
+
+```typescript
+import { Emitter } from "@agnt-rcpt/sdk-ts";
+
+const e = new Emitter();
+```
+
+### Python SDK (v0.8.0a2)
+
+Install the pre-release:
+
+```bash
+pip install --pre agent-receipts
+```
+
+**Option A: explicit socket path**
+
+```python
+from agent_receipts import Emitter
+
+e = Emitter(socket_path="/path/to/events.sock")
+```
+
+**Option B: via environment variable (`AGENTRECEIPTS_SOCKET`)**
+
+```python
+from agent_receipts import Emitter
+
+e = Emitter()
+```
+
+### MCP Proxy (v0.8.0-alpha.1)
+
+Pass `--socket` or set `AGENTRECEIPTS_SOCKET`:
+
+```bash
+mcp-proxy --socket /path/to/events.sock npx -y @modelcontextprotocol/server-filesystem ~/Documents
+# or
+AGENTRECEIPTS_SOCKET=/path/to/events.sock mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
+```
+
+### OpenClaw
+
+See the [OpenClaw installation guide](/openclaw/installation) for daemon forwarding configuration.
+
+## Verify your chain
+
+`agent-receipts verify` reads the database directly — the daemon does not need to be running:
+
+```bash
+AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
+  agent-receipts verify \
+  --public-key ~/.local/share/agent-receipts/signing.key.pub
+```
+
+:::note
+The paths above use the default fallback location (`~/.local/share/agent-receipts/`). If you set `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY` when running the daemon, use those same values here. The `${XDG_DATA_HOME:-...}` shell expansion is not reliable for this command because the daemon also falls back to `~/.local/share` when `XDG_DATA_HOME` is set but is not an absolute path.
+:::
+
+A successful run prints the chain length and confirms hash linkage and signatures are intact. This is the command auditors and operators should use after any session.
+
+## Migrating from pre-v0.8 in-process signing
+
+**Chains are abandoned at the cutover.** The daemon starts a fresh chain at seq=1. There is no migration path for pre-cutover chains — do not attempt to resume them under the daemon.
+
+**Preserve old data offline if you need it.** Auditors who need long-term verification of pre-v0.8 receipts should archive the old SQLite databases and their corresponding public keys before uninstalling the previous tooling. Verification of those receipts continues to work using the archived files and a v0.7 (or compatible) `verify` binary.
+
+**New paths are separate.** The daemon writes to `$XDG_DATA_HOME/agent-receipts/` (falling back to `~/.local/share/agent-receipts/` when `$XDG_DATA_HOME` is unset or not an absolute path). The in-process SDKs typically wrote to `~/.agent-receipts/` or a path configured via `AGENTRECEIPTS_DB`. These directories are distinct — the daemon will not pick up old data.
+
+## Troubleshooting
+
+**Receipts are not appearing in the database.**
+The most common cause is that the daemon is not running when the emitter starts. Emitters drop events silently if the socket is unreachable — check that `agent-receipts-daemon` is running and that the socket path matches. Confirm the daemon is alive and the socket exists:
+
+```bash
+pgrep agent-receipts-daemon
+ls -la "${TMPDIR:-/tmp}/agentreceipts/events.sock"                       # macOS
+ls -la "${XDG_RUNTIME_DIR:-/run}/agentreceipts/events.sock"  # Linux
+```
+
+**Socket path mismatch.**
+If you start the daemon and an emitter on different socket paths, events are dropped. Set `AGENTRECEIPTS_SOCKET` to the same value in the daemon's environment and each emitter's environment, or rely on the platform default by not setting it in either.
+
+**Key not initialised error.**
+If the daemon exits immediately with an error about a missing key or database, run `agent-receipts-daemon --init` first. The daemon will not auto-create the key on first start — initialisation is intentionally explicit so key generation is a deliberate action, not a side effect.
+
+**`go install` binary not found.**
+After `go install`, the binary lands in `$GOBIN` (or `$(go env GOPATH)/bin`, usually `~/go/bin`). Add it to your `$PATH`:
+
+```bash
+# bash / zsh
+export PATH="$(go env GOPATH)/bin:$PATH"
+```
+
+```fish
+# fish
+fish_add_path (go env GOPATH)/bin
+```
