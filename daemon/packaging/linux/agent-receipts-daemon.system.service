@@ -1,0 +1,65 @@
+[Unit]
+Description=Agent Receipts signing daemon
+Documentation=https://github.com/agent-receipts/ar/tree/main/daemon
+
+[Service]
+Type=simple
+User=agentreceipts
+Group=agentreceipts
+
+# Run once (as root) before enabling the service to generate the signing key:
+#   agent-receipts-daemon -init \
+#     -key /etc/agentreceipts/signing.key \
+#     -public-key /var/lib/agentreceipts/signing.key.pub \
+#     -db /var/lib/agentreceipts/receipts.db
+#   chown agentreceipts:agentreceipts /etc/agentreceipts/signing.key
+#   chmod 0400 /etc/agentreceipts/signing.key
+# See README § System-level install for the full setup sequence.
+ExecStart=/usr/local/bin/agent-receipts-daemon \
+  -db /var/lib/agentreceipts/receipts.db \
+  -key /etc/agentreceipts/signing.key \
+  -public-key /var/lib/agentreceipts/signing.key.pub \
+  -socket /run/agentreceipts/events.sock
+
+# Directories managed by systemd (created before ExecStart).
+# RuntimeDirectory is ephemeral: /run/agentreceipts is removed on stop.
+RuntimeDirectory=agentreceipts
+RuntimeDirectoryMode=0750
+# StateDirectory is persistent: /var/lib/agentreceipts survives stop/restart.
+StateDirectory=agentreceipts
+StateDirectoryMode=0750
+# /etc/agentreceipts is NOT managed by ConfigurationDirectory= — systemd would
+# make it writable, which conflicts with the read-only intent below.
+# Instead, create it during installation (see README § System-level install).
+
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+# MemoryDenyWriteExecute omitted: Go uses W+X memory internally and crashes with it.
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+# Allow writes to managed data and runtime directories.
+# /etc/agentreceipts is read-only: the daemon only needs to read signing.key at
+# runtime. Write access to the key directory would allow a compromised daemon to
+# overwrite the private key. The -public-key flag points signing.key.pub to the
+# writable StateDirectory instead (see ExecStart above).
+# systemd manages /var/lib/agentreceipts (StateDirectory) and /run/agentreceipts
+# (RuntimeDirectory) and grants write access to those automatically.
+ReadWritePaths=/var/lib/agentreceipts /run/agentreceipts
+ReadOnlyPaths=/etc/agentreceipts
+
+[Install]
+WantedBy=multi-user.target
