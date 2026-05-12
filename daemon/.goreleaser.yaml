@@ -133,7 +133,9 @@ brews:
         Receipts database: ~/.local/share/agent-receipts/receipts.db
         Signing key:       ~/.local/share/agent-receipts/signing.key
         Socket (macOS):    $TMPDIR/agentreceipts/events.sock
+                           (falls back to /tmp/agentreceipts/events.sock when $TMPDIR is unset)
         Socket (Linux):    $XDG_RUNTIME_DIR/agentreceipts/events.sock
+                           (falls back to /run/agentreceipts/events.sock when $XDG_RUNTIME_DIR is unset)
       EOS
 
       livecheck do
