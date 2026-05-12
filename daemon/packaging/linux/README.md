@@ -112,11 +112,10 @@ useradd --system --no-create-home \
 The key must exist before the service first starts. Generate it as root and hand it to the service user:
 
 ```sh
-# Create the config directory with open permissions temporarily so root can write
-# into it, then tighten after key generation.
-# systemd does NOT manage /etc/agentreceipts (no ConfigurationDirectory= in the
-# unit) so the packaging step must create it. Root owns it; the service user can
-# read but not write, which prevents a compromised daemon from overwriting the key.
+# Create the config directory owned by root, group agentreceipts, mode 0750.
+# Root can write into it (for key generation below); the service user can traverse
+# but not create or unlink files. systemd does NOT manage this directory
+# (no ConfigurationDirectory= in the unit) — the packaging step must create it.
 install -d -m 0750 -o root -g agentreceipts /etc/agentreceipts
 
 # Generate the key as root. /etc/agentreceipts is 0750 (root:agentreceipts): root
