@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- User-level LaunchAgent for agent-receipts-daemon.
+
+     Install (macOS Monterey+):
+       1. Create the log directory:
+              mkdir -p ~/Library/Logs/agent-receipts
+       2. Ensure the LaunchAgents directory exists (may be absent on fresh installs):
+              mkdir -p ~/Library/LaunchAgents
+       3. Copy the plist, substituting the placeholder with your home directory:
+              sed "s|/Users/YOUR_USERNAME|$HOME|g" ai.agentreceipts.daemon.plist \
+                > ~/Library/LaunchAgents/ai.agentreceipts.daemon.plist
+       4. Run the one-time key initialisation:
+              agent-receipts-daemon --init
+       5. Load the agent:
+              launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.agentreceipts.daemon.plist
+
+     Remove:  launchctl bootout gui/$(id -u)/ai.agentreceipts.daemon
+
+     Log location: ~/Library/Logs/agent-receipts/daemon.log (stdout + stderr).
+     launchd does not expand ~ or $HOME in path keys, so the placeholder path
+     /Users/YOUR_USERNAME must be replaced with your actual home directory
+     (step 3 above does this using $HOME, which handles non-standard home
+     directory locations such as network accounts or custom $HOME values).
+
+     Binary path: /opt/homebrew/bin on Apple Silicon Macs; change to
+     /usr/local/bin on Intel Macs, or use the full path to your install. -->
+<dict>
+    <key>Label</key>
+    <string>ai.agentreceipts.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Apple Silicon Homebrew path. Intel: /usr/local/bin/agent-receipts-daemon -->
+        <string>/opt/homebrew/bin/agent-receipts-daemon</string>
+    </array>
+
+    <!-- Restart on crash or non-zero exit; do not restart on clean exit.
+         This prevents restart loops when the daemon exits intentionally (e.g. --init). -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- launchd requires absolute paths; ~ and $HOME are not expanded. -->
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/agent-receipts/daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/agent-receipts/daemon.log</string>
+</dict>
+</plist>
