@@ -1,2 +1,2 @@
 #Type Name           ID   GECOS                          Home directory
-u     agentreceipts  -    "Agent Receipts daemon"        /var/lib/agent-receipts
+u     agentreceipts  -    "Agent Receipts daemon"        /var/lib/agentreceipts

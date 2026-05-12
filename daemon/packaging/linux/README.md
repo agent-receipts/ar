@@ -93,15 +93,15 @@ cp agent-receipts-daemon.system.sysusers /etc/sysusers.d/agent-receipts.conf
 systemd-sysusers /etc/sysusers.d/agent-receipts.conf
 ```
 
-> **Note:** `StateDirectory=agent-receipts` in the unit file causes systemd to create
-> `/var/lib/agent-receipts` (owned by `agentreceipts`) on the first service start. If
+> **Note:** `StateDirectory=agentreceipts` in the unit file causes systemd to create
+> `/var/lib/agentreceipts` (owned by `agentreceipts`) on the first service start. If
 > you use the sysusers approach, you do **not** need to create this directory manually.
 
 **Option B — manually:**
 
 ```sh
 useradd --system --no-create-home \
-        --home-dir /var/lib/agent-receipts \
+        --home-dir /var/lib/agentreceipts \
         --comment "Agent Receipts daemon" \
         --shell /usr/sbin/nologin \
         agentreceipts
@@ -112,19 +112,21 @@ useradd --system --no-create-home \
 The key must exist before the service first starts. Generate it as root and hand it to the service user:
 
 ```sh
-# Create the config directory (systemd will also do this on first start, but
-# we need it to exist before we write the key).
-install -d -m 0750 -o agentreceipts -g agentreceipts /etc/agent-receipts
+# Create the config directory with restricted permissions.
+# systemd does NOT manage /etc/agentreceipts (no ConfigurationDirectory= in the
+# unit) so the packaging step must create it. Root owns it; the service user can
+# read but not write, which prevents a compromised daemon from overwriting the key.
+install -d -m 0750 -o root -g agentreceipts /etc/agentreceipts
 
 # Generate the key as the service user so ownership is correct from the start.
 # -public-key points the pub file to the writable StateDirectory so that
-# /etc/agent-receipts can be mounted read-only by the service unit.
+# /etc/agentreceipts can be mounted read-only by the service unit.
 sudo -u agentreceipts \
   agent-receipts-daemon \
     -init \
-    -key /etc/agent-receipts/signing.key \
-    -public-key /var/lib/agent-receipts/signing.key.pub \
-    -db /var/lib/agent-receipts/receipts.db
+    -key /etc/agentreceipts/signing.key \
+    -public-key /var/lib/agentreceipts/signing.key.pub \
+    -db /var/lib/agentreceipts/receipts.db
 ```
 
 The `-init` command writes `signing.key` (0600) and `signing.key.pub` (0644).
@@ -195,8 +197,8 @@ agent-receipts verify
 
 # System-level (explicit paths):
 agent-receipts verify \
-  -db /var/lib/agent-receipts/receipts.db \
-  -public-key /var/lib/agent-receipts/signing.key.pub \
+  -db /var/lib/agentreceipts/receipts.db \
+  -public-key /var/lib/agentreceipts/signing.key.pub \
   -chain-id default
 ```
 
