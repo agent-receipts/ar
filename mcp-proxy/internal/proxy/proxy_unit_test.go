@@ -54,7 +54,7 @@ func TestMakeErrorResponse_NilID(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if id, ok := got["id"]; !ok || id != nil {
-		t.Errorf("expected id=null for nil request, got %v (present=%v)", id, ok)
+		t.Errorf("expected id=null for nil id, got %v (present=%v)", id, ok)
 	}
 }
 
