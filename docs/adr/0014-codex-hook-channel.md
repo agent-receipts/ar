@@ -2,7 +2,15 @@
 
 ## Status
 
-Proposed
+Proposed — **deferred pending integration demand** (2026-05-12). The design is recorded so it is not re-derived from scratch when needed; no implementation work is scheduled. Revisit when a user or downstream caller requests Codex receipt emission, or in tandem with ADR-0013 if `claude_code_hook` is implemented first. See *Deferral note* below.
+
+## Deferral note
+
+This ADR is intentionally parked alongside ADR-0013. Codex inherits the same hook-channel substrate Claude Code would and adds a coverage-block schema specific to Codex's sandbox model; building either channel in isolation duplicates work, and there is no current pull for either.
+
+Trigger conditions for picking this back up: (a) a user, customer, or maintainer asks for Codex receipt emission; (b) ADR-0013 is being implemented and the shared hook substrate should be landed once for both channels; or (c) Codex's sandbox-coverage model becomes interesting to a separate workstream (e.g. an audit/compliance integration) that needs receipts as evidence.
+
+If picked up alongside ADR-0013, consider collapsing both into a single "agent hook channel" ADR — most of the design is shared, and the Codex-specific concerns (sandbox coverage, hook-gap enumeration) are well-suited to being a section within a unified document rather than a parallel ADR.
 
 ## Context
 

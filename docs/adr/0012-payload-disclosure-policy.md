@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted (2026-05-12). Implementation is partial — see *Implementation status* below.
 
 ## Context
 
@@ -101,6 +101,24 @@ This ADR's *architecture* is decided now (because the receipt format is permanen
 - **Phase C — Enterprise.** Multi-recipient HPKE, HSM / KMS adapters, pluggable remote stores, retention knobs, operator-facing key-management documentation.
 
 Phase A receipts are forward-compatible with Phase B and C — no re-encryption, no migration.
+
+### Implementation status (as of 2026-05-12)
+
+What has landed:
+
+- The field has been renamed across SDKs from `parameters_preview` to `parameters_disclosure` (TS SDK ≥0.6.0; Go and Python SDKs carry the renamed field).
+- The config knob is named `parameterDisclosure` and the existing OpenClaw value space (`false | true | "high" | string[]`) is honoured at the config layer.
+- The hash-only default holds: no channel populates `parameters_disclosure` by default.
+
+What has **not** landed and is required before disclosure is enabled in any non-experimental channel:
+
+- The asymmetric envelope (`v`, `alg`, `recipients`, `nonce`, `ct`). No SDK currently produces or consumes the structured envelope shape committed to in this ADR.
+- The forensic key-pair lifecycle (auto-generation, on-disk layout next to the signing key, CLI for export/import).
+- Cross-SDK canonical-JSON equivalence tests for the envelope.
+
+Until those land, callers **MUST NOT** populate `parameters_disclosure` from raw tool arguments — the field exists as a forward-compatible placeholder, not a plaintext-payload channel. The "plaintext-in-body" mode of the legacy TS `parameters_preview` is explicitly removed as a supported behaviour (see *Consequences → existing TS field is repurposed*).
+
+This gap is tracked as the remainder of **Phase A**. Phase B and Phase C are unchanged and remain sequenced behind daemon work (ADR-0010) and enterprise pull respectively.
 
 ## Consequences
 

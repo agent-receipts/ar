@@ -25,11 +25,11 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0009](0009-canonicalization-and-schema-consistency.md) | Canonicalisation Profile and VC Field Name Commitment | Accepted |
 | [ADR-0010](0010-daemon-process-separation.md) | Daemon Process Separation for Signing and Storage | Accepted |
 | [ADR-0011](0011-zod-for-runtime-validation.md) | Zod for runtime schema validation | Accepted |
-| [ADR-0012](0012-payload-disclosure-policy.md) | Payload Disclosure Policy (`parameterDisclosure`) | Proposed |
-| [ADR-0013](0013-claude-code-hook-channel.md) | claude_code_hook Emission Channel | Proposed |
-| [ADR-0014](0014-codex-hook-channel.md) | codex_hook Emission Channel | Proposed |
+| [ADR-0012](0012-payload-disclosure-policy.md) | Payload Disclosure Policy (`parameterDisclosure`) | Accepted (partial impl) |
+| [ADR-0013](0013-claude-code-hook-channel.md) | claude_code_hook Emission Channel | Proposed (deferred) |
+| [ADR-0014](0014-codex-hook-channel.md) | codex_hook Emission Channel | Proposed (deferred) |
 | [ADR-0015](0015-key-rotation-byok-anchoring.md) | Key Rotation, BYOK Abstraction, and External Anchoring | Proposed |
-| [ADR-0016](0016-mcp-proxy-audit-encryption.md) | Audit Store Encryption at Rest (mcp-proxy) | Proposed |
+| [ADR-0016](0016-mcp-proxy-audit-encryption.md) | Audit Store Encryption at Rest (mcp-proxy) | Accepted |
 
 ## References
 

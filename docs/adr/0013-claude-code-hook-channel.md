@@ -2,7 +2,15 @@
 
 ## Status
 
-Proposed
+Proposed — **deferred pending integration demand** (2026-05-12). The design is recorded so it is not re-derived from scratch when needed; no implementation work is scheduled. Revisit when a user or downstream caller requests Claude Code receipt emission. See *Deferral note* below.
+
+## Deferral note
+
+This ADR is intentionally parked. The architectural decision is sound and the design is complete enough to start from, but there is no current user or integration pulling for a Claude Code receipt channel. Surface area is large (plugin shape, emitter binary, per-session drop files, runtime-directory handling, hook-event mapping) and the protocol-level value is small until someone is going to consume the receipts.
+
+Trigger conditions for picking this back up: (a) a user, customer, or maintainer asks for Claude Code receipt emission; (b) ADR-0014 (`codex_hook`) is being implemented and we want to land the shared hook substrate once; or (c) the channel-space enumeration in ADR-0010 needs to be extended in a way that benefits from a concrete second example.
+
+If picked up, also revisit whether ADR-0013 and ADR-0014 should collapse into a single "agent hook channel" ADR — the designs overlap enough that one document may serve both better than two parallel ones.
 
 ## Context
 
