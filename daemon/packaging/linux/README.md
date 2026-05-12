@@ -18,10 +18,7 @@ Runs as the logged-in user. No root or dedicated system user needed. Data lives 
 Install the binary (pick one):
 
 ```sh
-# Via go install (once sdk/go v0.7+ is tagged):
-go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@latest
-
-# Or build from source:
+# Build from source (go install @latest is not yet supported — see daemon/README.md):
 git clone https://github.com/agent-receipts/ar
 cd ar/daemon
 go build -o ~/.local/bin/agent-receipts-daemon ./cmd/agent-receipts-daemon
@@ -76,7 +73,7 @@ systemctl --user disable agent-receipts-daemon
 
 ## System-level install (production)
 
-Runs as a dedicated `agentreceipts` system user with restricted filesystem permissions and seccomp-style systemd hardening.
+Runs as a dedicated `agentreceipts` system user with restricted filesystem permissions and systemd sandboxing/hardening.
 
 ### Prerequisites
 
@@ -120,10 +117,13 @@ The key must exist before the service first starts. Generate it as root and hand
 install -d -m 0750 -o agentreceipts -g agentreceipts /etc/agent-receipts
 
 # Generate the key as the service user so ownership is correct from the start.
+# -public-key points the pub file to the writable StateDirectory so that
+# /etc/agent-receipts can be mounted read-only by the service unit.
 sudo -u agentreceipts \
   agent-receipts-daemon \
     -init \
     -key /etc/agent-receipts/signing.key \
+    -public-key /var/lib/agent-receipts/signing.key.pub \
     -db /var/lib/agent-receipts/receipts.db
 ```
 
@@ -196,7 +196,7 @@ agent-receipts verify
 # System-level (explicit paths):
 agent-receipts verify \
   -db /var/lib/agent-receipts/receipts.db \
-  -public-key /etc/agent-receipts/signing.key.pub \
+  -public-key /var/lib/agent-receipts/signing.key.pub \
   -chain-id default
 ```
 

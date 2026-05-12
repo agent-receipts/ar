@@ -10,10 +10,12 @@ Group=agentreceipts
 # Run once before enabling the service to generate the signing key:
 #   sudo -u agentreceipts agent-receipts-daemon -init \
 #     -key /etc/agent-receipts/signing.key \
+#     -public-key /var/lib/agent-receipts/signing.key.pub \
 #     -db /var/lib/agent-receipts/receipts.db
 ExecStart=/usr/local/bin/agent-receipts-daemon \
   -db /var/lib/agent-receipts/receipts.db \
   -key /etc/agent-receipts/signing.key \
+  -public-key /var/lib/agent-receipts/signing.key.pub \
   -socket /run/agentreceipts/events.sock
 
 # Directories managed by systemd (created before ExecStart).
@@ -46,9 +48,15 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 RemoveIPC=yes
-# Allow writes to managed directories; /etc/agent-receipts is needed because the
-# daemon re-writes signing.key.pub on every startup.
-ReadWritePaths=/var/lib/agent-receipts /run/agentreceipts /etc/agent-receipts
+# Allow writes to managed data and runtime directories.
+# /etc/agent-receipts is read-only: the daemon only needs to read signing.key at
+# runtime. Write access to the key directory would allow a compromised daemon to
+# overwrite the private key. The -public-key flag points signing.key.pub to the
+# writable StateDirectory instead (see ExecStart above).
+# systemd manages /var/lib/agent-receipts (StateDirectory) and /run/agentreceipts
+# (RuntimeDirectory) and grants write access to those automatically.
+ReadWritePaths=/var/lib/agent-receipts /run/agentreceipts
+ReadOnlyPaths=/etc/agent-receipts
 
 [Install]
 WantedBy=multi-user.target
