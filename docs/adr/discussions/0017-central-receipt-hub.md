@@ -1,0 +1,7 @@
+# Discussion: ADR-0017 — Central Receipt Hub and External Anchoring
+
+Companion to [ADR-0017](../0017-central-receipt-hub.md).
+
+Multi-node agent-receipts deployments — laptop plus EC2 nodes running OpenClaw and Hermes — currently produce N independent per-node chains with no aggregation point, and ADR-0015's commitment to external anchoring has a write contract but no concrete deployment shape. ADR-0017 proposes a single answer to both: a hub mode of the existing daemon (`agent-receipts daemon --ingest`) that receives JWS-signed JSONL batches over HTTPS, mirrors per-node chains, and periodically anchors per-node chain heads to an S3 bucket with object lock. Local chains remain the source of truth; the hub is a durable mirror and the S3 bucket is the trust root for the anchoring claim — neither replaces per-receipt signature verification under the node's DID.
+
+Open input wanted on: JWS vs RFC 9421 HTTP Message Signatures as the batch-auth default (ADR proposes JWS, see §4 rationale); anchor cadence to S3 and the truncation-detection-window/cost tradeoff (proposal: per-node, the more recent of 5min or 1000 receipts); and the hub's own DID/key-rotation lifecycle (proposal: same as a regular node, register via `did:web` in production and rotate via the ADR-0015 rotation chain). Global cross-node ordering is explicitly deferred — recording that here so it does not get relitigated in this thread.
