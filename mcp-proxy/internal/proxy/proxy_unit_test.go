@@ -47,6 +47,17 @@ func TestMakeErrorResponse_StringID(t *testing.T) {
 	}
 }
 
+func TestMakeErrorResponse_NilID(t *testing.T) {
+	resp := MakeErrorResponse(nil, -32600, "Invalid Request")
+	var got map[string]any
+	if err := json.Unmarshal(resp, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if id, ok := got["id"]; !ok || id != nil {
+		t.Errorf("expected id=null for nil request, got %v (present=%v)", id, ok)
+	}
+}
+
 func TestMakeErrorResponseWithData_NilData(t *testing.T) {
 	resp := MakeErrorResponseWithData(json.RawMessage(`1`), -32001, "blocked", nil)
 	var got map[string]any
