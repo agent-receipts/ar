@@ -112,24 +112,32 @@ useradd --system --no-create-home \
 The key must exist before the service first starts. Generate it as root and hand it to the service user:
 
 ```sh
-# Create the config directory with restricted permissions.
+# Create the config directory with open permissions temporarily so root can write
+# into it, then tighten after key generation.
 # systemd does NOT manage /etc/agentreceipts (no ConfigurationDirectory= in the
 # unit) so the packaging step must create it. Root owns it; the service user can
 # read but not write, which prevents a compromised daemon from overwriting the key.
 install -d -m 0750 -o root -g agentreceipts /etc/agentreceipts
 
-# Generate the key as the service user so ownership is correct from the start.
+# Generate the key as root. /etc/agentreceipts is 0750 (root:agentreceipts): root
+# can write into it; the service user can traverse but not create files.
 # -public-key points the pub file to the writable StateDirectory so that
 # /etc/agentreceipts can be mounted read-only by the service unit.
-sudo -u agentreceipts \
-  agent-receipts-daemon \
-    -init \
-    -key /etc/agentreceipts/signing.key \
-    -public-key /var/lib/agentreceipts/signing.key.pub \
-    -db /var/lib/agentreceipts/receipts.db
+agent-receipts-daemon \
+  -init \
+  -key /etc/agentreceipts/signing.key \
+  -public-key /var/lib/agentreceipts/signing.key.pub \
+  -db /var/lib/agentreceipts/receipts.db
+
+# Hand the private key to the service user (read-only).
+chown agentreceipts:agentreceipts /etc/agentreceipts/signing.key
+chmod 0600 /etc/agentreceipts/signing.key
 ```
 
-The `-init` command writes `signing.key` (0600) and `signing.key.pub` (0644).
+The `-init` command writes `signing.key` (0600) and `signing.key.pub` (0644). After
+the `chown`/`chmod` above, `/etc/agentreceipts` is 0750 (root:agentreceipts) and
+`signing.key` is owned by `agentreceipts` with mode 0600 — the daemon can read it
+but nothing else can write to the directory.
 
 ### 3 — Install and start the unit
 
@@ -184,6 +192,13 @@ usermod -aG agentreceipts <emitter-user>
 ```
 
 The socket itself is created with mode `0660` (owner `agentreceipts`, group `agentreceipts`), so group members can connect.
+
+> **Note:** Members of the `agentreceipts` group also gain traversal access to
+> `/var/lib/agentreceipts` (mode 0750) and read access to the receipt store at
+> `/var/lib/agentreceipts/receipts.db` (mode 0640, group-readable). If that is
+> undesirable, consider a dedicated socket group or set `SocketGroup=` in a
+> `.socket` unit so that socket access and store access can be granted
+> independently.
 
 ---
 
