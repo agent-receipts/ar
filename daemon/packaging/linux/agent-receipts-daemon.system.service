@@ -13,7 +13,7 @@ Group=agentreceipts
 #     -public-key /var/lib/agentreceipts/signing.key.pub \
 #     -db /var/lib/agentreceipts/receipts.db
 #   chown agentreceipts:agentreceipts /etc/agentreceipts/signing.key
-#   chmod 0600 /etc/agentreceipts/signing.key
+#   chmod 0400 /etc/agentreceipts/signing.key
 # See README § System-level install for the full setup sequence.
 ExecStart=/usr/local/bin/agent-receipts-daemon \
   -db /var/lib/agentreceipts/receipts.db \

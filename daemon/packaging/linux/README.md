@@ -131,13 +131,14 @@ agent-receipts-daemon \
 
 # Hand the private key to the service user (read-only).
 chown agentreceipts:agentreceipts /etc/agentreceipts/signing.key
-chmod 0600 /etc/agentreceipts/signing.key
+chmod 0400 /etc/agentreceipts/signing.key
 ```
 
 The `-init` command writes `signing.key` (0600) and `signing.key.pub` (0644). After
-the `chown`/`chmod` above, `/etc/agentreceipts` is 0750 (root:agentreceipts) and
-`signing.key` is owned by `agentreceipts` with mode 0600 — the daemon can read it
-but nothing else can write to the directory.
+the `chown`/`chmod` above, `signing.key` is owned by `agentreceipts` with mode 0400
+(owner-read-only) — the daemon can read the key but cannot overwrite it. Runtime
+immutability is reinforced by `ReadOnlyPaths=/etc/agentreceipts` in the unit, which
+prevents writes even if the file permissions are later relaxed.
 
 ### 3 — Install and start the unit
 
