@@ -106,7 +106,46 @@ brews:
     # `:github_latest` (which returns repo-wide latest). `:github_releases`
     # scans all releases; regex extracts version from the `daemon/vX.Y.Z`
     # tag prefix.
+    #
+    # post_install, service, and caveats are also emitted here so they survive
+    # formula regeneration on each release (GoReleaser overwrites the formula
+    # file; anything not in custom_block or the named fields would be lost).
     custom_block: |
+      def post_install
+        (var/"log").mkpath
+      end
+
+      service do
+        run opt_bin/"agent-receipts-daemon"
+        keep_alive crashed: true
+        log_path var/"log/agent-receipts-daemon.log"
+        error_log_path var/"log/agent-receipts-daemon.log"
+        working_dir var
+      end
+
+      def caveats
+        <<~EOS
+          Before starting the service for the first time, generate your signing key:
+            agent-receipts-daemon --init
+
+          Then start the daemon:
+            brew services start agent-receipts/tap/agent-receipts-daemon
+
+          Receipts database: $XDG_DATA_HOME/agent-receipts/receipts.db
+                             (falls back to ~/.local/share/agent-receipts/receipts.db when $XDG_DATA_HOME is unset or relative)
+                             Override: AGENTRECEIPTS_DB
+          Signing key:       $XDG_DATA_HOME/agent-receipts/signing.key
+                             (falls back to ~/.local/share/agent-receipts/signing.key when $XDG_DATA_HOME is unset or relative)
+                             Override: AGENTRECEIPTS_KEY
+          Socket (macOS):    $TMPDIR/agentreceipts/events.sock
+                             (falls back to /tmp/agentreceipts/events.sock when $TMPDIR is unset)
+                             Override: AGENTRECEIPTS_SOCKET
+          Socket (Linux):    $XDG_RUNTIME_DIR/agentreceipts/events.sock
+                             (falls back to /run/agentreceipts/events.sock when $XDG_RUNTIME_DIR is unset)
+                             Override: AGENTRECEIPTS_SOCKET
+        EOS
+      end
+
       livecheck do
         url "https://github.com/agent-receipts/ar"
         strategy :github_releases
