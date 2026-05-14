@@ -6,7 +6,7 @@ Documentation=https://github.com/agent-receipts/ar/tree/main/daemon
 Type=simple
 # %h is the user's home directory; %t expands to $XDG_RUNTIME_DIR, ensuring the
 # socket path is correct even when the service starts outside a PAM session.
-ExecStartPre=/bin/sh -c 'test -f %h/.local/share/agent-receipts/signing.key || %h/.local/bin/agent-receipts-daemon -init'
+ExecStartPre=/bin/sh -c 'test -f "%h/.local/share/agent-receipts/signing.key" || "%h/.local/bin/agent-receipts-daemon" -init'
 ExecStart=%h/.local/bin/agent-receipts-daemon \
   -socket %t/agentreceipts/events.sock
 Restart=on-failure

@@ -50,7 +50,7 @@ main() {
   # daemon/v*) so we filter by tag prefix and skip pre-releases explicitly —
   # the repo-wide "latest" pointer is not reliable here.
   step "Resolving latest release..."
-  VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" | \
+  VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" | \
     awk '
       /"tag_name":.*"daemon\/v/ {
         match($0, /"daemon\/v[^"]+/)
@@ -64,7 +64,9 @@ main() {
 
   # Download
   ARCHIVE="daemon_${VERSION}_linux_${GOARCH}.tar.gz"
-  RELEASE_BASE="https://github.com/${REPO}/releases/download/daemon/v${VERSION}"
+  # %2F-encode the slash in the tag so the URL matches the canonical form used
+  # by the Homebrew formula (daemon/.goreleaser.yaml url_template).
+  RELEASE_BASE="https://github.com/${REPO}/releases/download/daemon%2Fv${VERSION}"
 
   step "Downloading ${ARCHIVE}..."
   WORK_DIR=$(mktemp -d)
@@ -74,7 +76,7 @@ main() {
   # This is a cryptographic signing daemon — supply chain integrity matters.
   step "Verifying checksum..."
   curl -fsSL -o "${WORK_DIR}/checksums.txt" "${RELEASE_BASE}/checksums.txt"
-  EXPECTED=$(grep "  ${ARCHIVE}$" "${WORK_DIR}/checksums.txt" | awk '{print $1}')
+  EXPECTED=$(awk -v f="${ARCHIVE}" '$2 == f { print $1 }' "${WORK_DIR}/checksums.txt")
   [ -n "$EXPECTED" ] || die "No checksum entry found for ${ARCHIVE} in checksums.txt"
   ACTUAL=$(sha256sum "${WORK_DIR}/${ARCHIVE}" | awk '{print $1}')
   [ "$ACTUAL" = "$EXPECTED" ] || \
@@ -95,13 +97,19 @@ main() {
   "${INSTALL_DIR}/agent-receipts-daemon" --version >/dev/null 2>&1 || \
     die "Installed binary failed to run — check glibc compatibility or open an issue"
 
-  # Key init — skip if key already exists (idempotent on upgrades)
-  if [ -f "$KEY_FILE" ]; then
-    echo "    signing key already present — skipping -init"
-  else
-    step "Generating signing key..."
-    "${INSTALL_DIR}/agent-receipts-daemon" -init
+  # Key init — try -init and handle both outcomes.
+  # Attempting unconditionally (rather than pre-checking KEY_FILE) ensures
+  # correctness when XDG_DATA_HOME overrides the default key location: if the
+  # key already exists at a non-default path, -init exits non-zero, and the
+  # fallback check at the default path distinguishes "already present" from a
+  # real failure.
+  step "Generating signing key..."
+  if "${INSTALL_DIR}/agent-receipts-daemon" -init 2>"${WORK_DIR}/init.err"; then
     echo "    key: ${KEY_FILE}"
+  elif [ -f "$KEY_FILE" ]; then
+    echo "    signing key already present — skipping"
+  else
+    die "-init failed: $(head -1 "${WORK_DIR}/init.err")"
   fi
 
   # Install systemd user unit.
@@ -117,7 +125,7 @@ Documentation=https://github.com/agent-receipts/ar/tree/main/daemon
 Type=simple
 # %h is the user's home directory; %t expands to $XDG_RUNTIME_DIR, ensuring the
 # socket path is correct even when the service starts outside a PAM session.
-ExecStartPre=/bin/sh -c 'test -f %h/.local/share/agent-receipts/signing.key || %h/.local/bin/agent-receipts-daemon -init'
+ExecStartPre=/bin/sh -c 'test -f "%h/.local/share/agent-receipts/signing.key" || "%h/.local/bin/agent-receipts-daemon" -init'
 ExecStart=%h/.local/bin/agent-receipts-daemon \
   -socket %t/agentreceipts/events.sock
 Restart=on-failure
@@ -139,15 +147,24 @@ UNIT_EOF
   export XDG_RUNTIME_DIR
   SYSTEMCTL_ERR="${WORK_DIR}/systemctl.err"
   if systemctl --user daemon-reload 2>"$SYSTEMCTL_ERR"; then
-    systemctl --user enable --now agent-receipts-daemon
-    STARTED=1
-    echo "    Service running."
+    if systemctl --user enable --now agent-receipts-daemon 2>>"$SYSTEMCTL_ERR"; then
+      STARTED=1
+      echo "    Service running."
+    else
+      printf '    Service enabled but failed to start.\n'
+      printf '    Diagnose with:\n'
+      printf '      systemctl --user status agent-receipts-daemon\n'
+      printf '      journalctl --user -u agent-receipts-daemon -n 20\n'
+      if [ -s "$SYSTEMCTL_ERR" ]; then
+        printf '    systemctl error: %s\n' "$(head -1 "$SYSTEMCTL_ERR")"
+      fi
+    fi
   else
     printf '    No active systemd user session'
     if [ -s "$SYSTEMCTL_ERR" ]; then
       printf ' (%s)' "$(head -1 "$SYSTEMCTL_ERR")"
     fi
-    printf '\n'
+    printf '.\n'
     printf '    After enabling linger (see below) and logging back in, run:\n'
     printf '      systemctl --user daemon-reload\n'
     printf '      systemctl --user enable --now agent-receipts-daemon\n'
@@ -182,7 +199,7 @@ UNIT_EOF
   printf '\n'
   printf 'One root step required — enables the user session to persist across logouts:\n'
   printf '\n'
-  printf '    sudo loginctl enable-linger %s\n' "$USER"
+  printf '    sudo loginctl enable-linger %s\n' "$(id -un)"
   printf '\n'
   if [ "$STARTED" = "1" ]; then
     printf 'The service is already running. Enable linger so it survives future logouts.\n'
