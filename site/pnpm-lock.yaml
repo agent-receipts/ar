@@ -9,13 +9,13 @@ importers:
   .:
     dependencies:
       '@astrojs/starlight':
-        specifier: ^0.39.2
+        specifier: ^0.39
         version: 0.39.2(astro@6.3.1(@types/node@24.12.3)(rollup@4.60.3))
       astro:
-        specifier: ^6.3.1
+        specifier: ^6
         version: 6.3.1(@types/node@24.12.3)(rollup@4.60.3)
       sharp:
-        specifier: ^0.34.5
+        specifier: ^0.34
         version: 0.34.5
     devDependencies:
       playwright:
