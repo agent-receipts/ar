@@ -12,6 +12,8 @@ set -eu
 
 REPO="agent-receipts/ar"
 INSTALL_DIR="${HOME}/.local/bin"
+# KEY_FILE is the XDG default path. The installer targets the default install layout;
+# custom AGENTRECEIPTS_KEY or XDG_DATA_HOME overrides are out of scope here.
 KEY_FILE="${HOME}/.local/share/agent-receipts/signing.key"
 UNIT_DIR="${HOME}/.config/systemd/user"
 UNIT_NAME="agent-receipts-daemon.service"
@@ -53,11 +55,13 @@ main() {
   if [ -f "$LEGACY_KEY" ]; then
     printf '\nLegacy signing key found at: %s\n' "$LEGACY_KEY"
     printf 'The daemon now uses:         %s\n' "$KEY_FILE"
-    printf 'Move your key before continuing:\n'
+    printf 'Move your data before continuing:\n'
     printf '  mkdir -p "%s"\n' "$(dirname "$KEY_FILE")"
     printf '  mv "%s" "%s"\n' "$LEGACY_KEY" "$KEY_FILE"
     printf '  mv "%s.pub" "%s.pub"\n' "$LEGACY_KEY" "$KEY_FILE"
-    die "Aborting — move legacy keys and re-run the installer"
+    printf '  # Also move the receipt database (preserves chain history):\n'
+    printf '  mv "%s" "%s"\n' "${HOME}/.agent-receipts/receipts.db" "${HOME}/.local/share/agent-receipts/receipts.db"
+    die "Aborting — move legacy data and re-run the installer"
   fi
 
   # Resolve latest stable daemon release.
@@ -190,6 +194,7 @@ UNIT_EOF
       if [ -s "$SYSTEMCTL_ERR" ]; then
         printf '    systemctl error: %s\n' "$(head -1 "$SYSTEMCTL_ERR")"
       fi
+      exit 1
     fi
   else
     printf '    No active systemd user session'
