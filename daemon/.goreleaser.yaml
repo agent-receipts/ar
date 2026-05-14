@@ -112,14 +112,14 @@ brews:
     # file; anything not in custom_block or the named fields would be lost).
     custom_block: |
       def post_install
-        (var/"log").mkpath
+        (var/"log/agent-receipts").mkpath
       end
 
       service do
         run opt_bin/"agent-receipts-daemon"
         keep_alive crashed: true
-        log_path var/"log/agent-receipts-daemon.log"
-        error_log_path var/"log/agent-receipts-daemon.log"
+        log_path var/"log/agent-receipts/daemon.log"
+        error_log_path var/"log/agent-receipts/daemon.log"
         working_dir var
       end
 
