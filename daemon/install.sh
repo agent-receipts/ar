@@ -45,6 +45,21 @@ main() {
     *)             die "Unsupported architecture: $(uname -m)" ;;
   esac
 
+  # Detect legacy beta key path before downloading anything.
+  # Old installs wrote to ~/.agent-receipts/; the daemon now uses the XDG path.
+  # An upgrade from the old layout would otherwise look like a fresh install and
+  # silently create a new signing identity under the new path.
+  LEGACY_KEY="${HOME}/.agent-receipts/signing.key"
+  if [ -f "$LEGACY_KEY" ]; then
+    printf '\nLegacy signing key found at: %s\n' "$LEGACY_KEY"
+    printf 'The daemon now uses:         %s\n' "$KEY_FILE"
+    printf 'Move your key before continuing:\n'
+    printf '  mkdir -p "%s"\n' "$(dirname "$KEY_FILE")"
+    printf '  mv "%s" "%s"\n' "$LEGACY_KEY" "$KEY_FILE"
+    printf '  mv "%s.pub" "%s.pub"\n' "$LEGACY_KEY" "$KEY_FILE"
+    die "Aborting — move legacy keys and re-run the installer"
+  fi
+
   # Resolve latest stable daemon release.
   # The repo has multiple component release trains (sdk/go/v*, mcp-proxy/v*,
   # daemon/v*) so we filter by tag prefix and skip pre-releases explicitly —
@@ -99,37 +114,20 @@ main() {
   install -m 0755 "${WORK_DIR}/extract/agent-receipts-daemon" "${INSTALL_DIR}/"
   install -m 0755 "${WORK_DIR}/extract/agent-receipts"        "${INSTALL_DIR}/"
 
-  # Detect legacy beta key path (old installs wrote to ~/.agent-receipts/).
-  # An upgrade from that layout looks like a fresh install and would generate a
-  # new key under the new XDG path, creating a different signing identity while
-  # leaving existing receipts verifiable only via the old key.
-  LEGACY_KEY="${HOME}/.agent-receipts/signing.key"
-  if [ -f "$LEGACY_KEY" ]; then
-    printf '\n'
-    printf 'Warning: found a signing key at the legacy beta path:\n'
-    printf '  %s\n' "$LEGACY_KEY"
-    printf 'The daemon now uses:\n'
-    printf '  %s\n' "$KEY_FILE"
-    printf 'Move your key before continuing:\n'
-    printf '  mkdir -p "%s"\n' "$(dirname "$KEY_FILE")"
-    printf '  mv "%s" "%s"\n' "$LEGACY_KEY" "$KEY_FILE"
-    printf '  mv "%s.pub" "%s.pub"\n' "$LEGACY_KEY" "$KEY_FILE"
-    die "Aborting — move legacy keys and re-run the installer"
-  fi
-
-  # Key init — try -init and handle both outcomes.
-  # Attempting unconditionally (rather than pre-checking KEY_FILE) ensures
-  # correctness when XDG_DATA_HOME overrides the default key location: if the
-  # key already exists at a non-default path, -init exits non-zero, and the
-  # fallback check at the default path distinguishes "already present" from a
-  # real failure.
+  # Key init — attempt unconditionally and handle both outcomes.
+  # When -init succeeds the key is at KEY_FILE (the XDG default).
+  # When -init fails: if KEY_FILE exists, treat it as "already present" (common
+  # on re-runs). Otherwise warn — the key may exist at a custom AGENTRECEIPTS_KEY
+  # or XDG_DATA_HOME path and the user should verify it before proceeding.
   step "Generating signing key..."
   if "${INSTALL_DIR}/agent-receipts-daemon" -init 2>"${WORK_DIR}/init.err"; then
     echo "    key: ${KEY_FILE}"
   elif [ -f "$KEY_FILE" ]; then
     echo "    signing key already present — skipping"
   else
-    die "-init failed: $(head -1 "${WORK_DIR}/init.err")"
+    printf '    Warning: -init reported: %s\n' "$(head -1 "${WORK_DIR}/init.err")"
+    printf '    If AGENTRECEIPTS_KEY or XDG_DATA_HOME is set, verify the key exists\n'
+    printf '    at the custom path before starting the service.\n'
   fi
 
   # Install systemd user unit.
@@ -147,7 +145,16 @@ Documentation=https://github.com/agent-receipts/ar/tree/main/daemon
 Type=simple
 # %h is the user's home directory; %t expands to $XDG_RUNTIME_DIR, ensuring the
 # socket path is correct even when the service starts outside a PAM session.
-ExecStartPre=/bin/sh -c 'test -f "%h/.local/share/agent-receipts/signing.key" || "%h/.local/bin/agent-receipts-daemon" -init'
+# If ExecStart is changed to a different binary location, update ExecStartPre too.
+#
+# Key is generated only on a truly fresh install (no receipts.db). If the key is
+# missing but a database exists, the service fails loudly for operator recovery
+# rather than silently creating a new signing identity (see daemon/daemon.go:148-151).
+ExecStartPre=/bin/sh -c '\
+  if test -f "%h/.local/share/agent-receipts/signing.key"; then exit 0;\
+  elif test -f "%h/.local/share/agent-receipts/receipts.db"; then\
+    printf "signing key missing but receipts.db exists -- recover the key before restarting\n" >&2; exit 1;\
+  else exec "%h/.local/bin/agent-receipts-daemon" -init; fi'
 ExecStart=%h/.local/bin/agent-receipts-daemon \
   -socket %t/agentreceipts/events.sock
 Restart=on-failure
@@ -169,11 +176,14 @@ UNIT_EOF
   export XDG_RUNTIME_DIR
   SYSTEMCTL_ERR="${WORK_DIR}/systemctl.err"
   if systemctl --user daemon-reload 2>"$SYSTEMCTL_ERR"; then
-    if systemctl --user enable --now agent-receipts-daemon 2>>"$SYSTEMCTL_ERR"; then
+    # enable marks the unit for auto-start; restart starts or restarts the running
+    # process so upgrades take effect without a separate manual restart step.
+    if systemctl --user enable agent-receipts-daemon 2>>"$SYSTEMCTL_ERR" && \
+       systemctl --user restart agent-receipts-daemon 2>>"$SYSTEMCTL_ERR"; then
       STARTED=1
       echo "    Service running."
     else
-      printf '    Service enabled but failed to start.\n'
+      printf '    Service failed to start.\n'
       printf '    Diagnose with:\n'
       printf '      systemctl --user status agent-receipts-daemon\n'
       printf '      journalctl --user -u agent-receipts-daemon -n 20\n'

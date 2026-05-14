@@ -19,7 +19,7 @@ Runs as the logged-in user. No root or dedicated system user needed. Data lives 
 curl -fsSL https://github.com/agent-receipts/ar/releases/latest/download/install.sh | sh
 ```
 
-Handles binary download, key generation, unit install, and service start in one step. See `install.sh` in this directory for details.
+Handles binary download, key generation, unit install, and service start in one step. See [`daemon/install.sh`](../../install.sh) for details.
 
 ### Manual install
 
