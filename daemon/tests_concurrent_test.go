@@ -67,10 +67,10 @@ func TestConcurrentSDKEmitters(t *testing.T) {
 		t.Fatalf("emitter failed: %v", err)
 	}
 
-	// Wait for all receipts (30 total). 30 s gives macOS CI runners (which are
-	// slower than Linux) enough headroom; the poll exits as soon as all receipts
-	// arrive so the happy path is unaffected.
-	receipts := f.WaitForReceiptCount(t, totalFrames, 30*time.Second)
+	// Wait for all receipts (30 total). 60 s gives macOS CI runners (which are
+	// significantly slower than Linux) enough headroom; the poll exits as soon
+	// as all receipts arrive so the happy path is unaffected.
+	receipts := f.WaitForReceiptCount(t, totalFrames, 60*time.Second)
 
 	// store.GetChain orders by insert id, which under concurrent emitters does
 	// not necessarily match Chain.Sequence (frame-receive order vs.
