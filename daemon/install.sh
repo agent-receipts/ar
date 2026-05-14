@@ -89,13 +89,33 @@ main() {
   mkdir -p "${WORK_DIR}/extract"
   # Tarballs have a top-level directory (e.g. daemon_0.8.0_linux_amd64/); strip it.
   tar -xzf "${WORK_DIR}/${ARCHIVE}" --strip-components=1 -C "${WORK_DIR}/extract"
+
+  # Smoke-test the extracted binary BEFORE overwriting any installed version.
+  # If the new binary is incompatible (glibc mismatch, bad arch) the existing
+  # install is preserved and the script aborts cleanly.
+  "${WORK_DIR}/extract/agent-receipts-daemon" --version >/dev/null 2>&1 || \
+    die "New binary failed to run on this host — aborting to preserve existing install"
+
   install -m 0755 "${WORK_DIR}/extract/agent-receipts-daemon" "${INSTALL_DIR}/"
   install -m 0755 "${WORK_DIR}/extract/agent-receipts"        "${INSTALL_DIR}/"
 
-  # Smoke-test the binary on this host before proceeding.
-  # Catches glibc mismatches, bad architectures, or corrupt archives early.
-  "${INSTALL_DIR}/agent-receipts-daemon" --version >/dev/null 2>&1 || \
-    die "Installed binary failed to run — check glibc compatibility or open an issue"
+  # Detect legacy beta key path (old installs wrote to ~/.agent-receipts/).
+  # An upgrade from that layout looks like a fresh install and would generate a
+  # new key under the new XDG path, creating a different signing identity while
+  # leaving existing receipts verifiable only via the old key.
+  LEGACY_KEY="${HOME}/.agent-receipts/signing.key"
+  if [ -f "$LEGACY_KEY" ]; then
+    printf '\n'
+    printf 'Warning: found a signing key at the legacy beta path:\n'
+    printf '  %s\n' "$LEGACY_KEY"
+    printf 'The daemon now uses:\n'
+    printf '  %s\n' "$KEY_FILE"
+    printf 'Move your key before continuing:\n'
+    printf '  mkdir -p "%s"\n' "$(dirname "$KEY_FILE")"
+    printf '  mv "%s" "%s"\n' "$LEGACY_KEY" "$KEY_FILE"
+    printf '  mv "%s.pub" "%s.pub"\n' "$LEGACY_KEY" "$KEY_FILE"
+    die "Aborting — move legacy keys and re-run the installer"
+  fi
 
   # Key init — try -init and handle both outcomes.
   # Attempting unconditionally (rather than pre-checking KEY_FILE) ensures
@@ -114,6 +134,8 @@ main() {
 
   # Install systemd user unit.
   # The embedded unit is kept in sync with daemon/packaging/linux/agent-receipts-daemon.service.
+  # Always written on install/upgrade — if you have custom Environment= settings, put them
+  # in a drop-in file instead: ~/.config/systemd/user/agent-receipts-daemon.service.d/override.conf
   step "Installing systemd user unit to ${UNIT_DIR}..."
   mkdir -p "$UNIT_DIR"
   cat > "${UNIT_DIR}/${UNIT_NAME}" << 'UNIT_EOF'
@@ -175,7 +197,8 @@ UNIT_EOF
   # to your shell rc file). Uses a marker comment for idempotency.
   if [ ! -f "$BASHRC" ]; then
     echo "    ~/.bashrc not found — skipping (add manually to your shell rc file if needed)"
-  elif grep -qF '# agent-receipts: XDG_RUNTIME_DIR' "$BASHRC"; then
+  elif grep -qF '# agent-receipts: XDG_RUNTIME_DIR' "$BASHRC" || \
+       grep -qE '^[[:space:]]*export[[:space:]]+XDG_RUNTIME_DIR' "$BASHRC"; then
     echo "    XDG_RUNTIME_DIR already in ${BASHRC} — skipping"
   else
     step "Adding XDG_RUNTIME_DIR to ${BASHRC}..."
@@ -202,10 +225,11 @@ UNIT_EOF
   printf '    sudo loginctl enable-linger %s\n' "$(id -un)"
   printf '\n'
   if [ "$STARTED" = "1" ]; then
-    printf 'The service is already running. Enable linger so it survives future logouts.\n'
+    printf 'The service is running. Enable linger so it survives future logouts and\n'
+    printf 'starts automatically on boot without requiring a login session.\n'
   else
-    printf 'Without linger, the daemon cannot start. After running the command above,\n'
-    printf 'log out and back in (or open a new SSH session) to activate it.\n'
+    printf 'Without linger the user manager does not persist across logouts. After\n'
+    printf 'enabling linger, log out and back in (or open a new SSH session).\n'
   fi
   printf '\n'
   printf 'Note: MCP emitters running as system services need this in their unit file:\n'
