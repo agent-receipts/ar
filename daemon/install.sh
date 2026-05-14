@@ -4,6 +4,10 @@
 #
 # Installs to ~/.local/bin, sets up the systemd user unit, and generates the
 # signing key if one does not already exist. Safe to re-run for upgrades.
+#
+# Wrapping everything in main() guards against partial execution when the
+# download is truncated mid-stream while piped to sh.
+
 set -eu
 
 REPO="agent-receipts/ar"
@@ -13,65 +17,98 @@ UNIT_DIR="${HOME}/.config/systemd/user"
 UNIT_NAME="agent-receipts-daemon.service"
 BASHRC="${HOME}/.bashrc"
 
+# Set at the top so the EXIT trap is always safe to evaluate.
+WORK_DIR=""
+STARTED=0
+trap '[ -n "$WORK_DIR" ] && rm -rf -- "$WORK_DIR"' EXIT
+
 step() { printf '\n==> %s\n' "$*"; }
 die()  { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 
-# Linux only
-[ "$(uname -s)" = "Linux" ] || die "Linux only. For macOS: brew install agent-receipts/tap/agent-receipts-daemon"
+main() {
+  # Linux only
+  [ "$(uname -s)" = "Linux" ] || \
+    die "Linux only. For macOS: brew install agent-receipts/tap/agent-receipts-daemon"
 
-# Require systemd
-command -v systemctl >/dev/null 2>&1 || die "systemctl not found — this installer requires systemd"
+  # Require systemd
+  command -v systemctl >/dev/null 2>&1 || \
+    die "systemctl not found — this installer requires systemd"
 
-# Map uname -m to GoReleaser arch labels
-case "$(uname -m)" in
-  x86_64)        GOARCH=amd64 ;;
-  aarch64|arm64) GOARCH=arm64 ;;
-  *)             die "Unsupported architecture: $(uname -m)" ;;
-esac
+  # sha256sum for checksum verification (part of coreutils, present on all mainstream distros)
+  command -v sha256sum >/dev/null 2>&1 || \
+    die "sha256sum not found — install coreutils and retry"
 
-# Resolve latest daemon release from the GitHub releases API.
-# The repo contains multiple components with distinct tag prefixes (sdk/go/v*,
-# mcp-proxy/v*, daemon/v*) so we filter specifically for daemon tags rather
-# than relying on the repo-wide "latest" release pointer.
-step "Resolving latest release..."
-VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" \
-  | grep '"tag_name"' \
-  | grep '"daemon/v' \
-  | head -1 \
-  | sed 's/.*"daemon\/v\([^"]*\)".*/\1/')
-[ -n "$VERSION" ] || die "Could not resolve latest daemon version from GitHub API"
-echo "    version: ${VERSION}"
+  # Map uname -m to GoReleaser arch labels
+  case "$(uname -m)" in
+    x86_64)        GOARCH=amd64 ;;
+    aarch64|arm64) GOARCH=arm64 ;;
+    *)             die "Unsupported architecture: $(uname -m)" ;;
+  esac
 
-# Download
-ARCHIVE="daemon_${VERSION}_linux_${GOARCH}.tar.gz"
-URL="https://github.com/${REPO}/releases/download/daemon/v${VERSION}/${ARCHIVE}"
+  # Resolve latest stable daemon release.
+  # The repo has multiple component release trains (sdk/go/v*, mcp-proxy/v*,
+  # daemon/v*) so we filter by tag prefix and skip pre-releases explicitly —
+  # the repo-wide "latest" pointer is not reliable here.
+  step "Resolving latest release..."
+  VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" | \
+    awk '
+      /"tag_name":.*"daemon\/v/ {
+        match($0, /"daemon\/v[^"]+/)
+        tag = substr($0, RSTART + 9, RLENGTH - 9)
+      }
+      tag != "" && /"prerelease": false/ { print tag; exit }
+      /"prerelease": true/ { tag = "" }
+    ')
+  [ -n "$VERSION" ] || die "Could not resolve latest stable daemon version from GitHub API"
+  echo "    version: ${VERSION}"
 
-step "Downloading ${ARCHIVE}..."
-WORK_DIR=$(mktemp -d)
-trap 'rm -rf "$WORK_DIR"' EXIT INT TERM
-curl -fsSL -o "${WORK_DIR}/${ARCHIVE}" "$URL"
+  # Download
+  ARCHIVE="daemon_${VERSION}_linux_${GOARCH}.tar.gz"
+  RELEASE_BASE="https://github.com/${REPO}/releases/download/daemon/v${VERSION}"
 
-# Install binaries
-step "Installing binaries to ${INSTALL_DIR}..."
-mkdir -p "$INSTALL_DIR"
-mkdir -p "${WORK_DIR}/extract"
-# Tarballs have a top-level directory (e.g. daemon_0.8.0_linux_amd64/); strip it.
-tar -xzf "${WORK_DIR}/${ARCHIVE}" --strip-components=1 -C "${WORK_DIR}/extract"
-install -m 0755 "${WORK_DIR}/extract/agent-receipts-daemon" "${INSTALL_DIR}/"
-install -m 0755 "${WORK_DIR}/extract/agent-receipts"        "${INSTALL_DIR}/"
+  step "Downloading ${ARCHIVE}..."
+  WORK_DIR=$(mktemp -d)
+  curl -fsSL -o "${WORK_DIR}/${ARCHIVE}" "${RELEASE_BASE}/${ARCHIVE}"
 
-# Key init — skip if key already exists (idempotent on upgrades)
-if [ -f "$KEY_FILE" ]; then
-  echo "    signing key already present — skipping -init"
-else
-  step "Generating signing key..."
-  "${INSTALL_DIR}/agent-receipts-daemon" -init
-fi
+  # Verify checksum before writing anything to the filesystem.
+  # This is a cryptographic signing daemon — supply chain integrity matters.
+  step "Verifying checksum..."
+  curl -fsSL -o "${WORK_DIR}/checksums.txt" "${RELEASE_BASE}/checksums.txt"
+  EXPECTED=$(grep "  ${ARCHIVE}$" "${WORK_DIR}/checksums.txt" | awk '{print $1}')
+  [ -n "$EXPECTED" ] || die "No checksum entry found for ${ARCHIVE} in checksums.txt"
+  ACTUAL=$(sha256sum "${WORK_DIR}/${ARCHIVE}" | awk '{print $1}')
+  [ "$ACTUAL" = "$EXPECTED" ] || \
+    die "Checksum mismatch for ${ARCHIVE} — download may be corrupted or tampered with"
+  echo "    OK: ${EXPECTED}"
 
-# Install systemd user unit
-step "Installing systemd user unit to ${UNIT_DIR}..."
-mkdir -p "$UNIT_DIR"
-cat > "${UNIT_DIR}/${UNIT_NAME}" << 'UNIT_EOF'
+  # Install binaries
+  step "Installing binaries to ${INSTALL_DIR}..."
+  mkdir -p "$INSTALL_DIR"
+  mkdir -p "${WORK_DIR}/extract"
+  # Tarballs have a top-level directory (e.g. daemon_0.8.0_linux_amd64/); strip it.
+  tar -xzf "${WORK_DIR}/${ARCHIVE}" --strip-components=1 -C "${WORK_DIR}/extract"
+  install -m 0755 "${WORK_DIR}/extract/agent-receipts-daemon" "${INSTALL_DIR}/"
+  install -m 0755 "${WORK_DIR}/extract/agent-receipts"        "${INSTALL_DIR}/"
+
+  # Smoke-test the binary on this host before proceeding.
+  # Catches glibc mismatches, bad architectures, or corrupt archives early.
+  "${INSTALL_DIR}/agent-receipts-daemon" --version >/dev/null 2>&1 || \
+    die "Installed binary failed to run — check glibc compatibility or open an issue"
+
+  # Key init — skip if key already exists (idempotent on upgrades)
+  if [ -f "$KEY_FILE" ]; then
+    echo "    signing key already present — skipping -init"
+  else
+    step "Generating signing key..."
+    "${INSTALL_DIR}/agent-receipts-daemon" -init
+    echo "    key: ${KEY_FILE}"
+  fi
+
+  # Install systemd user unit.
+  # The embedded unit is kept in sync with daemon/packaging/linux/agent-receipts-daemon.service.
+  step "Installing systemd user unit to ${UNIT_DIR}..."
+  mkdir -p "$UNIT_DIR"
+  cat > "${UNIT_DIR}/${UNIT_NAME}" << 'UNIT_EOF'
 [Unit]
 Description=Agent Receipts signing daemon
 Documentation=https://github.com/agent-receipts/ar/tree/main/daemon
@@ -94,47 +131,69 @@ RuntimeDirectoryMode=0700
 WantedBy=default.target
 UNIT_EOF
 
-# Enable and start (or restart on upgrade).
-# systemctl --user requires an active user session (XDG_RUNTIME_DIR set and
-# /run/user/<uid>/systemd/private reachable). Ensure the variable is set so
-# that installs over SSH without linger still attempt the enable step.
-step "Enabling agent-receipts-daemon..."
-XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-export XDG_RUNTIME_DIR
-if systemctl --user daemon-reload 2>/dev/null; then
-  systemctl --user enable agent-receipts-daemon
-  systemctl --user restart agent-receipts-daemon
-  echo "    Service running."
-else
-  printf '    No active systemd user session detected.\n'
-  printf '    After enabling linger (see below) and logging back in, run:\n'
-  printf '      systemctl --user daemon-reload\n'
-  printf '      systemctl --user enable --now agent-receipts-daemon\n'
-fi
+  # Enable and start (or restart on upgrade).
+  # systemctl --user needs an active user session. Pre-set XDG_RUNTIME_DIR so
+  # installs over SSH without linger still attempt the enable step.
+  step "Enabling agent-receipts-daemon..."
+  XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  export XDG_RUNTIME_DIR
+  SYSTEMCTL_ERR="${WORK_DIR}/systemctl.err"
+  if systemctl --user daemon-reload 2>"$SYSTEMCTL_ERR"; then
+    systemctl --user enable --now agent-receipts-daemon
+    STARTED=1
+    echo "    Service running."
+  else
+    printf '    No active systemd user session'
+    if [ -s "$SYSTEMCTL_ERR" ]; then
+      printf ' (%s)' "$(head -1 "$SYSTEMCTL_ERR")"
+    fi
+    printf '\n'
+    printf '    After enabling linger (see below) and logging back in, run:\n'
+    printf '      systemctl --user daemon-reload\n'
+    printf '      systemctl --user enable --now agent-receipts-daemon\n'
+  fi
 
-# Add XDG_RUNTIME_DIR export to ~/.bashrc so that SSH sessions without a full
-# PAM login still have the variable set for user-service socket discovery.
-if grep -qF 'XDG_RUNTIME_DIR' "$BASHRC" 2>/dev/null; then
-  echo "    XDG_RUNTIME_DIR already in ${BASHRC} — skipping"
-else
-  step "Adding XDG_RUNTIME_DIR to ${BASHRC}..."
-  printf '\n# Required for systemd user services in SSH sessions (added by agent-receipts install.sh)\n' >> "$BASHRC"
-  # SC2016: single quotes are intentional — $(id -u) must expand at shell
-  # startup when .bashrc is sourced, not here during install.
-  # shellcheck disable=SC2016
-  printf 'export XDG_RUNTIME_DIR=/run/user/$(id -u)\n' >> "$BASHRC"
-fi
+  # Add XDG_RUNTIME_DIR export to ~/.bashrc so SSH sessions have it set.
+  # Only edits the file if it already exists (non-bash users: add manually
+  # to your shell rc file). Uses a marker comment for idempotency.
+  if [ ! -f "$BASHRC" ]; then
+    echo "    ~/.bashrc not found — skipping (add manually to your shell rc file if needed)"
+  elif grep -qF '# agent-receipts: XDG_RUNTIME_DIR' "$BASHRC"; then
+    echo "    XDG_RUNTIME_DIR already in ${BASHRC} — skipping"
+  else
+    step "Adding XDG_RUNTIME_DIR to ${BASHRC}..."
+    printf '\n# agent-receipts: XDG_RUNTIME_DIR — needed for systemd user services in SSH sessions\n' >> "$BASHRC"
+    # SC2016: $(id -u) must expand when .bashrc is sourced, not now.
+    # shellcheck disable=SC2016
+    printf 'export XDG_RUNTIME_DIR=/run/user/$(id -u)\n' >> "$BASHRC"
+  fi
 
-# Done
-printf '\nagent-receipts-daemon v%s installed to %s.\n' "$VERSION" "$INSTALL_DIR"
-printf '\n'
-printf 'One root step required — enables the user session to persist across logouts:\n'
-printf '\n'
-printf '    sudo loginctl enable-linger %s\n' "$USER"
-printf '\n'
-printf 'Without linger, the daemon stops when you log out. After running the command\n'
-printf 'above, log out and back in (or open a new SSH session) to activate it.\n'
-printf '\n'
-printf 'Note: MCP emitters running as system services need this in their unit file:\n'
-printf '    Environment=XDG_RUNTIME_DIR=/run/user/<uid>\n'
-printf 'See: https://github.com/agent-receipts/ar/tree/main/daemon/packaging/linux\n'
+  # Warn if ~/.local/bin is not in PATH so binaries are findable right away.
+  case ":${PATH}:" in
+    *":${INSTALL_DIR}:"*) ;;
+    *) printf '\nNote: %s is not in your PATH.\n' "$INSTALL_DIR"
+       # SC2016: $PATH is literal text for the user to copy — must not expand here.
+       # shellcheck disable=SC2016
+       printf 'Add to your shell rc file:\n  export PATH="%s:$PATH"\n' "$INSTALL_DIR" ;;
+  esac
+
+  # Summary
+  printf '\nagent-receipts-daemon v%s installed to %s.\n' "$VERSION" "$INSTALL_DIR"
+  printf '\n'
+  printf 'One root step required — enables the user session to persist across logouts:\n'
+  printf '\n'
+  printf '    sudo loginctl enable-linger %s\n' "$USER"
+  printf '\n'
+  if [ "$STARTED" = "1" ]; then
+    printf 'The service is already running. Enable linger so it survives future logouts.\n'
+  else
+    printf 'Without linger, the daemon cannot start. After running the command above,\n'
+    printf 'log out and back in (or open a new SSH session) to activate it.\n'
+  fi
+  printf '\n'
+  printf 'Note: MCP emitters running as system services need this in their unit file:\n'
+  printf '    Environment=XDG_RUNTIME_DIR=/run/user/<uid>\n'
+  printf 'See: https://github.com/agent-receipts/ar/tree/main/daemon/packaging/linux\n'
+}
+
+main "$@"
