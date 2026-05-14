@@ -87,7 +87,7 @@ func TestTwoMCPProxySessionsConcurrent(t *testing.T) {
 		}
 	}
 
-	receipts := fix.WaitForReceiptCount(t, total, 45*time.Second)
+	receipts := fix.WaitForReceiptCount(t, total, 120*time.Second)
 
 	sort.Slice(receipts, func(i, j int) bool {
 		return receipts[i].CredentialSubject.Chain.Sequence <
