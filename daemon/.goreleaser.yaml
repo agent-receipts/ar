@@ -120,7 +120,6 @@ brews:
         keep_alive crashed: true
         log_path var/"log/agent-receipts/daemon.log"
         error_log_path var/"log/agent-receipts/daemon.log"
-        working_dir var
       end
 
       def caveats
@@ -143,6 +142,8 @@ brews:
           Socket (Linux):    $XDG_RUNTIME_DIR/agentreceipts/events.sock
                              (falls back to /run/agentreceipts/events.sock when $XDG_RUNTIME_DIR is unset)
                              Override: AGENTRECEIPTS_SOCKET
+          Daemon logs:       #{var}/log/agent-receipts/daemon.log
+                             (stdout + stderr, written by launchd when started via `brew services`)
         EOS
       end
 
