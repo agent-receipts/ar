@@ -4,15 +4,20 @@ Documentation=https://github.com/agent-receipts/ar/tree/main/daemon
 
 [Service]
 Type=simple
-# Adjust ExecStart to wherever the binary is installed.
-# Common locations: %h/.local/bin/agent-receipts-daemon (per-user install)
-#                   /usr/local/bin/agent-receipts-daemon (system-wide install)
+# %h is the user's home directory; %t expands to $XDG_RUNTIME_DIR, ensuring the
+# socket path is correct even when the service starts outside a PAM session.
+# If ExecStart is changed to a different binary location, update the path in
+# ExecStartPre to match, or put the change in a drop-in override file.
 #
-# Run once before enabling to generate the signing key:
-#   agent-receipts-daemon -init
-#
-# %t expands to $XDG_RUNTIME_DIR, ensuring the socket path is correct even when
-# the service is started outside a PAM session (where XDG_RUNTIME_DIR may be unset).
+# ExecStartPre: key is generated only on a truly fresh install (no receipts.db).
+# If the key is missing but a database exists, the service fails loudly so the
+# operator can recover the key rather than silently creating a new signing identity
+# (which would orphan the existing receipt chain — see daemon/daemon.go:148-151).
+ExecStartPre=/bin/sh -c '\
+  if test -f "%h/.local/share/agent-receipts/signing.key"; then exit 0;\
+  elif test -f "%h/.local/share/agent-receipts/receipts.db"; then\
+    printf "signing key missing but receipts.db exists -- recover the key before restarting\n" >&2; exit 1;\
+  else exec "%h/.local/bin/agent-receipts-daemon" -init; fi'
 ExecStart=%h/.local/bin/agent-receipts-daemon \
   -socket %t/agentreceipts/events.sock
 Restart=on-failure

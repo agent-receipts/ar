@@ -13,7 +13,19 @@ Two unit files are provided:
 
 Runs as the logged-in user. No root or dedicated system user needed. Data lives in the user's home directory.
 
-### Prerequisites
+### Quick install (Linux only)
+
+```sh
+curl -fsSL https://github.com/agent-receipts/ar/releases/latest/download/install.sh | sh
+```
+
+Handles binary download, key generation, unit install, and service start in one step. See [`daemon/install.sh`](../../install.sh) for details.
+
+### Manual install
+
+Use this path if you built from source or need a custom configuration.
+
+#### Prerequisites
 
 Install the binary (pick one):
 
@@ -26,18 +38,22 @@ go build -o ~/.local/bin/agent-receipts-daemon ./cmd/agent-receipts-daemon
 
 The unit file assumes `~/.local/bin/agent-receipts-daemon` (`%h/.local/bin/…`). If the binary is elsewhere, edit `ExecStart` before installing the unit.
 
-### 1 — Generate the signing key (once)
+#### 1 — Generate the signing key (once, optional)
+
+The unit's `ExecStartPre` generates the key automatically on first start if it
+does not already exist, so this step is optional for most installs.
+
+To generate it manually before enabling the service:
 
 ```sh
 agent-receipts-daemon -init
 ```
 
 This creates `~/.local/share/agent-receipts/signing.key` (0600) and
-`~/.local/share/agent-receipts/signing.key.pub` (0644). The daemon refuses to
-start without a key. Run `-init` only once — if the key files already exist,
-`-init` will fail with an error rather than overwrite them. To rotate keys,
-remove the existing key files first, then re-run `-init` (this invalidates the
-existing receipt chain).
+`~/.local/share/agent-receipts/signing.key.pub` (0644). Run `-init` only once — if
+the key files already exist, `-init` fails with an error rather than overwrite them.
+To rotate keys, remove the existing key files first, then re-run `-init` (this
+invalidates the existing receipt chain).
 
 > **Note:** the default key and database paths have recently moved to
 > `~/.local/share/agent-receipts/` (XDG Base Directory). If you ran an earlier
@@ -45,7 +61,7 @@ existing receipt chain).
 > corresponding environment variables to point the daemon at the old paths, or
 > move the files to the new location.
 
-### 2 — Install and start the unit
+#### 2 — Install and start the unit
 
 ```sh
 mkdir -p ~/.config/systemd/user
@@ -55,14 +71,14 @@ systemctl --user daemon-reload
 systemctl --user enable --now agent-receipts-daemon
 ```
 
-### 3 — Check status and logs
+#### 3 — Check status and logs
 
 ```sh
 systemctl --user status agent-receipts-daemon
 journalctl --user -u agent-receipts-daemon -f
 ```
 
-### Stopping / disabling
+#### Stopping / disabling
 
 ```sh
 systemctl --user stop agent-receipts-daemon
