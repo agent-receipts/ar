@@ -9,13 +9,13 @@ importers:
   .:
     dependencies:
       '@astrojs/starlight':
-        specifier: ^0.39
+        specifier: ^0.39.2
         version: 0.39.2(astro@6.3.1(@types/node@24.12.3)(rollup@4.60.3))
       astro:
-        specifier: ^6
+        specifier: ^6.3.1
         version: 6.3.1(@types/node@24.12.3)(rollup@4.60.3)
       sharp:
-        specifier: ^0.34
+        specifier: ^0.34.5
         version: 0.34.5
     devDependencies:
       playwright:
@@ -2120,8 +2120,8 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
-  uuid@11.1.0:
-    resolution: {integrity: sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==}
+  uuid@11.1.1:
+    resolution: {integrity: sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==}
     hasBin: true
 
   vfile-location@5.0.3:
@@ -4077,7 +4077,7 @@ snapshots:
       roughjs: 4.6.6
       stylis: 4.4.0
       ts-dedent: 2.2.0
-      uuid: 11.1.0
+      uuid: 11.1.1
 
   micromark-core-commonmark@2.0.3:
     dependencies:
@@ -4923,7 +4923,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  uuid@11.1.0: {}
+  uuid@11.1.1: {}
 
   vfile-location@5.0.3:
     dependencies:
