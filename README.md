@@ -14,6 +14,7 @@
 | | |
 |---|---|
 | **Project site & docs** | [agentreceipts.ai](https://agentreceipts.ai) |
+| **Daemon setup & migration guide** | [agentreceipts.ai/getting-started/daemon-setup/](https://agentreceipts.ai/getting-started/daemon-setup/) |
 | **API reference** | [Go](https://agentreceipts.ai/sdk-go/api-reference/) · [TypeScript](https://agentreceipts.ai/sdk-ts/api-reference/) · [Python](https://agentreceipts.ai/sdk-py/api-reference/) |
 | **Blog** | [Your AI Agent Just Sent an Email](https://jongerius.solutions/post/your-ai-agent-just-sent-an-email/) · [Every MCP Tool Call My AI Makes Now Gets a Signed Receipt](https://jongerius.solutions/post/auditing-github-mcp-agent-receipts/) |
 | **Go** | [sdk/go](https://pkg.go.dev/github.com/agent-receipts/ar/sdk/go) · [mcp-proxy](https://pkg.go.dev/github.com/agent-receipts/ar/mcp-proxy) · [dashboard](https://pkg.go.dev/github.com/agent-receipts/dashboard) |
@@ -55,6 +56,7 @@ Agent Receipts is an open protocol and set of SDKs for producing cryptographical
 | [`sdk/go/`](sdk/go/) | Go SDK |
 | [`sdk/ts/`](sdk/ts/) | TypeScript SDK |
 | [`sdk/py/`](sdk/py/) | Python SDK |
+| [`daemon/`](daemon/) | Signing daemon — out-of-process key custody, shared audit chain |
 | [`mcp-proxy/`](mcp-proxy/) | MCP proxy with receipt signing, policy engine, intent tracking |
 | [`cross-sdk-tests/`](cross-sdk-tests/) | Cross-language verification tests |
 | [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
