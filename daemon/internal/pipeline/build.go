@@ -138,11 +138,17 @@ func (p *Pipeline) Process(f socket.Frame) error {
 // followed by the live receipt, holding one AllocatePair lock across both
 // inserts so they are guaranteed adjacent. On synthetic failure it logs and
 // falls back to processLive for the live receipt alone.
+//
+// Panic safety: pair.Rollback() is deferred immediately after AllocatePair so
+// any panic before CommitFirst releases the mutex. After CommitFirst, the
+// returned liveAlloc shares the same release Once so deferring liveAlloc.Rollback()
+// covers panics in the second phase; pair.Rollback() becomes a no-op.
 func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) error {
 	pair := p.State.AllocatePair()
+	defer pair.Rollback() // panic-safety: no-op after CommitFirst
 
-	synAlloc := pair.FirstAllocation()
-	synthetic, synHash, err := p.buildAndSignDropReceipt(frame.DropCount, frame.SessionID, peer, synAlloc)
+	synthetic, synHash, err := p.buildAndSignDropReceipt(
+		frame.DropCount, frame.SessionID, peer, pair.FirstSeq, pair.FirstPrev)
 	if err != nil {
 		pair.Rollback()
 		p.logError("build events_dropped receipt (drop_count=%d session=%s): %v",
@@ -150,7 +156,7 @@ func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) er
 		return p.processLive(frame, peer)
 	}
 	p.trace("events_dropped receipt: session=%s drop_count=%d seq=%d",
-		frame.SessionID, frame.DropCount, synAlloc.Sequence)
+		frame.SessionID, frame.DropCount, pair.FirstSeq)
 
 	if err := p.Store.Insert(synthetic, synHash); err != nil {
 		pair.Rollback()
@@ -163,10 +169,11 @@ func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) er
 	// allocation for the live receipt. The mutex remains held so no other
 	// frame can interleave between the two receipts.
 	liveAlloc := pair.CommitFirst(synHash)
+	defer liveAlloc.Rollback() // panic-safety; pair.Rollback defer is now a no-op
 
 	live, liveHash, err := p.buildAndSign(frame, peer, liveAlloc)
 	if err != nil {
-		liveAlloc.Rollback() // releases lock; chain is at synAlloc.Sequence+1
+		liveAlloc.Rollback() // releases lock; chain is at pair.FirstSeq+1
 		return err
 	}
 	p.trace("receipt signed: seq=%d hash=%s", liveAlloc.Sequence, liveHash)
@@ -429,19 +436,21 @@ func (p *Pipeline) buildAndSign(
 	}, now)
 }
 
-// buildAndSignDropReceipt constructs a synthetic events_dropped receipt that
-// records the emitter's accumulated drop count in the chain. Called by
-// insertDropReceipt when frame.DropCount > 0.
+// buildAndSignDropReceipt constructs a synthetic events_dropped receipt.
+// seq and prevHash come directly from PairAlloc.FirstSeq/FirstPrev rather
+// than from a chain.Allocation, avoiding the ambiguous no-op Allocation that
+// would be needed to represent the first PairAlloc slot.
 func (p *Pipeline) buildAndSignDropReceipt(
 	dropCount int64,
 	sessionID string,
 	peer socket.PeerCred,
-	alloc chain.Allocation,
+	seq int64,
+	prevHash *string,
 ) (receipt.AgentReceipt, string, error) {
 	now := p.Now().Format(time.RFC3339)
 
-	if alloc.Sequence > int64(math.MaxInt) {
-		return receipt.AgentReceipt{}, "", fmt.Errorf("chain sequence %d exceeds int range on this platform (max %d)", alloc.Sequence, math.MaxInt)
+	if seq > int64(math.MaxInt) {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("chain sequence %d exceeds int range on this platform (max %d)", seq, math.MaxInt)
 	}
 
 	return p.signAndHash(receipt.CreateInput{
@@ -458,17 +467,17 @@ func (p *Pipeline) buildAndSignDropReceipt(
 			Timestamp: now,
 			ParametersDisclosure: map[string]string{
 				"emitter.drop_count": strconv.FormatInt(dropCount, 10),
-				"peer.platform": peer.Platform,
-				"peer.pid":      strconv.FormatInt(int64(peer.PID), 10),
-				"peer.uid":      strconv.FormatUint(uint64(peer.UID), 10),
-				"peer.gid":      strconv.FormatUint(uint64(peer.GID), 10),
-				"peer.exe_path": peer.ExePath,
+				"peer.platform":      peer.Platform,
+				"peer.pid":           strconv.FormatInt(int64(peer.PID), 10),
+				"peer.uid":           strconv.FormatUint(uint64(peer.UID), 10),
+				"peer.gid":           strconv.FormatUint(uint64(peer.GID), 10),
+				"peer.exe_path":      peer.ExePath,
 			},
 		},
 		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
 		Chain: receipt.Chain{
-			Sequence:            int(alloc.Sequence),
-			PreviousReceiptHash: alloc.PrevHash,
+			Sequence:            int(seq),
+			PreviousReceiptHash: prevHash,
 			ChainID:             p.State.ChainID(),
 		},
 	}, now)

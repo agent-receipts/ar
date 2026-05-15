@@ -158,12 +158,11 @@ func TestAllocatePair_AdjacentSequences(t *testing.T) {
 	s := New("c")
 	pair := s.AllocatePair()
 
-	first := pair.FirstAllocation()
-	if first.Sequence != 1 {
-		t.Errorf("first.Sequence = %d, want 1", first.Sequence)
+	if pair.FirstSeq != 1 {
+		t.Errorf("FirstSeq = %d, want 1", pair.FirstSeq)
 	}
-	if first.PrevHash != nil {
-		t.Errorf("first.PrevHash = %v, want nil", first.PrevHash)
+	if pair.FirstPrev != nil {
+		t.Errorf("FirstPrev = %v, want nil", pair.FirstPrev)
 	}
 
 	second := pair.CommitFirst("hash-1")
