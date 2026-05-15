@@ -5,6 +5,20 @@ All notable changes to `agent-receipts-daemon` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-05-15
+
+### Added
+
+- **`agent-receipts-hook` binary** ([#403](https://github.com/agent-receipts/ar/pull/403),
+  closes [#364](https://github.com/agent-receipts/ar/issues/364)):
+  Short-lived PostToolUse hook for Claude Code (and future agent runtimes) that
+  captures native host tool calls — `Bash`, `Write`, `Edit`, `Read`, `WebFetch`,
+  `WebSearch` — and forwards them to `agent-receipts-daemon` over the Unix socket.
+  Fills the audit gap left by `mcp-proxy`, which only covers MCP tool calls.
+  Always exits 0 (fire-and-forget, per ADR-0010). Format-dispatch model makes
+  adding new runtimes a single function + map entry.
+  Shipped in the same Homebrew formula and release tarball as `agent-receipts-daemon`.
+
 ## [0.8.0] - 2026-05-15
 
 ### Added
@@ -89,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive suite of integration tests covering socket communication,
   chain continuity, key generation, and verification workflows.
 
+[0.8.1]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.1
 [0.8.0]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0
 [0.8.0-alpha.2]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0-alpha.2
 [0.8.0-alpha.1]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0-alpha.1
