@@ -39,13 +39,11 @@ Add to `~/.claude/settings.json` to capture tool calls across all projects. Use 
 
 ## Verify receipts appear
 
-After running any Claude Code tool (e.g. a `Bash` command), query the daemon receipt store:
+After running any Claude Code tool (e.g. a `Bash` command), check the dashboard or openclaw — receipts with `channel: claude-code` should appear alongside any MCP receipts from `mcp-proxy`.
 
-```bash
-agent-receipts list
-```
-
-You should see receipts with `channel: claude-code` alongside any MCP receipts from `mcp-proxy`.
+:::note
+`agent-receipts list` is not yet implemented ([#410](https://github.com/agent-receipts/ar/issues/410)). Use the dashboard or openclaw to inspect receipts in the interim.
+:::
 
 ## What Claude Code sends
 
@@ -74,7 +72,7 @@ Claude Code serialises each PostToolUse event as a JSON object on stdin:
 
 ## MCP tool overlap
 
-The empty matcher captures `mcp__*` tools too, which `mcp-proxy` already covers. This produces a second receipt per MCP call — one at `channel: "mcp"` from the proxy, one at `channel: "claude-code"` from the hook. They are distinguishable in `agent-receipts list` output. If you want to exclude MCP tools from the hook, add a non-empty matcher or restrict the hook to specific tool names. See the [overview](/hook/overview/#mcp-tool-overlap) for more detail.
+The empty matcher captures `mcp__*` tools too, which `mcp-proxy` already covers. This produces a second receipt per MCP call — one at `channel: "mcp"` from the proxy, one at `channel: "claude-code"` from the hook. Both share the same `session_id` and are distinguishable by their `channel` field. If you want to exclude MCP tools from the hook, add a non-empty matcher or restrict the hook to specific tool names. See the [overview](/hook/overview/#mcp-tool-overlap) for more detail.
 
 ## Session correlation
 
@@ -84,6 +82,6 @@ Claude Code passes the same `session_id` across all tool calls in a session. Bot
 
 | Flag | Description |
 |---|---|
-| `--format` | Force a specific input format. Defaults to auto-detection via environment variables. Currently supported: `claude-code`. |
+| `--format` | Force a specific input format. Defaults to auto-detection via `hook_event_name` in the stdin payload or the `CLAUDE_SESSION_ID` environment variable. Currently supported: `claude-code`. |
 
 The `--format` flag is intended for testing and future runtime support. In normal Claude Code usage, auto-detection is sufficient.
