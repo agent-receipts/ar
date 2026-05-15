@@ -194,6 +194,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `reversal_method` | No | Machine-readable reversal method (e.g. `gmail:undo_send`). |
 | `reversal_window_seconds` | No | Seconds within which reversal is possible. |
 | `reversal_of` | No | `urn:receipt:<uuid>` of the original receipt this receipt reverses. Present only on reversal receipts. |
+| `response_hash` | No | `sha256:` prefixed hash of the tool's response (RFC 8785 canonical JSON). |
 | `state_change.before_hash` | Conditional | `sha256:` hash of state before. Required when `state_change` is present. |
 | `state_change.after_hash` | Conditional | `sha256:` hash of state after. Required when `state_change` is present. |
 
@@ -223,6 +224,7 @@ Present when this chain was spawned by delegation from another agent. All fields
 | `chain_id` | Yes | Opaque identifier grouping receipts into a chain. |
 | `sequence` | Yes | Monotonically increasing integer, starting at `1`. |
 | `previous_receipt_hash` | Yes | `sha256:` hash of previous receipt, or `null` for first in chain. |
+| `terminal` | No | `true` if this is the final receipt in the chain. Enables tail-truncation detection by verifiers — see [Receipt Chain Verification](/specification/receipt-chain-verification/#chain-integrity-verification). |
 
 ## Proof
 
@@ -230,7 +232,7 @@ Present when this chain was spawned by delegation from another agent. All fields
 |---|---|---|
 | `type` | Yes | Must be `"Ed25519Signature2020"`. |
 | `created` | Yes | ISO 8601 datetime when the proof was created. |
-| `verificationMethod` | Yes | DID URL of the signing key. |
+| `verificationMethod` | Yes | DID URL of the signing key. The `did:agent:` method used in examples is an illustrative placeholder — DID resolution is not specified in the current protocol (see ADR-0007). |
 | `proofPurpose` | Yes | Must be `"assertionMethod"`. |
 | `proofValue` | Yes | Multibase-encoded (`u`-prefixed base64url, no padding) Ed25519 signature. |
 

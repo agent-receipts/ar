@@ -48,7 +48,7 @@ Agent Receipts are hash-chained into tamper-evident sequences. This page describ
 
 ## Canonical form
 
-For hashing and signing, receipts must be serialized using the **JSON Canonicalization Scheme (RFC 8785)** with the `proof` field removed before hashing. This approach aligns with the W3C Verifiable Credentials Data Integrity specification, though the signing procedure defined here is intentionally simplified.
+For hashing and signing, receipts must be serialized using the **JSON Canonicalization Scheme (RFC 8785)** with the `proof` field removed before hashing. This diverges from the W3C Verifiable Credentials Data Integrity default, which uses JSON-LD canonicalization (RDF Dataset Canonicalization). Implementations expecting JSON-LD processing will not be interoperable with Agent Receipt signatures — existing JSON-LD-based VC tooling cannot verify them without modification.
 
 ## Signing
 
@@ -60,13 +60,15 @@ To verify a receipt chain:
 
 1. Retrieve all receipts for the chain, ordered by `chain.sequence`. Let *n* be the number of receipts.
 2. For each receipt *R(i)* (0-based index):
-   - **a.** Verify the `proof` signature against the issuer's public key at `proof.verificationMethod`.
+   - **a.** Verify the `proof` signature against the issuer's public key at `proof.verificationMethod`. Note: resolution of `proof.verificationMethod` URLs (particularly `did:agent:` identifiers) is not specified in the current protocol — verifiers must obtain public keys through out-of-band means (e.g. the daemon's published `.pub` file).
    - **b.** Compute the hex-encoded SHA-256 digest of the RFC 8785 canonical form of *R(i)* with the `proof` field removed.
    - **c.** If *i < n - 1*, confirm *R(i+1)*'s `chain.previous_receipt_hash` equals `sha256:` concatenated with that hex digest.
 3. For each receipt *R(i)* where *i > 0*, confirm `chain.sequence` equals *R(i-1)*'s `chain.sequence` + 1.
 4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null`.
 
 If any step fails, the chain is broken at that point. Receipts before the break may still be individually valid; receipts after are suspect.
+
+**Truncation detection.** The algorithm above detects inserted, modified, or reordered receipts, but does not detect tail truncation — a chain that ends prematurely looks identical to a normally-terminated chain. When the final receipt carries `chain.terminal: true`, verifiers SHOULD treat any chain that ends without this flag as potentially truncated. Without a terminal receipt, silently dropping the most recent events is undetectable by this algorithm alone.
 
 ## Reversal receipts
 
