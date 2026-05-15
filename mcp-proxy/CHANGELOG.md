@@ -19,13 +19,7 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Dependencies
 
-- Bump `github.com/agent-receipts/ar/sdk/go` from `v0.8.0-alpha.2` to `v0.8.0`.
-
-## [0.8.0-alpha.2] - 2026-05-10
-
-### Dependencies
-
-- Bump `github.com/agent-receipts/ar/sdk/go` from `v0.8.0-alpha.1` to `v0.8.0-alpha.2`.
+- Bump `github.com/agent-receipts/ar/sdk/go` from `v0.8.0-alpha.1` to `v0.8.0`.
 
 ## [0.8.0-alpha.1] - 2026-05-09
 
@@ -102,6 +96,5 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
   [#262](https://github.com/agent-receipts/ar/issues/262).
 
 [0.8.0]: https://github.com/agent-receipts/ar/releases/tag/mcp-proxy%2Fv0.8.0
-[0.8.0-alpha.2]: https://github.com/agent-receipts/ar/releases/tag/mcp-proxy%2Fv0.8.0-alpha.2
 [0.8.0-alpha.1]: https://github.com/agent-receipts/ar/releases/tag/mcp-proxy%2Fv0.8.0-alpha.1
 [0.6.2]: https://github.com/agent-receipts/ar/compare/mcp-proxy/v0.6.1...mcp-proxy/v0.6.2
