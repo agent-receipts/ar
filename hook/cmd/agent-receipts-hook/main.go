@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"io"
 	"log/slog"
@@ -24,11 +25,23 @@ var formats = map[string]reader{
 	"claude-code": readClaudeCode,
 }
 
-// detect returns the format name inferred from environment variables. An empty
-// string means no format could be auto-detected; the caller should fall back
-// to the --format flag or exit silently.
-func detect(env func(string) string) string {
+// detect returns the format name inferred from the stdin payload and
+// environment. An empty string means no format could be auto-detected; the
+// caller should fall back to the --format flag or exit silently.
+//
+// Claude Code does not set CLAUDE_SESSION_ID as an environment variable; it
+// passes hook_event_name:"PostToolUse" in the stdin JSON payload instead. We
+// check both signals so the binary works with runtimes that take either
+// approach. Only PostToolUse is accepted from stdin to avoid misidentifying
+// PreToolUse or other hook event payloads as PostToolUse frames.
+func detect(stdin []byte, env func(string) string) string {
 	if env("CLAUDE_SESSION_ID") != "" {
+		return "claude-code"
+	}
+	var probe struct {
+		HookEventName string `json:"hook_event_name"`
+	}
+	if json.Unmarshal(stdin, &probe) == nil && probe.HookEventName == "PostToolUse" {
 		return "claude-code"
 	}
 	return ""
@@ -53,7 +66,7 @@ func main() {
 
 	format := *formatFlag
 	if format == "" {
-		format = detect(env)
+		format = detect(stdin, env)
 	}
 	if format == "" {
 		// Unknown runtime — nothing to record.

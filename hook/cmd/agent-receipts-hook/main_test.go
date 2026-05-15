@@ -175,17 +175,42 @@ func TestReadClaudeCode_InputOutputAreValidJSON(t *testing.T) {
 
 func TestDetect(t *testing.T) {
 	tests := []struct {
-		name string
-		env  map[string]string
-		want string
+		name  string
+		stdin string
+		env   map[string]string
+		want  string
 	}{
 		{
-			name: "CLAUDE_SESSION_ID set",
+			name: "CLAUDE_SESSION_ID env var set",
 			env:  map[string]string{"CLAUDE_SESSION_ID": "abc"},
 			want: "claude-code",
 		},
 		{
-			name: "no known env vars",
+			name:  "hook_event_name in stdin (no env var)",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"Bash","tool_input":{},"tool_response":{}}`,
+			env:   map[string]string{},
+			want:  "claude-code",
+		},
+		{
+			name:  "hook_event_name takes precedence over missing env var",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"Read"}`,
+			env:   map[string]string{"CLAUDE_SESSION_ID": ""},
+			want:  "claude-code",
+		},
+		{
+			name:  "no env var and no hook_event_name in stdin",
+			stdin: `{"session_id":"s","tool_name":"Bash"}`,
+			env:   map[string]string{},
+			want:  "",
+		},
+		{
+			name:  "non-PostToolUse hook_event_name is not detected",
+			stdin: `{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_input":{}}`,
+			env:   map[string]string{},
+			want:  "",
+		},
+		{
+			name: "no known env vars and empty stdin",
 			env:  map[string]string{},
 			want: "",
 		},
@@ -199,11 +224,17 @@ func TestDetect(t *testing.T) {
 			env:  map[string]string{"CLAUDE_SESSION_ID": ""},
 			want: "",
 		},
+		{
+			name:  "malformed stdin does not panic",
+			stdin: `not json`,
+			env:   map[string]string{},
+			want:  "",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := detect(func(k string) string { return tt.env[k] })
+			got := detect([]byte(tt.stdin), func(k string) string { return tt.env[k] })
 			if got != tt.want {
 				t.Errorf("detect() = %q; want %q", got, tt.want)
 			}
