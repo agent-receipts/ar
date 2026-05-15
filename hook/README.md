@@ -1,6 +1,6 @@
 # agent-receipts-hook
 
-Short-lived hook binary for [Agent Receipts](https://github.com/agent-receipts/ar). Invoked by agent runtimes (Claude Code, Codex, …) on `PostToolUse` events — reads a JSON frame from stdin, maps it to an audit event, and forwards it to `agent-receipts-daemon` over a Unix-domain socket. Always exits 0 so it never blocks the agent.
+Short-lived hook binary for [Agent Receipts](https://github.com/agent-receipts/ar). Invoked by agent runtimes on `PostToolUse` events — reads a JSON frame from stdin, maps it to an audit event, and forwards it to `agent-receipts-daemon` over a Unix-domain socket. Always exits 0 so it never blocks the agent.
 
 ## Install
 
@@ -40,7 +40,7 @@ In your Claude Code settings (`~/.claude/settings.json`):
 |---------|-----------|-------------|
 | Claude Code | `CLAUDE_SESSION_ID` env var | `--format claude-code` |
 
-Auto-detection runs first; use `--format` to override.
+Auto-detection runs when `--format` is unset. Use `--format` to force a specific format.
 
 ## License
 

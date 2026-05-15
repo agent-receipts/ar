@@ -55,10 +55,10 @@ SDKs are independent implementations of the same spec. They do not depend on eac
 
 ## Go workspace
 
-The repo-root `go.work` lists `./sdk/go`, `./mcp-proxy`, and `./cross-sdk-tests`. It is committed so that:
+The repo-root `go.work` lists `./sdk/go`, `./mcp-proxy`, `./hook`, `./daemon`, and `./cross-sdk-tests`. It is committed so that:
 
-- Local builds and tests of `mcp-proxy` exercise the in-tree `sdk/go` (not the published version).
-- CI does the same — `mcp-proxy` PR checks catch breakage from `sdk/go` changes in the same PR, closing the gap where two passing per-module workflows could still ship a broken integration.
+- Local builds and tests of `mcp-proxy` and `hook` exercise the in-tree `sdk/go` (not the published version).
+- CI does the same — `mcp-proxy` and `hook` PR checks catch breakage from `sdk/go` changes in the same PR, closing the gap where two passing per-module workflows could still ship a broken integration.
 - Published `go.mod` files stay free of local `replace` directives — `publish-go.yml` rejects those at release time. Use `go.work` for monorepo wiring instead.
 
 After cloning, no extra setup is required: `go build`, `go test`, and `go vet` from any module directory will pick up the workspace automatically.

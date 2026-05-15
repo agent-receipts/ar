@@ -121,6 +121,10 @@ brews:
 
       def caveats
         <<~EOS
+          agent-receipts-hook is now a separate formula. If you previously installed
+          it via this formula, run:
+            brew install agent-receipts/tap/agent-receipts-hook
+
           Before starting the service for the first time, generate your signing key:
             agent-receipts-daemon --init
 

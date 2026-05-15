@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Short-lived PostToolUse hook binary for agent runtimes (Claude Code, Codex, …). Reads a JSON frame from stdin, maps it to an `emitter.Event`, and forwards it to `agent-receipts-daemon` over a Unix-domain socket. Always exits 0 — never blocks the agent. Built on [sdk/go/emitter](../sdk/go/emitter/).
+Short-lived PostToolUse hook binary. Currently supports Claude Code; designed to support additional runtimes via the `formats` map in `main.go`. Reads a JSON frame from stdin, maps it to an `emitter.Event`, and forwards it to `agent-receipts-daemon` over a Unix-domain socket. Always exits 0 — never blocks the agent. Built on [sdk/go/emitter](../sdk/go/emitter/).
 
 ## Getting started
 
