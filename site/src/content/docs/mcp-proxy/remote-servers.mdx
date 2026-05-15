@@ -37,7 +37,7 @@ Remote MCP Server (e.g. mcp.atlassian.com/v1/mcp)
 
 ```bash
 mcp-proxy init --name atlassian-proxy
-# creates ~/.agent-receipts/atlassian-proxy.pem (0600) and ~/.agent-receipts/atlassian-proxy.pem.pub
+# creates ~/.local/share/agent-receipts/atlassian-proxy.pem (0600) and ~/.local/share/agent-receipts/atlassian-proxy.pem.pub
 ```
 
 :::tip[Reuse an existing key]
@@ -55,7 +55,7 @@ Add an entry to your MCP client config that runs `mcp-proxy` wrapping `npx mcp-r
       "command": "/Users/YOU/go/bin/mcp-proxy",
       "args": [
         "-name", "atlassian",
-        "-key", "/Users/YOU/.agent-receipts/atlassian-proxy.pem",
+        "-key", "/Users/YOU/.local/share/agent-receipts/atlassian-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -74,7 +74,7 @@ claude mcp add-json atlassian-audited --scope user '{
   "command": "/Users/YOU/go/bin/mcp-proxy",
   "args": [
     "-name", "atlassian",
-    "-key", "'"$HOME"'/.agent-receipts/atlassian-proxy.pem",
+    "-key", "'"$HOME"'/.local/share/agent-receipts/atlassian-proxy.pem",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -108,7 +108,7 @@ The list of bundled taxonomies lives at [`mcp-proxy/configs/`](https://github.co
 **Fix:** run the full proxy command directly in a terminal first, complete the browser OAuth, then Ctrl+C and reconnect via `/mcp`:
 
 ```bash
-$HOME/go/bin/mcp-proxy -name atlassian -key ~/.agent-receipts/atlassian-proxy.pem \
+$HOME/go/bin/mcp-proxy -name atlassian -key ~/.local/share/agent-receipts/atlassian-proxy.pem \
   npx --registry https://registry.npmjs.org -y mcp-remote https://mcp.atlassian.com/v1/mcp
 ```
 

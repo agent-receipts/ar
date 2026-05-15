@@ -29,7 +29,7 @@ The default policy includes a `pause_high_risk` rule. When you generate a config
 
 ```bash
 mcp-proxy init --name github-proxy
-# creates ~/.agent-receipts/github-proxy.pem (0600) and ~/.agent-receipts/github-proxy.pem.pub
+# creates ~/.local/share/agent-receipts/github-proxy.pem (0600) and ~/.local/share/agent-receipts/github-proxy.pem.pub
 # prints a claude_desktop_config.json snippet — paste it as a starting point
 ```
 
@@ -43,7 +43,7 @@ Claude Desktop doesn't shell-expand config values, so paste absolute paths. On m
 
 ```bash
 echo "command: $(which mcp-proxy)"
-echo "key:     $HOME/.agent-receipts/github-proxy.pem"
+echo "key:     $HOME/.local/share/agent-receipts/github-proxy.pem"
 echo "server:  $(which github-mcp-server)"
 ```
 
@@ -60,7 +60,7 @@ The token needs to reach the MCP server's environment **without being written in
 Install the 1Password CLI (`brew install 1password-cli`), sign in (`op signin`), and create a referenced env file:
 
 ```ini
-# ~/.agent-receipts/mcp.env  (chmod 600)
+# ~/.local/share/agent-receipts/mcp.env  (chmod 600)
 GITHUB_PERSONAL_ACCESS_TOKEN=op://Personal/GitHub/token
 ```
 
@@ -73,11 +73,11 @@ Point Claude Desktop at `op run` — it resolves the `op://` reference at exec t
       "command": "/opt/homebrew/bin/op",
       "args": [
         "run",
-        "--env-file=/Users/YOU/.agent-receipts/mcp.env",
+        "--env-file=/Users/YOU/.local/share/agent-receipts/mcp.env",
         "--",
         "/Users/YOU/go/bin/mcp-proxy",
         "-name", "github",
-        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -103,7 +103,7 @@ security add-generic-password -s github-mcp -a "$USER" -w
 
 ```bash
 #!/usr/bin/env bash
-# ~/.agent-receipts/run-mcp-proxy-github.sh — chmod 700
+# ~/.local/share/agent-receipts/run-mcp-proxy-github.sh — chmod 700
 set -euo pipefail
 GITHUB_PERSONAL_ACCESS_TOKEN="$(security find-generic-password -s github-mcp -a "$USER" -w)" \
   exec /Users/YOU/go/bin/mcp-proxy "$@"
@@ -117,10 +117,10 @@ Point Claude Desktop at the launcher — no `env` block, since the script sets i
 {
   "mcpServers": {
     "github-audited": {
-      "command": "/Users/YOU/.agent-receipts/run-mcp-proxy-github.sh",
+      "command": "/Users/YOU/.local/share/agent-receipts/run-mcp-proxy-github.sh",
       "args": [
         "-name", "github",
-        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -142,7 +142,7 @@ Useful for kicking the tyres against a throwaway PAT before wiring up secret man
       "command": "/Users/YOU/go/bin/mcp-proxy",
       "args": [
         "-name", "github",
-        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -165,12 +165,12 @@ Restart Claude Desktop. The GitHub MCP server now runs behind the proxy — ever
 After making tool calls, inspect the receipt store from your terminal:
 
 ```bash
-# List all receipts (uses the default ~/.agent-receipts/receipts.db)
+# List all receipts (uses the default ~/.local/share/agent-receipts/receipts.db)
 mcp-proxy list
 
 # Verify chain integrity
 mcp-proxy verify \
-  -key ~/.agent-receipts/github-proxy.pem.pub \
+  -key ~/.local/share/agent-receipts/github-proxy.pem.pub \
   <chain-id>
 ```
 

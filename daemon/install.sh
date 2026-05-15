@@ -47,23 +47,6 @@ main() {
     *)             die "Unsupported architecture: $(uname -m)" ;;
   esac
 
-  # Detect legacy beta key path before downloading anything.
-  # Old installs wrote to ~/.agent-receipts/; the daemon now uses the XDG path.
-  # An upgrade from the old layout would otherwise look like a fresh install and
-  # silently create a new signing identity under the new path.
-  LEGACY_KEY="${HOME}/.agent-receipts/signing.key"
-  if [ -f "$LEGACY_KEY" ]; then
-    printf '\nLegacy signing key found at: %s\n' "$LEGACY_KEY"
-    printf 'The daemon now uses:         %s\n' "$KEY_FILE"
-    printf 'Move your data before continuing:\n'
-    printf '  mkdir -p "%s"\n' "$(dirname "$KEY_FILE")"
-    printf '  mv "%s" "%s"\n' "$LEGACY_KEY" "$KEY_FILE"
-    printf '  mv "%s.pub" "%s.pub"\n' "$LEGACY_KEY" "$KEY_FILE"
-    printf '  # Also move the receipt database (preserves chain history):\n'
-    printf '  mv "%s" "%s"\n' "${HOME}/.agent-receipts/receipts.db" "${HOME}/.local/share/agent-receipts/receipts.db"
-    die "Aborting — move legacy data and re-run the installer"
-  fi
-
   # Resolve latest stable daemon release.
   # The repo has multiple component release trains (sdk/go/v*, mcp-proxy/v*,
   # daemon/v*) so we filter by tag prefix and skip pre-releases explicitly —

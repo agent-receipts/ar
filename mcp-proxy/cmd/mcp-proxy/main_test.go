@@ -56,19 +56,63 @@ func withHomeDirResolver(t *testing.T, resolver func() (string, error)) {
 	t.Cleanup(func() { userHomeDir = prev })
 }
 
+// withXDGDataHome temporarily sets XDG_DATA_HOME to dir (or unsets it when dir
+// is empty) and restores the previous value on cleanup.
+func withXDGDataHome(t *testing.T, dir string) {
+	t.Helper()
+	prev, had := os.LookupEnv("XDG_DATA_HOME")
+	if dir == "" {
+		os.Unsetenv("XDG_DATA_HOME")
+	} else {
+		os.Setenv("XDG_DATA_HOME", dir)
+	}
+	t.Cleanup(func() {
+		if had {
+			os.Setenv("XDG_DATA_HOME", prev)
+		} else {
+			os.Unsetenv("XDG_DATA_HOME")
+		}
+	})
+}
+
 func TestDefaultDBPathUsesHomeDir(t *testing.T) {
 	home := t.TempDir()
 	withHomeDirResolver(t, func() (string, error) { return home, nil })
+	withXDGDataHome(t, "") // ensure XDG_DATA_HOME does not override
 
 	got := defaultDBPath("audit.db")
-	want := filepath.Join(home, ".agent-receipts", "audit.db")
+	want := filepath.Join(home, ".local", "share", "agent-receipts", "audit.db")
 	if got != want {
 		t.Fatalf("defaultDBPath(audit.db) = %q, want %q", got, want)
 	}
 }
 
+func TestDefaultDBPathRespectsXDGDataHome(t *testing.T) {
+	xdgDir := t.TempDir()
+	withXDGDataHome(t, xdgDir)
+
+	got := defaultDBPath("audit.db")
+	want := filepath.Join(xdgDir, "agent-receipts", "audit.db")
+	if got != want {
+		t.Fatalf("defaultDBPath(audit.db) = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultDBPathIgnoresRelativeXDGDataHome(t *testing.T) {
+	home := t.TempDir()
+	withHomeDirResolver(t, func() (string, error) { return home, nil })
+	withXDGDataHome(t, "relative/xdg") // relative — must be ignored per XDG spec
+
+	got := defaultDBPath("audit.db")
+	want := filepath.Join(home, ".local", "share", "agent-receipts", "audit.db")
+	if got != want {
+		t.Fatalf("defaultDBPath(audit.db) = %q, want %q; expected relative XDG_DATA_HOME to be ignored", got, want)
+	}
+}
+
 func TestDefaultDBPathFallsBackOnResolverError(t *testing.T) {
 	withHomeDirResolver(t, func() (string, error) { return "", errors.New("no home") })
+	withXDGDataHome(t, "") // ensure XDG_DATA_HOME does not override
 
 	if got := defaultDBPath("audit.db"); got != "audit.db" {
 		t.Fatalf("expected fallback to bare filename, got %q", got)
@@ -77,6 +121,7 @@ func TestDefaultDBPathFallsBackOnResolverError(t *testing.T) {
 
 func TestDefaultDBPathFallsBackOnEmptyHome(t *testing.T) {
 	withHomeDirResolver(t, func() (string, error) { return "", nil })
+	withXDGDataHome(t, "") // ensure XDG_DATA_HOME does not override
 
 	if got := defaultDBPath("audit.db"); got != "audit.db" {
 		t.Fatalf("expected fallback for empty home, got %q", got)
@@ -85,6 +130,7 @@ func TestDefaultDBPathFallsBackOnEmptyHome(t *testing.T) {
 
 func TestDefaultDBPathRejectsRelativeHome(t *testing.T) {
 	withHomeDirResolver(t, func() (string, error) { return "relative/path", nil })
+	withXDGDataHome(t, "") // ensure XDG_DATA_HOME does not override
 
 	if got := defaultDBPath("audit.db"); got != "audit.db" {
 		t.Fatalf("expected fallback for non-absolute home, got %q", got)

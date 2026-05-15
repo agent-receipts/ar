@@ -982,18 +982,40 @@ func recordRejectedToolCall(db *audit.Store, sessionID string, rc rejectedCall) 
 // os.UserHomeDir can still resolve via /etc/passwd).
 var userHomeDir = os.UserHomeDir
 
-// defaultDBPath returns an absolute path under the user's home directory
-// (`~/.agent-receipts/<name>`) for the given filename. MCP clients (Claude
-// Desktop, Claude Code, Codex) spawn the proxy with an unwritable cwd, so a
-// relative default would crash on first open. Falls back to the bare filename
-// only if the home directory cannot be resolved to an absolute path — callers
-// are expected to surface a clear error when that fallback is hit.
-func defaultDBPath(name string) string {
+// xdgDataHome returns the XDG_DATA_HOME directory or its default
+// ($HOME/.local/share). Returns "" when XDG_DATA_HOME is unset and the
+// user's home directory cannot be determined.
+//
+// Per the XDG Base Directory spec, $XDG_DATA_HOME must be an absolute path;
+// a relative value is treated as invalid and ignored, falling back to the
+// $HOME/.local/share default. This protects against a misconfigured
+// environment silently relocating the receipt store under the working
+// directory of whichever process happened to start the proxy.
+func xdgDataHome() string {
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome != "" && filepath.IsAbs(dataHome) {
+		return dataHome
+	}
 	home, err := userHomeDir()
 	if err != nil || home == "" || !filepath.IsAbs(home) {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share")
+}
+
+// defaultDBPath returns an absolute path under the XDG data directory
+// (`$XDG_DATA_HOME/agent-receipts/<name>`, defaulting to
+// `~/.local/share/agent-receipts/<name>`) for the given filename. MCP clients
+// (Claude Desktop, Claude Code, Codex) spawn the proxy with an unwritable
+// cwd, so a relative default would crash on first open. Falls back to the
+// bare filename only if the data home directory cannot be resolved — callers
+// are expected to surface a clear error when that fallback is hit.
+func defaultDBPath(name string) string {
+	dh := xdgDataHome()
+	if dh == "" {
 		return name
 	}
-	return filepath.Join(home, ".agent-receipts", name)
+	return filepath.Join(dh, "agent-receipts", name)
 }
 
 // ensureDir creates the parent directory of path at 0o700 permissions.

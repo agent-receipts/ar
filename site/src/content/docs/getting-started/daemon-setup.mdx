@@ -202,7 +202,7 @@ A successful run prints the chain length and confirms hash linkage and signature
 
 **Preserve old data offline if you need it.** Auditors who need long-term verification of pre-v0.8 receipts should archive the old SQLite databases and their corresponding public keys before uninstalling the previous tooling. Verification of those receipts continues to work using the archived files and a v0.7 (or compatible) `verify` binary.
 
-**New paths are separate.** The daemon writes to `$XDG_DATA_HOME/agent-receipts/` (falling back to `~/.local/share/agent-receipts/` when `$XDG_DATA_HOME` is unset or not an absolute path). The in-process SDKs typically wrote to `~/.agent-receipts/` or a path configured via `AGENTRECEIPTS_DB`. These directories are distinct — the daemon will not pick up old data.
+**New paths are separate.** The daemon, MCP proxy, and hook all write to `$XDG_DATA_HOME/agent-receipts/` (falling back to `~/.local/share/agent-receipts/` when `$XDG_DATA_HOME` is unset or not an absolute path). The in-process SDKs (pre-v0.8) typically wrote to `~/.agent-receipts/` or a path configured via `AGENTRECEIPTS_DB`. These directories are distinct — the current tooling will not pick up old data from the legacy path.
 
 ## Troubleshooting
 

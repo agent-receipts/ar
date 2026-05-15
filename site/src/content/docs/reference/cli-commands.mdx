@@ -40,7 +40,7 @@ mcp-proxy list --follow --interval 1s     # custom poll interval
 | `-json` | Output as JSON (NDJSON — one object per line — in `--follow` mode) |
 | `-follow`, `-f` | After the initial listing, keep polling and stream new receipts as they are inserted (`tail -f`-style). Exit with `Ctrl-C`. In `--follow` mode, the startup batch is printed in chronological order (oldest → newest) so it reads continuously with the streamed tail. |
 | `-interval` | Poll interval in `--follow` mode (default: `500ms`) |
-| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
 
 ### Example output
 
@@ -76,7 +76,7 @@ mcp-proxy inspect -key public.pem <receipt-id>   # verify signature
 | Flag | Description |
 |------|-------------|
 | `-key` | Public key PEM file to verify the receipt signature |
-| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
 
 ## `mcp-proxy verify`
 
@@ -89,7 +89,7 @@ mcp-proxy verify -key public.pem <chain-id>
 | Flag | Description |
 |------|-------------|
 | `-key` | Public key PEM file (required) |
-| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
 
 ## `mcp-proxy export`
 
@@ -102,7 +102,7 @@ mcp-proxy export <chain-id> > chain.json
 
 | Flag | Description |
 |------|-------------|
-| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
 
 ## `mcp-proxy stats`
 
@@ -116,7 +116,7 @@ mcp-proxy stats -json
 | Flag | Description |
 |------|-------------|
 | `-json` | Output as JSON |
-| `-receipt-db` | Receipt store path (default: `$HOME/.agent-receipts/receipts.db`) |
+| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
 
 ## `mcp-proxy timing`
 
@@ -131,7 +131,7 @@ mcp-proxy timing -limit 10                    # top 10 tools
 
 | Flag | Description |
 |------|-------------|
-| `-db` | Audit database path (default: `$HOME/.agent-receipts/audit.db`) |
+| `-db` | Audit database path (default: `$HOME/.local/share/agent-receipts/audit.db`) |
 | `-session` | Filter by session ID |
 | `-limit` | Maximum number of tools to show (default: `20`) |
 | `-json` | Output as JSON |
@@ -183,7 +183,7 @@ mcp-proxy doctor -json                              # JSON output
 
 ## `mcp-proxy init`
 
-One-command setup: creates `~/.agent-receipts/`, generates an Ed25519 signing keypair with correct permissions (private key `0600`, public key `0644`), initialises the receipt database, and prints a `claude_desktop_config.json` snippet to stdout.
+One-command setup: creates `~/.local/share/agent-receipts/`, generates an Ed25519 signing keypair with correct permissions (private key `0600`, public key `0644`), initialises the receipt database, and prints a `claude_desktop_config.json` snippet to stdout.
 
 Safe to re-run — warns and skips key generation if files already exist (use `-force` to overwrite).
 
@@ -216,7 +216,7 @@ mcp-proxy audit-secrets -db /path/to/audit.db                 # specify audit DB
 
 | Flag | Description |
 |------|-------------|
-| `-db` | Audit database path (default: `$HOME/.agent-receipts/audit.db`) |
+| `-db` | Audit database path (default: `$HOME/.local/share/agent-receipts/audit.db`) |
 | `-redact-patterns` | YAML file with additional patterns to scan for |
 
 If the database was encrypted at rest (proxy launched with `BEACON_ENCRYPTION_KEY`), set the same env var before running so the scanner can decrypt. Without the key, encrypted rows are reported as `encrypted-no-key` and counted as hits.

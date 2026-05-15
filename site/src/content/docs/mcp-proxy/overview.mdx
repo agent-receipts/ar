@@ -104,11 +104,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "command": "/opt/homebrew/bin/op",
       "args": [
         "run",
-        "--env-file=/Users/YOU/.agent-receipts/mcp.env",
+        "--env-file=/Users/YOU/.local/share/agent-receipts/mcp.env",
         "--",
         "/Users/YOU/go/bin/mcp-proxy",
         "-name", "github",
-        "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -130,7 +130,7 @@ claude mcp add-json github-audited --scope user '{
   "command": "/Users/YOU/go/bin/mcp-proxy",
   "args": [
     "-name", "github",
-    "-key", "/Users/YOU/.agent-receipts/github-proxy.pem",
+    "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
