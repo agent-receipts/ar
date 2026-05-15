@@ -10,6 +10,7 @@ sdk/go/        # Go SDK (receipt, store, taxonomy)
 sdk/ts/        # TypeScript SDK (@agnt-rcpt/sdk-ts)
 sdk/py/        # Python SDK (agent-receipts)
 mcp-proxy/     # MCP STDIO proxy with audit, policy, and receipts (Go)
+hook/          # PostToolUse hook binary for Claude Code and other runtimes (Go)
 site/          # Documentation site (Astro)
 cross-sdk-tests/  # Cross-language receipt verification tests
 ```
@@ -24,6 +25,7 @@ Each subdirectory has its own AGENTS.md with project-specific details.
 | sdk/ts | TypeScript | `pnpm test` | `pnpm build` |
 | sdk/py | Python | `uv run pytest` | `uv build` |
 | mcp-proxy | Go | `go test ./...` | `go build ./cmd/mcp-proxy` |
+| hook | Go | `go test ./...` | `go build ./cmd/agent-receipts-hook` |
 | site | TypeScript | — | `pnpm build` |
 | spec | — | — | JSON schema validation |
 
@@ -32,6 +34,7 @@ Each subdirectory has its own AGENTS.md with project-specific details.
 - All changes go through pull requests — never push directly to main
 - CI is path-filtered: changes to `sdk/go/` only trigger Go SDK CI
 - mcp-proxy CI also triggers on `sdk/go/` changes (dependency)
+- hook CI also triggers on `sdk/go/` changes (dependency)
 - Site deploys on `site/**` or `spec/**` changes
 - Go modules share a repo-root `go.work` (see [Go workspace](#go-workspace)); never add a local `replace` directive in any published `go.mod`
 - Run language-specific linters before committing (go vet, biome, ruff)
@@ -42,6 +45,7 @@ Each subdirectory has its own AGENTS.md with project-specific details.
 spec (protocol definition)
   ↓
 sdk/go ← mcp-proxy (linked locally via repo-root go.work)
+sdk/go ← hook (linked locally via repo-root go.work)
 sdk/go ← cross-sdk-tests (linked locally via repo-root go.work)
 sdk/ts
 sdk/py
