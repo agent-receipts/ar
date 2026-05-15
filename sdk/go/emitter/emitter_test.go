@@ -417,10 +417,24 @@ func TestEmit_ReconnectAfterDaemonRestart(t *testing.T) {
 		receipts, getErr := s.GetChain(d2.cfg.ChainID)
 		s.Close()
 		if getErr == nil && len(receipts) >= 3 {
-			// Verify at least one post-restart receipt carries the
-			// emitter's stable session_id. This is the OQ4 property
-			// (session_id persists across daemon reconnects).
+			// Filter out daemon-synthesised events_dropped receipts: a
+			// positive drop counter on the first post-restart frame causes
+			// the daemon to prepend a synthetic receipt before the live one,
+			// so receipts[2:] may start with it.
+			var live []receipt.AgentReceipt
 			for _, r := range receipts[2:] {
+				if r.CredentialSubject.Action.Type != "agent_receipts.events_dropped" {
+					live = append(live, r)
+				}
+			}
+			if len(live) == 0 {
+				// Only the synthetic receipt has arrived yet; wait for the live one.
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+			// Verify post-restart receipts carry the emitter's stable
+			// session_id (OQ4 property: persists across daemon reconnects).
+			for _, r := range live {
 				if r.Issuer.SessionID != wantSession {
 					t.Errorf("post-restart receipt session_id = %q, want %q", r.Issuer.SessionID, wantSession)
 				}
