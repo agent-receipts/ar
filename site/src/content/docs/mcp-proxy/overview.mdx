@@ -1,9 +1,9 @@
 ---
 title: MCP Proxy
-description: Transparent audit proxy for MCP servers — classifies and scores tool calls, applies proxy-layer policy rules, and forwards audit events to the agent-receipts daemon for signing and storage.
+description: Transparent audit proxy for MCP servers — classifies and scores tool calls, applies proxy-layer policy rules, signs receipts locally, and forwards events to agent-receipts-daemon when configured.
 ---
 
-The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, Claude Code, etc.) and any MCP server. It intercepts every tool call, classifies and scores it, applies proxy-layer policy rules, redacts sensitive data, then forwards an audit event to the `agent-receipts` daemon for signing and tamper-evident storage — without modifying the server or client.
+The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, Claude Code, etc.) and any MCP server. It intercepts every tool call, classifies and scores it, applies proxy-layer policy rules, redacts sensitive data, and signs and stores an Ed25519 receipt locally. When `agent-receipts-daemon` is configured via `--socket`, it also forwards events to the daemon for an independently signed and stored chain — without modifying the server or client.
 
 **Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy)
 
@@ -21,7 +21,7 @@ Scores that cross 50: `create_token` (write 20 + sensitive 30 = 50), `update_aut
 - **MCP prefix stripping** -- automatically strips `mcp__<server>__` prefixes so receipts and classification use clean tool names
 - **Policy rules** (proxy layer) -- YAML rules engine with four actions: pass, flag, pause (approval required), and block
 - **Approval workflows** (proxy layer) -- HTTP endpoints for async approval of paused operations
-- **Cryptographic receipts** -- Ed25519-signed W3C Verifiable Credentials, signed and hash-chained by the `agent-receipts` daemon
+- **Cryptographic receipts** -- Ed25519-signed W3C Verifiable Credentials, hash-chained per session; events are also forwarded to `agent-receipts-daemon` when `--socket` is configured
 - **Issuer identity** -- receipts identify the AI agent, model, and operator via CLI flags
 - **Intent tracking** -- groups related tool calls by temporal proximity
 - **Data redaction** -- JSON-aware and pattern-based redaction of secrets before storage
@@ -38,14 +38,14 @@ MCP Client (Claude Desktop / Claude Code)
     |  - classify operation
     |  - score risk
     |  - evaluate policy rules
-    |  - redact sensitive data
-    |  - forward event (Unix socket) ──> agent-receipts daemon
-    v                                        - sign receipt (Ed25519)
- MCP Server (any)                            - append to chain
-                                             - write to SQLite
+    |  - redact sensitive data (local storage)
+    |  - sign receipt (Ed25519) → local SQLite
+    |  - forward event (--socket) ─────────────> agent-receipts-daemon
+    v                                                 - sign independently
+ MCP Server (any)                                     - append to daemon chain
 ```
 
-The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, forwards them to the wrapped server, and returns the response. Each tool call generates a signed Agent Receipt — signing and storage are handled by the `agent-receipts` daemon, which hash-chains receipts into a tamper-evident audit log.
+The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, forwards them to the wrapped server, and returns the response. Each tool call produces a locally signed Agent Receipt. When `--socket` points to a running `agent-receipts-daemon`, events are also forwarded for an independently signed chain.
 
 ## Quick start
 
@@ -58,8 +58,8 @@ brew install agent-receipts/tap/mcp-proxy
 mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 
 # With configuration (example: GitHub's official MCP server — brew install github-mcp-server)
-# -key is the standalone signing path; with the daemon running, omit -key and
-# set AGENTRECEIPTS_SOCKET instead — see Daemon Setup.
+# -key sets the local signing key (omit for an ephemeral key).
+# Daemon forwarding is a separate path configured via --socket — see Daemon Setup.
 mcp-proxy \
   -name github \
   -key private.pem \

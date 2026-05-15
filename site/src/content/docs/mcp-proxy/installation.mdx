@@ -49,7 +49,7 @@ Wrap any MCP server by passing its command as arguments. For a quick smoke test,
 mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 ```
 
-The proxy intercepts stdin/stdout, logs every tool call, and forwards messages transparently. When the `agent-receipts` daemon is running, it forwards audit events there for signing and storage. Without the daemon (or if `AGENTRECEIPTS_SOCKET` is unset), it falls back to an ephemeral Ed25519 key pair for standalone use. Press `Ctrl-C` to stop.
+The proxy intercepts stdin/stdout, logs every tool call, and forwards messages transparently. It always signs receipts locally — with `-key` if provided, or an ephemeral Ed25519 key pair otherwise. Separately, daemon forwarding sends a copy of each event to `agent-receipts-daemon` via the `--socket` flag (defaults to the platform socket path; set `--socket=""` to disable). Press `Ctrl-C` to stop.
 
 For wiring the proxy into an actual client, jump to [Claude Code](/mcp-proxy/claude-code/), [Claude Desktop](/mcp-proxy/claude-desktop/), or [Codex](/mcp-proxy/codex/).
 
@@ -67,7 +67,7 @@ Most GitHub MCP tools don't reach the threshold — `create_pull_request` scores
 
 ## Standalone signing key
 
-For production use, key management is handled by the `agent-receipts` daemon — see [Daemon Setup](/getting-started/daemon-setup/). The instructions below are for standalone use (no daemon), where the proxy holds the signing key directly.
+For production use, key management is handled by `agent-receipts-daemon` — see [Daemon Setup](/getting-started/daemon-setup/). The instructions below are for standalone use (no daemon), where the proxy holds the signing key directly.
 
 `mcp-proxy init` does everything in one step: creates `~/.agent-receipts/`, generates an Ed25519 keypair with correct permissions, initialises the receipt database, and prints a ready-to-paste `claude_desktop_config.json` snippet:
 

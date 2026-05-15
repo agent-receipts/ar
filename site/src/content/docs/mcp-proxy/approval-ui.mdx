@@ -3,7 +3,7 @@ title: Approval Server
 description: HTTP endpoints that gate paused tool calls, how to approve or deny them, and how to auto-start an approver.
 ---
 
-The Approval Server is a proxy-layer feature — it gates tool calls at the MCP boundary and is separate from the Agent Receipts audit protocol. All calls (approved, denied, or timed out) are recorded as receipts regardless of outcome.
+The Approval Server is a proxy-layer feature — it gates tool calls at the MCP boundary and is separate from the Agent Receipts audit protocol. All calls (approved, denied, or timed out) are recorded in the audit log regardless of outcome.
 
 **Approvals are off by default.** To turn them on, pass `-http 127.0.0.1:<port>` to `mcp-proxy`. Without that flag the listener never starts, and any tool call that matches a `pause` rule fails immediately with JSON-RPC code `-32003` (`no approver configured`) instead of waiting for an approver that isn't there. With the listener up, a paused call blocks forwarding until something POSTs an approve or deny decision; if no approver responds within `-approval-timeout` (default 60s), the call fails with code `-32002` (`tool call approval timed out…`).
 
