@@ -99,7 +99,7 @@ Multiple projects have independently converged on the same cryptographic and pro
 | **OWASP Agentic AI Top 10** | Microsoft AGT, Pipelock, mcp-firewall (ressl) |
 | **YAML policy config** | All projects |
 
-Agent Receipts (this project) sits outside the enforcement tools in the table above — it is an audit trail, not a policy engine. Its trust model: signing keys live in a separate `agent-receipts-daemon` process (not in the agent, proxy, or SDK), so the audit trail is independent of the component being audited.
+Agent Receipts (this project) sits outside the enforcement tools in the table above — it is an audit trail, not a policy engine. In the daemon-backed deployment, signing keys live in `agent-receipts-daemon` and never enter the agent, proxy, or SDK process, so those components cannot forge or rewrite signed receipts. The SDKs and mcp-proxy also support a standalone in-process signing mode (the current default) where the key lives in the calling process.
 
 ---
 
