@@ -34,7 +34,7 @@ sequenceDiagram
   C->>P: tools/call (risk score ≥ 50)
   P->>P: match pause rule
   P-->>AP: stderr: PAUSED approval_id
-  AP->>P: POST /api/tool-calls/{id}/approve
+  AP->>P: POST /api/tool-calls/{approval_id}/approve
   P->>S: forward tool call
   S-->>P: result
   P-->>C: tools/call result

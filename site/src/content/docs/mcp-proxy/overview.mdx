@@ -39,6 +39,7 @@ flowchart TD
   AP -->|denied or timeout| E[JSON-RPC error]
   C --> BL[block] --> E
   W --> R[Sign receipt and store]
+  E --> R
 ```
 
 ## How it works

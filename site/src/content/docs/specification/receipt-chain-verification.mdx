@@ -98,8 +98,9 @@ If any step fails, the delegation link is unverifiable. The delegated chain's re
 ```mermaid
 flowchart TD
   A[Delegated chain receipt with delegation field] --> B[Resolve delegation.parent_chain_id]
-  B --> C[Find receipt matching delegation.parent_receipt_id]
-  C -->|not found| F[Delegation unverifiable]
+  B -->|not found| F[Delegation unverifiable]
+  B -->|found| C[Find receipt matching delegation.parent_receipt_id]
+  C -->|not found| F
   C -->|found| D{delegator.id == parent issuer.id?}
   D -->|no| F
   D -->|yes| E{principal unchanged across chains?}
