@@ -95,9 +95,10 @@ type Event struct {
 type Option func(*config)
 
 type config struct {
-	socketPath string
-	sessionID  string
-	logger     *slog.Logger
+	socketPath   string
+	sessionID    string
+	logger       *slog.Logger
+	strictErrors bool
 }
 
 // WithSocketPath overrides the daemon socket path. When unset, the path
@@ -130,6 +131,18 @@ func WithLogger(l *slog.Logger) Option {
 	return func(c *config) { c.logger = l }
 }
 
+// WithStrictErrors makes Emit return dial and write failures as errors
+// instead of silently dropping them. The default fire-and-forget behaviour
+// (returning nil on transient I/O failures) is preserved for all callers
+// that do not pass this option, so it is a non-breaking addition.
+//
+// Use this option when the caller must know whether the event reached the
+// daemon — for example, a hook binary that should exit non-zero when the
+// daemon is unreachable so the agent runtime surfaces the failure.
+func WithStrictErrors() Option {
+	return func(c *config) { c.strictErrors = true }
+}
+
 // Emitter is the daemon-socket client. Construct with New, fire events
 // with Emit, release the socket with Close. Safe for concurrent Emit.
 type Emitter struct {
@@ -139,9 +152,10 @@ type Emitter struct {
 	// Uses atomic.Int64 so concurrent logDrop calls never corrupt state.
 	dropCount atomic.Int64
 
-	socketPath string
-	sessionID  string
-	logger     *slog.Logger
+	socketPath   string
+	sessionID    string
+	logger       *slog.Logger
+	strictErrors bool
 
 	mu     sync.Mutex
 	conn   net.Conn
@@ -174,9 +188,10 @@ func New(opts ...Option) (*Emitter, error) {
 		cfg.logger = slog.Default()
 	}
 	return &Emitter{
-		socketPath: cfg.socketPath,
-		sessionID:  cfg.sessionID,
-		logger:     cfg.logger,
+		socketPath:   cfg.socketPath,
+		sessionID:    cfg.sessionID,
+		logger:       cfg.logger,
+		strictErrors: cfg.strictErrors,
 	}, nil
 }
 
@@ -311,6 +326,9 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 			}
 			e.dropCount.Add(pendingDrops)
 			e.logDrop(ctx, "dial", err)
+			if e.strictErrors {
+				return fmt.Errorf("emitter: dial %s: %w", e.socketPath, err)
+			}
 			return nil
 		}
 		// Install with a check-and-set: if a sibling Emit dialled and
@@ -358,7 +376,11 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		// Emit re-establish.
 		e.mu.Unlock()
 		e.dropCount.Add(pendingDrops)
-		e.logDrop(ctx, "write", errors.New("connection reset by sibling Emit"))
+		siblingErr := errors.New("connection reset by sibling Emit")
+		e.logDrop(ctx, "write", siblingErr)
+		if e.strictErrors {
+			return fmt.Errorf("emitter: write: %w", siblingErr)
+		}
 		return nil
 	}
 	if err := e.writeFrame(ctx, conn, body); err != nil {
@@ -375,6 +397,9 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		e.dropCount.Add(pendingDrops)
 		e.logDrop(ctx, "write", err)
 		_ = conn.Close()
+		if e.strictErrors {
+			return fmt.Errorf("emitter: write frame: %w", err)
+		}
 		return nil
 	}
 	e.mu.Unlock()

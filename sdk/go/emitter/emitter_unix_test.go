@@ -887,6 +887,96 @@ func TestEmit_DropCounterRestoredOnWriteFailure(t *testing.T) {
 	}
 }
 
+// TestEmit_StrictErrors_DialFailure asserts that WithStrictErrors() causes
+// Emit to return an error when the daemon socket is missing, rather than
+// silently returning nil (the default fire-and-forget behaviour).
+func TestEmit_StrictErrors_DialFailure(t *testing.T) {
+	dir := shortSocketDir(t)
+	em, err := New(
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
+		WithLogger(silentLogger()),
+		WithStrictErrors(),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	err = em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "noop"},
+		Decision: "allowed",
+	})
+	if err == nil {
+		t.Error("Emit with strict errors returned nil; want error on dial failure")
+	}
+}
+
+// TestEmit_StrictErrors_WriteFailure asserts that WithStrictErrors() causes
+// Emit to return an error when the write fails (listener closed mid-stream),
+// rather than silently returning nil.
+func TestEmit_StrictErrors_WriteFailure(t *testing.T) {
+	dir := shortSocketDir(t)
+	rl := newRecordingListener(t, dir)
+
+	em, err := New(
+		WithSocketPath(rl.path),
+		WithLogger(silentLogger()),
+		WithStrictErrors(),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	// Establish the connection via a successful emit.
+	if err := em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "first"},
+		Decision: "allowed",
+	}); err != nil {
+		t.Fatalf("first Emit: %v", err)
+	}
+	rl.waitForFrames(t, 1, 2*time.Second)
+
+	// Stop listener and remove socket so the next write fails.
+	rl.Stop()
+	_ = os.Remove(rl.path)
+	time.Sleep(50 * time.Millisecond)
+
+	err = em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "failing"},
+		Decision: "allowed",
+	})
+	if err == nil {
+		t.Error("Emit with strict errors returned nil; want error on write failure")
+	}
+}
+
+// TestEmit_NoStrictErrors_DialFailure confirms that without WithStrictErrors
+// the default fire-and-forget behaviour is preserved: dial failure returns nil.
+func TestEmit_NoStrictErrors_DialFailure(t *testing.T) {
+	dir := shortSocketDir(t)
+	em, err := New(
+		WithSocketPath(filepath.Join(dir, "missing.sock")),
+		WithLogger(silentLogger()),
+		// no WithStrictErrors
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	if err := em.Emit(context.Background(), Event{
+		Channel:  "mcp",
+		Tool:     Tool{Name: "noop"},
+		Decision: "allowed",
+	}); err != nil {
+		t.Errorf("Emit without strict errors returned error %v; want nil (fire-and-forget)", err)
+	}
+}
+
 func TestEmit_ConcurrentCallsAreSerialised(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
