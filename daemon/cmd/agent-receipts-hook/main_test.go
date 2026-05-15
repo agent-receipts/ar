@@ -11,9 +11,6 @@ import (
 // --- readClaudeCode unit tests ---
 
 func TestReadClaudeCode(t *testing.T) {
-	validInput := json.RawMessage(`{"command":"go test ./..."}`)
-	validResponse := json.RawMessage(`{"output":"ok","exit_code":0}`)
-
 	tests := []struct {
 		name      string
 		stdin     string
@@ -107,9 +104,6 @@ func TestReadClaudeCode(t *testing.T) {
 			wantOut:   true,
 		},
 	}
-
-	_ = validInput
-	_ = validResponse
 
 	noEnv := func(string) string { return "" }
 
