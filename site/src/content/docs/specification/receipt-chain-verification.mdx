@@ -46,6 +46,25 @@ Agent Receipts are hash-chained into tamper-evident sequences. This page describ
 </svg>
 </div>
 
+```mermaid
+flowchart TD
+  A[Load chain ordered by sequence] --> A2{R_0.chain.previous_receipt_hash is null?}
+  A2 -->|no| Z[Chain broken]
+  A2 -->|yes| A3{R_0.chain.sequence == 1?}
+  A3 -->|no| Z
+  A3 -->|yes| B[For each receipt R_i]
+  B --> C[Verify Ed25519 signature]
+  C -->|fail| Z
+  C -->|pass| D[SHA-256 of canonical form — proof excluded]
+  D --> E{Not last receipt?}
+  E -->|yes| F["Check R_i+1.chain.previous_receipt_hash == sha256:digest"]
+  F -->|fail| Z
+  F -->|pass| G[Check sequence increments by 1]
+  G -->|fail| Z
+  G -->|pass| B
+  E -->|no| H[Chain integrity verified ✓]
+```
+
 ## Canonical form
 
 For hashing and signing, receipts must be serialized using the **JSON Canonicalization Scheme (RFC 8785)** with the `proof` field removed before hashing. This diverges from the W3C Verifiable Credentials Data Integrity default, which uses JSON-LD canonicalization (RDF Dataset Canonicalization). Implementations expecting JSON-LD processing will not be interoperable with Agent Receipt signatures — existing JSON-LD-based VC tooling cannot verify them without modification.
@@ -64,7 +83,7 @@ To verify a receipt chain:
    - **b.** Compute the hex-encoded SHA-256 digest of the RFC 8785 canonical form of *R(i)* with the `proof` field removed.
    - **c.** If *i < n - 1*, confirm *R(i+1)*'s `chain.previous_receipt_hash` equals `sha256:` concatenated with that hex digest.
 3. For each receipt *R(i)* where *i > 0*, confirm `chain.sequence` equals *R(i-1)*'s `chain.sequence` + 1.
-4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null`.
+4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null` and `chain.sequence` is `1`.
 
 If any step fails, the chain is broken at that point. Receipts before the break may still be individually valid; receipts after are suspect.
 

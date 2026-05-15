@@ -62,6 +62,14 @@ MCP Client (Claude Desktop / Claude Code)
 
 The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, forwards them to the wrapped server, and returns the response. Each tool call produces a locally signed Agent Receipt. When `--socket` points to a running `agent-receipts-daemon`, events are also forwarded for an independently signed chain.
 
+```mermaid
+graph LR
+  C[MCP Client] ---|"stdio / JSON-RPC"| P[mcp-proxy]
+  P ---|"stdio / JSON-RPC"| S[MCP Server]
+  P -- "Unix socket" --> D[agent-receipts-daemon]
+  D --> DB[(receipts.db)]
+```
+
 ## Quick start
 
 ```bash

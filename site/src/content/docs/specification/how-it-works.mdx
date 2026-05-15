@@ -90,7 +90,22 @@ Before a receipt can be trusted, it needs a cryptographic signature proving the 
 3. Sign the canonical bytes with the issuer's **Ed25519** private key
 4. Encode the signature as **u-prefixed base64url** (no padding) and attach as `proof.proofValue`
 
-In the reference implementation, steps 2–4 are performed by the `agent-receipts` daemon. The emitter (agent, mcp-proxy, or SDK) sends the receipt fields over a Unix socket; the daemon canonicalizes, signs, and stores the result. The issuer process never holds the private key.
+In the reference implementation, steps 2–4 are performed by the `agent-receipts` daemon. The emitter (agent, mcp-proxy, or SDK) sends an event frame over a Unix socket; the daemon builds the receipt fields from that frame, then canonicalizes, signs, and stores the result. The issuer process never holds the private key.
+
+```mermaid
+sequenceDiagram
+  participant E as Emitter (plugin / proxy / SDK)
+  participant D as agent-receipts-daemon
+  participant DB as receipts.db
+
+  E->>D: emitter frame (v, ts_emit, tool, session_id, channel, decision, input?, output?, error?) [Unix socket]
+  Note over D: daemon builds receipt fields from frame
+  Note over D: capture peer creds (uid, pid, exe_path)
+  Note over D: RFC 8785 canonicalize<br/>hash input → action.parameters_hash<br/>hash output → outcome.response_hash<br/>(plaintext not stored)
+  Note over D: SHA-256 of this receipt → next receipt's chain.previous_receipt_hash
+  Note over D: Ed25519 sign
+  D->>DB: insert signed receipt
+```
 
 The same canonical bytes are also SHA-256 hashed to produce the link for the *next* receipt in the chain.
 

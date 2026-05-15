@@ -117,6 +117,20 @@ It sits in front of an MCP server you already use and gives you:
 
 AI agents are increasingly acting on behalf of humans — sending emails, modifying documents, making purchases, managing files. Observability platforms like LangSmith and Arize provide valuable operational telemetry but are designed for debugging and monitoring, not cryptographic proof of authorization or identity. Agent Receipts produces a tamper-evident record using the same Ed25519 and SHA-256 primitives the space already converged on, wrapped in the W3C Verifiable Credentials envelope — reusing standards, not authoring a new one. The EU AI Act mandates traceability for high-risk AI systems (Article 12); Agent Receipts produces a record that meets that bar.
 
+```mermaid
+graph LR
+  subgraph ap["Emitter process"]
+    A["Agent / plugin / proxy"]
+  end
+  A -- "Unix socket" --> D
+  subgraph dp["agent-receipts-daemon"]
+    D[daemon]
+    D --> K[(Ed25519 key)]
+    D --> DB[(receipts.db)]
+  end
+  V["agent-receipts verify"] -- "read-only" --> DB
+```
+
 ## What is an Agent Receipt?
 
 An **Agent Receipt** is a cryptographically signed record of a single action taken by an AI agent on behalf of a human. Each receipt is structured as a [W3C Verifiable Credential](https://www.w3.org/TR/vc-data-model-2.0/) with type `AgentReceipt`, signed with Ed25519, and hash-chained into a tamper-evident log.
