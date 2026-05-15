@@ -13,10 +13,10 @@ The `@agnt-rcpt/openclaw` plugin integrates the Agent Receipt Protocol with Open
 
 - Intercepts every tool call routed through OpenClaw via lifecycle hooks
 - Classifies each call using the bundled action taxonomy (filesystem, system, browser, and more)
-- Signs a W3C Verifiable Credential receipt with an Ed25519 key
+- Signs a W3C Verifiable Credential receipt with an Ed25519 key (in-process by default; set `daemonForwarding: true` to move signing to `agent-receipts-daemon`)
 - Hash-chains receipts into a tamper-evident sequence per session
 - Stores receipts in a local SQLite database
-- Exposes two agent tools (`ar_query_receipts`, `ar_verify_chain`) so the agent can query and verify its own audit trail
+- Exposes two agent tools (`ar_query_receipts`, `ar_verify_chain`) for querying and verifying the local audit trail
 
 See [Installation](/openclaw/installation/) to get started.
 
@@ -36,7 +36,7 @@ OpenClaw agent makes a tool call
     v
  after_tool_call hook
     |  - record outcome (success / failure)
-    |  - sign receipt (Ed25519)
+    |  - sign receipt (Ed25519, using keyPath key — or forward to agent-receipts-daemon if daemonForwarding: true)
     |  - chain to previous receipt (SHA-256 hash link)
     |  - store in SQLite
     v

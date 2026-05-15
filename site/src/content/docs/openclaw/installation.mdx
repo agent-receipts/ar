@@ -68,15 +68,18 @@ All configuration is optional. Defaults are shown below:
         "config": {
           "enabled": true,
           "dbPath": "~/.openclaw/agent-receipts/receipts.db",
-          "keyPath": "~/.openclaw/agent-receipts/keys.json",
+          "keyPath": "~/.openclaw/agent-receipts/keys.json",  // in-process signing key; not used when daemonForwarding is true
           // "taxonomyPath": "/path/to/custom-taxonomy.json",  // optional — overrides bundled taxonomy
-          "parameterDisclosure": false    // false | true | "high" | string[]
+          "parameterDisclosure": false,   // false | true | "high" | string[]
+          "daemonForwarding": false       // set true to forward events to agent-receipts-daemon instead of signing in-process
         }
       }
     }
   }
 }
 ```
+
+`keyPath` holds the Ed25519 signing key used for in-process receipt signing (the default). When `daemonForwarding: true`, signing is delegated to `agent-receipts-daemon` and `keyPath` is not used — see [Daemon Setup](/getting-started/daemon-setup/) for daemon installation. Daemon forwarding is opt-in because it sends raw tool I/O across a process boundary; see the [openclaw README](https://github.com/agent-receipts/openclaw#daemon-forwarding) for trust-boundary details.
 
 ## Parameter disclosure
 
