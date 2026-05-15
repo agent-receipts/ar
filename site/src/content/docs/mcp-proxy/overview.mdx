@@ -49,8 +49,8 @@ The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, for
 
 ```mermaid
 graph LR
-  C[MCP Client] --- |"stdio / JSON-RPC"| P[mcp-proxy]
-  P --- |"stdio / JSON-RPC"| S[MCP Server]
+  C[MCP Client] ---|"stdio / JSON-RPC"| P[mcp-proxy]
+  P ---|"stdio / JSON-RPC"| S[MCP Server]
   P -- "Unix socket" --> D[agent-receipts-daemon]
   D --> DB[(receipts.db)]
 ```

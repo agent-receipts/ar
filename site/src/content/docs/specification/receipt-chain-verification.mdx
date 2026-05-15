@@ -62,7 +62,7 @@ flowchart TD
   F -->|pass| G[Check sequence increments by 1]
   G -->|fail| Z
   G -->|pass| B
-  E -->|no| H[Chain valid ✓]
+  E -->|no| H[Chain integrity verified ✓]
 ```
 
 ## Canonical form
@@ -83,7 +83,7 @@ To verify a receipt chain:
    - **b.** Compute the hex-encoded SHA-256 digest of the RFC 8785 canonical form of *R(i)* with the `proof` field removed.
    - **c.** If *i < n - 1*, confirm *R(i+1)*'s `chain.previous_receipt_hash` equals `sha256:` concatenated with that hex digest.
 3. For each receipt *R(i)* where *i > 0*, confirm `chain.sequence` equals *R(i-1)*'s `chain.sequence` + 1.
-4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null`.
+4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null` and `chain.sequence` is `1`.
 
 If any step fails, the chain is broken at that point. Receipts before the break may still be individually valid; receipts after are suspect.
 
