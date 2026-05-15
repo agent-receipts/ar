@@ -35,6 +35,7 @@ sequenceDiagram
     participant Plugin as agent-receipts plugin
     participant Tool
     participant DB as SQLite
+    participant Daemon as agent-receipts-daemon
 
     Agent->>OpenClaw: tool call
     OpenClaw->>Plugin: before_tool_call (priority 100)
@@ -42,14 +43,15 @@ sequenceDiagram
     OpenClaw->>Tool: execute
     Tool-->>OpenClaw: result / error
     OpenClaw->>Plugin: after_tool_call
-    Note over Plugin: classify action + risk<br/>build receipt<br/>sign Ed25519<br/>hash + chain to previous
+    Note over Plugin: classify action + risk<br/>build receipt<br/>sign Ed25519 (in-process, default)
     Plugin->>DB: insert receipt
+    Plugin-->>Daemon: forward event [if daemonForwarding: true]
     OpenClaw-->>Agent: tool result
 ```
 
 `before_tool_call` runs at priority 100 — earlier than most hooks — to capture timing accurately before the tool call starts. It stashes the parameters hash (SHA-256 of the [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) canonical JSON of the arguments) and the start timestamp.
 
-Receipt creation happens in `after_tool_call`. If receipt creation fails for any reason — signing error, DB write error — the plugin logs a warning and returns cleanly. The agent session continues; the receipt is lost but the tool call is not blocked.
+Receipt creation happens in `after_tool_call`. The default path signs in-process and writes to the local SQLite database. With `daemonForwarding: true`, the plugin also forwards the event to `agent-receipts-daemon` over a Unix socket; the daemon signs and stores an independent receipt. If receipt creation fails for any reason — signing error, DB write error — the plugin logs a warning and returns cleanly. The agent session continues; the receipt is lost but the tool call is not blocked.
 
 ---
 

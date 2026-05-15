@@ -83,6 +83,8 @@ Before a receipt can be trusted, it needs a cryptographic signature proving the 
 </svg>
 </div>
 
+*All steps above are performed by `agent-receipts-daemon`. The emitter sends the raw receipt fields; the daemon owns the key and produces the signed receipt.*
+
 1. Start with the receipt fields (everything except `proof`)
 2. Serialize to **RFC 8785** canonical JSON — deterministic byte ordering
 3. Sign the canonical bytes with the issuer's **Ed25519** private key
