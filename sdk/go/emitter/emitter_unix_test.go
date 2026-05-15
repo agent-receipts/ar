@@ -731,7 +731,9 @@ func TestEmit_DropCounterIncrementsOnFailure(t *testing.T) {
 
 	// Now bring up a listener at the same path and emit once more.
 	rl := newRecordingListener(t, dir)
-	_ = os.Rename(rl.path, missingPath)
+	if err := os.Rename(rl.path, missingPath); err != nil {
+		t.Fatalf("rename listener socket: %v", err)
+	}
 	rl.path = missingPath
 
 	if err := em.Emit(context.Background(), Event{
@@ -773,7 +775,9 @@ func TestEmit_DropCounterResetAfterFlush(t *testing.T) {
 
 	// Bring up listener.
 	rl := newRecordingListener(t, dir)
-	_ = os.Rename(rl.path, missingPath)
+	if err := os.Rename(rl.path, missingPath); err != nil {
+		t.Fatalf("rename listener socket: %v", err)
+	}
 	rl.path = missingPath
 
 	// First successful send flushes drop_count = 1.
@@ -801,76 +805,79 @@ func TestEmit_DropCounterResetAfterFlush(t *testing.T) {
 
 // TestEmit_DropCounterRestoredOnWriteFailure verifies that when a send
 // attempt fails mid-write (writeFrame error), the pending drop count that was
-// optimistically consumed is added back to the counter so it is not lost.
+// optimistically consumed (via Swap) is added back so it is not lost.
+//
+// Uses in-package access to inject a known value (7) before the failure; the
+// first successful post-failure frame must carry at least 7+1 = 8 drops
+// (injected + the write failure itself). Any additional dial failures between
+// the stop and reconnect add to the count, hence ">= 8" not "== 8".
 func TestEmit_DropCounterRestoredOnWriteFailure(t *testing.T) {
 	dir := shortSocketDir(t)
 
-	// Bring up a real listener first so the emitter can connect.
 	rl1 := newRecordingListener(t, dir)
-	em, err := New(
-		WithSocketPath(rl1.path),
-		WithLogger(silentLogger()),
-	)
+	em, err := New(WithSocketPath(rl1.path), WithLogger(silentLogger()))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	defer em.Close()
 
-	// Establish connection with a normal emit.
+	// Establish the connection.
 	if err := em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "prime"}, Decision: "allowed"}); err != nil {
 		t.Fatalf("prime Emit: %v", err)
 	}
 	rl1.waitForFrames(t, 1, 2*time.Second)
 
-	// Simulate a drop BEFORE rl1 goes away: the emitter now has drop_count = 0.
-	// We need drop_count > 0 at the moment of the write failure so we can
-	// observe the restore. Inject it by stopping the listener while holding
-	// a non-zero drop count accumulated from a missing socket.
-	//
-	// Step 1: stop rl1 and let the emitter's connection die.
+	// Inject a known pending count before killing the listener.
+	const injected = 7
+	em.dropCount.Store(injected)
+
+	// Stop rl1 so the next write fails; give the OS time to propagate.
 	rl1.Stop()
 	_ = os.Remove(rl1.path)
 	time.Sleep(50 * time.Millisecond)
 
-	// Step 2: emit to the dead socket — this drops and increments the counter.
-	// We just need drop_count > 0; the exact value depends on OS timing (write
-	// fail on rl1's dead conn, then one or more dial fails), so don't pin it.
+	// This emit hits the dead connection: pendingDrops = 7, write fails,
+	// Add(7) restores, then logDrop adds 1 → dropCount = 8.
 	_ = em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "dead"}, Decision: "allowed"})
 
-	// Step 3: bring up rl2. The emitter will dial + write. Writes may fail
-	// once more (dial race window), but eventually should succeed with drop_count > 0.
+	// Start rl2 at rl1's path so the emitter can reconnect.
 	rl2 := newRecordingListener(t, dir)
-	_ = os.Rename(rl2.path, rl1.path)
+	if err := os.Rename(rl2.path, rl1.path); err != nil {
+		t.Fatalf("rename listener socket: %v", err)
+	}
 	rl2.path = rl1.path
 
-	// Emit until we receive a frame with drop_count > 0 or time out.
+	// Loop until the emitter delivers a frame; any intermediate dial
+	// failures only increase the count beyond the minimum.
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		_ = em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "probe"}, Decision: "allowed"})
+		_ = em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "flush"}, Decision: "allowed"})
 		for _, raw := range rl2.snapshot() {
 			var f frame
 			if err := json.Unmarshal(raw, &f); err != nil {
 				continue
 			}
-			if f.DropCount > 0 {
-				// Capture the count before emitting so the wait target is stable
-				// regardless of when the listener goroutine processes the next frame.
-				beforeCount := len(rl2.snapshot())
-				_ = em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "after"}, Decision: "allowed"})
-				frames2 := rl2.waitForFrames(t, beforeCount+1, 2*time.Second)
-				last := frames2[len(frames2)-1]
-				var after frame
-				if err := json.Unmarshal(last, &after); err != nil {
-					t.Fatalf("unmarshal after frame: %v", err)
-				}
-				if after.DropCount != 0 {
-					t.Errorf("after flush, drop_count = %d; want 0", after.DropCount)
-				}
-				return
+			// Must carry at least injected+1 (the injected value was
+			// restored, and the write failure itself added 1 more).
+			if f.DropCount < injected+1 {
+				t.Errorf("drop_count = %d; want >= %d (injected=%d + write failure)",
+					f.DropCount, injected+1, injected)
 			}
+			// The counter must be zero on the immediately following frame.
+			beforeCount := len(rl2.snapshot())
+			_ = em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "clean"}, Decision: "allowed"})
+			frames2 := rl2.waitForFrames(t, beforeCount+1, 2*time.Second)
+			var clean frame
+			if err := json.Unmarshal(frames2[len(frames2)-1], &clean); err != nil {
+				t.Fatalf("unmarshal clean frame: %v", err)
+			}
+			if clean.DropCount != 0 {
+				t.Errorf("clean frame drop_count = %d; want 0 (counter must reset after flush)", clean.DropCount)
+			}
+			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("never received a frame with drop_count > 0; snapshot: %v", rl2.snapshot())
+			t.Fatalf("never received a frame; drop_count must carry >= %d", injected+1)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
