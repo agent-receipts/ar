@@ -5,6 +5,24 @@ All notable changes to `agent-receipts-daemon` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-05-15
+
+### Added
+
+- **Phase 2 integration tests**: concurrent mcp-proxy sessions, RFC8785-canonical
+  hash verification, socket handler coverage improved from 50.9% to 81.1%
+  ([#362](https://github.com/agent-receipts/ar/issues/362),
+  [#365](https://github.com/agent-receipts/ar/issues/365)).
+- **macOS `brew services` integration**: `brew services start agent-receipts-daemon`
+  now works — `service do` block added to the Homebrew formula via GoReleaser
+  template ([#375](https://github.com/agent-receipts/ar/issues/375)).
+- **Binary release pipeline**: GoReleaser-backed CI workflow publishes signed
+  archives and updates the Homebrew tap on each `daemon/v*` tag.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` from `v0.8.0-alpha.2` to `v0.8.0`.
+
 ## [0.8.0-alpha.2] - 2026-05-10
 
 ### Added
@@ -71,5 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive suite of integration tests covering socket communication,
   chain continuity, key generation, and verification workflows.
 
-[0.8.0-alpha.2]: https://github.com/agent-receipts/ar/releases/tag/daemon/v0.8.0-alpha.2
-[0.8.0-alpha.1]: https://github.com/agent-receipts/ar/releases/tag/daemon/v0.8.0-alpha.1
+[0.8.0]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0
+[0.8.0-alpha.2]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0-alpha.2
+[0.8.0-alpha.1]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0-alpha.1

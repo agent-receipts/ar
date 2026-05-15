@@ -9,6 +9,18 @@ This file starts at 0.6.2; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.8.0] - 2026-05-15
+
+### Tests
+
+- Improved proxy test coverage from 32.7% to 69.1% and socket handler coverage
+  from 50.9% to 81.1%; fixed concurrent test timeout flakiness
+  ([#376](https://github.com/agent-receipts/ar/issues/376)).
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` from `v0.8.0-alpha.1` to `v0.8.0`.
+
 ## [0.8.0-alpha.1] - 2026-05-09
 
 ### Dependencies
@@ -83,4 +95,6 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
   (disable) as remediations, then exits non-zero. Closes
   [#262](https://github.com/agent-receipts/ar/issues/262).
 
+[0.8.0]: https://github.com/agent-receipts/ar/releases/tag/mcp-proxy%2Fv0.8.0
+[0.8.0-alpha.1]: https://github.com/agent-receipts/ar/releases/tag/mcp-proxy%2Fv0.8.0-alpha.1
 [0.6.2]: https://github.com/agent-receipts/ar/compare/mcp-proxy/v0.6.1...mcp-proxy/v0.6.2
