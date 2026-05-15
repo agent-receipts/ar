@@ -61,6 +61,8 @@ rules:
 
 ### Actions
 
+`pass` and `flag` are audit-only — they record the call and forward it. `pause` and `block` are proxy-layer enforcement features; the Agent Receipts protocol itself is audit-only and does not block or modify tool calls.
+
 | Action | Behavior |
 |--------|----------|
 | `pass` | Log only, forward normally |
