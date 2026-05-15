@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -460,8 +461,23 @@ func writeAll(w io.Writer, buf []byte) error {
 	return nil
 }
 
+// saturatingIncr increments c by 1, capping at math.MaxInt64 so the counter
+// never wraps negative. The daemon rejects frames with drop_count < 0, so an
+// overflowed counter would make all subsequent emits fail validation.
+func saturatingIncr(c *atomic.Int64) {
+	for {
+		v := c.Load()
+		if v == math.MaxInt64 {
+			return
+		}
+		if c.CompareAndSwap(v, v+1) {
+			return
+		}
+	}
+}
+
 func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
-	e.dropCount.Add(1)
+	saturatingIncr(&e.dropCount)
 	e.logger.LogAttrs(ctx, slog.LevelDebug, "agent-receipts emitter dropped event",
 		slog.String("stage", stage),
 		slog.String("socket", e.socketPath),

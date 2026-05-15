@@ -187,6 +187,9 @@ func (s *State) AllocatePair() PairAlloc {
 // for the second slot. The mutex remains held. Must be called at most once and
 // only after the first receipt was inserted successfully.
 func (p PairAlloc) CommitFirst(firstHash string) Allocation {
+	if p.state == nil {
+		panic("chain.PairAlloc: CommitFirst on zero-value PairAlloc")
+	}
 	p.state.nextSeq = p.FirstSeq + 1
 	h := firstHash
 	p.state.prevHash = &h
@@ -202,5 +205,8 @@ func (p PairAlloc) CommitFirst(firstHash string) Allocation {
 // insert fails, or as a deferred panic-safety guard. No-op after CommitFirst
 // (the second Allocation's Rollback handles cleanup instead).
 func (p PairAlloc) Rollback() {
+	if p.state == nil {
+		panic("chain.PairAlloc: Rollback on zero-value PairAlloc")
+	}
 	p.release.Do(func() { p.state.mu.Unlock() })
 }
