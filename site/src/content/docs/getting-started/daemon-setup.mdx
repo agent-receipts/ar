@@ -172,6 +172,10 @@ mcp-proxy --socket /path/to/events.sock npx -y @modelcontextprotocol/server-file
 AGENTRECEIPTS_SOCKET=/path/to/events.sock mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 ```
 
+### agent-receipts-hook
+
+`agent-receipts-hook` is a short-lived hook binary that captures native agent tool calls (Bash, Write, Edit, Read, …) that bypass `mcp-proxy`. Install it from the same release tarball as the daemon, then [wire it up as a PostToolUse hook](/hook/claude-code/) in your agent runtime. The hook uses the same socket-path resolution as the other emitters — no extra socket configuration needed.
+
 ### OpenClaw
 
 See the [OpenClaw installation guide](/openclaw/installation) for daemon forwarding configuration.

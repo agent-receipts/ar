@@ -1,0 +1,10 @@
+{
+  "mappings": [
+    {"tool_name": "Bash",      "action_type": "host.shell.execute"},
+    {"tool_name": "Write",     "action_type": "host.fs.write"},
+    {"tool_name": "Edit",      "action_type": "host.fs.write"},
+    {"tool_name": "Read",      "action_type": "host.fs.read"},
+    {"tool_name": "WebFetch",  "action_type": "host.web.read"},
+    {"tool_name": "WebSearch", "action_type": "host.web.read"}
+  ]
+}

@@ -1,9 +1,9 @@
 ---
 title: CLI Commands
-description: Command reference for the MCP Proxy audit CLI.
+description: Command reference for the Agent Receipts CLI tools — mcp-proxy audit commands and agent-receipts-hook.
 ---
 
-The MCP Proxy includes subcommands for setup, diagnosis, and querying the audit trail.
+This page covers the `mcp-proxy` audit subcommands and the `agent-receipts-hook` PostToolUse hook binary.
 
 > The default `-db` and `-receipt-db` paths shown below resolve via Go's `os.UserHomeDir()`. On Unix and macOS this is `$HOME`; on Windows this uses the OS user home directory, typically `%USERPROFILE%`.
 
@@ -234,3 +234,21 @@ The scanner reads `messages.raw` (full JSON-RPC payloads) and `tool_calls.argume
 **Exit codes:** `0` if no matches found; `1` if one or more matches found; `2` on error.
 
 If matches are found, the raw token values are already in the database. Because the audit log is append-only, the recommended action is to **rotate the secret** and consider the old value compromised.
+
+## `agent-receipts-hook`
+
+Short-lived PostToolUse hook binary that captures native host tool calls and forwards them to `agent-receipts-daemon`. Invoked automatically by agent runtimes that support PostToolUse hooks — not meant to be run interactively.
+
+```bash
+agent-receipts-hook [--format=<name>]
+```
+
+| Flag | Description |
+|---|---|
+| `--format` | Force a specific input format (default: auto-detected from environment variables). Currently supported: `claude-code`. |
+
+**Exit behaviour:** Always exits 0. Emit failures (daemon not running, socket missing, malformed frame) are dropped silently — the hook never blocks the agent.
+
+**Auto-detection:** When `--format` is omitted, the binary inspects environment variables to identify the calling runtime. `CLAUDE_SESSION_ID` set → `claude-code` format.
+
+See [Hook: Claude Code](/hook/claude-code/) for wiring instructions.
