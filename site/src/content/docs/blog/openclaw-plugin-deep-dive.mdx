@@ -55,7 +55,7 @@ sequenceDiagram
 
 `before_tool_call` runs at priority 100 — earlier than most hooks — to capture timing accurately before the tool call starts. It stashes the parameters hash (SHA-256 of the [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) canonical JSON of the arguments) and the start timestamp.
 
-Receipt creation happens in `after_tool_call`. The default path signs in-process and writes to the local SQLite database. With `daemonForwarding: true`, the plugin forwards the event to `agent-receipts-daemon` instead — the daemon signs and stores the receipt; in-process signing is skipped. If receipt creation fails for any reason — signing error, DB write error — the plugin logs a warning and returns cleanly. The agent session continues; the receipt is lost but the tool call is not blocked.
+Receipt creation happens in `after_tool_call`. The default path signs in-process and writes to the local SQLite database. With `daemonForwarding: true`, the plugin forwards the event to `agent-receipts-daemon` instead — the daemon signs and stores the receipt; in-process signing is skipped. In the default in-process path, signing or DB write failures are caught by the plugin, which logs a warning and returns cleanly. In the daemon-forwarding path, forwarding is fire-and-forget — daemon-side failures are not reported back to the plugin. In both cases the agent session continues; the receipt may be lost but the tool call is not blocked.
 
 ---
 

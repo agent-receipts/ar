@@ -83,7 +83,7 @@ Before a receipt can be trusted, it needs a cryptographic signature proving the 
 </svg>
 </div>
 
-*Steps 2–4 (canonicalization, signing, storage) are performed by `agent-receipts-daemon` in the reference implementation. The emitter supplies the receipt fields (step 1) and sends them over a Unix socket; the daemon owns the key.*
+*Steps 2–4 (canonicalization, signing, and signature encoding) are performed by `agent-receipts-daemon` in the reference implementation. The emitter supplies the receipt fields (step 1) and sends them over a Unix socket; the daemon owns the key and stores the result.*
 
 1. Start with the receipt fields (everything except `proof`)
 2. Serialize to **RFC 8785** canonical JSON — deterministic byte ordering
