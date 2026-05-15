@@ -21,6 +21,19 @@ This post covers the plugin's internal mechanics, using real receipts from the f
 
 The proxy approach gives you more context — it has the full request including the reasoning context that triggered the call. The plugin approach requires zero changes to your agent or tool implementations. You get receipts for every tool call automatically, across any tool your agent uses, by virtue of OpenClaw's hook system.
 
+```mermaid
+graph LR
+  subgraph proxy["MCP Proxy approach"]
+    MC[MCP Client] -- stdio --> MP[mcp-proxy]
+    MP -- stdio --> MS[MCP Server]
+  end
+  subgraph plugin["OpenClaw Plugin approach"]
+    AG[Agent] --> OC[OpenClaw gateway]
+    OC --> PL[agent-receipts hooks]
+    PL --> T[Tool implementations]
+  end
+```
+
 ---
 
 ## The hook pipeline

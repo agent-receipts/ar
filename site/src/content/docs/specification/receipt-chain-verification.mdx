@@ -95,6 +95,18 @@ When a receipt chain includes a `delegation` field:
 
 If any step fails, the delegation link is unverifiable. The delegated chain's receipts are still individually valid but cannot be traced back to the parent chain.
 
+```mermaid
+flowchart TD
+  A[Delegated chain receipt with delegation field] --> B[Resolve delegation.parent_chain_id]
+  B --> C[Find receipt matching delegation.parent_receipt_id]
+  C -->|not found| F[Delegation unverifiable]
+  C -->|found| D{delegator.id == parent issuer.id?}
+  D -->|no| F
+  D -->|yes| E{principal unchanged across chains?}
+  E -->|no| F
+  E -->|yes| G[Delegation link verified ✓]
+```
+
 ## Trusted timestamp verification
 
 When `action.trusted_timestamp` is present and non-null:

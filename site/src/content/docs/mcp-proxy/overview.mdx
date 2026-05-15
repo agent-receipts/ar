@@ -28,6 +28,19 @@ Scores that cross 50: `create_token` (write 20 + sensitive 30 = 50), `update_aut
 - **Encryption at rest** -- optional AES-256-GCM encryption of audit data
 - **Audit CLI** -- list, inspect, verify, export, and query receipts from the command line
 
+```mermaid
+flowchart TD
+  A[Tool call arrives] --> B[Score risk 0-100]
+  B --> C[Match policy rules — most restrictive wins]
+  C --> P[pass] --> W[Forward to MCP server]
+  C --> FL[flag] --> W
+  C --> PA[pause] --> AP{Approver responds?}
+  AP -->|approved| W
+  AP -->|denied or timeout| E[JSON-RPC error]
+  C --> BL[block] --> E
+  W --> R[Sign receipt and store]
+```
+
 ## How it works
 
 ```
