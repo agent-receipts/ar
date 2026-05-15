@@ -48,12 +48,14 @@ Agent Receipts are hash-chained into tamper-evident sequences. This page describ
 
 ```mermaid
 flowchart TD
-  A[Load chain ordered by sequence] --> B[For each receipt R_i]
+  A[Load chain ordered by sequence] --> A2{R_0.prev_hash is null?}
+  A2 -->|no| Z[Chain broken]
+  A2 -->|yes| B[For each receipt R_i]
   B --> C[Verify Ed25519 signature]
-  C -->|fail| Z[Chain broken at R_i]
+  C -->|fail| Z
   C -->|pass| D[SHA-256 canonical form]
   D --> E{Not last receipt?}
-  E -->|yes| F[Check R_i+1.prev_hash matches]
+  E -->|yes| F[Check R_i+1.prev_hash matches digest]
   F -->|fail| Z
   F -->|pass| G[Check sequence increments by 1]
   G -->|fail| Z
