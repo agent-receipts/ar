@@ -292,6 +292,8 @@ Load a chain from the store and verify its integrity.
 
 ### `ReceiptStore`
 
+Use `openStore(dbPath)` to create a store — the class constructor is an implementation detail. `openStore` is the stable public factory.
+
 ```typescript
 class ReceiptStore {
   constructor(dbPath: string);
@@ -408,4 +410,10 @@ const FILESYSTEM_ACTIONS: readonly ActionTypeEntry[]  // 7 types
 const SYSTEM_ACTIONS: readonly ActionTypeEntry[]       // 7 types
 const ALL_ACTIONS: readonly ActionTypeEntry[]           // all + unknown
 const UNKNOWN_ACTION: ActionTypeEntry
+```
+
+`DATA_ACTIONS` (3 data/API types) is exported from the `taxonomy` subpath, not the package root:
+
+```typescript
+import { DATA_ACTIONS } from "@agnt-rcpt/sdk-ts/taxonomy";
 ```

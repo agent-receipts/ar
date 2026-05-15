@@ -256,7 +256,7 @@ OutcomeStatus = Literal["success", "failure", "pending"]
 CONTEXT: list[str]          # ["https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"]
 CREDENTIAL_TYPE: list[str]  # ["VerifiableCredential", "AgentReceipt"]
 RECEIPT_VERSION: str        # "0.2.0" (receipt schema)
-VERSION: str                # "0.5.0" (package version)
+VERSION: str                # current package version
 ```
 
 ---
@@ -406,6 +406,12 @@ FILESYSTEM_ACTIONS: list[ActionTypeEntry]  # 7 types
 SYSTEM_ACTIONS: list[ActionTypeEntry]      # 7 types
 ALL_ACTIONS: list[ActionTypeEntry]         # all + unknown
 UNKNOWN_ACTION: ActionTypeEntry
+```
+
+`DATA_ACTIONS` (3 data/API types) is exported from the `taxonomy` submodule, not the package root:
+
+```python
+from agent_receipts.taxonomy import DATA_ACTIONS
 ```
 
 ### Backwards compatibility aliases

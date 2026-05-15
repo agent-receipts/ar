@@ -5,6 +5,10 @@ description: Create, sign, and verify your first Agent Receipt.
 
 This guide walks you through creating, signing, and verifying an Agent Receipt using either the TypeScript or Python SDK.
 
+:::note[In-process API — standalone and testing use]
+The examples below use the direct SDK signing API, where the calling process holds the private key. This is the legacy in-process pattern that ADR-0010 deprecates in favour of the `agent-receipts-daemon`. For production deployments, the daemon owns the key and emitters send events over a socket — see [Daemon Setup](/getting-started/daemon-setup/).
+:::
+
 ## TypeScript
 
 ### 1. Install
