@@ -29,19 +29,19 @@ var formats = map[string]reader{
 // environment. An empty string means no format could be auto-detected; the
 // caller should fall back to the --format flag or exit silently.
 //
-// Claude Code sets CLAUDE_SESSION_ID in the environment for older versions and
-// always includes hook_event_name in the stdin JSON payload. We check both so
-// either signal suffices.
+// Claude Code does not set CLAUDE_SESSION_ID as an environment variable; it
+// passes hook_event_name:"PostToolUse" in the stdin JSON payload instead. We
+// check both signals so the binary works with runtimes that take either
+// approach. Only PostToolUse is accepted from stdin to avoid misidentifying
+// PreToolUse or other hook event payloads as PostToolUse frames.
 func detect(stdin []byte, env func(string) string) string {
 	if env("CLAUDE_SESSION_ID") != "" {
 		return "claude-code"
 	}
-	// Claude Code passes hook_event_name in the JSON payload rather than via
-	// an environment variable. Detect by probing the payload directly.
 	var probe struct {
 		HookEventName string `json:"hook_event_name"`
 	}
-	if json.Unmarshal(stdin, &probe) == nil && probe.HookEventName != "" {
+	if json.Unmarshal(stdin, &probe) == nil && probe.HookEventName == "PostToolUse" {
 		return "claude-code"
 	}
 	return ""

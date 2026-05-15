@@ -204,6 +204,12 @@ func TestDetect(t *testing.T) {
 			want:  "",
 		},
 		{
+			name:  "non-PostToolUse hook_event_name is not detected",
+			stdin: `{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_input":{}}`,
+			env:   map[string]string{},
+			want:  "",
+		},
+		{
 			name: "no known env vars and empty stdin",
 			env:  map[string]string{},
 			want: "",
@@ -226,15 +232,9 @@ func TestDetect(t *testing.T) {
 		},
 	}
 
-	noEnv := func(k string) string { return "" }
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			env := noEnv
-			if tt.env != nil {
-				env = func(k string) string { return tt.env[k] }
-			}
-			got := detect([]byte(tt.stdin), env)
+			got := detect([]byte(tt.stdin), func(k string) string { return tt.env[k] })
 			if got != tt.want {
 				t.Errorf("detect() = %q; want %q", got, tt.want)
 			}
