@@ -4,12 +4,14 @@ package daemon
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/agent-receipts/ar/sdk/go/emitter"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 )
 
 // TestConcurrentDaemonStartSameSocket verifies that when two daemon instances
@@ -69,6 +71,100 @@ func TestConcurrentDaemonStartSameSocket(t *testing.T) {
 		t.Fatalf("first daemon no longer accepting after second daemon exit: %v", err)
 	}
 	fix.WaitForReceiptCount(t, 1, 5*time.Second)
+}
+
+// TestDropCounterEndToEnd verifies the full drop-counter pipeline: emitter
+// drops accumulate while the daemon is down, the count is flushed on the first
+// successful send after restart, and the daemon inserts a synthetic
+// events_dropped receipt in the chain before the live receipt.
+func TestDropCounterEndToEnd(t *testing.T) {
+	fix1 := StartDaemon(t)
+	pubPEM := fix1.PublicKey
+	cfg := fix1.Config
+
+	// Stop the first daemon without emitting anything. The emitter will be
+	// created after stop so all initial sends hit a dead socket.
+	fix1.cancel()
+	select {
+	case <-fix1.done:
+		if fix1.daemonErr != nil {
+			t.Logf("first daemon: %v", fix1.daemonErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("first daemon did not stop within 3s")
+	}
+
+	em, err := emitter.New(
+		emitter.WithSocketPath(cfg.SocketPath),
+		emitter.WithSessionID("drop-e2e-session"),
+		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+	)
+	if err != nil {
+		t.Fatalf("emitter.New: %v", err)
+	}
+	defer em.Close()
+
+	ctx := context.Background()
+	// Three emits to the dead socket → three dial failures → drop_count = 3.
+	for i := 0; i < 3; i++ {
+		if err := em.Emit(ctx, emitter.Event{Channel: "test", Tool: emitter.Tool{Name: "dropped"}, Decision: "allowed"}); err != nil {
+			t.Fatalf("Emit %d: expected nil (fire-and-forget), got %v", i, err)
+		}
+	}
+
+	// Restart the daemon at the same socket/DB/key.
+	fix2 := StartDaemonFromConfig(t, cfg, pubPEM)
+
+	// First successful send to fix2 flushes drop_count = 3.
+	if err := em.Emit(ctx, emitter.Event{Channel: "test", Tool: emitter.Tool{Name: "live"}, Decision: "allowed"}); err != nil {
+		t.Fatalf("live Emit: %v", err)
+	}
+
+	// Expect two receipts: synthetic events_dropped (seq 1) + live (seq 2).
+	receipts := fix2.WaitForReceiptCount(t, 2, 10*time.Second)
+	if len(receipts) != 2 {
+		t.Fatalf("got %d receipts, want 2 (events_dropped + live)\ntrace:\n%s", len(receipts), fix2.Trace())
+	}
+
+	synthetic := receipts[0]
+	live := receipts[1]
+
+	if synthetic.CredentialSubject.Chain.Sequence != 1 {
+		t.Errorf("synthetic seq = %d, want 1", synthetic.CredentialSubject.Chain.Sequence)
+	}
+	if got := synthetic.CredentialSubject.Action.Type; got != "agent_receipts.events_dropped" {
+		t.Errorf("synthetic action.type = %q, want agent_receipts.events_dropped", got)
+	}
+	if got := synthetic.CredentialSubject.Action.ParametersDisclosure["drop_count"]; got != "3" {
+		t.Errorf("synthetic drop_count = %q, want 3", got)
+	}
+	if got := synthetic.Issuer.SessionID; got != "drop-e2e-session" {
+		t.Errorf("synthetic session_id = %q, want drop-e2e-session", got)
+	}
+
+	if live.CredentialSubject.Chain.Sequence != 2 {
+		t.Errorf("live seq = %d, want 2", live.CredentialSubject.Chain.Sequence)
+	}
+	if got := live.CredentialSubject.Action.Type; got != "test.live" {
+		t.Errorf("live action.type = %q, want test.live", got)
+	}
+
+	// Verify prev_hash link: live must point to synthetic.
+	wantPrev, err := receipt.HashReceipt(synthetic)
+	if err != nil {
+		t.Fatalf("hash synthetic: %v", err)
+	}
+	if live.CredentialSubject.Chain.PreviousReceiptHash == nil || *live.CredentialSubject.Chain.PreviousReceiptHash != wantPrev {
+		t.Errorf("live prev_hash = %v, want %s", live.CredentialSubject.Chain.PreviousReceiptHash, wantPrev)
+	}
+
+	// Both receipts must verify under the daemon's public key.
+	for i, r := range receipts {
+		ok, err := receipt.Verify(r, pubPEM)
+		if err != nil || !ok {
+			t.Errorf("receipt[%d]: verify ok=%v err=%v", i, ok, err)
+		}
+	}
 }
 
 // TestSandboxedEmitterViaDaemonSocket verifies that an emitter succeeds even

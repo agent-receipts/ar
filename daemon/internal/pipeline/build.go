@@ -169,7 +169,7 @@ func (p *Pipeline) insertDropReceipt(frame *EmitterFrame, peer socket.PeerCred) 
 	}
 
 	if err := p.Store.Insert(signed, hash); err != nil {
-		return fmt.Errorf("store insert: %w", err)
+		return fmt.Errorf("insert drop receipt: %w", err)
 	}
 
 	alloc.Commit(hash)
