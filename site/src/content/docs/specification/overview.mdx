@@ -95,7 +95,7 @@ The human (or organization) on whose behalf the agent acted. Identified by a DID
 
 ### Issuer
 
-The agent (or agent platform) that performed the action and produced the receipt. The issuer signs the receipt with its private key.
+The agent (or agent platform) that performed the action and produced the receipt. The receipt is signed using the issuer's key — in the reference implementation the `agent-receipts` daemon holds that key and performs the signing; the issuer process sends the event fields and never touches the key directly.
 
 ## Relationship to existing work
 

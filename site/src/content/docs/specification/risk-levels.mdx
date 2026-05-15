@@ -30,5 +30,5 @@ The no-downgrade rule ensures that risk levels serve as a reliable floor for com
 
 - **Filtering**: Show only `high` and `critical` actions in an audit dashboard
 - **Alerting**: Trigger real-time notifications for `critical` actions
-- **Authorization gates**: Require explicit user confirmation before executing `high` or `critical` actions
+- **Authorization gates**: Risk levels provide a basis for enforcement or approval tooling (such as the mcp-proxy `pause` rule or external policy engines) to require confirmation before executing `high` or `critical` actions
 - **Compliance reporting**: Generate reports filtered by risk level for regulatory requirements
