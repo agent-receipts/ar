@@ -292,6 +292,8 @@ Load a chain from the store and verify its integrity.
 
 ### `ReceiptStore`
 
+Use `openStore(dbPath)` to create a store — the class constructor is an implementation detail. `openStore` is the stable public factory.
+
 ```typescript
 class ReceiptStore {
   constructor(dbPath: string);
@@ -406,6 +408,7 @@ interface ClassificationResult {
 ```typescript
 const FILESYSTEM_ACTIONS: readonly ActionTypeEntry[]  // 7 types
 const SYSTEM_ACTIONS: readonly ActionTypeEntry[]       // 7 types
+const DATA_ACTIONS: readonly ActionTypeEntry[]          // 3 data/API types
 const ALL_ACTIONS: readonly ActionTypeEntry[]           // all + unknown
 const UNKNOWN_ACTION: ActionTypeEntry
 ```

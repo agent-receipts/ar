@@ -286,6 +286,16 @@ func LoadTaxonomyConfig(path string) ([]TaxonomyMapping, error)
 
 Load taxonomy mappings from a JSON file. Validates that no duplicate tool names exist.
 
+### Variables
+
+```go
+var FilesystemActions []ActionTypeEntry  // 7 filesystem action types
+var SystemActions     []ActionTypeEntry  // 7 system action types
+var DataActions       []ActionTypeEntry  // 3 data/API action types
+```
+
+Pre-populated slices of action type entries by category. Use `AllActions()` to get all categories combined.
+
 ### Types
 
 ```go
