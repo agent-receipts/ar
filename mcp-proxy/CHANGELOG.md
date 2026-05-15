@@ -101,4 +101,7 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
   (disable) as remediations, then exits non-zero. Closes
   [#262](https://github.com/agent-receipts/ar/issues/262).
 
+[0.8.0]: https://github.com/agent-receipts/ar/releases/tag/mcp-proxy%2Fv0.8.0
+[0.8.0-alpha.2]: https://github.com/agent-receipts/ar/releases/tag/mcp-proxy%2Fv0.8.0-alpha.2
+[0.8.0-alpha.1]: https://github.com/agent-receipts/ar/releases/tag/mcp-proxy%2Fv0.8.0-alpha.1
 [0.6.2]: https://github.com/agent-receipts/ar/compare/mcp-proxy/v0.6.1...mcp-proxy/v0.6.2

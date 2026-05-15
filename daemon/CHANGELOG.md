@@ -89,5 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive suite of integration tests covering socket communication,
   chain continuity, key generation, and verification workflows.
 
-[0.8.0-alpha.2]: https://github.com/agent-receipts/ar/releases/tag/daemon/v0.8.0-alpha.2
-[0.8.0-alpha.1]: https://github.com/agent-receipts/ar/releases/tag/daemon/v0.8.0-alpha.1
+[0.8.0]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0
+[0.8.0-alpha.2]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0-alpha.2
+[0.8.0-alpha.1]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0-alpha.1
