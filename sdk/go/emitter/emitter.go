@@ -17,9 +17,15 @@
 // connection) Emit logs a debug-level drop via the configured slog.Logger
 // and returns nil within milliseconds. Per ADR-0010 §"Permissions and
 // trust", a drop with the daemon NOT running is silent by design — there
-// is no daemon to record the gap. The EAGAIN-driven local drop counter
-// described in the same section ships in a follow-up commit; for now,
-// every drop reason takes the same silent path.
+// is no daemon to record the gap.
+//
+// Drop counter: every failed send (dial timeout, write timeout, broken
+// connection) increments an atomic counter. On the next successful send the
+// accumulated count is included in the frame's drop_count field and reset to
+// zero, letting the daemon insert a synthetic events_dropped receipt that
+// makes the gap visible in the chain. Narrow loss window: if the emitter
+// process crashes after a drop but before a subsequent successful send, the
+// accumulated count is lost and the gap remains permanently invisible.
 package emitter
 
 import (
@@ -30,11 +36,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -125,6 +133,12 @@ func WithLogger(l *slog.Logger) Option {
 // Emitter is the daemon-socket client. Construct with New, fire events
 // with Emit, release the socket with Close. Safe for concurrent Emit.
 type Emitter struct {
+	// dropCount accumulates failed sends. Swapped to zero when a frame is
+	// successfully written; the captured value is embedded in that frame's
+	// drop_count field so the daemon can record the gap as a synthetic receipt.
+	// Uses atomic.Int64 so concurrent logDrop calls never corrupt state.
+	dropCount atomic.Int64
+
 	socketPath string
 	sessionID  string
 	logger     *slog.Logger
@@ -184,6 +198,7 @@ type frame struct {
 	Output    json.RawMessage `json:"output,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	Decision  string          `json:"decision"`
+	DropCount int64           `json:"drop_count,omitempty"`
 }
 
 type frameTool struct {
@@ -242,6 +257,11 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		}
 	}
 
+	// Capture accumulated drops and reset the counter to zero. If this send
+	// succeeds the daemon receives the count; if it fails, pendingDrops is
+	// restored (see the failure paths below) so it isn't lost.
+	pendingDrops := e.dropCount.Swap(0)
+
 	body, err := json.Marshal(frame{
 		Version:   SupportedFrameVersion,
 		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
@@ -252,14 +272,19 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		Output:    ev.Output,
 		Error:     ev.Error,
 		Decision:  ev.Decision,
+		DropCount: pendingDrops,
 	})
 	if err != nil {
+		// Marshal failure is a caller bug, not a transient outage. Restore
+		// the pending drops so they survive this call.
+		e.dropCount.Add(pendingDrops)
 		return fmt.Errorf("emitter: marshal frame: %w", err)
 	}
 	if len(body) > MaxFrameSize {
 		// Surface oversize as a returned error rather than silent drop:
 		// the daemon would reject the frame at read time too, so this
 		// is a logic bug in the caller, not a transient outage.
+		e.dropCount.Add(pendingDrops)
 		return fmt.Errorf("emitter: frame too large: %d bytes (max %d)", len(body), MaxFrameSize)
 	}
 
@@ -271,6 +296,7 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
+		e.dropCount.Add(pendingDrops)
 		return errors.New("emitter: closed")
 	}
 	needDial := e.conn == nil
@@ -280,8 +306,10 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		dialed, err := e.dial(ctx)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
+				e.dropCount.Add(pendingDrops)
 				return ctxErr
 			}
+			e.dropCount.Add(pendingDrops)
 			e.logDrop(ctx, "dial", err)
 			return nil
 		}
@@ -296,6 +324,7 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		case e.closed:
 			e.mu.Unlock()
 			_ = dialed.Close()
+			e.dropCount.Add(pendingDrops)
 			return errors.New("emitter: closed")
 		case e.conn == nil:
 			e.conn = dialed
@@ -317,6 +346,7 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
+		e.dropCount.Add(pendingDrops)
 		return errors.New("emitter: closed")
 	}
 	conn := e.conn
@@ -327,6 +357,7 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		// (ADR-0010 prefers next-Emit re-dial); drop and let the next
 		// Emit re-establish.
 		e.mu.Unlock()
+		e.dropCount.Add(pendingDrops)
 		e.logDrop(ctx, "write", errors.New("connection reset by sibling Emit"))
 		return nil
 	}
@@ -341,6 +372,7 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		// on I/O — holding e.mu across them would stall sibling Emits).
 		e.conn = nil
 		e.mu.Unlock()
+		e.dropCount.Add(pendingDrops)
 		e.logDrop(ctx, "write", err)
 		_ = conn.Close()
 		return nil
@@ -350,7 +382,8 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 }
 
 // Close releases the underlying connection. After Close, subsequent Emit
-// calls return an error. Safe to call multiple times.
+// calls return an error. Safe to call multiple times. Any drop count
+// accumulated but not yet flushed to the daemon is abandoned on Close.
 func (e *Emitter) Close() error {
 	e.mu.Lock()
 	if e.closed {
@@ -428,7 +461,23 @@ func writeAll(w io.Writer, buf []byte) error {
 	return nil
 }
 
+// saturatingIncr increments c by 1, capping at math.MaxInt64 so the counter
+// never wraps negative. The daemon rejects frames with drop_count < 0, so an
+// overflowed counter would make all subsequent emits fail validation.
+func saturatingIncr(c *atomic.Int64) {
+	for {
+		v := c.Load()
+		if v == math.MaxInt64 {
+			return
+		}
+		if c.CompareAndSwap(v, v+1) {
+			return
+		}
+	}
+}
+
 func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
+	saturatingIncr(&e.dropCount)
 	e.logger.LogAttrs(ctx, slog.LevelDebug, "agent-receipts emitter dropped event",
 		slog.String("stage", stage),
 		slog.String("socket", e.socketPath),

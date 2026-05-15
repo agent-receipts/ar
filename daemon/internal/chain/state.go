@@ -136,3 +136,77 @@ func (a Allocation) Rollback() {
 		a.state.mu.Unlock()
 	})
 }
+
+// PairAlloc reserves two consecutive chain slots under a single mutex
+// acquisition, guaranteeing the two receipts are adjacent in the chain even
+// when Process is called concurrently from multiple emitter connections.
+//
+// Usage:
+//
+//	pair := state.AllocatePair()
+//	defer pair.Rollback() // panic-safety: releases lock if CommitFirst never called
+//	// build first receipt using pair.FirstSeq and pair.FirstPrev
+//	second := pair.CommitFirst(firstHash)  // advances seq, keeps lock held
+//	defer second.Rollback()                // panic-safety: releases lock if Commit never called
+//	// build second receipt using second.Sequence and second.PrevHash
+//	second.Commit(secondHash)              // advances seq, releases lock
+//
+// FirstSeq and FirstPrev expose the first slot's chain position directly.
+// There is no Allocation for the first slot — using plain values prevents
+// callers from accidentally calling Rollback on the first slot (which would
+// release the mutex prematurely and leave the second slot unguarded).
+//
+// Call pair.Rollback() if the first insert fails (releases lock, no advance).
+// Call second.Rollback() if the second insert fails (releases lock; chain is
+// at FirstSeq+1 since CommitFirst already advanced it).
+type PairAlloc struct {
+	state     *State
+	FirstSeq  int64   // sequence number for the first slot
+	FirstPrev *string // prev_hash for the first slot; nil for the chain's first receipt
+	release   *sync.Once
+}
+
+// AllocatePair atomically reserves two consecutive chain slots. The State
+// mutex is held until CommitFirst+second.Commit or Rollback is called.
+func (s *State) AllocatePair() PairAlloc {
+	s.mu.Lock()
+	var prev *string
+	if s.prevHash != nil {
+		v := *s.prevHash
+		prev = &v
+	}
+	return PairAlloc{
+		state:    s,
+		FirstSeq: s.nextSeq,
+		FirstPrev: prev,
+		release:  &sync.Once{},
+	}
+}
+
+// CommitFirst advances the chain past the first slot and returns an Allocation
+// for the second slot. The mutex remains held. Must be called at most once and
+// only after the first receipt was inserted successfully.
+func (p PairAlloc) CommitFirst(firstHash string) Allocation {
+	if p.state == nil {
+		panic("chain.PairAlloc: CommitFirst on zero-value PairAlloc")
+	}
+	p.state.nextSeq = p.FirstSeq + 1
+	h := firstHash
+	p.state.prevHash = &h
+	return Allocation{
+		state:    p.state,
+		Sequence: p.FirstSeq + 1,
+		PrevHash: &h,
+		release:  p.release, // second Commit/Rollback releases the outer lock
+	}
+}
+
+// Rollback releases the mutex without advancing the chain. Use when the first
+// insert fails, or as a deferred panic-safety guard. No-op after CommitFirst
+// (the second Allocation's Rollback handles cleanup instead).
+func (p PairAlloc) Rollback() {
+	if p.state == nil {
+		panic("chain.PairAlloc: Rollback on zero-value PairAlloc")
+	}
+	p.release.Do(func() { p.state.mu.Unlock() })
+}

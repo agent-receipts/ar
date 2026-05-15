@@ -154,6 +154,104 @@ func TestCommitAfterRollbackIsNoOp(t *testing.T) {
 	}
 }
 
+func TestAllocatePair_AdjacentSequences(t *testing.T) {
+	s := New("c")
+	pair := s.AllocatePair()
+
+	if pair.FirstSeq != 1 {
+		t.Errorf("FirstSeq = %d, want 1", pair.FirstSeq)
+	}
+	if pair.FirstPrev != nil {
+		t.Errorf("FirstPrev = %v, want nil", pair.FirstPrev)
+	}
+
+	second := pair.CommitFirst("hash-1")
+	if second.Sequence != 2 {
+		t.Errorf("second.Sequence = %d, want 2", second.Sequence)
+	}
+	if second.PrevHash == nil || *second.PrevHash != "hash-1" {
+		t.Errorf("second.PrevHash = %v, want hash-1", second.PrevHash)
+	}
+
+	second.Commit("hash-2")
+
+	// Next allocation must be at seq 3.
+	next := s.Allocate()
+	defer next.Rollback()
+	if next.Sequence != 3 {
+		t.Errorf("post-pair next.Sequence = %d, want 3", next.Sequence)
+	}
+	if next.PrevHash == nil || *next.PrevHash != "hash-2" {
+		t.Errorf("post-pair next.PrevHash = %v, want hash-2", next.PrevHash)
+	}
+}
+
+// TestAllocatePair_RollbackBeforeCommitFirst verifies that rolling back the
+// pair before CommitFirst is called leaves the chain unchanged.
+func TestAllocatePair_RollbackBeforeCommitFirst(t *testing.T) {
+	s := New("c")
+	pair := s.AllocatePair()
+	pair.Rollback()
+
+	// Chain must be unchanged: next Allocate should give seq 1.
+	a := s.Allocate()
+	defer a.Rollback()
+	if a.Sequence != 1 {
+		t.Errorf("after Rollback, seq = %d, want 1", a.Sequence)
+	}
+}
+
+// TestAllocatePair_RollbackAfterCommitFirst verifies that rolling back the
+// second allocation (after CommitFirst) leaves the chain at seq 2 (first slot
+// committed, second rolled back).
+func TestAllocatePair_RollbackAfterCommitFirst(t *testing.T) {
+	s := New("c")
+	pair := s.AllocatePair()
+	second := pair.CommitFirst("hash-1")
+	second.Rollback() // second slot not committed
+
+	// Chain is at seq 2 (first was committed by CommitFirst).
+	a := s.Allocate()
+	defer a.Rollback()
+	if a.Sequence != 2 {
+		t.Errorf("after CommitFirst+Rollback, seq = %d, want 2", a.Sequence)
+	}
+	if a.PrevHash == nil || *a.PrevHash != "hash-1" {
+		t.Errorf("after CommitFirst+Rollback, prev_hash = %v, want hash-1", a.PrevHash)
+	}
+}
+
+// TestAllocatePair_ConcurrentNoInterleave is the core regression: concurrent
+// Allocate calls must not interleave with an active AllocatePair.
+func TestAllocatePair_ConcurrentNoInterleave(t *testing.T) {
+	s := New("c")
+
+	// Hold a pair allocation and attempt concurrent Allocate from a goroutine.
+	pair := s.AllocatePair()
+
+	var goroutineSeq int64
+	started := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		close(started)
+		a := s.Allocate() // must block until pair is fully committed
+		goroutineSeq = a.Sequence
+		a.Rollback()
+		close(done)
+	}()
+	<-started
+
+	// Complete the pair.
+	second := pair.CommitFirst("h1")
+	second.Commit("h2")
+
+	<-done
+	// Goroutine got seq 3 (after both pair slots committed).
+	if goroutineSeq != 3 {
+		t.Errorf("goroutine seq = %d, want 3 (pair held lock for both slots)", goroutineSeq)
+	}
+}
+
 func TestDoubleRollbackIsNoOp(t *testing.T) {
 	s := New("c")
 	a := s.Allocate()

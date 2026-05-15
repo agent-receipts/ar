@@ -32,6 +32,11 @@ const multibaseBase64URL = "u"
 // misinterpret future fields.
 const SupportedFrameVersion = "1"
 
+// actionTypeEventsDropped is the action type for the daemon-synthesised
+// events_dropped receipt. The "agent_receipts" namespace identifies the daemon
+// as the source rather than a user-facing tool channel.
+const actionTypeEventsDropped = "agent_receipts.events_dropped"
+
 // EmitterFrame is the JSON payload emitters send. Mirrors ADR-0010 §"Schema
 // split". Fields the emitter does not populate are zero/empty; the daemon
 // fills in the authoritative chain/peer/id/ts_recv before signing.
@@ -42,6 +47,11 @@ const SupportedFrameVersion = "1"
 // A literal JSON null (or omitted field) means "no payload" and produces no
 // hash — hashing the literal "null" would falsely commit the daemon to a
 // value the emitter did not send.
+//
+// DropCount, when > 0, records events the emitter dropped (connect/write
+// failures) before this successful send. The daemon inserts a synthetic
+// events_dropped receipt with this count before the live receipt so the gap
+// is visible in the chain.
 type EmitterFrame struct {
 	Version   string          `json:"v"`
 	TsEmit    string          `json:"ts_emit"`
@@ -52,6 +62,7 @@ type EmitterFrame struct {
 	Output    json.RawMessage `json:"output,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	Decision  string          `json:"decision"`
+	DropCount int64           `json:"drop_count,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -68,7 +79,8 @@ type Pipeline struct {
 	Store    store.ReceiptStore
 	IssuerID string // e.g. "did:agent-receipts-daemon:<host>"
 	Now      func() time.Time
-	TraceLog io.Writer // Optional trace log for testing; nil = silent
+	TraceLog io.Writer              // Optional trace log for testing; nil = silent
+	ErrorLog func(string, ...any)   // Optional error logger; nil = silent
 
 	// traceMu serialises writes to TraceLog. Process is invoked concurrently
 	// from the listener accept loop, so unguarded fmt.Fprintf calls would
@@ -93,15 +105,17 @@ func New(s *chain.State, ks keysource.KeySource, store store.ReceiptStore, issue
 }
 
 // Process is the daemon's per-frame entrypoint. It parses the frame, allocates
-// the next chain slot, builds and signs the AgentReceipt, persists it via
-// store.Insert, and Commits the chain allocation. Any error before Commit
-// triggers Rollback so the chain state is not advanced past a missing receipt.
+// the next chain slot(s), builds and signs the AgentReceipt(s), persists them
+// via store.Insert, and commits the chain allocation. A non-nil return always
+// means the live receipt was NOT persisted.
 //
-// Rollback is deferred — and chain.Allocation.Commit/Rollback are idempotent
-// via sync.Once — so the chain mutex is released even if buildAndSign or
-// Store.Insert panics. Without that guarantee, a single panicking frame would
-// orphan the lock and deadlock the daemon for every subsequent emitter on the
-// same socket.
+// When the frame carries a positive DropCount, Process uses chain.AllocatePair
+// to reserve two consecutive slots under one mutex acquisition, guaranteeing
+// the synthetic events_dropped receipt and the live receipt are adjacent in the
+// chain even under concurrent emitter connections. If the synthetic insert
+// fails, Process logs the error and falls back to a normal single-slot insert
+// for the live receipt — the gap becomes invisible in that edge case but the
+// live receipt is still preserved.
 func (p *Pipeline) Process(f socket.Frame) error {
 	var frame EmitterFrame
 	if err := json.Unmarshal(f.Payload, &frame); err != nil {
@@ -111,12 +125,77 @@ func (p *Pipeline) Process(f socket.Frame) error {
 		return fmt.Errorf("invalid emitter frame: %w", err)
 	}
 
-	p.trace("frame received: session=%s channel=%s tool=%s", frame.SessionID, frame.Channel, frame.Tool.Name)
+	p.trace("frame received: session=%s channel=%s tool=%s drop_count=%d",
+		frame.SessionID, frame.Channel, frame.Tool.Name, frame.DropCount)
 
+	if frame.DropCount > 0 {
+		return p.processWithDrop(&frame, f.Peer)
+	}
+	return p.processLive(&frame, f.Peer)
+}
+
+// processWithDrop inserts a synthetic events_dropped receipt immediately
+// followed by the live receipt, holding one AllocatePair lock across both
+// inserts so they are guaranteed adjacent. On synthetic failure it logs and
+// falls back to processLive for the live receipt alone.
+//
+// Panic safety: pair.Rollback() is deferred immediately after AllocatePair so
+// any panic before CommitFirst releases the mutex. After CommitFirst, the
+// returned liveAlloc shares the same release Once so deferring liveAlloc.Rollback()
+// covers panics in the second phase; pair.Rollback() becomes a no-op.
+func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) error {
+	pair := p.State.AllocatePair()
+	defer pair.Rollback() // panic-safety: no-op after CommitFirst
+
+	synthetic, synHash, err := p.buildAndSignDropReceipt(
+		frame.DropCount, frame.SessionID, peer, pair.FirstSeq, pair.FirstPrev)
+	if err != nil {
+		pair.Rollback()
+		p.logError("build events_dropped receipt (drop_count=%d session=%s): %v",
+			frame.DropCount, frame.SessionID, err)
+		return p.processLive(frame, peer)
+	}
+	p.trace("events_dropped receipt: session=%s drop_count=%d seq=%d",
+		frame.SessionID, frame.DropCount, pair.FirstSeq)
+
+	if err := p.Store.Insert(synthetic, synHash); err != nil {
+		pair.Rollback()
+		p.logError("insert events_dropped receipt (drop_count=%d session=%s): %v",
+			frame.DropCount, frame.SessionID, err)
+		return p.processLive(frame, peer)
+	}
+
+	// CommitFirst advances the chain past the synthetic slot and returns the
+	// allocation for the live receipt. The mutex remains held so no other
+	// frame can interleave between the two receipts.
+	liveAlloc := pair.CommitFirst(synHash)
+	defer liveAlloc.Rollback() // panic-safety; pair.Rollback defer is now a no-op
+
+	live, liveHash, err := p.buildAndSign(frame, peer, liveAlloc)
+	if err != nil {
+		liveAlloc.Rollback() // releases lock; chain is at pair.FirstSeq+1
+		return err
+	}
+	p.trace("receipt signed: seq=%d hash=%s", liveAlloc.Sequence, liveHash)
+
+	if err := p.Store.Insert(live, liveHash); err != nil {
+		liveAlloc.Rollback()
+		return fmt.Errorf("insert receipt: %w", err)
+	}
+	p.trace("receipt stored: seq=%d", liveAlloc.Sequence)
+
+	liveAlloc.Commit(liveHash)
+	return nil
+}
+
+// processLive allocates one chain slot, builds, inserts, and commits the live
+// receipt. Used for frames with DropCount == 0 and as fallback when the
+// synthetic insert fails.
+func (p *Pipeline) processLive(frame *EmitterFrame, peer socket.PeerCred) error {
 	alloc := p.State.Allocate()
 	defer alloc.Rollback()
 
-	signed, hash, err := p.buildAndSign(&frame, f.Peer, alloc)
+	signed, hash, err := p.buildAndSign(frame, peer, alloc)
 	if err != nil {
 		return err
 	}
@@ -129,6 +208,16 @@ func (p *Pipeline) Process(f socket.Frame) error {
 
 	alloc.Commit(hash)
 	return nil
+}
+
+// logError calls ErrorLog if it is set. Used for non-fatal conditions where
+// Process still returns nil (e.g., synthetic receipt failure with live receipt
+// committed). Callers hold no locks when calling this.
+func (p *Pipeline) logError(format string, args ...any) {
+	if p.ErrorLog == nil {
+		return
+	}
+	p.ErrorLog(format, args...)
 }
 
 // trace writes a trace line to TraceLog if it's not nil. Safe to call
@@ -178,6 +267,9 @@ func validateFrame(f *EmitterFrame) error {
 		// ok
 	default:
 		return fmt.Errorf("unknown decision %q (want allowed|denied|pending)", f.Decision)
+	}
+	if f.DropCount < 0 {
+		return fmt.Errorf("drop_count %d is negative", f.DropCount)
 	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
@@ -327,7 +419,7 @@ func (p *Pipeline) buildAndSign(
 		outcome.ResponseHash = hash
 	}
 
-	unsigned := receipt.Create(receipt.CreateInput{
+	return p.signAndHash(receipt.CreateInput{
 		Issuer: receipt.Issuer{
 			ID:        p.IssuerID,
 			Type:      "AgentReceiptsDaemon",
@@ -341,7 +433,62 @@ func (p *Pipeline) buildAndSign(
 			PreviousReceiptHash: alloc.PrevHash,
 			ChainID:             p.State.ChainID(),
 		},
-	})
+	}, now)
+}
+
+// buildAndSignDropReceipt constructs a synthetic events_dropped receipt.
+// seq and prevHash come directly from PairAlloc.FirstSeq/FirstPrev rather
+// than from a chain.Allocation, avoiding the ambiguous no-op Allocation that
+// would be needed to represent the first PairAlloc slot.
+func (p *Pipeline) buildAndSignDropReceipt(
+	dropCount int64,
+	sessionID string,
+	peer socket.PeerCred,
+	seq int64,
+	prevHash *string,
+) (receipt.AgentReceipt, string, error) {
+	now := p.Now().Format(time.RFC3339)
+
+	if seq > int64(math.MaxInt) {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("chain sequence %d exceeds int range on this platform (max %d)", seq, math.MaxInt)
+	}
+
+	return p.signAndHash(receipt.CreateInput{
+		Issuer: receipt.Issuer{
+			ID:        p.IssuerID,
+			Type:      "AgentReceiptsDaemon",
+			SessionID: sessionID,
+		},
+		Principal: receipt.Principal{ID: "did:user:unknown"},
+		Action: receipt.Action{
+			Type:      actionTypeEventsDropped,
+			ToolName:  "events_dropped",
+			RiskLevel: receipt.RiskLow,
+			Timestamp: now,
+			ParametersDisclosure: map[string]string{
+				"emitter.drop_count": strconv.FormatInt(dropCount, 10),
+				"peer.platform":      peer.Platform,
+				"peer.pid":           strconv.FormatInt(int64(peer.PID), 10),
+				"peer.uid":           strconv.FormatUint(uint64(peer.UID), 10),
+				"peer.gid":           strconv.FormatUint(uint64(peer.GID), 10),
+				"peer.exe_path":      peer.ExePath,
+			},
+		},
+		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+		Chain: receipt.Chain{
+			Sequence:            int(seq),
+			PreviousReceiptHash: prevHash,
+			ChainID:             p.State.ChainID(),
+		},
+	}, now)
+}
+
+// signAndHash builds, signs, and hashes one receipt. It is the common tail
+// shared by buildAndSign and buildAndSignDropReceipt — both construct a
+// CreateInput, set the issuance timestamp, and then need identical
+// canonicalize → sign → hash steps.
+func (p *Pipeline) signAndHash(in receipt.CreateInput, now string) (receipt.AgentReceipt, string, error) {
+	unsigned := receipt.Create(in)
 	// receipt.Create stamps IssuanceDate from time.Now() internally. Replace it
 	// with our deterministic now so action.timestamp, issuanceDate, and
 	// proof.created all share a single value (and tests can override Now).
