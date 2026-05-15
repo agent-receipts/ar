@@ -137,11 +137,11 @@ Parameters are hashed, not stored in plaintext. The operator controls what is di
 
 ## Why the daemon matters
 
-The signing keys and receipt store live in the `agent-receipts` daemon — a separate OS-level process running under its own user account. The agent process sends events over a Unix socket and never touches the keys or the database.
+The signing keys and receipt store live in the `agent-receipts` daemon — a separate process that is the sole writer to the chain. The agent sends events over a Unix socket; keys and database handles never enter the agent process.
 
-A compromised or misbehaving agent cannot forge, suppress, or tamper with its own receipts.
+The daemon records caller peer credentials (pid, uid, executable path) at connect time — captured by the OS, not self-reported by the agent.
 
-See [Daemon Setup](/getting-started/daemon-setup/) to install and run the daemon.
+For the strongest tamper-evidence guarantee, deploy the daemon as a dedicated OS user so the key file is inaccessible to the agent's account. See [Daemon Setup](/getting-started/daemon-setup/).
 
 ## Design principles
 
