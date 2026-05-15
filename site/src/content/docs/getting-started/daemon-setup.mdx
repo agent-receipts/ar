@@ -174,7 +174,7 @@ AGENTRECEIPTS_SOCKET=/path/to/events.sock mcp-proxy npx -y @modelcontextprotocol
 
 ### agent-receipts-hook
 
-`agent-receipts-hook` is a short-lived hook binary that captures native agent tool calls (Bash, Write, Edit, Read, …) that bypass `mcp-proxy`. Install it from the same release tarball as the daemon, then [wire it up as a PostToolUse hook](/hook/claude-code/) in your agent runtime. The hook uses the same socket-path resolution as the other emitters — no extra socket configuration needed.
+`agent-receipts-hook` is a short-lived hook binary that captures native agent tool calls (Bash, Write, Edit, Read, …) that bypass `mcp-proxy`. Install it separately (see [Hook Installation](/hook/installation/)), then [wire it up as a PostToolUse hook](/hook/claude-code/) in your agent runtime. The hook uses the same socket-path resolution as the other emitters — no extra socket configuration needed.
 
 ### OpenClaw
 

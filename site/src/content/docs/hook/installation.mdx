@@ -3,7 +3,7 @@ title: Hook Installation
 description: Install the agent-receipts-hook binary and verify it is on your PATH.
 ---
 
-`agent-receipts-hook` ships in the same release tarball as `agent-receipts-daemon` and `agent-receipts`.
+`agent-receipts-hook` is released independently of the daemon — it has its own Homebrew formula and Go module path.
 
 ## Prerequisites
 
@@ -14,19 +14,17 @@ description: Install the agent-receipts-hook binary and verify it is on your PAT
 ### Homebrew (macOS, Linux)
 
 ```bash
-brew install agent-receipts/tap/agent-receipts-daemon
+brew install agent-receipts/tap/agent-receipts-hook
 ```
-
-This installs `agent-receipts-daemon`, `agent-receipts`, and `agent-receipts-hook` from a single tarball.
 
 ### Prebuilt binaries
 
-Download a tarball for your platform (darwin/linux, amd64/arm64) from the [releases page](https://github.com/agent-receipts/ar/releases?q=daemon) and move `agent-receipts-hook` onto your `$PATH`.
+Download a tarball for your platform (darwin/linux, amd64/arm64) from the [releases page](https://github.com/agent-receipts/ar/releases?q=hook) and move `agent-receipts-hook` onto your `$PATH`.
 
 ### From source
 
 ```bash
-go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-hook@latest
+go install github.com/agent-receipts/ar/hook/cmd/agent-receipts-hook@latest
 ```
 
 Requires Go 1.26+.
