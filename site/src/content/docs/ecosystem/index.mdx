@@ -18,6 +18,16 @@ The space segments into four layers:
 | **Kernel-Level Enforcement** | OS-level syscall interception, sandboxing | agentsh / Canyon Road, Anthropic sandbox-runtime |
 | **Governance Frameworks** | Application-level policy engine, identity, compliance | Microsoft AGT, GitHub Agentic Workflows |
 
+```mermaid
+graph TD
+  K[Kernel enforcement — agentsh]
+  E[Egress proxy — Pipelock]
+  G[MCP gateway — MintMCP / Peta]
+  F[Governance framework — Microsoft AGT]
+  AR["Agent Receipts — independent audit layer (spans all channels)"]
+  K & E & G & F --> AR
+```
+
 ---
 
 ## Detailed Comparison: Open-Source Agent Security Tools
