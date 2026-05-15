@@ -6,6 +6,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -167,14 +169,30 @@ func TestDropCounterEndToEnd(t *testing.T) {
 	}
 }
 
-// TestEmitterRequiresOnlySocketPath pins the contract that the emitter's only
-// external dependency is the daemon socket. The emitter has no DB path, no key
-// path, and no filesystem writes — it only dials the socket and sends frames.
-// This is the ADR-0010 separation guarantee: a process that can reach the
-// daemon socket can emit receipts regardless of whether it can access the DB,
-// the key, or any other daemon-owned path.
+// TestEmitterRequiresOnlySocketPath verifies that the emitter succeeds even
+// when every default filesystem path the old in-process emitter would have
+// used (HOME, XDG_DATA_HOME, XDG_RUNTIME_DIR, TMPDIR) is read-only. This is
+// the ADR-0010 regression guard: if someone accidentally re-introduces DB or
+// key access into the emitter, those opens would return EACCES and surface as
+// an Emit error here.
 func TestEmitterRequiresOnlySocketPath(t *testing.T) {
 	fix := StartDaemon(t)
+
+	// Create a read-only sandbox directory and redirect all default path
+	// env vars into it. Any emitter code that tries os.Create/os.OpenFile
+	// under HOME, XDG_DATA_HOME, XDG_RUNTIME_DIR, or TMPDIR will get EACCES.
+	sandboxHome := t.TempDir()
+	if err := os.Chmod(sandboxHome, 0o555); err != nil {
+		t.Fatalf("chmod sandboxHome: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(sandboxHome, 0o755) })
+	t.Setenv("HOME", sandboxHome)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(sandboxHome, ".local", "share"))
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(sandboxHome, "run"))
+	t.Setenv("TMPDIR", filepath.Join(sandboxHome, "tmp")) // macOS default socket/DB base
+
+	// The daemon was started before the env vars were redirected and uses
+	// paths from its Config struct, so it is unaffected.
 
 	em, err := emitter.New(
 		emitter.WithSocketPath(fix.Config.SocketPath),
@@ -191,7 +209,7 @@ func TestEmitterRequiresOnlySocketPath(t *testing.T) {
 		Tool:     emitter.Tool{Name: "socket-only-tool"},
 		Decision: "allowed",
 	}); err != nil {
-		t.Fatalf("Emit: %v", err)
+		t.Fatalf("Emit in read-only-HOME sandbox: %v", err)
 	}
 
 	receipts := fix.WaitForReceiptCount(t, 1, 5*time.Second)
