@@ -9,6 +9,12 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.8.0] - 2026-05-15
+
+### Changed
+
+- No SDK code changes. Version bump to maintain lockstep with the coordinated v0.8.0 release.
+
 ## [0.8.0-alpha.2] - 2026-05-10
 
 ### Changed
