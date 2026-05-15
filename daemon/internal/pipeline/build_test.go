@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -810,5 +811,54 @@ func TestProcess_DropCountChainContinues(t *testing.T) {
 		if got == nil || *got != want {
 			t.Errorf("receipts[%d] prev_hash = %v, want %s", i, got, want)
 		}
+	}
+}
+
+// failOnNthInsert wraps a ReceiptStore and returns an error on the Nth Insert.
+type failOnNthInsert struct {
+	store.ReceiptStore
+	n       int
+	callNum int
+}
+
+func (f *failOnNthInsert) Insert(r receipt.AgentReceipt, hash string) error {
+	f.callNum++
+	if f.callNum == f.n {
+		return fmt.Errorf("simulated store insert failure on call %d", f.n)
+	}
+	return f.ReceiptStore.Insert(r, hash)
+}
+
+// TestProcess_DropCountSyntheticFailureLiveReceiptPersists verifies that when
+// the synthetic events_dropped receipt fails to persist, the live receipt is
+// still written to the store. The synthetic insert error is returned by
+// Process so the socket listener can log it, but the live event is not lost.
+func TestProcess_DropCountSyntheticFailureLiveReceiptPersists(t *testing.T) {
+	ks := newTestKeySource(t)
+	underlying := newTestStore(t)
+	// Fail only the first Insert (the synthetic receipt); the second (live) must succeed.
+	st := &failOnNthInsert{ReceiptStore: underlying, n: 1}
+
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	err := p.Process(dropFrame(t, 2))
+	if err == nil {
+		t.Error("expected error from synthetic insert failure, got nil")
+	}
+
+	// Live receipt must still be in the store despite the synthetic failure.
+	receipts, getErr := underlying.GetChain("chain-1")
+	if getErr != nil {
+		t.Fatalf("GetChain: %v", getErr)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts, want 1 (live receipt must survive synthetic failure)", len(receipts))
+	}
+	if got := receipts[0].CredentialSubject.Action.Type; got != "sdk.op" {
+		t.Errorf("action.type = %q, want sdk.op", got)
+	}
+	if got := receipts[0].CredentialSubject.Chain.Sequence; got != 1 {
+		t.Errorf("seq = %d, want 1 (chain advanced past failed synthetic slot)", got)
 	}
 }

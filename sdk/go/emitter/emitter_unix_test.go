@@ -781,9 +781,13 @@ func TestEmit_DropCounterResetAfterFlush(t *testing.T) {
 	rl.path = missingPath
 
 	// First successful send flushes drop_count = 1.
-	_ = em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "flush"}, Decision: "allowed"})
+	if err := em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "flush"}, Decision: "allowed"}); err != nil {
+		t.Fatalf("flush Emit: %v", err)
+	}
 	// Second successful send should have drop_count = 0.
-	_ = em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "clean"}, Decision: "allowed"})
+	if err := em.Emit(context.Background(), Event{Channel: "mcp", Tool: Tool{Name: "clean"}, Decision: "allowed"}); err != nil {
+		t.Fatalf("clean Emit: %v", err)
+	}
 
 	frames := rl.waitForFrames(t, 2, 2*time.Second)
 

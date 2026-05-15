@@ -129,13 +129,15 @@ func (p *Pipeline) Process(f socket.Frame) error {
 	p.trace("frame received: session=%s channel=%s tool=%s drop_count=%d",
 		frame.SessionID, frame.Channel, frame.Tool.Name, frame.DropCount)
 
+	// Attempt the synthetic events_dropped receipt first. On failure, save
+	// the error but continue: the live receipt is more important than the
+	// gap notification, and the chain allocation is rolled back on failure
+	// so the live receipt still gets the correct sequence number. The
+	// synthetic error is returned at the end so the daemon log captures it.
+	var dropErr error
 	if frame.DropCount > 0 {
 		if err := p.insertDropReceipt(&frame, f.Peer); err != nil {
-			// The synthetic receipt failed to persist; the emitter's counter
-			// was already reset, so these drops are now permanently invisible.
-			// Return the error so the socket listener logs it — the live
-			// receipt is still attempted on the next Emit from this emitter.
-			return fmt.Errorf("insert events_dropped receipt (drop_count=%d session=%s): %w",
+			dropErr = fmt.Errorf("insert events_dropped receipt (drop_count=%d session=%s): %w",
 				frame.DropCount, frame.SessionID, err)
 		}
 	}
@@ -155,7 +157,7 @@ func (p *Pipeline) Process(f socket.Frame) error {
 	p.trace("receipt stored: seq=%d", alloc.Sequence)
 
 	alloc.Commit(hash)
-	return nil
+	return dropErr
 }
 
 // insertDropReceipt allocates a chain slot, builds a synthetic events_dropped
