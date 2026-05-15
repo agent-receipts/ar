@@ -707,8 +707,8 @@ func TestProcess_DropCountInsertsEventsDroppedReceipt(t *testing.T) {
 	if got := synthetic.CredentialSubject.Outcome.Status; got != "success" {
 		t.Errorf("synthetic outcome.status = %q, want success", got)
 	}
-	if got := synthetic.CredentialSubject.Action.ParametersDisclosure["drop_count"]; got != "3" {
-		t.Errorf("synthetic drop_count disclosure = %q, want 3", got)
+	if got := synthetic.CredentialSubject.Action.ParametersDisclosure["emitter.drop_count"]; got != "3" {
+		t.Errorf("synthetic emitter.drop_count disclosure = %q, want 3", got)
 	}
 	if got := synthetic.Issuer.SessionID; got != "sess-drop" {
 		t.Errorf("synthetic session_id = %q, want sess-drop", got)
