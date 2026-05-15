@@ -121,6 +121,14 @@ export default defineConfig({
           ],
         },
         {
+          label: "Hook",
+          items: [
+            { label: "Overview", slug: "hook/overview" },
+            { label: "Installation", slug: "hook/installation" },
+            { label: "Claude Code", slug: "hook/claude-code" },
+          ],
+        },
+        {
           label: "Dashboard",
           items: [
             { label: "Overview", slug: "dashboard/overview" },

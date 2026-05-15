@@ -17,10 +17,13 @@ graph LR
   subgraph proxy["MCP Proxy"]
     P[mcp-proxy] -- "wraps" --> M[MCP Server]
   end
+  subgraph hook["Hook"]
+    H[agent-receipts-hook] -- "PostToolUse" --> NT[Native tools]
+  end
   subgraph plugin["OpenClaw Plugin"]
     O[OpenClaw gateway] -- "hooks" --> T[Tools]
   end
-  S & P & O -- "Unix socket" --> D[agent-receipts-daemon]
+  S & P & H & O -- "Unix socket" --> D[agent-receipts-daemon]
   D --> DB[(receipts.db)]
 ```
 
@@ -150,3 +153,4 @@ print(result.length)  # number of receipts verified
 - Read the [Introduction](/) for background on the protocol
 - See the [Agent Receipt Schema](/specification/agent-receipt-schema/) for the full receipt structure
 - Explore the [Action Taxonomy](/specification/action-taxonomy/) to understand action types and risk levels
+- Set up `agent-receipts-hook` to capture native tool calls — see [Hook: Claude Code](/hook/claude-code/)

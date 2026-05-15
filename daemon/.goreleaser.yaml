@@ -42,13 +42,28 @@ builds:
     ldflags:
       - -s -w
 
+  - id: agent-receipts-hook
+    main: ./cmd/agent-receipts-hook
+    binary: agent-receipts-hook
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
 archives:
-  - # Explicitly bundle both binaries into one archive per platform so the
-    # Homebrew formula can install both agent-receipts-daemon and agent-receipts
-    # from a single download.
+  - # Bundle all three binaries into one archive per platform so the Homebrew
+    # formula can install agent-receipts-daemon, agent-receipts, and
+    # agent-receipts-hook from a single download.
     ids:
       - agent-receipts-daemon
       - agent-receipts
+      - agent-receipts-hook
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     files:
@@ -98,9 +113,11 @@ brews:
     install: |
       bin.install "agent-receipts-daemon"
       bin.install "agent-receipts"
+      bin.install "agent-receipts-hook"
     test: |
       system "#{bin}/agent-receipts-daemon", "--version"
       system "#{bin}/agent-receipts", "--help"
+      system "#{bin}/agent-receipts-hook"
     # `brew outdated` and `brew livecheck` use this to detect new releases.
     # The `ar` repo ships multiple taggable components, so we can't use
     # `:github_latest` (which returns repo-wide latest). `:github_releases`
