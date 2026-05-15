@@ -141,7 +141,7 @@ Receipt 2: sequence=2, previous_receipt_hash=sha256:<hash of receipt 1>
 Receipt 3: sequence=3, previous_receipt_hash=sha256:<hash of receipt 2>
 ```
 
-To tamper with the chain, you'd need to modify a receipt, recompute all subsequent hashes, and re-sign every receipt with the private key. Without the key, the chain is tamper-evident: any modification breaks verification at the point of change, and any gap in sequence numbers is immediately visible.
+To tamper with the chain, you'd need to modify a receipt, recompute all subsequent hashes, and re-sign every receipt with the private key. Without the key, the chain is tamper-evident: any modification breaks verification at the point of change, and any gap in sequence numbers is immediately visible. In the default configuration the signing key lives on disk at `~/.openclaw/agent-receipts/keys.json` — accessible to the agent process itself. Set `daemonForwarding: true` to move key material into `agent-receipts-daemon`: the agent can no longer read the key or rewrite already-signed receipts. The daemon listens on a local Unix socket, so a compromised agent running as the same OS user can still connect and emit new events for signing; preventing that requires the daemon to run as a dedicated OS user.
 
 The `export` command produces the full credential for independent verification:
 

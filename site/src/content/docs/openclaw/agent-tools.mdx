@@ -87,7 +87,7 @@ Tamper detected! The following receipts have issues:
 ```
 
 :::caution[A broken chain means receipts at or after the reported position cannot be trusted]
-A valid chain guarantees that no receipt was altered, inserted, or deleted after it was written. If the chain is broken, treat all receipts from the reported position onward as potentially compromised and investigate before relying on them.
+A valid chain guarantees that no receipt was altered, inserted, or deleted after signing. The strength of that guarantee depends on where the signing key lives: in the default in-process configuration the key is stored on disk alongside the agent, so a compromised agent process could read the key and forge receipts. With `daemonForwarding: true` the key lives in `agent-receipts-daemon` — the agent process cannot read the key material or rewrite already-signed receipts. Note that the daemon listens on a local Unix socket: any process running as the same OS user can still connect and emit new events; preventing that requires the daemon to run as a dedicated OS user (the production deployment). If the chain is broken, treat all receipts from the reported position onward as potentially compromised and investigate before relying on them.
 :::
 
 ---
