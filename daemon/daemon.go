@@ -317,6 +317,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	pp := pipeline.New(state, ks, st, cfg.IssuerID)
 	pp.TraceLog = cfg.TraceLog
+	pp.ErrorLog = cfg.Logger.Printf
 
 	ln, err := socket.Listen(socket.Options{
 		Path:     cfg.SocketPath,

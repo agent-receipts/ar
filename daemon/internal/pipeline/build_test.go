@@ -830,9 +830,10 @@ func (f *failOnNthInsert) Insert(r receipt.AgentReceipt, hash string) error {
 }
 
 // TestProcess_DropCountSyntheticFailureLiveReceiptPersists verifies that when
-// the synthetic events_dropped receipt fails to persist, the live receipt is
-// still written to the store. The synthetic insert error is returned by
-// Process so the socket listener can log it, but the live event is not lost.
+// the synthetic events_dropped receipt fails to persist, Process still returns
+// nil and the live receipt is written. The synthetic failure is routed to
+// ErrorLog rather than returned, keeping the return-value contract: a non-nil
+// return from Process always means the live receipt was NOT persisted.
 func TestProcess_DropCountSyntheticFailureLiveReceiptPersists(t *testing.T) {
 	ks := newTestKeySource(t)
 	underlying := newTestStore(t)
@@ -842,12 +843,19 @@ func TestProcess_DropCountSyntheticFailureLiveReceiptPersists(t *testing.T) {
 	state := chain.New("chain-1")
 	p := New(state, ks, st, "did:agent-receipts-daemon:test")
 
-	err := p.Process(dropFrame(t, 2))
-	if err == nil {
-		t.Error("expected error from synthetic insert failure, got nil")
+	var logged string
+	p.ErrorLog = func(format string, args ...any) {
+		logged = fmt.Sprintf(format, args...)
 	}
 
-	// Live receipt must still be in the store despite the synthetic failure.
+	if err := p.Process(dropFrame(t, 2)); err != nil {
+		t.Errorf("Process returned error %v; want nil (live receipt was persisted)", err)
+	}
+	if logged == "" {
+		t.Error("ErrorLog was not called; synthetic failure must be logged")
+	}
+
+	// Live receipt must be in the store.
 	receipts, getErr := underlying.GetChain("chain-1")
 	if getErr != nil {
 		t.Fatalf("GetChain: %v", getErr)
@@ -859,6 +867,6 @@ func TestProcess_DropCountSyntheticFailureLiveReceiptPersists(t *testing.T) {
 		t.Errorf("action.type = %q, want sdk.op", got)
 	}
 	if got := receipts[0].CredentialSubject.Chain.Sequence; got != 1 {
-		t.Errorf("seq = %d, want 1 (chain advanced past failed synthetic slot)", got)
+		t.Errorf("seq = %d, want 1", got)
 	}
 }

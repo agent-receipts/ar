@@ -79,7 +79,8 @@ type Pipeline struct {
 	Store    store.ReceiptStore
 	IssuerID string // e.g. "did:agent-receipts-daemon:<host>"
 	Now      func() time.Time
-	TraceLog io.Writer // Optional trace log for testing; nil = silent
+	TraceLog io.Writer              // Optional trace log for testing; nil = silent
+	ErrorLog func(string, ...any)   // Optional error logger; nil = silent
 
 	// traceMu serialises writes to TraceLog. Process is invoked concurrently
 	// from the listener accept loop, so unguarded fmt.Fprintf calls would
@@ -129,15 +130,15 @@ func (p *Pipeline) Process(f socket.Frame) error {
 	p.trace("frame received: session=%s channel=%s tool=%s drop_count=%d",
 		frame.SessionID, frame.Channel, frame.Tool.Name, frame.DropCount)
 
-	// Attempt the synthetic events_dropped receipt first. On failure, save
-	// the error but continue: the live receipt is more important than the
-	// gap notification, and the chain allocation is rolled back on failure
-	// so the live receipt still gets the correct sequence number. The
-	// synthetic error is returned at the end so the daemon log captures it.
-	var dropErr error
+	// Attempt the synthetic events_dropped receipt first. On failure, log
+	// via ErrorLog and continue: the live receipt is more important than
+	// the gap notification, and the chain allocation is rolled back on
+	// failure so the live receipt still gets the correct sequence number.
+	// Process returns nil when the live receipt is committed — a non-nil
+	// return always means the live receipt was NOT persisted.
 	if frame.DropCount > 0 {
 		if err := p.insertDropReceipt(&frame, f.Peer); err != nil {
-			dropErr = fmt.Errorf("insert events_dropped receipt (drop_count=%d session=%s): %w",
+			p.logError("insert events_dropped receipt (drop_count=%d session=%s): %v",
 				frame.DropCount, frame.SessionID, err)
 		}
 	}
@@ -157,7 +158,7 @@ func (p *Pipeline) Process(f socket.Frame) error {
 	p.trace("receipt stored: seq=%d", alloc.Sequence)
 
 	alloc.Commit(hash)
-	return dropErr
+	return nil
 }
 
 // insertDropReceipt allocates a chain slot, builds a synthetic events_dropped
@@ -181,6 +182,16 @@ func (p *Pipeline) insertDropReceipt(frame *EmitterFrame, peer socket.PeerCred) 
 
 	alloc.Commit(hash)
 	return nil
+}
+
+// logError calls ErrorLog if it is set. Used for non-fatal conditions where
+// Process still returns nil (e.g., synthetic receipt failure with live receipt
+// committed). Callers hold no locks when calling this.
+func (p *Pipeline) logError(format string, args ...any) {
+	if p.ErrorLog == nil {
+		return
+	}
+	p.ErrorLog(format, args...)
 }
 
 // trace writes a trace line to TraceLog if it's not nil. Safe to call
