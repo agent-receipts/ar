@@ -46,6 +46,21 @@ Agent Receipts are hash-chained into tamper-evident sequences. This page describ
 </svg>
 </div>
 
+```mermaid
+flowchart TD
+  A[Load chain ordered by sequence] --> B[For each receipt R_i]
+  B --> C[Verify Ed25519 signature]
+  C -->|fail| Z[Chain broken at R_i]
+  C -->|pass| D[SHA-256 canonical form]
+  D --> E{Not last receipt?}
+  E -->|yes| F[Check R_i+1.prev_hash matches]
+  F -->|fail| Z
+  F -->|pass| G[Check sequence increments by 1]
+  G -->|fail| Z
+  G -->|pass| B
+  E -->|no| H[Chain valid ✓]
+```
+
 ## Canonical form
 
 For hashing and signing, receipts must be serialized using the **JSON Canonicalization Scheme (RFC 8785)** with the `proof` field removed before hashing. This diverges from the W3C Verifiable Credentials Data Integrity default, which uses JSON-LD canonicalization (RDF Dataset Canonicalization). Implementations expecting JSON-LD processing will not be interoperable with Agent Receipt signatures — existing JSON-LD-based VC tooling cannot verify them without modification.
