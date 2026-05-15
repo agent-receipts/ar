@@ -9,6 +9,21 @@ This guide walks you through creating, signing, and verifying an Agent Receipt u
 The examples below use the direct SDK signing API, where the calling process holds the private key. This is the legacy in-process pattern that ADR-0010 deprecates in favour of the `agent-receipts-daemon`. For production deployments, the daemon owns the key and emitters send events over a socket — see [Daemon Setup](/getting-started/daemon-setup/).
 :::
 
+```mermaid
+graph LR
+  subgraph sdk["SDK (this guide)"]
+    A[Your app code] -- "SDK API call" --> S[Agent Receipts SDK]
+  end
+  subgraph proxy["MCP Proxy"]
+    P[mcp-proxy] -- "wraps" --> M[MCP Server]
+  end
+  subgraph plugin["OpenClaw Plugin"]
+    O[OpenClaw gateway] -- "hooks" --> T[Tools]
+  end
+  S & P & O -- "Unix socket" --> D[agent-receipts-daemon]
+  D --> DB[(receipts.db)]
+```
+
 ## TypeScript
 
 ### 1. Install
