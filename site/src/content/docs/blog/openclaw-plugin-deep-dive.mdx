@@ -43,9 +43,13 @@ sequenceDiagram
     OpenClaw->>Tool: execute
     Tool-->>OpenClaw: result / error
     OpenClaw->>Plugin: after_tool_call
-    Note over Plugin: classify action + risk<br/>build receipt<br/>sign Ed25519 (in-process, default)
-    Plugin->>DB: insert receipt
-    Plugin-->>Daemon: forward event [if daemonForwarding: true]
+    Note over Plugin: classify action + risk<br/>build receipt
+    alt daemonForwarding: false (default)
+      Note over Plugin: sign Ed25519 in-process
+      Plugin->>DB: insert receipt
+    else daemonForwarding: true
+      Plugin-->>Daemon: forward event [fire-and-forget]
+    end
     OpenClaw-->>Agent: tool result
 ```
 
