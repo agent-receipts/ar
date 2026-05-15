@@ -9,14 +9,32 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/agent-receipts/ar/daemon/internal/sockettest"
 	"github.com/agent-receipts/ar/sdk/go/emitter"
 )
+
+// shortSocketDir returns a temp directory whose path is short enough to fit a
+// socket filename within the 104-byte AF_UNIX sun_path limit on macOS.
+// t.TempDir() on macOS GitHub Actions can return paths > 90 bytes, leaving
+// no room for the socket filename and causing `bind: invalid argument`.
+func shortSocketDir(t *testing.T) string {
+	t.Helper()
+	base := "/tmp"
+	if _, err := os.Stat(base); err != nil {
+		base = os.TempDir()
+	}
+	dir, err := os.MkdirTemp(base, "ar*")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
 
 // recordingListener accepts frames from a Unix socket and records them.
 type recordingListener struct {
@@ -121,7 +139,7 @@ type wireFrame struct {
 // through emitter to a real AF_UNIX listener. This is the authoritative test
 // that a valid Claude Code hook configuration reaches the daemon correctly.
 func TestIntegration_ClaudeCodeFrame(t *testing.T) {
-	dir := sockettest.ShortSocketDir(t)
+	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
 	const sessionID = "integ-session-2026"
@@ -191,7 +209,7 @@ func TestIntegration_ClaudeCodeFrame(t *testing.T) {
 // error returned) when the daemon socket is unreachable. This is the
 // fire-and-forget contract: a missing daemon must never block the agent.
 func TestIntegration_DaemonDown(t *testing.T) {
-	dir := sockettest.ShortSocketDir(t)
+	dir := shortSocketDir(t)
 	// No listener started — socket path doesn't exist.
 	socketPath := filepath.Join(dir, "missing.sock")
 
