@@ -96,7 +96,8 @@ sequenceDiagram
   participant D as agent-receipts-daemon
   participant DB as receipts.db
 
-  E->>D: event(tool, session_id, input, output) [Unix socket]
+  E->>D: emitter frame (tool, session_id, channel, decision, input?, output?) [Unix socket]
+  Note over D: daemon builds receipt fields from frame
   Note over D: capture peer creds (uid, pid, exe_path)
   Note over D: RFC 8785 canonicalize<br/>hash input → action.parameters_hash<br/>hash output → outcome.response_hash<br/>(plaintext not stored)
   Note over D: SHA-256 of this receipt → next receipt's chain.previous_receipt_hash
