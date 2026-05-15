@@ -381,7 +381,8 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 }
 
 // Close releases the underlying connection. After Close, subsequent Emit
-// calls return an error. Safe to call multiple times.
+// calls return an error. Safe to call multiple times. Any drop count
+// accumulated but not yet flushed to the daemon is abandoned on Close.
 func (e *Emitter) Close() error {
 	e.mu.Lock()
 	if e.closed {

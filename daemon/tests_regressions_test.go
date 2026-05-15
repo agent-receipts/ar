@@ -167,25 +167,18 @@ func TestDropCounterEndToEnd(t *testing.T) {
 	}
 }
 
-// TestSandboxedEmitterViaDaemonSocket verifies that an emitter succeeds even
-// when it has no write access to the canonical receipt-DB directory. This is
-// the regression test for the pre-ADR-0010 architecture where the emitter
-// wrote directly to SQLite: in a sandboxed process (read-only rootfs,
-// container with mounted read-only volumes) the emitter would fail with a
-// permission error when trying to create or open the database. After the
-// daemon separation, the emitter only writes to the daemon's Unix socket and
-// never touches the DB path itself.
-func TestSandboxedEmitterViaDaemonSocket(t *testing.T) {
+// TestEmitterRequiresOnlySocketPath pins the contract that the emitter's only
+// external dependency is the daemon socket. The emitter has no DB path, no key
+// path, and no filesystem writes — it only dials the socket and sends frames.
+// This is the ADR-0010 separation guarantee: a process that can reach the
+// daemon socket can emit receipts regardless of whether it can access the DB,
+// the key, or any other daemon-owned path.
+func TestEmitterRequiresOnlySocketPath(t *testing.T) {
 	fix := StartDaemon(t)
 
-	// The emitter is constructed with only a socket path — no DB path whatsoever.
-	// In the old architecture the emitter would have tried to open cfg.DBPath
-	// (or the default ~/.agent-receipts/receipts.db) for writing. Here we
-	// deliberately do NOT pass the DB path to the emitter; the emitter should
-	// not need it and must succeed purely via the socket.
 	em, err := emitter.New(
 		emitter.WithSocketPath(fix.Config.SocketPath),
-		emitter.WithSessionID("sandboxed-session"),
+		emitter.WithSessionID("socket-only-session"),
 		emitter.WithLogger(slog.Default()),
 	)
 	if err != nil {
@@ -195,10 +188,10 @@ func TestSandboxedEmitterViaDaemonSocket(t *testing.T) {
 
 	if err := em.Emit(context.Background(), emitter.Event{
 		Channel:  "test",
-		Tool:     emitter.Tool{Name: "sandboxed-tool"},
+		Tool:     emitter.Tool{Name: "socket-only-tool"},
 		Decision: "allowed",
 	}); err != nil {
-		t.Fatalf("Emit in read-only-DB scenario: %v (emitter should not need DB access)", err)
+		t.Fatalf("Emit: %v", err)
 	}
 
 	receipts := fix.WaitForReceiptCount(t, 1, 5*time.Second)
@@ -206,10 +199,10 @@ func TestSandboxedEmitterViaDaemonSocket(t *testing.T) {
 		t.Fatalf("got %d receipts, want 1", len(receipts))
 	}
 	r := receipts[0]
-	if r.CredentialSubject.Action.Type != "test.sandboxed-tool" {
-		t.Errorf("action.type = %q, want test.sandboxed-tool", r.CredentialSubject.Action.Type)
+	if r.CredentialSubject.Action.Type != "test.socket-only-tool" {
+		t.Errorf("action.type = %q, want test.socket-only-tool", r.CredentialSubject.Action.Type)
 	}
-	if r.Issuer.SessionID != "sandboxed-session" {
-		t.Errorf("issuer.session_id = %q, want sandboxed-session", r.Issuer.SessionID)
+	if r.Issuer.SessionID != "socket-only-session" {
+		t.Errorf("issuer.session_id = %q, want socket-only-session", r.Issuer.SessionID)
 	}
 }

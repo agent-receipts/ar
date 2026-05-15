@@ -131,7 +131,12 @@ func (p *Pipeline) Process(f socket.Frame) error {
 
 	if frame.DropCount > 0 {
 		if err := p.insertDropReceipt(&frame, f.Peer); err != nil {
-			return fmt.Errorf("insert events_dropped receipt: %w", err)
+			// The synthetic receipt failed to persist; the emitter's counter
+			// was already reset, so these drops are now permanently invisible.
+			// Return the error so the socket listener logs it — the live
+			// receipt is still attempted on the next Emit from this emitter.
+			return fmt.Errorf("insert events_dropped receipt (drop_count=%d session=%s): %w",
+				frame.DropCount, frame.SessionID, err)
 		}
 	}
 
