@@ -1,7 +1,11 @@
 ---
-title: Introduction
-description: What Agent Receipts are and why they exist.
+title: "An audit trail your agent can't tamper with"
+description: A separate daemon signs and stores a tamper-evident receipt for every tool call your agent makes. The signing keys and the receipt store live outside the agent process.
 ---
+
+A separate daemon signs and stores a tamper-evident receipt for every tool call your agent makes. The signing keys and the receipt store live outside the agent process, so the audit trail holds up even if the agent is compromised.
+
+Built for platform and security teams approving agentic deployments.
 
 ## Start with a real agent workflow
 
@@ -11,7 +15,7 @@ It sits in front of an MCP server you already use and gives you:
 
 - Signed receipts for every tool call
 - A tamper-evident audit chain
-- Risk scoring and policy enforcement without modifying the client or server
+- Risk scoring and cryptographic receipts, without modifying the client or server
 
 ### Best first paths
 
@@ -22,12 +26,12 @@ It sits in front of an MCP server you already use and gives you:
 
 ### What you will do
 
-1. Install `mcp-proxy`
+1. Install the daemon and `mcp-proxy`
 2. Wrap one MCP server
 3. Make a few tool calls from your agent
 4. Inspect and verify the signed receipts
 
-<div style="background: #f5f6fa; border: 1px solid #d0d4e0; border-radius: 6px; padding: 1.25rem 1rem 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<div style="background: #f5f6fa; border: 1px solid #d0d4e0; border-radius: 6px; padding: 1.25rem 1rem 1rem; margin-bottom: 0.5rem; overflow-x: auto;">
 <svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto; min-width: 600px;">
   <defs>
     <marker id="flow-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
@@ -109,9 +113,9 @@ It sits in front of an MCP server you already use and gives you:
 </svg>
 </div>
 
-AI agents are increasingly acting on behalf of humans — sending emails, modifying documents, making purchases, managing files. But there is no widely adopted open standard for recording what an agent did, why it did it, whether it succeeded, and whether it can be undone.
+*Conceptual overview. Signing and storage happen inside the `agent-receipts` daemon — the agent process sends events over a Unix socket and never touches the keys.*
 
-Observability platforms like LangSmith and Arize provide valuable operational telemetry, but are designed for debugging and monitoring — not cryptographic proof of authorization or identity. No project today produces an audit trail that links a specific action to a specific agent, user authorization, and set of scopes. The EU AI Act mandates traceability for high-risk AI systems (Article 12), but leaves the record format to implementers.
+AI agents are increasingly acting on behalf of humans — sending emails, modifying documents, making purchases, managing files. Observability platforms like LangSmith and Arize provide valuable operational telemetry but are designed for debugging and monitoring, not cryptographic proof of authorization or identity. Agent Receipts produces a tamper-evident record using the same Ed25519 and SHA-256 primitives the space already converged on, wrapped in the W3C Verifiable Credentials envelope — reusing standards, not authoring a new one. The EU AI Act mandates traceability for high-risk AI systems (Article 12); Agent Receipts produces a record that meets that bar.
 
 ## What is an Agent Receipt?
 
@@ -130,6 +134,14 @@ Every Agent Receipt captures:
 - **Chain position** — a hash link to the previous receipt, forming a tamper-evident sequence
 
 Parameters are hashed, not stored in plaintext. The operator controls what is disclosed. Sensitive data never appears in receipts.
+
+## Why the daemon matters
+
+The signing keys and receipt store live in the `agent-receipts` daemon — a separate OS-level process running under its own user account. The agent process sends events over a Unix socket and never touches the keys or the database.
+
+A compromised or misbehaving agent cannot forge, suppress, or tamper with its own receipts.
+
+See [Daemon Setup](/getting-started/daemon-setup/) to install and run the daemon.
 
 ## Design principles
 
