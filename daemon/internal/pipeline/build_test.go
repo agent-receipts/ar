@@ -600,6 +600,7 @@ func TestProcess_RejectsMalformedFrames(t *testing.T) {
 		{"missing tool.name", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{},"decision":"allowed"}`},
 		{"missing decision", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"}}`},
 		{"unknown decision", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"maybe"}`},
+		{"negative drop_count", `{"v":"1",` + ok + `,"session_id":"s","channel":"sdk","tool":{"name":"t"},"decision":"allowed","drop_count":-1}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -615,5 +616,199 @@ func TestProcess_RejectsMalformedFrames(t *testing.T) {
 	defer a.Rollback()
 	if a.Sequence != 1 {
 		t.Errorf("after rejected frames, next seq = %d, want 1 (no advance)", a.Sequence)
+	}
+}
+
+func dropFrame(t *testing.T, dropCount int64) socket.Frame {
+	t.Helper()
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "sess-drop",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "op"},
+		Decision:  "allowed",
+		DropCount: dropCount,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return socket.Frame{
+		Payload: body,
+		Peer:    socket.PeerCred{Platform: "linux", PID: 99, UID: 1000, GID: 1000, ExePath: "/usr/bin/emitter"},
+	}
+}
+
+// TestProcess_DropCountZero verifies that when drop_count is absent (zero),
+// Process inserts exactly one receipt and the chain starts at sequence 1.
+func TestProcess_DropCountZero(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatal(err)
+	}
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts, want 1 (no synthetic receipt for zero drop_count)", len(receipts))
+	}
+	if receipts[0].CredentialSubject.Chain.Sequence != 1 {
+		t.Errorf("seq = %d, want 1", receipts[0].CredentialSubject.Chain.Sequence)
+	}
+}
+
+// TestProcess_DropCountInsertsEventsDroppedReceipt verifies the core
+// events_dropped guarantee: when drop_count > 0 the daemon inserts a synthetic
+// receipt at the current chain slot before the live receipt, so the gap is
+// visible in the chain with no missing sequences.
+func TestProcess_DropCountInsertsEventsDroppedReceipt(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	if err := p.Process(dropFrame(t, 3)); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 2 {
+		t.Fatalf("got %d receipts, want 2 (synthetic + live)", len(receipts))
+	}
+
+	synthetic := receipts[0]
+	live := receipts[1]
+
+	// Synthetic receipt at seq 1.
+	if synthetic.CredentialSubject.Chain.Sequence != 1 {
+		t.Errorf("synthetic seq = %d, want 1", synthetic.CredentialSubject.Chain.Sequence)
+	}
+	if synthetic.CredentialSubject.Chain.PreviousReceiptHash != nil {
+		t.Errorf("synthetic first-in-chain: prev_hash should be nil")
+	}
+	if got := synthetic.CredentialSubject.Action.Type; got != actionTypeEventsDropped {
+		t.Errorf("synthetic action.type = %q, want %q", got, actionTypeEventsDropped)
+	}
+	if got := synthetic.CredentialSubject.Action.ToolName; got != "events_dropped" {
+		t.Errorf("synthetic tool_name = %q, want events_dropped", got)
+	}
+	if got := synthetic.CredentialSubject.Action.RiskLevel; got != "low" {
+		t.Errorf("synthetic risk_level = %q, want low", got)
+	}
+	if got := synthetic.CredentialSubject.Outcome.Status; got != "success" {
+		t.Errorf("synthetic outcome.status = %q, want success", got)
+	}
+	if got := synthetic.CredentialSubject.Action.ParametersDisclosure["drop_count"]; got != "3" {
+		t.Errorf("synthetic drop_count disclosure = %q, want 3", got)
+	}
+	if got := synthetic.Issuer.SessionID; got != "sess-drop" {
+		t.Errorf("synthetic session_id = %q, want sess-drop", got)
+	}
+
+	// Live receipt at seq 2, prev_hash pointing to synthetic.
+	if live.CredentialSubject.Chain.Sequence != 2 {
+		t.Errorf("live seq = %d, want 2", live.CredentialSubject.Chain.Sequence)
+	}
+	wantPrev, err := receipt.HashReceipt(synthetic)
+	if err != nil {
+		t.Fatalf("hash synthetic: %v", err)
+	}
+	if live.CredentialSubject.Chain.PreviousReceiptHash == nil || *live.CredentialSubject.Chain.PreviousReceiptHash != wantPrev {
+		t.Errorf("live prev_hash = %v, want %s", live.CredentialSubject.Chain.PreviousReceiptHash, wantPrev)
+	}
+	if live.CredentialSubject.Action.Type != "sdk.op" {
+		t.Errorf("live action.type = %q, want sdk.op", live.CredentialSubject.Action.Type)
+	}
+
+	// Both receipts must be verifiable — the synthetic receipt uses the same
+	// signer as the live one.
+	pubPEM, err := ks.PublicKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range receipts {
+		ok, err := receipt.Verify(r, pubPEM)
+		if err != nil || !ok {
+			t.Errorf("receipt[%d]: verify ok=%v err=%v", i, ok, err)
+		}
+	}
+}
+
+// TestProcess_DropCountPreservesPeerAttestationOnSynthetic verifies that the
+// peer cred from the emitter connection is recorded in the synthetic receipt's
+// parameters_disclosure, matching the live receipt's attribution source.
+func TestProcess_DropCountPreservesPeerAttestationOnSynthetic(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	if err := p.Process(dropFrame(t, 1)); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) < 1 {
+		t.Fatal("no receipts")
+	}
+	pd := receipts[0].CredentialSubject.Action.ParametersDisclosure
+	if pd["peer.platform"] != "linux" {
+		t.Errorf("peer.platform = %q, want linux", pd["peer.platform"])
+	}
+	if pd["peer.pid"] != "99" {
+		t.Errorf("peer.pid = %q, want 99", pd["peer.pid"])
+	}
+	if pd["peer.exe_path"] != "/usr/bin/emitter" {
+		t.Errorf("peer.exe_path = %q", pd["peer.exe_path"])
+	}
+}
+
+// TestProcess_DropCountChainContinues verifies that a frame with a drop_count
+// followed by a normal frame (no drops) produces a clean contiguous chain
+// with correct prev_hash links across all three receipts.
+func TestProcess_DropCountChainContinues(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	if err := p.Process(dropFrame(t, 2)); err != nil {
+		t.Fatalf("Process (drop frame): %v", err)
+	}
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatalf("Process (normal frame): %v", err)
+	}
+
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 3 {
+		t.Fatalf("got %d receipts, want 3 (synthetic + live + normal)", len(receipts))
+	}
+	for i, r := range receipts {
+		if r.CredentialSubject.Chain.Sequence != i+1 {
+			t.Errorf("receipts[%d].Sequence = %d, want %d", i, r.CredentialSubject.Chain.Sequence, i+1)
+		}
+	}
+	for i := 1; i < len(receipts); i++ {
+		want, err := receipt.HashReceipt(receipts[i-1])
+		if err != nil {
+			t.Fatalf("hash receipt %d: %v", i-1, err)
+		}
+		got := receipts[i].CredentialSubject.Chain.PreviousReceiptHash
+		if got == nil || *got != want {
+			t.Errorf("receipts[%d] prev_hash = %v, want %s", i, got, want)
+		}
 	}
 }

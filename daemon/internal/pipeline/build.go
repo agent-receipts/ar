@@ -32,6 +32,11 @@ const multibaseBase64URL = "u"
 // misinterpret future fields.
 const SupportedFrameVersion = "1"
 
+// actionTypeEventsDropped is the action type for the daemon-synthesised
+// events_dropped receipt. The "agent_receipts" namespace identifies the daemon
+// as the source rather than a user-facing tool channel.
+const actionTypeEventsDropped = "agent_receipts.events_dropped"
+
 // EmitterFrame is the JSON payload emitters send. Mirrors ADR-0010 §"Schema
 // split". Fields the emitter does not populate are zero/empty; the daemon
 // fills in the authoritative chain/peer/id/ts_recv before signing.
@@ -42,6 +47,11 @@ const SupportedFrameVersion = "1"
 // A literal JSON null (or omitted field) means "no payload" and produces no
 // hash — hashing the literal "null" would falsely commit the daemon to a
 // value the emitter did not send.
+//
+// DropCount, when > 0, records events the emitter dropped (connect/write
+// failures) before this successful send. The daemon inserts a synthetic
+// events_dropped receipt with this count before the live receipt so the gap
+// is visible in the chain.
 type EmitterFrame struct {
 	Version   string          `json:"v"`
 	TsEmit    string          `json:"ts_emit"`
@@ -52,6 +62,7 @@ type EmitterFrame struct {
 	Output    json.RawMessage `json:"output,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	Decision  string          `json:"decision"`
+	DropCount int64           `json:"drop_count,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -97,6 +108,10 @@ func New(s *chain.State, ks keysource.KeySource, store store.ReceiptStore, issue
 // store.Insert, and Commits the chain allocation. Any error before Commit
 // triggers Rollback so the chain state is not advanced past a missing receipt.
 //
+// When the frame carries a positive DropCount, Process first inserts a
+// synthetic events_dropped receipt (in its own allocation) that makes the gap
+// visible in the chain before the live receipt.
+//
 // Rollback is deferred — and chain.Allocation.Commit/Rollback are idempotent
 // via sync.Once — so the chain mutex is released even if buildAndSign or
 // Store.Insert panics. Without that guarantee, a single panicking frame would
@@ -111,7 +126,14 @@ func (p *Pipeline) Process(f socket.Frame) error {
 		return fmt.Errorf("invalid emitter frame: %w", err)
 	}
 
-	p.trace("frame received: session=%s channel=%s tool=%s", frame.SessionID, frame.Channel, frame.Tool.Name)
+	p.trace("frame received: session=%s channel=%s tool=%s drop_count=%d",
+		frame.SessionID, frame.Channel, frame.Tool.Name, frame.DropCount)
+
+	if frame.DropCount > 0 {
+		if err := p.insertDropReceipt(&frame, f.Peer); err != nil {
+			return fmt.Errorf("insert events_dropped receipt: %w", err)
+		}
+	}
 
 	alloc := p.State.Allocate()
 	defer alloc.Rollback()
@@ -126,6 +148,29 @@ func (p *Pipeline) Process(f socket.Frame) error {
 		return fmt.Errorf("insert receipt: %w", err)
 	}
 	p.trace("receipt stored: seq=%d", alloc.Sequence)
+
+	alloc.Commit(hash)
+	return nil
+}
+
+// insertDropReceipt allocates a chain slot, builds a synthetic events_dropped
+// receipt encoding the emitter's drop count, and commits. Called by Process
+// before the live receipt when frame.DropCount > 0.
+func (p *Pipeline) insertDropReceipt(frame *EmitterFrame, peer socket.PeerCred) error {
+	alloc := p.State.Allocate()
+	defer alloc.Rollback()
+
+	p.trace("events_dropped receipt: session=%s drop_count=%d seq=%d",
+		frame.SessionID, frame.DropCount, alloc.Sequence)
+
+	signed, hash, err := p.buildAndSignDropReceipt(frame.DropCount, frame.SessionID, peer, alloc)
+	if err != nil {
+		return err
+	}
+
+	if err := p.Store.Insert(signed, hash); err != nil {
+		return fmt.Errorf("store insert: %w", err)
+	}
 
 	alloc.Commit(hash)
 	return nil
@@ -178,6 +223,9 @@ func validateFrame(f *EmitterFrame) error {
 		// ok
 	default:
 		return fmt.Errorf("unknown decision %q (want allowed|denied|pending)", f.Decision)
+	}
+	if f.DropCount < 0 {
+		return fmt.Errorf("drop_count %d is negative", f.DropCount)
 	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
@@ -327,7 +375,7 @@ func (p *Pipeline) buildAndSign(
 		outcome.ResponseHash = hash
 	}
 
-	unsigned := receipt.Create(receipt.CreateInput{
+	return p.signAndHash(receipt.CreateInput{
 		Issuer: receipt.Issuer{
 			ID:        p.IssuerID,
 			Type:      "AgentReceiptsDaemon",
@@ -341,7 +389,60 @@ func (p *Pipeline) buildAndSign(
 			PreviousReceiptHash: alloc.PrevHash,
 			ChainID:             p.State.ChainID(),
 		},
-	})
+	}, now)
+}
+
+// buildAndSignDropReceipt constructs a synthetic events_dropped receipt that
+// records the emitter's accumulated drop count in the chain. Called by
+// insertDropReceipt when frame.DropCount > 0.
+func (p *Pipeline) buildAndSignDropReceipt(
+	dropCount int64,
+	sessionID string,
+	peer socket.PeerCred,
+	alloc chain.Allocation,
+) (receipt.AgentReceipt, string, error) {
+	now := p.Now().Format(time.RFC3339)
+
+	if alloc.Sequence > int64(math.MaxInt) {
+		return receipt.AgentReceipt{}, "", fmt.Errorf("chain sequence %d exceeds int range on this platform (max %d)", alloc.Sequence, math.MaxInt)
+	}
+
+	return p.signAndHash(receipt.CreateInput{
+		Issuer: receipt.Issuer{
+			ID:        p.IssuerID,
+			Type:      "AgentReceiptsDaemon",
+			SessionID: sessionID,
+		},
+		Principal: receipt.Principal{ID: "did:user:unknown"},
+		Action: receipt.Action{
+			Type:      actionTypeEventsDropped,
+			ToolName:  "events_dropped",
+			RiskLevel: receipt.RiskLow,
+			Timestamp: now,
+			ParametersDisclosure: map[string]string{
+				"drop_count":    strconv.FormatInt(dropCount, 10),
+				"peer.platform": peer.Platform,
+				"peer.pid":      strconv.FormatInt(int64(peer.PID), 10),
+				"peer.uid":      strconv.FormatUint(uint64(peer.UID), 10),
+				"peer.gid":      strconv.FormatUint(uint64(peer.GID), 10),
+				"peer.exe_path": peer.ExePath,
+			},
+		},
+		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+		Chain: receipt.Chain{
+			Sequence:            int(alloc.Sequence),
+			PreviousReceiptHash: alloc.PrevHash,
+			ChainID:             p.State.ChainID(),
+		},
+	}, now)
+}
+
+// signAndHash builds, signs, and hashes one receipt. It is the common tail
+// shared by buildAndSign and buildAndSignDropReceipt — both construct a
+// CreateInput, set the issuance timestamp, and then need identical
+// canonicalize → sign → hash steps.
+func (p *Pipeline) signAndHash(in receipt.CreateInput, now string) (receipt.AgentReceipt, string, error) {
+	unsigned := receipt.Create(in)
 	// receipt.Create stamps IssuanceDate from time.Now() internally. Replace it
 	// with our deterministic now so action.timestamp, issuanceDate, and
 	// proof.created all share a single value (and tests can override Now).
