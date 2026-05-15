@@ -34,9 +34,11 @@ flowchart TD
   B --> C[Match policy rules — most restrictive wins]
   C --> P[pass] --> W[Forward to MCP server]
   C --> FL[flag] --> W
-  C --> PA[pause] --> AP{Approver responds?}
-  AP -->|approved| W
-  AP -->|denied or timeout| E[JSON-RPC error]
+  C --> PA[pause] --> AP{Listener configured?}
+  AP -->|no| E[JSON-RPC -32003 fail fast]
+  AP -->|yes| AP2{Approver responds?}
+  AP2 -->|approved| W
+  AP2 -->|denied or timeout| E
   C --> BL[block] --> E
   W --> R[Sign receipt and store]
   E --> R

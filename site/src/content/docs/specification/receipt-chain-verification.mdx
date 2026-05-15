@@ -101,7 +101,7 @@ flowchart TD
   B -->|not found| F[Delegation unverifiable]
   B -->|found| C[Find receipt matching delegation.parent_receipt_id]
   C -->|not found| F
-  C -->|found| D{delegator.id == parent issuer.id?}
+  C -->|found| D{delegation.delegator.id == parent chain issuer.id?}
   D -->|no| F
   D -->|yes| E{principal unchanged across chains?}
   E -->|no| F
