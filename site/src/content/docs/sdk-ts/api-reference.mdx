@@ -408,7 +408,12 @@ interface ClassificationResult {
 ```typescript
 const FILESYSTEM_ACTIONS: readonly ActionTypeEntry[]  // 7 types
 const SYSTEM_ACTIONS: readonly ActionTypeEntry[]       // 7 types
-const DATA_ACTIONS: readonly ActionTypeEntry[]          // 3 data/API types
 const ALL_ACTIONS: readonly ActionTypeEntry[]           // all + unknown
 const UNKNOWN_ACTION: ActionTypeEntry
+```
+
+`DATA_ACTIONS` (3 data/API types) is exported from the `taxonomy` subpath, not the package root:
+
+```typescript
+import { DATA_ACTIONS } from "@agnt-rcpt/sdk-ts/taxonomy";
 ```

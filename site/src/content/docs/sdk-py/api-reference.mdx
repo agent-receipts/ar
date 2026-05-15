@@ -404,9 +404,14 @@ class ClassificationResult:
 ```python
 FILESYSTEM_ACTIONS: list[ActionTypeEntry]  # 7 types
 SYSTEM_ACTIONS: list[ActionTypeEntry]      # 7 types
-DATA_ACTIONS: list[ActionTypeEntry]        # 3 data/API types
 ALL_ACTIONS: list[ActionTypeEntry]         # all + unknown
 UNKNOWN_ACTION: ActionTypeEntry
+```
+
+`DATA_ACTIONS` (3 data/API types) is exported from the `taxonomy` submodule, not the package root:
+
+```python
+from agent_receipts.taxonomy import DATA_ACTIONS
 ```
 
 ### Backwards compatibility aliases
