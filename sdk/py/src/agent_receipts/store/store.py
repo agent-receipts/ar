@@ -181,7 +181,7 @@ class ReceiptStore:
 
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         dir_ = "DESC" if filters.newest_first else "ASC"
-        order_clause = f"ORDER BY timestamp {dir_}, sequence {dir_}"
+        order_clause = f"ORDER BY timestamp {dir_}, sequence {dir_}, rowid {dir_}"
         if filters.limit is not None:
             params.append(filters.limit)
             sql = f"SELECT receipt_json FROM receipts{where} {order_clause} LIMIT ?"  # noqa: S608

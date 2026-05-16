@@ -277,6 +277,29 @@ def test_query_desc_sequence_tiebreaker() -> None:
     store.close()
 
 
+def test_query_asc_sequence_tiebreaker() -> None:
+    """When timestamps are equal, lower sequence comes first in ASC order."""
+    store = open_store(":memory:")
+    shared_ts = "2026-06-01T12:00:00Z"
+    r1 = make_receipt(
+        id="urn:receipt:asctie1", timestamp=shared_ts, chain_id="casctie", sequence=1
+    )
+    r2 = make_receipt(
+        id="urn:receipt:asctie2",
+        timestamp=shared_ts,
+        chain_id="casctie",
+        sequence=2,
+        previous_hash=hash_receipt(r1),
+    )
+    store.insert(r2, hash_receipt(r2))  # insert higher sequence first
+    store.insert(r1, hash_receipt(r1))
+
+    results = store.query(ReceiptQuery())
+    ids = [r.id for r in results]
+    assert ids.index("urn:receipt:asctie1") < ids.index("urn:receipt:asctie2")
+    store.close()
+
+
 def test_stats() -> None:
     store = open_store(":memory:")
     r1 = make_receipt(

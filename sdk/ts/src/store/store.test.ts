@@ -200,6 +200,41 @@ describe("ReceiptStore", () => {
 			expect(results[0]?.id).toBe("urn:receipt:1");
 		});
 
+		it("asc order with sequence tiebreaker when timestamps are equal", () => {
+			store.insert(
+				makeReceipt({
+					id: "urn:receipt:asc-tie-1",
+					sequence: 5,
+					actionType: "filesystem.file.read",
+					riskLevel: "low",
+					status: "success",
+					timestamp: "2026-01-01T00:00:00Z",
+				}),
+				"sha256:asctie1",
+			);
+			store.insert(
+				makeReceipt({
+					id: "urn:receipt:asc-tie-2",
+					sequence: 6,
+					actionType: "filesystem.file.read",
+					riskLevel: "low",
+					status: "success",
+					timestamp: "2026-01-01T00:00:00Z",
+				}),
+				"sha256:asctie2",
+			);
+
+			const results = store.query({ order: "asc" });
+			// Among the tied rows, lower sequence comes first.
+			const tieIdx1 = results.findIndex(
+				(r) => r.id === "urn:receipt:asc-tie-1",
+			);
+			const tieIdx2 = results.findIndex(
+				(r) => r.id === "urn:receipt:asc-tie-2",
+			);
+			expect(tieIdx1).toBeLessThan(tieIdx2);
+		});
+
 		it("desc order with sequence tiebreaker when timestamps are equal", () => {
 			// Insert two extra receipts with the same timestamp but different sequences.
 			store.insert(

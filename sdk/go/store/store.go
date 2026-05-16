@@ -415,7 +415,7 @@ func buildQueryReceiptsSQL(q Query) (string, []any) {
 	if q.NewestFirst {
 		order = "DESC"
 	}
-	orderClause := fmt.Sprintf("ORDER BY timestamp %s, sequence %s", order, order)
+	orderClause := fmt.Sprintf("ORDER BY timestamp %s, sequence %s, rowid %s", order, order, order)
 	if q.Limit != nil {
 		query := fmt.Sprintf(
 			"SELECT receipt_json FROM receipts %s %s LIMIT ?",

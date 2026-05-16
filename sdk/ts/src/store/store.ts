@@ -228,7 +228,7 @@ export class ReceiptStore {
 			conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
 		const dir = filters.order === "desc" ? "DESC" : "ASC";
-		const orderClause = `ORDER BY timestamp ${dir}, sequence ${dir}`;
+		const orderClause = `ORDER BY timestamp ${dir}, sequence ${dir}, rowid ${dir}`;
 
 		let sql: string;
 		if (filters.limit !== undefined) {

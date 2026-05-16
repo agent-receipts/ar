@@ -425,6 +425,48 @@ func TestQueryReceiptsDescSequenceTiebreaker(t *testing.T) {
 	}
 }
 
+func TestQueryReceiptsAscSequenceTiebreaker(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	sharedTS := "2024-06-01T12:00:00Z"
+	for _, seq := range []int{2, 1} { // insert in reverse to confirm ordering is by SQL not insertion
+		unsigned := receipt.Create(receipt.CreateInput{
+			Issuer:    receipt.Issuer{ID: "did:agent:test"},
+			Principal: receipt.Principal{ID: "did:user:test"},
+			Action: receipt.Action{
+				Type:      "filesystem.file.read",
+				RiskLevel: receipt.RiskLow,
+				Timestamp: sharedTS,
+			},
+			Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+			Chain:   receipt.Chain{Sequence: seq, ChainID: "chain-asc-tie"},
+		})
+		signed, err := receipt.Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, _ := receipt.HashReceipt(signed)
+		if err := s.Insert(signed, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	asc, err := s.QueryReceipts(Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asc) != 2 {
+		t.Fatalf("expected 2 receipts, got %d", len(asc))
+	}
+	if got := asc[0].CredentialSubject.Chain.Sequence; got != 1 {
+		t.Errorf("ASC tiebreaker: expected sequence 1 first, got %d", got)
+	}
+	if got := asc[1].CredentialSubject.Chain.Sequence; got != 2 {
+		t.Errorf("ASC tiebreaker: expected sequence 2 second, got %d", got)
+	}
+}
+
 func TestQueryReceiptsCombinedFilters(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()
