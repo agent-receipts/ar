@@ -9,6 +9,16 @@ This file starts at 0.6.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.9.0] - 2026-05-16
+
+### Added
+
+- **`emitter.WithStrictErrors()` option** ([#415](https://github.com/agent-receipts/ar/pull/415)):
+  When set, `Emitter.Emit()` returns errors on dial and write failures instead
+  of calling `logDrop` and returning nil. Callers that do not opt in keep
+  fire-and-forget semantics unchanged. Used by `agent-receipts-hook` to surface
+  daemon-unreachable as a visible exit-1 failure.
+
 ## [0.8.0] - 2026-05-15
 
 ### Changed

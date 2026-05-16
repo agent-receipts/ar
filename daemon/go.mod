@@ -3,7 +3,7 @@ module github.com/agent-receipts/ar/daemon
 go 1.26.1
 
 require (
-	github.com/agent-receipts/ar/sdk/go v0.8.0
+	github.com/agent-receipts/ar/sdk/go v0.9.0
 	golang.org/x/sys v0.43.0
 )
 

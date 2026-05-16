@@ -2,7 +2,7 @@ module github.com/agent-receipts/ar/hook
 
 go 1.26.1
 
-require github.com/agent-receipts/ar/sdk/go v0.8.0
+require github.com/agent-receipts/ar/sdk/go v0.9.0
 
 require (
 	// daemon is a test-only dep of sdk/go/emitter (integration build tag). Lazy loading
