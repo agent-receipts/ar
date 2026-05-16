@@ -177,6 +177,18 @@ def test_query_no_filters() -> None:
     store.close()
 
 
+def test_query_explicit_limit_respected() -> None:
+    """An explicit limit still caps results after the cap removal."""
+    store = open_store(":memory:")
+    for i in range(5):
+        r = make_receipt(id=f"urn:receipt:el{i}", sequence=i + 1)
+        store.insert(r, hash_receipt(r))
+
+    results = store.query(ReceiptQuery(limit=3))
+    assert len(results) == 3
+    store.close()
+
+
 def test_query_no_default_limit() -> None:
     """No limit set means all rows are returned — no silent cap."""
     store = open_store(":memory:")

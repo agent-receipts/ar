@@ -637,6 +637,37 @@ func TestQueryAfterRowIDAppliesFilters(t *testing.T) {
 	}
 }
 
+func TestQueryAfterRowIDNilLimitReturnsAllRows(t *testing.T) {
+	s := setupStore(t)
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 5
+	var prevHash *string
+	for i := 1; i <= n; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-nil-limit", prevHash)
+		h, err := receipt.HashReceipt(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+
+	// nil Limit must return all rows above rowid 0.
+	results, _, err := s.QueryAfterRowID(Query{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != n {
+		t.Errorf("QueryAfterRowID with nil Limit: got %d rows, want %d", len(results), n)
+	}
+}
+
 func TestCloseMultipleTimes(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
