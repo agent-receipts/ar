@@ -51,6 +51,7 @@ Claude Code serialises each PostToolUse event as a JSON object on stdin:
 
 ```json
 {
+  "hook_event_name": "PostToolUse",
   "session_id": "<current session ID>",
   "tool_name": "Bash",
   "tool_input": { "command": "go test ./..." },
@@ -72,7 +73,7 @@ Claude Code serialises each PostToolUse event as a JSON object on stdin:
 
 ## MCP tool overlap
 
-The empty matcher captures `mcp__*` tools too, which `mcp-proxy` already covers. This produces a second receipt per MCP call — one at `channel: "mcp"` from the proxy, one at `channel: "claude-code"` from the hook. Both share the same `session_id` and are distinguishable by their `channel` field. If you want to exclude MCP tools from the hook, add a non-empty matcher or restrict the hook to specific tool names. See the [overview](/hook/overview/#mcp-tool-overlap) for more detail.
+The empty matcher captures `mcp__*` tools too, which `mcp-proxy` already covers. This produces a second receipt per MCP call — one at `channel: "mcp"` from the proxy, one at `channel: "claude-code"` from the hook. They are distinguishable by their `channel` field. If you want to exclude MCP tools from the hook, add a non-empty matcher or restrict the hook to specific tool names. See the [overview](/hook/overview/#mcp-tool-overlap) for more detail.
 
 ## Session correlation
 
