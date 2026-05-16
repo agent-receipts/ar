@@ -166,7 +166,8 @@ describe("verifyChain", () => {
 	it("expectedFinalHash mismatch error includes expected and computed hashes", () => {
 		const { publicKey, privateKey } = generateKeyPair();
 		const chain = buildChain(3, privateKey);
-		const realFinalHash = hashReceipt(chain[2]!);
+		const last = chain.at(-1);
+		const realFinalHash = last != null ? hashReceipt(last) : "";
 		const wrongHash = `sha256:${"0".repeat(64)}`;
 
 		const result = verifyChain(chain, publicKey, {
