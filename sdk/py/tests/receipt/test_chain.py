@@ -220,6 +220,44 @@ class TestAdr0008ChainBehaviours:
 
     # --- receipt after terminal ---
 
+    def test_compute_error_preserved_through_terminal_check(self) -> None:
+        """sig-compute error surfaces even when terminal violation also present."""
+        kp = generate_key_pair()
+        terminal_chain = _build_terminal_chain(2, kp.private_key)
+        terminal_hash = hash_receipt(terminal_chain[-1])
+
+        extra_unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="filesystem.file.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=3,
+                    previous_receipt_hash=terminal_hash,
+                    chain_id="chain_test",
+                ),
+            )
+        )
+        extra_signed = sign_receipt(
+            extra_unsigned, kp.private_key, "did:agent:test#key-1"
+        )
+        chain = [*terminal_chain, extra_signed]
+        target_id = chain[0].id
+        real_verify = verify_receipt
+
+        def raise_sig(receipt: object, key: object) -> bool:
+            if getattr(receipt, "id", None) == target_id:
+                raise ValueError("synthetic sig failure")
+            return real_verify(receipt, key)  # type: ignore[arg-type]
+
+        target = "agent_receipts.receipt.chain.verify_receipt"
+        with patch(target, side_effect=raise_sig):
+            result = verify_chain(chain, kp.public_key)
+
+        assert result.valid is False
+        assert "signature compute failed at index 0" in result.error
+
     def test_receipt_after_terminal_is_always_invalid(self) -> None:
         kp = generate_key_pair()
         terminal_chain = _build_terminal_chain(3, kp.private_key)

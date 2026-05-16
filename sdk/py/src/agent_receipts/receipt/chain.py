@@ -140,17 +140,24 @@ def verify_chain(
 
         previous = receipt
 
+    # Sig errors take precedence over hash-compute errors; when both are present
+    # the hash-compute error is discarded (a single error field can only surface one).
+    # Compute this before the terminal check so early returns preserve it.
+    loop_error = signature_compute_error or hash_compute_error or ""
+
     # Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
     for i, receipt in enumerate(receipts[:-1]):
         if receipt.credentialSubject.chain.terminal is True:
             if broken_at == -1:
                 broken_at = i + 1
+            # Compute errors take precedence; fall back to terminal violation message.
             return ChainVerification(
                 valid=False,
                 length=len(receipts),
                 receipts=results,
                 broken_at=broken_at,
-                error=(
+                error=loop_error
+                or (
                     f"receipt after terminal: receipt at index {i + 1} "
                     f"follows a terminal receipt at index {i}"
                 ),
@@ -161,13 +168,8 @@ def verify_chain(
         length=len(receipts),
         receipts=results,
         broken_at=broken_at,
+        error=loop_error,
     )
-    # Sig errors take precedence over hash-compute errors; when both are present
-    # the hash-compute error is discarded (a single error field can only surface one).
-    if signature_compute_error is not None:
-        cv.error = signature_compute_error
-    elif hash_compute_error is not None:
-        cv.error = hash_compute_error
 
     # Response-hash verification (spec §4.3.2).
     # When a body is supplied: recompute and fail on mismatch.
