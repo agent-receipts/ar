@@ -180,6 +180,37 @@ AGENTRECEIPTS_SOCKET=/path/to/events.sock mcp-proxy npx -y @modelcontextprotocol
 
 See the [OpenClaw installation guide](/openclaw/installation) for daemon forwarding configuration.
 
+## Payload disclosure
+
+By default the daemon stores only a cryptographic hash of each tool call's input and output (`parameters_hash` / `response_hash`). This is privacy-preserving — the receipt proves what happened without retaining the raw payload.
+
+### Opt-in plaintext disclosure
+
+You can instruct the daemon to also store the plaintext input and output in the `parameters_disclosure` receipt field:
+
+```bash
+agent-receipts-daemon --parameter-disclosure
+# or via environment variable
+AGENTRECEIPTS_PARAMETER_DISCLOSURE=1 agent-receipts-daemon
+```
+
+When this flag is enabled, the daemon logs a warning block at startup:
+
+```
+WARNING: --parameter-disclosure is enabled.
+Plaintext tool input and output will be stored in receipts.
+This is a temporary opt-in pending encrypted disclosure (issue #280).
+Ensure receipts.db is protected and does not contain secrets you cannot afford to expose.
+```
+
+:::danger
+`--parameter-disclosure` stores **unredacted** tool payloads in `receipts.db`. Tool call arguments routinely contain file paths, file contents, API tokens, and other sensitive data. Do not enable this flag until daemon-side redaction ([issue #423](https://github.com/agent-receipts/ar/issues/423)) has landed, unless you have verified that your workload does not produce sensitive payloads.
+:::
+
+### Future: encrypted disclosure
+
+The plaintext opt-in is a temporary bridge. The target design ([ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md), [issue #280](https://github.com/agent-receipts/ar/issues/280)) uses asymmetric encryption so the daemon stores ciphertext — recoverable only by the holder of a forensic private key, not by the daemon process itself. This allows full forensic capability without the daemon being able to read its own past disclosures. The `--parameter-disclosure` flag will be superseded by that design when it ships.
+
 ## Verify your chain
 
 `agent-receipts verify` reads the database directly — the daemon does not need to be running:
