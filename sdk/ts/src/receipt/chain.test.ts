@@ -127,12 +127,56 @@ describe("verifyChain", () => {
 			const result = verifyChain(chain, publicKey);
 			expect(result.valid).toBe(false);
 			expect(result.brokenAt).toBe(1);
+			expect(result.receipts).toHaveLength(2);
 			expect(result.error).toMatch(/^hash compute failed at index 0:/);
 			expect(result.error).toContain("synthetic canonicalize failure");
 			expect(result.receipts[1]?.hashLinkValid).toBe(false);
 		} finally {
 			spy.mockRestore();
 		}
+	});
+
+	it("hash compute error mid-chain: all receipts present (invariant)", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(5, privateKey);
+		const targetId = chain[0]?.id;
+
+		const original = hashModule.hashReceipt;
+		const spy = vi.spyOn(hashModule, "hashReceipt").mockImplementation((r) => {
+			if (r.id === targetId) {
+				throw new Error("synthetic failure");
+			}
+			return original(r);
+		});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.brokenAt).toBe(1);
+			expect(result.length).toBe(5);
+			expect(result.receipts).toHaveLength(5);
+			// Only receipt[1]'s hash link is broken; later ones resolve normally.
+			expect(result.receipts[1]?.hashLinkValid).toBe(false);
+			expect(result.receipts[2]?.hashLinkValid).toBe(true);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("expectedFinalHash mismatch error includes expected and computed hashes", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(3, privateKey);
+		const realFinalHash = hashReceipt(chain[2]!);
+		const wrongHash = `sha256:${"0".repeat(64)}`;
+
+		const result = verifyChain(chain, publicKey, {
+			expectedFinalHash: wrongHash,
+		});
+
+		expect(result.valid).toBe(false);
+		expect(result.error).toMatch(/final receipt hash mismatch at index 2/);
+		expect(result.error).toContain(wrongHash);
+		expect(result.error).toContain(realFinalHash);
 	});
 
 	it("surfaces verifyReceipt errors via the error field", () => {
