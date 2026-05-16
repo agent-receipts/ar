@@ -12,6 +12,7 @@ from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
 from agent_receipts.receipt.signing import (
     generate_key_pair,
     sign_receipt,
+    verify_receipt,
 )
 from agent_receipts.receipt.types import (
     Chain,
@@ -602,6 +603,34 @@ class TestAdr0008ChainBehaviours:
         assert result.receipts[1].signature_valid is False
         assert result.receipts[0].hash_link_valid is True
         assert result.receipts[1].hash_link_valid is True
+
+    def test_dual_error_sig_takes_precedence_over_hash_compute(self) -> None:
+        """When both sig-compute and hash-compute errors occur, sig wins in cv.error."""
+        kp = generate_key_pair()
+        chain = _build_chain(3, kp.private_key)
+        target_id = chain[0].id
+        real_verify = verify_receipt
+        real_hash = hash_receipt
+
+        def raise_sig(receipt: object, key: object) -> bool:
+            if getattr(receipt, "id", None) == target_id:
+                raise ValueError("sig compute failure")
+            return real_verify(receipt, key)  # type: ignore[arg-type]
+
+        def raise_hash(r: object) -> str:
+            if getattr(r, "id", None) == target_id:
+                raise ValueError("hash compute failure")
+            return real_hash(r)  # type: ignore[arg-type]
+
+        sig_target = "agent_receipts.receipt.chain.verify_receipt"
+        hash_target = "agent_receipts.receipt.chain.hash_receipt"
+        with patch(sig_target, side_effect=raise_sig):
+            with patch(hash_target, side_effect=raise_hash):
+                result = verify_chain(chain, kp.public_key)
+
+        assert result.valid is False
+        assert "signature compute failed at index 0" in result.error
+        assert "hash compute" not in result.error
 
     def test_response_bodies_absent_entry_emits_note(self) -> None:
         """When response_hash is present but receipt id is not in the map, emit note."""

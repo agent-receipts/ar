@@ -162,7 +162,8 @@ def verify_chain(
         receipts=results,
         broken_at=broken_at,
     )
-    # Sig errors take precedence over hash-compute errors.
+    # Sig errors take precedence over hash-compute errors; when both are present
+    # the hash-compute error is discarded (a single error field can only surface one).
     if signature_compute_error is not None:
         cv.error = signature_compute_error
     elif hash_compute_error is not None:
