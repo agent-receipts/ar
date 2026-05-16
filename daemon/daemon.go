@@ -59,6 +59,12 @@ type Config struct {
 	// When nil, tracing is silent. Tests can pass a buffer to inspect
 	// what frames were received, receipts signed, etc.
 	TraceLog io.Writer
+
+	// ParameterDisclosure controls whether plaintext tool input and output are
+	// included in the parameters_disclosure receipt field. Disabled by default.
+	// WARNING: stores unredacted payloads — see issue #280 for the encrypted
+	// design that supersedes this flag.
+	ParameterDisclosure bool
 }
 
 // DefaultSocketPath returns the per-OS default socket path. Phase 1 resolves
@@ -315,9 +321,17 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	cfg.Logger.Printf("loaded chain %s, next seq=%d", cfg.ChainID, state.NextSeq())
 
+	if cfg.ParameterDisclosure {
+		cfg.Logger.Printf("WARNING: --parameter-disclosure is enabled.")
+		cfg.Logger.Printf("WARNING: Plaintext tool input and output will be stored in receipts.")
+		cfg.Logger.Printf("WARNING: This is a temporary opt-in pending encrypted disclosure (issue #280).")
+		cfg.Logger.Printf("WARNING: Ensure receipts.db is protected and does not contain secrets you cannot afford to expose.")
+	}
+
 	pp := pipeline.New(state, ks, st, cfg.IssuerID)
 	pp.TraceLog = cfg.TraceLog
 	pp.ErrorLog = cfg.Logger.Printf
+	pp.ParameterDisclosure = cfg.ParameterDisclosure
 
 	ln, err := socket.Listen(socket.Options{
 		Path:     cfg.SocketPath,
