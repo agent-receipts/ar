@@ -420,6 +420,44 @@ describe("verifyChain", () => {
 		expect(chain.at(-1)?.credentialSubject.chain.terminal).toBe(true);
 	});
 
+	it("compute error is preserved when terminal violation also present", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+		const extra = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const extraSigned = signReceipt(extra, privateKey, "did:agent:test#key-1");
+		const chain = [...terminalChain, extraSigned];
+		const targetId = chain[0]?.id;
+
+		const original = signingModule.verifyReceipt;
+		const spy = vi
+			.spyOn(signingModule, "verifyReceipt")
+			.mockImplementation((r, key) => {
+				if (r.id === targetId) throw new Error("synthetic sig failure");
+				return original(r, key);
+			});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.error).toMatch(/signature compute failed at index 0/);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
 	it("receipt after terminal is always invalid", () => {
 		const { publicKey, privateKey } = generateKeyPair();
 		const terminalChain = buildTerminalChain(3, privateKey);

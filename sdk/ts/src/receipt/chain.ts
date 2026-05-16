@@ -173,6 +173,11 @@ export function verifyChain(
 		previous = receipt;
 	}
 
+	// Sig errors take precedence over hash-compute errors; when both are present
+	// the hash-compute error is discarded (a single error field can only surface one).
+	// Compute this before the terminal check so early returns preserve it.
+	const loopError = signatureError ?? hashComputeError;
+
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
 	for (let i = 0; i < receipts.length - 1; i++) {
 		const r = receipts[i];
@@ -185,7 +190,7 @@ export function verifyChain(
 				receipts: results,
 				brokenAt,
 				responseHashNote: undefined,
-				error: signatureError,
+				error: loopError,
 			};
 		}
 	}
@@ -196,12 +201,8 @@ export function verifyChain(
 		receipts: results,
 		brokenAt,
 	};
-	// Sig errors take precedence over hash-compute errors; when both are present
-	// the hash-compute error is discarded (a single error field can only surface one).
-	if (signatureError !== undefined) {
-		cv.error = signatureError;
-	} else if (hashComputeError !== undefined) {
-		cv.error = hashComputeError;
+	if (loopError !== undefined) {
+		cv.error = loopError;
 	}
 
 	// Response-hash verification (spec §4.3.2).
