@@ -670,6 +670,76 @@ class TestAdr0008ChainBehaviours:
         assert "signature compute failed at index 0" in result.error
         assert "hash compute" not in result.error
 
+    def test_terminal_violation_before_compute_error(self) -> None:
+        """terminal violation (index 1) wins over compute error at later index.
+
+        Chain: [receipt[0](terminal), receipt[1], receipt[2]]
+        - terminal_violation_at = 1  (receipt[1] follows terminal receipt[0])
+        - hash_compute_error_at  = 2  (hash_receipt(receipt[1]) fails when
+          the loop processes receipt[2]'s link)
+        Terminal violation comes first, so broken_at must be 1 and the error
+        must describe the terminal violation, not the hash failure.
+        """
+        kp = generate_key_pair()
+        # receipt[0] is the sole terminal receipt.
+        terminal_chain = _build_terminal_chain(1, kp.private_key)
+        terminal_hash = hash_receipt(terminal_chain[0])
+
+        r1_unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="filesystem.file.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=2,
+                    previous_receipt_hash=terminal_hash,
+                    chain_id="chain_test",
+                ),
+            )
+        )
+        r1 = sign_receipt(r1_unsigned, kp.private_key, "did:agent:test#key-1")
+        r1_hash = hash_receipt(r1)
+
+        r2_unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:test"),
+                action=ActionInput(type="filesystem.file.read", risk_level="low"),
+                outcome=Outcome(status="success"),
+                chain=Chain(
+                    sequence=3,
+                    previous_receipt_hash=r1_hash,
+                    chain_id="chain_test",
+                ),
+            )
+        )
+        r2 = sign_receipt(r2_unsigned, kp.private_key, "did:agent:test#key-1")
+
+        chain = [*terminal_chain, r1, r2]
+
+        # Inject a hash failure only on receipt[1] (r1), so the error fires
+        # when the loop processes receipt[2] (loop index 2).
+        target_id = r1.id
+        real_hash_receipt = hash_receipt
+
+        def selective_raise(r: object) -> str:
+            if getattr(r, "id", None) == target_id:
+                raise ValueError("injected hash failure on receipt 1")
+            return real_hash_receipt(r)  # type: ignore[arg-type]
+
+        with patch(
+            "agent_receipts.receipt.chain.hash_receipt",
+            side_effect=selective_raise,
+        ):
+            result = verify_chain(chain, kp.public_key)
+
+        assert result.valid is False
+        # Terminal violation at index 1 must be the first broken point.
+        assert result.broken_at == 1
+        # Terminal violation message must win because it precedes the hash error.
+        assert "receipt after terminal" in result.error
+
     def test_response_bodies_absent_entry_emits_note(self) -> None:
         """When response_hash is present but receipt id is not in the map, emit note."""
         unsigned = create_receipt(
