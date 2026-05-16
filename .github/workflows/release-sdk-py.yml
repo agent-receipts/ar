@@ -1,0 +1,68 @@
+name: "Release: sdk-py"
+
+on:
+  push:
+    tags:
+      - "sdk-py-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Deployment environment lets you attach protection rules (required
+    # reviewers, wait timer, branch restrictions) to gate who can trigger
+    # a release. Configure at:
+    # https://github.com/agent-receipts/ar/settings/environments
+    environment: release-sdk-py
+    defaults:
+      run:
+        working-directory: sdk/py
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Prepare version
+        run: |
+          VERSION="${GITHUB_REF_NAME#sdk-py-v}"
+          echo "SDK_PY_VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Verify release tag matches pyproject.toml version
+        run: |
+          PY_VERSION=$(uv run python -c "
+          import tomllib, pathlib
+          p = pathlib.Path('pyproject.toml')
+          print(tomllib.loads(p.read_text())['project']['version'])
+          ")
+          if [ "$PY_VERSION" != "$SDK_PY_VERSION" ]; then
+            echo "::error::Release tag sdk-py-v${SDK_PY_VERSION} does not match pyproject.toml version ${PY_VERSION}"
+            exit 1
+          fi
+
+      - run: uv sync --frozen --all-extras
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Mark pre-release tags as GitHub pre-releases so they don't show
+          # up as "latest" on the GitHub Releases page.
+          # Covers SemVer pre-releases (e.g. v0.9.0-beta.1, *-*) and PEP 440
+          # pre-release suffixes (e.g. v0.9.0a1, v0.9.0rc1 — matched by [abc][0-9]).
+          # publish-py.yml (triggered on release publish) handles PyPI publication.
+          PRERELEASE_ARG=()
+          CORE="${SDK_PY_VERSION%%+*}"
+          if [[ "$CORE" == *-* ]] || [[ "$CORE" =~ [0-9]+(a|b|rc)[0-9]+$ ]]; then
+            PRERELEASE_ARG+=(--prerelease)
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "sdk-py ${SDK_PY_VERSION}" \
+            --generate-notes \
+            "${PRERELEASE_ARG[@]}"

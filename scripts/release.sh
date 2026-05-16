@@ -5,7 +5,13 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [--dry-run] <module> <version>
 
-Create a GitHub Release for a module in this monorepo.
+Validate and push the git tag for a module in this monorepo.
+
+The script tags only. Each module has a dedicated per-module release
+workflow in .github/workflows/release-<module>.yml that triggers on the
+tag, runs CI tests in a clean environment, and creates the GitHub Release.
+For modules with binaries (hook, mcp-proxy, daemon) it also builds
+artifacts via GoReleaser and publishes a Homebrew formula.
 
 Modules:
   sdk-go       Go SDK                 (tag: sdk/go/vVERSION)
@@ -17,14 +23,12 @@ Modules:
 
 Flags:
   --dry-run    Validate everything and print the actions, but do not push
-               tags or create releases.
+               the tag.
 
 Notes:
-  - Pre-release versions (e.g. 0.8.0-alpha.1) are automatically marked
-    as GitHub pre-releases.
-  - mcp-proxy and daemon push the tag only and let release-mcp-proxy.yml /
-    release-daemon.yml build binaries and create the GitHub Release. Other
-    modules use 'gh release create' directly.
+  - Pre-release versions (e.g. 0.8.0-alpha.1) are flagged here for
+    display only; the release workflow handles --prerelease detection.
+  - PEP 440 pre-release form (e.g. 0.8.0a1) is accepted only for sdk-py.
 
 Examples:
   $(basename "$0") sdk-go 0.2.0
@@ -41,8 +45,6 @@ cd "$(git rev-parse --show-toplevel)"
 
 # Preflight: ensure common tools are available
 command -v git >/dev/null 2>&1 || fail "git is not installed"
-command -v gh >/dev/null 2>&1 || fail "gh CLI is not installed — see https://cli.github.com"
-gh auth status >/dev/null 2>&1 || fail "gh is not authenticated — run gh auth login"
 
 DRY_RUN=false
 ARGS=()
@@ -215,51 +217,23 @@ if [[ "$CORE_VERSION" == *-* ]] || [[ "$CORE_VERSION" =~ [0-9]+(a|b|rc)[0-9]+$ ]
   PRERELEASE=true
 fi
 
-echo "Will create release:"
+echo "Will push tag:"
 echo "  Tag:         $TAG"
-echo "  Title:       $MODULE v$VERSION"
+echo "  Module:      $MODULE v$VERSION"
 [[ "$PRERELEASE" == "true" ]] && echo "  Pre-release: yes"
-if [[ "$MODULE" == "hook" ]]; then
-  echo "  Action:      push tag only; release-hook.yml builds binaries and creates the GitHub Release"
-elif [[ "$MODULE" == "mcp-proxy" ]]; then
-  echo "  Action:      push tag only; release-mcp-proxy.yml builds binaries and creates the GitHub Release"
-elif [[ "$MODULE" == "daemon" ]]; then
-  echo "  Action:      push tag only; release-daemon.yml builds binaries and creates the GitHub Release"
-else
-  echo "  Action:      gh release create"
-fi
+echo "  Action:      push tag; release-${MODULE}.yml creates the GitHub Release"
 echo ""
 
 if [[ "$DRY_RUN" == "true" ]]; then
-  echo "==> Dry run; not pushing tag or creating release."
+  echo "==> Dry run; not pushing tag."
   exit 0
 fi
 
 read -rp "Proceed? [y/N] " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
 
-REPO_URL=$(gh repo view --json url -q '.url')
-
-if [[ "$MODULE" == "hook" || "$MODULE" == "mcp-proxy" || "$MODULE" == "daemon" ]]; then
-  # release-hook.yml / release-mcp-proxy.yml / release-daemon.yml owns release
-  # creation; we only push the tag. Avoids "release already exists" conflict
-  # between this script and the workflow when both call gh release create.
-  case "$MODULE" in
-    hook)      WORKFLOW="release-hook.yml" ;;
-    mcp-proxy) WORKFLOW="release-mcp-proxy.yml" ;;
-    daemon)    WORKFLOW="release-daemon.yml" ;;
-  esac
-  git tag "$TAG"
-  git push origin "$TAG"
-  echo ""
-  echo "==> Pushed tag $TAG"
-  echo "    ${WORKFLOW} builds binaries and creates the GitHub Release."
-  echo "    ${REPO_URL}/actions/workflows/${WORKFLOW}"
-else
-  PRERELEASE_FLAG=()
-  [[ "$PRERELEASE" == "true" ]] && PRERELEASE_FLAG=("--prerelease")
-  gh release create "$TAG" --title "$MODULE v$VERSION" --generate-notes "${PRERELEASE_FLAG[@]+"${PRERELEASE_FLAG[@]}"}"
-  echo ""
-  echo "==> Released $MODULE v$VERSION"
-  echo "    ${REPO_URL}/releases/tag/$TAG"
-fi
+git tag "$TAG"
+git push origin "$TAG"
+echo ""
+echo "==> Pushed tag $TAG"
+echo "    release-${MODULE}.yml will run CI and create the GitHub Release."
