@@ -154,7 +154,7 @@ The daemon is the only process that ever sees raw inputs — emitters are fire-a
 
 ## What's next
 
-- **OpenClaw on the shared chain** — openclaw emitting to the daemon socket, adding a third channel to the unified trail
-- **Breach-indicator flagging** (#436) — daemon-side pattern matching at emit time, writing indexed flags alongside receipts for efficient breach investigation queries
+- **Centralised storage** — the daemon today writes to a local SQLite file. The natural next step is a remote sink: ship receipts from multiple agents and machines to a shared store — Postgres, S3, or an OTel-compatible backend — so cross-agent audit trails can be correlated in one place
+- **Breach-indicator flagging** (#436) — daemon-side pattern matching at emit time, writing indexed flags alongside receipts for efficient breach investigation queries without needing to decrypt stored payloads
 - **Daemon config file** (#441) — replacing plist/unit file edits with a single `daemon.toml`
-- **`parameters_disclosure` encryption** (#280) — replacing plaintext disclosure with asymmetric ciphertext so only the forensic key holder can read stored inputs
+- **`parameters_disclosure` encryption** (#280) — replacing plaintext disclosure with asymmetric ciphertext so only the forensic key holder can read stored inputs; the redaction layer ships first so secrets are never written even in the interim
