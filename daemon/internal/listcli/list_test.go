@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,6 +46,9 @@ func fixtureDB(t *testing.T, dir, chainID string, count int) string {
 				Type:      "filesystem.file.read",
 				ToolName:  "Read",
 				RiskLevel: receipt.RiskLow,
+				// Explicit strictly-increasing timestamps avoid non-deterministic
+				// ordering when multiple receipts share the same wall-clock second.
+				Timestamp: fmt.Sprintf("2024-01-01T%02d:00:00Z", i),
 			},
 			Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
 			Chain:   receipt.Chain{Sequence: i, PreviousReceiptHash: prevHash, ChainID: chainID},
