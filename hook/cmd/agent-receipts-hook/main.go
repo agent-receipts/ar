@@ -1,14 +1,21 @@
 // Command agent-receipts-hook is a short-lived hook binary invoked by agent
-// runtimes (Claude Code, Codex, …) on PostToolUse events. It reads a JSON
-// frame from stdin, maps it to an emitter.Event, and forwards it to the
-// agent-receipts-daemon over a Unix-domain socket. The binary always exits 0
-// so it never blocks the agent, consistent with ADR-0010 §"Failure model".
+// runtimes (Claude Code, Codex, …) on PostToolUse and PreToolUse events. It
+// reads a JSON frame from stdin, maps it to an emitter.Event, and forwards it
+// to the agent-receipts-daemon over a Unix-domain socket.
+//
+// Exit behaviour:
+//   - stdin unreadable or runtime not recognised → silent exit 0 (not our concern)
+//   - runtime identified, any subsequent failure → exit 1 + message to stderr
+//
+// The strict-error exit-1 behaviour is intentional: once we know which runtime
+// is calling us, a failure to record the receipt is a signal worth surfacing.
 package main
 
 import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -30,10 +37,9 @@ var formats = map[string]reader{
 // caller should fall back to the --format flag or exit silently.
 //
 // Claude Code does not set CLAUDE_SESSION_ID as an environment variable; it
-// passes hook_event_name:"PostToolUse" in the stdin JSON payload instead. We
-// check both signals so the binary works with runtimes that take either
-// approach. Only PostToolUse is accepted from stdin to avoid misidentifying
-// PreToolUse or other hook event payloads as PostToolUse frames.
+// passes hook_event_name in the stdin JSON payload instead. We check both
+// signals so the binary works with runtimes that take either approach.
+// Both "PostToolUse" and "PreToolUse" are accepted from stdin.
 func detect(stdin []byte, env func(string) string) string {
 	if env("CLAUDE_SESSION_ID") != "" {
 		return "claude-code"
@@ -41,8 +47,11 @@ func detect(stdin []byte, env func(string) string) string {
 	var probe struct {
 		HookEventName string `json:"hook_event_name"`
 	}
-	if json.Unmarshal(stdin, &probe) == nil && probe.HookEventName == "PostToolUse" {
-		return "claude-code"
+	if json.Unmarshal(stdin, &probe) == nil {
+		switch probe.HookEventName {
+		case "PostToolUse", "PreToolUse":
+			return "claude-code"
+		}
 	}
 	return ""
 }
@@ -73,20 +82,24 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Runtime identified. From this point, failures exit 1 with a message so
+	// the agent runtime can surface the problem.
+
 	read, ok := formats[format]
 	if !ok {
-		// Unsupported format — drop silently.
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "agent-receipts-hook: unsupported format %q\n", format)
+		os.Exit(1)
 	}
 
 	ev, sessionID, err := read(stdin, env)
 	if err != nil {
-		// Malformed or unrecognisable frame — drop silently.
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "agent-receipts-hook: cannot parse %s payload: %v\n", format, err)
+		os.Exit(1)
 	}
 
 	opts := []emitter.Option{
 		emitter.WithLogger(logger),
+		emitter.WithStrictErrors(),
 	}
 	if sessionID != "" {
 		opts = append(opts, emitter.WithSessionID(sessionID))
@@ -94,11 +107,14 @@ func main() {
 
 	em, err := emitter.New(opts...)
 	if err != nil {
-		// No socket path available for this platform — drop silently.
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "agent-receipts-hook: cannot create emitter: %v\n", err)
+		os.Exit(1)
 	}
 	defer em.Close()
 
-	_ = em.Emit(context.Background(), ev)
+	if err := em.Emit(context.Background(), ev); err != nil {
+		fmt.Fprintf(os.Stderr, "agent-receipts-hook: emit failed: %v\n", err)
+		os.Exit(1)
+	}
 	os.Exit(0)
 }

@@ -205,15 +205,18 @@ func TestIntegration_ClaudeCodeFrame(t *testing.T) {
 	}
 }
 
-// TestIntegration_DaemonDown verifies the hook exits silently (no panic, no
-// error returned) when the daemon socket is unreachable. This is the
-// fire-and-forget contract: a missing daemon must never block the agent.
-func TestIntegration_DaemonDown(t *testing.T) {
+// TestIntegration_DaemonDown_StrictErrors verifies that with WithStrictErrors()
+// (the mode the hook uses), Emit returns an error when the daemon socket is
+// unreachable. The hook then exits non-zero to surface the failure to the agent
+// runtime. Latency must still be bounded by the dial timeout so the agent is
+// not blocked indefinitely.
+func TestIntegration_DaemonDown_StrictErrors(t *testing.T) {
 	dir := shortSocketDir(t)
 	// No listener started — socket path doesn't exist.
 	socketPath := filepath.Join(dir, "missing.sock")
 
 	stdin := `{
+		"hook_event_name": "PostToolUse",
 		"session_id": "no-daemon",
 		"tool_name": "Read",
 		"tool_input": {"file_path":"/tmp/test.txt"},
@@ -229,6 +232,55 @@ func TestIntegration_DaemonDown(t *testing.T) {
 		emitter.WithSocketPath(socketPath),
 		emitter.WithSessionID(sid),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		emitter.WithStrictErrors(),
+	)
+	if err != nil {
+		t.Fatalf("emitter.New: %v", err)
+	}
+	defer em.Close()
+
+	start := time.Now()
+	emitErr := em.Emit(context.Background(), ev)
+	elapsed := time.Since(start)
+
+	// With strict errors, a missing daemon must surface as an error.
+	if emitErr == nil {
+		t.Error("Emit returned nil; want error when daemon is unreachable (strict mode)")
+	}
+
+	// Latency must still be bounded: dial timeout (25ms) is the dominant cost.
+	// Allow 2x for slow CI.
+	if elapsed > 250*time.Millisecond {
+		t.Errorf("Emit took %s; want <250ms even in strict mode", elapsed)
+	}
+}
+
+// TestIntegration_DaemonDown_FireAndForget verifies that without WithStrictErrors,
+// the default fire-and-forget behaviour is preserved: Emit returns nil quickly
+// when the daemon socket is unreachable.
+func TestIntegration_DaemonDown_FireAndForget(t *testing.T) {
+	dir := shortSocketDir(t)
+	// No listener started — socket path doesn't exist.
+	socketPath := filepath.Join(dir, "missing.sock")
+
+	stdin := `{
+		"hook_event_name": "PostToolUse",
+		"session_id": "no-daemon-faf",
+		"tool_name": "Read",
+		"tool_input": {"file_path":"/tmp/test.txt"},
+		"tool_response": {"content":"hello"}
+	}`
+
+	ev, sid, err := readClaudeCode([]byte(stdin), func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("readClaudeCode: %v", err)
+	}
+
+	em, err := emitter.New(
+		emitter.WithSocketPath(socketPath),
+		emitter.WithSessionID(sid),
+		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		// no WithStrictErrors — fire-and-forget mode
 	)
 	if err != nil {
 		t.Fatalf("emitter.New: %v", err)

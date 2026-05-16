@@ -12,62 +12,100 @@ import (
 
 func TestReadClaudeCode(t *testing.T) {
 	tests := []struct {
-		name      string
-		stdin     string
-		wantErr   bool
-		wantTool  string
-		wantSID   string
-		wantInput bool
-		wantOut   bool
+		name         string
+		stdin        string
+		wantErr      bool
+		wantTool     string
+		wantSID      string
+		wantDecision string
+		wantInput    bool
+		wantOut      bool
 	}{
 		{
-			name: "full frame",
+			name: "PostToolUse full frame",
 			stdin: `{
+				"hook_event_name": "PostToolUse",
 				"session_id": "sess-abc",
 				"tool_name": "Bash",
 				"tool_input": {"command":"go test ./..."},
 				"tool_response": {"output":"ok","exit_code":0}
 			}`,
-			wantTool:  "Bash",
-			wantSID:   "sess-abc",
-			wantInput: true,
-			wantOut:   true,
+			wantTool:     "Bash",
+			wantSID:      "sess-abc",
+			wantDecision: "allowed",
+			wantInput:    true,
+			wantOut:      true,
+		},
+		{
+			name: "PreToolUse frame",
+			stdin: `{
+				"hook_event_name": "PreToolUse",
+				"session_id": "sess-pre",
+				"tool_use_id": "tu-001",
+				"tool_name": "Bash",
+				"tool_input": {"command":"rm -rf /"}
+			}`,
+			wantTool:     "Bash",
+			wantSID:      "sess-pre",
+			wantDecision: "pending",
+			wantInput:    true,
+			wantOut:      false,
+		},
+		{
+			name: "legacy frame without hook_event_name falls back to allowed",
+			stdin: `{
+				"session_id": "sess-legacy",
+				"tool_name": "Bash",
+				"tool_input": {"command":"go test ./..."},
+				"tool_response": {"output":"ok","exit_code":0}
+			}`,
+			wantTool:     "Bash",
+			wantSID:      "sess-legacy",
+			wantDecision: "allowed",
+			wantInput:    true,
+			wantOut:      true,
 		},
 		{
 			name: "no session_id",
 			stdin: `{
+				"hook_event_name": "PostToolUse",
 				"tool_name": "Read",
 				"tool_input": {"file_path":"/etc/hosts"},
 				"tool_response": {"content":"127.0.0.1 localhost"}
 			}`,
-			wantTool:  "Read",
-			wantSID:   "",
-			wantInput: true,
-			wantOut:   true,
+			wantTool:     "Read",
+			wantSID:      "",
+			wantDecision: "allowed",
+			wantInput:    true,
+			wantOut:      true,
 		},
 		{
 			name: "no tool_input",
 			stdin: `{
+				"hook_event_name": "PostToolUse",
 				"session_id": "s1",
 				"tool_name": "WebSearch",
 				"tool_response": {"results":[]}
 			}`,
-			wantTool:  "WebSearch",
-			wantSID:   "s1",
-			wantInput: false,
-			wantOut:   true,
+			wantTool:     "WebSearch",
+			wantSID:      "s1",
+			wantDecision: "allowed",
+			wantInput:    false,
+			wantOut:      true,
 		},
 		{
 			name: "no tool_response",
 			stdin: `{
+				"hook_event_name": "PostToolUse",
 				"session_id": "s2",
 				"tool_name": "Write",
 				"tool_input": {"file_path":"x.go","content":"package main"}
 			}`,
-			wantTool:  "Write",
-			wantSID:   "s2",
-			wantInput: true,
-			wantOut:   false,
+			wantTool:     "Write",
+			wantSID:      "s2",
+			wantDecision: "allowed",
+			wantInput:    true,
+			wantOut:      false,
 		},
 		{
 			name:    "missing tool_name",
@@ -90,18 +128,20 @@ func TestReadClaudeCode(t *testing.T) {
 				// Build a frame with a large but valid JSON input.
 				val := strings.Repeat("x", 100)
 				f := map[string]any{
-					"session_id":    "big",
-					"tool_name":     "Bash",
-					"tool_input":    map[string]string{"command": val},
-					"tool_response": map[string]string{"output": val},
+					"hook_event_name": "PostToolUse",
+					"session_id":      "big",
+					"tool_name":       "Bash",
+					"tool_input":      map[string]string{"command": val},
+					"tool_response":   map[string]string{"output": val},
 				}
 				b, _ := json.Marshal(f)
 				return string(b)
 			}(),
-			wantTool:  "Bash",
-			wantSID:   "big",
-			wantInput: true,
-			wantOut:   true,
+			wantTool:     "Bash",
+			wantSID:      "big",
+			wantDecision: "allowed",
+			wantInput:    true,
+			wantOut:      true,
 		},
 	}
 
@@ -128,8 +168,12 @@ func TestReadClaudeCode(t *testing.T) {
 			if ev.Tool.Server != "" {
 				t.Errorf("Tool.Server = %q; want empty", ev.Tool.Server)
 			}
-			if ev.Decision != "allowed" {
-				t.Errorf("Decision = %q; want allowed", ev.Decision)
+			wantDecision := tt.wantDecision
+			if wantDecision == "" {
+				wantDecision = "allowed"
+			}
+			if ev.Decision != wantDecision {
+				t.Errorf("Decision = %q; want %q", ev.Decision, wantDecision)
 			}
 			if sid != tt.wantSID {
 				t.Errorf("sessionID = %q; want %q", sid, tt.wantSID)
@@ -204,8 +248,14 @@ func TestDetect(t *testing.T) {
 			want:  "",
 		},
 		{
-			name:  "non-PostToolUse hook_event_name is not detected",
+			name:  "PreToolUse hook_event_name is detected as claude-code",
 			stdin: `{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_input":{}}`,
+			env:   map[string]string{},
+			want:  "claude-code",
+		},
+		{
+			name:  "unrecognised hook_event_name is not detected",
+			stdin: `{"hook_event_name":"StopHook","session_id":"s"}`,
 			env:   map[string]string{},
 			want:  "",
 		},
@@ -244,23 +294,11 @@ func TestDetect(t *testing.T) {
 
 // --- emitter.Event compatibility tests ---
 
-// TestReadClaudeCode_EventAcceptedByEmitter verifies that the emitter.Event
-// produced by readClaudeCode satisfies the emitter's validation rules (channel,
-// tool.name, decision, valid JSON). This catches mismatches before the emitter
-// rejects the frame at emit time.
-func TestReadClaudeCode_EventAcceptedByEmitter(t *testing.T) {
-	stdin := `{
-		"session_id": "compat-test",
-		"tool_name": "Bash",
-		"tool_input": {"command":"echo hello"},
-		"tool_response": {"output":"hello\n","exit_code":0}
-	}`
-	ev, _, err := readClaudeCode([]byte(stdin), func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("readClaudeCode: %v", err)
-	}
-
-	// Replicate the emitter's validation rules without dialling a socket.
+// checkEventAcceptedByEmitter replicates the emitter's validation rules without
+// dialling a socket. Used by TestReadClaudeCode_EventAcceptedByEmitter and
+// TestReadClaudeCode_PreToolUseAcceptedByEmitter.
+func checkEventAcceptedByEmitter(t *testing.T, ev emitter.Event) {
+	t.Helper()
 	if ev.Channel == "" {
 		t.Error("Channel is empty; emitter would reject")
 	}
@@ -284,7 +322,49 @@ func TestReadClaudeCode_EventAcceptedByEmitter(t *testing.T) {
 	if ev.Output != nil && !json.Valid(ev.Output) {
 		t.Errorf("Output is not valid JSON: %s", ev.Output)
 	}
-
 	// Sanity-check emitter.Tool type is used (compile-time check embedded here).
 	var _ emitter.Tool = ev.Tool
+}
+
+// TestReadClaudeCode_EventAcceptedByEmitter verifies that the emitter.Event
+// produced by readClaudeCode for a PostToolUse frame satisfies the emitter's
+// validation rules. This catches mismatches before the emitter rejects the
+// frame at emit time.
+func TestReadClaudeCode_EventAcceptedByEmitter(t *testing.T) {
+	stdin := `{
+		"hook_event_name": "PostToolUse",
+		"session_id": "compat-test",
+		"tool_name": "Bash",
+		"tool_input": {"command":"echo hello"},
+		"tool_response": {"output":"hello\n","exit_code":0}
+	}`
+	ev, _, err := readClaudeCode([]byte(stdin), func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("readClaudeCode: %v", err)
+	}
+	if ev.Decision != "allowed" {
+		t.Errorf("PostToolUse decision = %q; want allowed", ev.Decision)
+	}
+	checkEventAcceptedByEmitter(t, ev)
+}
+
+// TestReadClaudeCode_PreToolUseAcceptedByEmitter verifies that the emitter.Event
+// produced by readClaudeCode for a PreToolUse frame satisfies the emitter's
+// validation rules, with decision="pending".
+func TestReadClaudeCode_PreToolUseAcceptedByEmitter(t *testing.T) {
+	stdin := `{
+		"hook_event_name": "PreToolUse",
+		"session_id": "pre-compat-test",
+		"tool_use_id": "tu-abc",
+		"tool_name": "Write",
+		"tool_input": {"file_path":"x.go","content":"package main"}
+	}`
+	ev, _, err := readClaudeCode([]byte(stdin), func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("readClaudeCode: %v", err)
+	}
+	if ev.Decision != "pending" {
+		t.Errorf("PreToolUse decision = %q; want pending", ev.Decision)
+	}
+	checkEventAcceptedByEmitter(t, ev)
 }
