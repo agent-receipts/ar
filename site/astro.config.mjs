@@ -157,6 +157,10 @@ export default defineConfig({
           items: [
             { label: "All Posts", slug: "blog" },
             {
+              label: "Why Your Agent Can't Audit Itself",
+              slug: "blog/daemon-process-separation",
+            },
+            {
               label: "OpenClaw Plugin: How It Works",
               slug: "blog/openclaw-plugin-deep-dive",
             },
