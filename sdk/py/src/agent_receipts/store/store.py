@@ -10,8 +10,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from agent_receipts.receipt.types import AgentReceipt
 
-DEFAULT_QUERY_LIMIT = 10_000
-
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS receipts (
   id TEXT PRIMARY KEY,
@@ -47,7 +45,12 @@ class ReceiptQuery:
     status: str | None = None
     after: str | None = None
     before: str | None = None
+    # When None, all matching rows are returned (no default cap).
     limit: int | None = None
+    # When True, results are ordered newest-first (timestamp DESC, sequence
+    # DESC). Ties on timestamp are broken by sequence descending. Default is
+    # False (ascending) to preserve historical behavior.
+    newest_first: bool = False
 
 
 @dataclass
@@ -177,10 +180,13 @@ class ReceiptStore:
             params.append(filters.before)
 
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-        limit = filters.limit if filters.limit is not None else DEFAULT_QUERY_LIMIT
-        params.append(limit)
-
-        sql = f"SELECT receipt_json FROM receipts{where} ORDER BY timestamp LIMIT ?"  # noqa: S608
+        dir_ = "DESC" if filters.newest_first else "ASC"
+        order_clause = f"ORDER BY timestamp {dir_}, sequence {dir_}, rowid {dir_}"
+        if filters.limit is not None:
+            params.append(filters.limit)
+            sql = f"SELECT receipt_json FROM receipts{where} {order_clause} LIMIT ?"  # noqa: S608
+        else:
+            sql = f"SELECT receipt_json FROM receipts{where} {order_clause}"  # noqa: S608
         rows = self._conn.execute(sql, params).fetchall()
         return [_parse_receipt(r["receipt_json"]) for r in rows]
 

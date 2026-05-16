@@ -177,6 +177,169 @@ describe("ReceiptStore", () => {
 			});
 			expect(results).toHaveLength(2);
 		});
+
+		it("returns all rows ascending by default (no implicit cap)", () => {
+			// The three rows were inserted in beforeEach; no limit means all 3.
+			const results = store.query({});
+			expect(results).toHaveLength(3);
+			// Default order is ascending by timestamp.
+			expect(results[0]?.id).toBe("urn:receipt:1");
+			expect(results[2]?.id).toBe("urn:receipt:3");
+		});
+
+		it("returns rows in DESC order when order is 'desc'", () => {
+			const results = store.query({ order: "desc" });
+			expect(results).toHaveLength(3);
+			expect(results[0]?.id).toBe("urn:receipt:3");
+			expect(results[2]?.id).toBe("urn:receipt:1");
+		});
+
+		it("returns rows in ASC order when order is 'asc' (explicit)", () => {
+			const results = store.query({ order: "asc" });
+			expect(results).toHaveLength(3);
+			expect(results[0]?.id).toBe("urn:receipt:1");
+		});
+
+		it("asc order with sequence tiebreaker when timestamps are equal", () => {
+			store.insert(
+				makeReceipt({
+					id: "urn:receipt:asc-tie-1",
+					sequence: 5,
+					actionType: "filesystem.file.read",
+					riskLevel: "low",
+					status: "success",
+					timestamp: "2026-01-01T00:00:00Z",
+				}),
+				"sha256:asctie1",
+			);
+			store.insert(
+				makeReceipt({
+					id: "urn:receipt:asc-tie-2",
+					sequence: 6,
+					actionType: "filesystem.file.read",
+					riskLevel: "low",
+					status: "success",
+					timestamp: "2026-01-01T00:00:00Z",
+				}),
+				"sha256:asctie2",
+			);
+
+			const results = store.query({ order: "asc" });
+			// Among the tied rows, lower sequence comes first.
+			const tieIdx1 = results.findIndex(
+				(r) => r.id === "urn:receipt:asc-tie-1",
+			);
+			const tieIdx2 = results.findIndex(
+				(r) => r.id === "urn:receipt:asc-tie-2",
+			);
+			expect(tieIdx1).toBeGreaterThanOrEqual(0);
+			expect(tieIdx2).toBeGreaterThanOrEqual(0);
+			expect(tieIdx1).toBeLessThan(tieIdx2);
+		});
+
+		it("desc order with sequence tiebreaker when timestamps are equal", () => {
+			// Insert two extra receipts with the same timestamp but different sequences.
+			store.insert(
+				makeReceipt({
+					id: "urn:receipt:tie-1",
+					sequence: 10,
+					actionType: "filesystem.file.read",
+					riskLevel: "low",
+					status: "success",
+					timestamp: "2026-03-29T13:00:00Z",
+				}),
+				"sha256:tie1",
+			);
+			store.insert(
+				makeReceipt({
+					id: "urn:receipt:tie-2",
+					sequence: 11,
+					actionType: "filesystem.file.read",
+					riskLevel: "low",
+					status: "success",
+					timestamp: "2026-03-29T13:00:00Z",
+				}),
+				"sha256:tie2",
+			);
+
+			const results = store.query({ order: "desc" });
+			// The two tied rows should come first (most recent timestamp),
+			// with the higher sequence preceding the lower.
+			expect(results[0]?.id).toBe("urn:receipt:tie-2");
+			expect(results[1]?.id).toBe("urn:receipt:tie-1");
+		});
+	});
+
+	describe("no implicit 10k cap (regression guard)", () => {
+		it("returns all rows when limit is omitted, even beyond the former 10k cap", () => {
+			// Batch-insert 15000 rows via raw SQL to prove the LIMIT clause is
+			// absent when limit is undefined. This would fail with the old
+			// DEFAULT_QUERY_LIMIT = 10000 because only 10000 rows would be returned.
+			const freshStore = openStore(":memory:");
+			const db: DatabaseSync = (freshStore as unknown as { db: DatabaseSync })
+				.db;
+			const stmt = db.prepare(
+				`INSERT INTO receipts
+				 (id, chain_id, sequence, action_type, tool_name, risk_level, status,
+				  timestamp, issuer_id, principal_id, receipt_json, receipt_hash)
+				 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+			);
+			// Minimal valid AgentReceipt JSON the SDK can deserialize.
+			const baseJson = JSON.stringify({
+				id: "urn:receipt:bulk-base",
+				"@context": [
+					"https://www.w3.org/ns/credentials/v2",
+					"https://agentreceipts.ai/context/v1",
+				],
+				type: ["VerifiableCredential", "AgentReceipt"],
+				version: "0.2.0",
+				issuer: { id: "did:issuer" },
+				issuanceDate: "2024-01-01T00:00:00Z",
+				credentialSubject: {
+					principal: { id: "did:user" },
+					action: {
+						id: "act_0",
+						type: "filesystem.file.read",
+						tool_name: "Read",
+						risk_level: "low",
+						timestamp: "2024-01-01T00:00:00Z",
+					},
+					outcome: { status: "success" },
+					chain: {
+						sequence: 1,
+						chain_id: "chain-bulk",
+						previous_receipt_hash: null,
+					},
+				},
+				proof: {
+					type: "Ed25519Signature2020",
+					created: "2024-01-01T00:00:00Z",
+					verificationMethod: "did:issuer#k1",
+					proofPurpose: "assertionMethod",
+					proofValue: `u${"A".repeat(86)}`,
+				},
+			});
+			const n = 15_000;
+			for (let i = 1; i <= n; i++) {
+				stmt.run(
+					`urn:receipt:bulk-${i}`,
+					"chain-bulk",
+					i,
+					"filesystem.file.read",
+					"Read",
+					"low",
+					"success",
+					new Date(i * 1000).toISOString(),
+					"did:issuer",
+					"did:user",
+					baseJson,
+					`sha256:bulk${i}`,
+				);
+			}
+			const results = freshStore.query({});
+			expect(results).toHaveLength(n);
+			freshStore.close();
+		});
 	});
 
 	describe("corrupt receipt validation", () => {

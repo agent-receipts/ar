@@ -177,6 +177,162 @@ def test_query_no_filters() -> None:
     store.close()
 
 
+def test_query_explicit_limit_respected() -> None:
+    """An explicit limit still caps results after the cap removal."""
+    store = open_store(":memory:")
+    for i in range(5):
+        r = make_receipt(id=f"urn:receipt:el{i}", sequence=i + 1)
+        store.insert(r, hash_receipt(r))
+
+    results = store.query(ReceiptQuery(limit=3))
+    assert len(results) == 3
+    store.close()
+
+
+def test_query_no_default_limit() -> None:
+    """No limit set means all rows are returned — no silent cap.
+
+    Batch-inserts 15 000 rows via raw SQL to prove the LIMIT clause is absent.
+    This would fail with the old DEFAULT_QUERY_LIMIT = 10_000 because only
+    10 000 rows would be returned.
+    """
+    store = open_store(":memory:")
+    n = 15_000
+    # Generate one valid receipt JSON and reuse it for all rows (table id is
+    # unique per row; receipt_json content only needs to be deserializable).
+    base_receipt = make_receipt(id="urn:receipt:bulk-base", sequence=1)
+    base_json = base_receipt.model_dump_json()
+    rows = [
+        (
+            f"urn:receipt:bulk-{i}",
+            "chain-bulk",
+            i,
+            "filesystem.file.read",
+            "Read",
+            "low",
+            "success",
+            f"2024-01-01T{i // 3600:02d}:{(i % 3600) // 60:02d}:{i % 60:02d}Z",
+            "did:issuer",
+            "did:user",
+            base_json,
+            f"sha256:bulk{i}",
+            None,
+        )
+        for i in range(1, n + 1)
+    ]
+    store._conn.executemany(  # noqa: SLF001
+        """INSERT INTO receipts
+           (id, chain_id, sequence, action_type, tool_name, risk_level, status,
+            timestamp, issuer_id, principal_id, receipt_json, receipt_hash,
+            previous_receipt_hash)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        rows,
+    )
+    store._conn.commit()  # noqa: SLF001
+    results = store.query(ReceiptQuery())
+    assert len(results) == n
+    store.close()
+
+
+def test_query_order_asc_default() -> None:
+    """Default ordering is ascending by timestamp (oldest first)."""
+    store = open_store(":memory:")
+    r1 = make_receipt(
+        id="urn:receipt:ord1",
+        timestamp="2026-01-01T00:00:00Z",
+        chain_id="cord",
+        sequence=1,
+    )
+    r2 = make_receipt(
+        id="urn:receipt:ord2",
+        timestamp="2026-06-01T00:00:00Z",
+        chain_id="cord",
+        sequence=2,
+        previous_hash=hash_receipt(r1),
+    )
+    store.insert(r1, hash_receipt(r1))
+    store.insert(r2, hash_receipt(r2))
+
+    results = store.query(ReceiptQuery())
+    assert results[0].id == "urn:receipt:ord1"
+    assert results[1].id == "urn:receipt:ord2"
+    store.close()
+
+
+def test_query_order_desc() -> None:
+    """newest_first=True returns most recent receipts first."""
+    store = open_store(":memory:")
+    r1 = make_receipt(
+        id="urn:receipt:desc1",
+        timestamp="2026-01-01T00:00:00Z",
+        chain_id="cdesc",
+        sequence=1,
+    )
+    r2 = make_receipt(
+        id="urn:receipt:desc2",
+        timestamp="2026-06-01T00:00:00Z",
+        chain_id="cdesc",
+        sequence=2,
+        previous_hash=hash_receipt(r1),
+    )
+    store.insert(r1, hash_receipt(r1))
+    store.insert(r2, hash_receipt(r2))
+
+    results = store.query(ReceiptQuery(newest_first=True))
+    assert results[0].id == "urn:receipt:desc2"
+    assert results[1].id == "urn:receipt:desc1"
+    store.close()
+
+
+def test_query_desc_sequence_tiebreaker() -> None:
+    """When timestamps are equal, higher sequence comes first in DESC order."""
+    store = open_store(":memory:")
+    shared_ts = "2026-06-01T12:00:00Z"
+    r1 = make_receipt(
+        id="urn:receipt:tie1",
+        timestamp=shared_ts,
+        chain_id="ctie",
+        sequence=1,
+    )
+    r2 = make_receipt(
+        id="urn:receipt:tie2",
+        timestamp=shared_ts,
+        chain_id="ctie",
+        sequence=2,
+        previous_hash=hash_receipt(r1),
+    )
+    store.insert(r1, hash_receipt(r1))
+    store.insert(r2, hash_receipt(r2))
+
+    results = store.query(ReceiptQuery(newest_first=True))
+    assert results[0].id == "urn:receipt:tie2"
+    assert results[1].id == "urn:receipt:tie1"
+    store.close()
+
+
+def test_query_asc_sequence_tiebreaker() -> None:
+    """When timestamps are equal, lower sequence comes first in ASC order."""
+    store = open_store(":memory:")
+    shared_ts = "2026-06-01T12:00:00Z"
+    r1 = make_receipt(
+        id="urn:receipt:asctie1", timestamp=shared_ts, chain_id="casctie", sequence=1
+    )
+    r2 = make_receipt(
+        id="urn:receipt:asctie2",
+        timestamp=shared_ts,
+        chain_id="casctie",
+        sequence=2,
+        previous_hash=hash_receipt(r1),
+    )
+    store.insert(r2, hash_receipt(r2))  # insert higher sequence first
+    store.insert(r1, hash_receipt(r1))
+
+    results = store.query(ReceiptQuery())
+    ids = [r.id for r in results]
+    assert ids.index("urn:receipt:asctie1") < ids.index("urn:receipt:asctie2")
+    store.close()
+
+
 def test_stats() -> None:
     store = open_store(":memory:")
     r1 = make_receipt(

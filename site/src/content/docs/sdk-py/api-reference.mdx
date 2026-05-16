@@ -313,7 +313,10 @@ class ReceiptQuery:
     status: str | None = None
     after: str | None = None
     before: str | None = None
+    # When None, all matching rows are returned (no default cap).
     limit: int | None = None
+    # When True, returns newest receipts first; ties broken by sequence descending.
+    newest_first: bool = False
 ```
 
 #### `StoreStats`

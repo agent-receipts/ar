@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
@@ -345,6 +346,128 @@ func TestQueryReceiptsOrdering(t *testing.T) {
 	}
 }
 
+func TestQueryReceiptsNoDefaultLimit(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	// A small batch here proves the integration path; the real regression guard
+	// for the removed 10k cap is TestBuildQueryReceiptsSQLNoLimit in
+	// store_sql_test.go (white-box SQL assertion in the store package).
+	const n = 5
+	for i := 1; i <= n; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-1", nil)
+		h, _ := receipt.HashReceipt(r)
+		if err := s.Insert(r, h); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	// nil Limit must return all rows.
+	results, err := s.QueryReceipts(Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != n {
+		t.Errorf("expected %d results with no limit, got %d", n, len(results))
+	}
+
+	// Explicit Limit still works.
+	lim := 3
+	limited, err := s.QueryReceipts(Query{Limit: &lim})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(limited) != lim {
+		t.Errorf("expected %d results with explicit limit, got %d", lim, len(limited))
+	}
+}
+
+func TestQueryReceiptsDescSequenceTiebreaker(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	// Two receipts share the same timestamp but differ in sequence.
+	// With NewestFirst the one with the higher sequence must come first.
+	sharedTS := "2024-06-01T12:00:00Z"
+	for _, seq := range []int{1, 2} {
+		unsigned := receipt.Create(receipt.CreateInput{
+			Issuer:    receipt.Issuer{ID: "did:agent:test"},
+			Principal: receipt.Principal{ID: "did:user:test"},
+			Action: receipt.Action{
+				Type:      "filesystem.file.read",
+				RiskLevel: receipt.RiskLow,
+				Timestamp: sharedTS,
+			},
+			Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+			Chain:   receipt.Chain{Sequence: seq, ChainID: "chain-tie"},
+		})
+		signed, err := receipt.Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, _ := receipt.HashReceipt(signed)
+		if err := s.Insert(signed, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	desc, err := s.QueryReceipts(Query{NewestFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desc) != 2 {
+		t.Fatalf("expected 2 receipts, got %d", len(desc))
+	}
+	if got := desc[0].CredentialSubject.Chain.Sequence; got != 2 {
+		t.Errorf("tiebreaker: expected sequence 2 first, got %d", got)
+	}
+	if got := desc[1].CredentialSubject.Chain.Sequence; got != 1 {
+		t.Errorf("tiebreaker: expected sequence 1 second, got %d", got)
+	}
+}
+
+func TestQueryReceiptsAscSequenceTiebreaker(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	sharedTS := "2024-06-01T12:00:00Z"
+	for _, seq := range []int{2, 1} { // insert in reverse to confirm ordering is by SQL not insertion
+		unsigned := receipt.Create(receipt.CreateInput{
+			Issuer:    receipt.Issuer{ID: "did:agent:test"},
+			Principal: receipt.Principal{ID: "did:user:test"},
+			Action: receipt.Action{
+				Type:      "filesystem.file.read",
+				RiskLevel: receipt.RiskLow,
+				Timestamp: sharedTS,
+			},
+			Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+			Chain:   receipt.Chain{Sequence: seq, ChainID: "chain-asc-tie"},
+		})
+		signed, err := receipt.Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, _ := receipt.HashReceipt(signed)
+		if err := s.Insert(signed, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	asc, err := s.QueryReceipts(Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asc) != 2 {
+		t.Fatalf("expected 2 receipts, got %d", len(asc))
+	}
+	if got := asc[0].CredentialSubject.Chain.Sequence; got != 1 {
+		t.Errorf("ASC tiebreaker: expected sequence 1 first, got %d", got)
+	}
+	if got := asc[1].CredentialSubject.Chain.Sequence; got != 2 {
+		t.Errorf("ASC tiebreaker: expected sequence 2 second, got %d", got)
+	}
+}
+
 func TestQueryReceiptsCombinedFilters(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()
@@ -554,6 +677,44 @@ func TestQueryAfterRowIDAppliesFilters(t *testing.T) {
 	}
 	if results[0].CredentialSubject.Chain.ChainID != chainA {
 		t.Errorf("wrong chain: %s", results[0].CredentialSubject.Chain.ChainID)
+	}
+}
+
+func TestQueryAfterRowIDNilLimitReturnsAllRows(t *testing.T) {
+	s := setupStore(t)
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 5
+	var prevHash *string
+	for i := 1; i <= n; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-nil-limit", prevHash)
+		h, err := receipt.HashReceipt(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+
+	// nil Limit must return all rows above rowid 0.
+	results, _, err := s.QueryAfterRowID(Query{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != n {
+		t.Errorf("QueryAfterRowID with nil Limit: got %d rows, want %d", len(results), n)
+	}
+}
+
+func TestBuildQueryAfterRowIDSQLNilLimitOmitsLIMIT(t *testing.T) {
+	sql, _ := buildQueryAfterRowIDSQL(Query{}, 0)
+	if strings.Contains(sql, "LIMIT") {
+		t.Errorf("buildQueryAfterRowIDSQL with nil Limit must not contain LIMIT, got: %s", sql)
 	}
 }
 
