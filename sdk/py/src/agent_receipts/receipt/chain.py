@@ -92,6 +92,7 @@ def verify_chain(
     broken_at = -1
     previous: AgentReceipt | None = None
     signature_compute_error: str | None = None
+    hash_compute_error: str | None = None
 
     for i, receipt in enumerate(receipts):
         chain = receipt.credentialSubject.chain
@@ -117,24 +118,11 @@ def verify_chain(
         else:
             try:
                 previous_hash = hash_receipt(previous)
+                hash_link_valid = chain.previous_receipt_hash == previous_hash
             except (TypeError, ValueError) as exc:
-                results.append(
-                    ReceiptVerification(
-                        index=i,
-                        receipt_id=receipt.id,
-                        signature_valid=signature_valid,
-                        hash_link_valid=False,
-                        sequence_valid=sequence_valid,
-                    )
-                )
-                return ChainVerification(
-                    valid=False,
-                    length=len(receipts),
-                    receipts=results,
-                    broken_at=i,
-                    error=f"hash compute failed at index {i - 1}: {exc}",
-                )
-            hash_link_valid = chain.previous_receipt_hash == previous_hash
+                if hash_compute_error is None:
+                    hash_compute_error = f"hash compute failed at index {i - 1}: {exc}"
+                hash_link_valid = False
 
         verification = ReceiptVerification(
             index=i,
@@ -151,19 +139,6 @@ def verify_chain(
             broken_at = i
 
         previous = receipt
-
-    # Signature-compute exception takes precedence over later structural checks:
-    # if a receipt could not be canonicalised for verification, the chain is
-    # already structurally broken and downstream checks (terminal placement,
-    # response_hash, expected_length, ...) are not meaningful.
-    if signature_compute_error is not None:
-        return ChainVerification(
-            valid=False,
-            length=len(receipts),
-            receipts=results,
-            broken_at=broken_at,
-            error=signature_compute_error,
-        )
 
     # Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
     for i, receipt in enumerate(receipts[:-1]):
@@ -187,6 +162,11 @@ def verify_chain(
         receipts=results,
         broken_at=broken_at,
     )
+    # Sig errors take precedence over hash-compute errors.
+    if signature_compute_error is not None:
+        cv.error = signature_compute_error
+    elif hash_compute_error is not None:
+        cv.error = hash_compute_error
 
     # Response-hash verification (spec §4.3.2).
     # When a body is supplied: recompute and fail on mismatch.
@@ -241,7 +221,10 @@ def verify_chain(
         if last_hash != expected_final_hash:
             cv.valid = False
             cv.broken_at = last_index
-            cv.error = "final receipt hash does not match expected value"
+            cv.error = (
+                f"final receipt hash mismatch at index {last_index}: "
+                f"expected {expected_final_hash}, got {last_hash}"
+            )
             return cv
 
     if require_terminal:

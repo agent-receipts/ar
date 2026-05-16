@@ -494,6 +494,51 @@ class TestAdr0008ChainBehaviours:
         assert len(result.receipts) == 2
         assert result.receipts[1].hash_link_valid is False
 
+    def test_hash_compute_error_all_receipts_present(self) -> None:
+        """hash_receipt error mid-chain: all receipts must be in the result (invariant).
+
+        Uses a 5-receipt chain with a selective mock that only fails on receipt[0].
+        Verifies iteration continues: length==5, len(receipts)==5, broken_at==1,
+        and subsequent hash links (which hash receipt[1] onward) resolve normally.
+        """
+        kp = generate_key_pair()
+        chain = _build_chain(5, kp.private_key)
+        target_id = chain[0].id
+        real_hash_receipt = hash_receipt
+
+        def selective_raise(r: object) -> str:
+            if getattr(r, "id", None) == target_id:
+                raise ValueError("injected failure on receipt 0")
+            return real_hash_receipt(r)  # type: ignore[arg-type]
+
+        with patch(
+            "agent_receipts.receipt.chain.hash_receipt",
+            side_effect=selective_raise,
+        ):
+            result = verify_chain(chain, kp.public_key)
+
+        assert result.valid is False
+        assert result.broken_at == 1
+        assert result.length == 5
+        assert len(result.receipts) == 5
+        assert result.receipts[1].hash_link_valid is False
+        # Subsequent receipts: hash links resolved normally via receipt[1] onward.
+        assert result.receipts[2].hash_link_valid is True
+
+    def test_expected_final_hash_mismatch_error_message(self) -> None:
+        """expected_final_hash mismatch error includes expected and computed hashes."""
+        kp = generate_key_pair()
+        chain = _build_chain(3, kp.private_key)
+        real_final_hash = hash_receipt(chain[-1])
+        wrong_hash = "sha256:" + "0" * 64
+
+        result = verify_chain(chain, kp.public_key, expected_final_hash=wrong_hash)
+
+        assert result.valid is False
+        assert "final receipt hash mismatch at index 2" in result.error
+        assert wrong_hash in result.error
+        assert real_final_hash in result.error
+
     def test_hash_failure_in_expected_final_hash_populates_error(self) -> None:
         """hash_receipt raising on the final receipt surfaces via expected_final_hash.
 
