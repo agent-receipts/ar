@@ -11,6 +11,7 @@ Modules:
   sdk-go       Go SDK                 (tag: sdk/go/vVERSION)
   sdk-ts       TypeScript SDK         (tag: sdk-ts-vVERSION)
   sdk-py       Python SDK             (tag: sdk-py-vVERSION)
+  hook         agent-receipts-hook    (tag: hook/vVERSION)
   mcp-proxy    MCP proxy              (tag: mcp-proxy/vVERSION)
   daemon       agent-receipts daemon  (tag: daemon/vVERSION)
 
@@ -69,7 +70,7 @@ case "$MODULE" in
     [[ "$VERSION" =~ $SEMVER_RE ]] || [[ "$VERSION" =~ $PEP440_PRE_RE ]] || \
       fail "invalid version '$VERSION' for sdk-py — expected SemVer (e.g. 0.5.0, 1.0.0-beta.1) or PEP 440 pre-release (e.g. 0.8.0a1)"
     ;;
-  sdk-go|sdk-ts|mcp-proxy|daemon)
+  sdk-go|sdk-ts|hook|mcp-proxy|daemon)
     [[ "$VERSION" =~ $SEMVER_RE ]] || \
       fail "invalid version '$VERSION' for $MODULE — expected SemVer (e.g. 0.2.0, 1.0.0-beta.1). PEP 440 form (e.g. 0.8.0a1) is accepted only for sdk-py."
     ;;
@@ -91,7 +92,7 @@ REMOTE=$(git rev-parse origin/main)
 
 # Go modules don't support build metadata in tags
 case "$MODULE" in
-  sdk-go|mcp-proxy|daemon)
+  sdk-go|hook|mcp-proxy|daemon)
     [[ "$VERSION" != *+* ]] || fail "Go module versions cannot contain build metadata (+...)"
     ;;
 esac
@@ -108,6 +109,10 @@ case "$MODULE" in
   sdk-py)
     TAG="sdk-py-v${VERSION}"
     DIR="sdk/py"
+    ;;
+  hook)
+    TAG="hook/v${VERSION}"
+    DIR="hook"
     ;;
   mcp-proxy)
     TAG="mcp-proxy/v${VERSION}"
@@ -136,6 +141,15 @@ case "$MODULE" in
     command -v go >/dev/null 2>&1 || fail "go is not installed"
     echo "--- Running Go checks in $DIR"
     (cd "$DIR" && go vet ./... && go test ./...)
+    ;;
+  hook)
+    command -v go >/dev/null 2>&1 || fail "go is not installed"
+    echo "--- Checking for replace directive in $DIR/go.mod"
+    if grep -Eq '^[[:space:]]*replace[[:space:]]' "$DIR/go.mod"; then
+      fail "$DIR/go.mod contains a replace directive — remove it and point to a published sdk/go version before releasing"
+    fi
+    echo "--- Running Go checks in $DIR"
+    (cd "$DIR" && GOWORK=off go vet ./... && GOWORK=off go test ./...)
     ;;
   mcp-proxy)
     command -v go >/dev/null 2>&1 || fail "go is not installed"
@@ -205,7 +219,9 @@ echo "Will create release:"
 echo "  Tag:         $TAG"
 echo "  Title:       $MODULE v$VERSION"
 [[ "$PRERELEASE" == "true" ]] && echo "  Pre-release: yes"
-if [[ "$MODULE" == "mcp-proxy" ]]; then
+if [[ "$MODULE" == "hook" ]]; then
+  echo "  Action:      push tag only; release-hook.yml builds binaries and creates the GitHub Release"
+elif [[ "$MODULE" == "mcp-proxy" ]]; then
   echo "  Action:      push tag only; release-mcp-proxy.yml builds binaries and creates the GitHub Release"
 elif [[ "$MODULE" == "daemon" ]]; then
   echo "  Action:      push tag only; release-daemon.yml builds binaries and creates the GitHub Release"
@@ -224,11 +240,12 @@ read -rp "Proceed? [y/N] " confirm
 
 REPO_URL=$(gh repo view --json url -q '.url')
 
-if [[ "$MODULE" == "mcp-proxy" || "$MODULE" == "daemon" ]]; then
-  # release-mcp-proxy.yml / release-daemon.yml owns release creation; we only
-  # push the tag. Avoids "release already exists" conflict between this script
-  # and the workflow when both call gh release create against the same tag.
+if [[ "$MODULE" == "hook" || "$MODULE" == "mcp-proxy" || "$MODULE" == "daemon" ]]; then
+  # release-hook.yml / release-mcp-proxy.yml / release-daemon.yml owns release
+  # creation; we only push the tag. Avoids "release already exists" conflict
+  # between this script and the workflow when both call gh release create.
   case "$MODULE" in
+    hook)      WORKFLOW="release-hook.yml" ;;
     mcp-proxy) WORKFLOW="release-mcp-proxy.yml" ;;
     daemon)    WORKFLOW="release-daemon.yml" ;;
   esac

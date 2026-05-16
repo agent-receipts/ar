@@ -35,10 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Emit()` failure (daemon unreachable, using `WithStrictErrors()`). The only
   remaining silent exit 0 path is unrecognised runtime — not our concern.
 
-### Dependencies
-
-- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.9.0`.
-
 ## [0.9.0] - 2026-05-16
 
 ### Changed
