@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,14 +13,8 @@ import (
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
-	"github.com/agent-receipts/ar/sdk/go/receipt"
-	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
-// receiptSubcmdDeprecated prints a deprecation notice and exits 1.
-// mcp-proxy no longer maintains its own receipts.db; all receipts are
-// written by the agent-receipts daemon. Use the `agent-receipts` CLI
-// (e.g. `agent-receipts list`) to inspect the daemon's receipt store.
 func receiptSubcmdDeprecated(subcommand string) {
 	fmt.Fprintf(os.Stderr, "mcp-proxy %s: this subcommand has been removed.\n", subcommand)
 	fmt.Fprintf(os.Stderr, "\n")
@@ -38,107 +30,8 @@ func receiptSubcmdDeprecated(subcommand string) {
 	os.Exit(1)
 }
 
-const listRowFmt = "%-22s %-14s %-30s %-22s %-8s %-8s %s\n"
-
-func openReceiptStore(path string) *store.Store {
-	if err := ensureDBDir(path); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating receipt store directory: %v\n", err)
-		os.Exit(1)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening receipt store: %v\n", err)
-		os.Exit(1)
-	}
-	return s
-}
-
 func cmdList(_ []string) {
 	receiptSubcmdDeprecated("list")
-}
-
-// validateFollowFlags returns an error when --follow is set with a
-// non-positive --interval. Pulled out of cmdList so it can be tested
-// without invoking os.Exit.
-func validateFollowFlags(follow bool, interval time.Duration) error {
-	if follow && interval <= 0 {
-		return fmt.Errorf("--interval must be positive, got %s", interval)
-	}
-	return nil
-}
-
-// runFollowLoop polls the store on every tick for rows past lastRowID and
-// writes them to w. Exits cleanly when ctx is canceled (e.g. Ctrl-C).
-func runFollowLoop(ctx context.Context, s *store.Store, lastRowID int64, q store.Query, interval time.Duration, asJSON bool, w io.Writer) error {
-	if interval <= 0 {
-		return fmt.Errorf("run follow loop: interval must be positive, got %s", interval)
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	// One encoder per invocation: reused across ticks to avoid per-poll
-	// allocations and to keep encoding configuration in one place.
-	var enc *json.Encoder
-	if asJSON {
-		enc = json.NewEncoder(w)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			newRows, maxRowID, err := s.QueryAfterRowIDContext(ctx, q, lastRowID)
-			if err != nil {
-				// Treat cancellation as a clean exit, not an error.
-				if ctx.Err() != nil {
-					return nil
-				}
-				return err
-			}
-			lastRowID = maxRowID
-			if len(newRows) == 0 {
-				continue
-			}
-			if asJSON {
-				for _, r := range newRows {
-					if err := enc.Encode(r); err != nil {
-						return err
-					}
-				}
-			} else {
-				writeReceiptRows(w, newRows)
-			}
-		}
-	}
-}
-
-// reverseReceipts reverses s in place. Used in follow mode so the initial
-// newest-first batch is flipped to chronological order, matching the
-// subsequent streamed rows.
-func reverseReceipts(s []receipt.AgentReceipt) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
-}
-
-func writeReceiptRows(w io.Writer, receipts []receipt.AgentReceipt) {
-	for _, r := range receipts {
-		subj := r.CredentialSubject
-		server := ""
-		if subj.Action.Target != nil {
-			server = subj.Action.Target.System
-		}
-		fmt.Fprintf(w, listRowFmt,
-			truncate(r.ID, 23),
-			truncate(server, 14),
-			truncate(subj.Action.ToolName, 30),
-			truncate(subj.Action.Type, 22),
-			subj.Action.RiskLevel,
-			subj.Outcome.Status,
-			subj.Action.Timestamp,
-		)
-	}
 }
 
 func cmdInspect(_ []string) {
@@ -412,96 +305,6 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
-}
-
-// writePrivateKeyFile writes data to path with 0600 permissions. When force is
-// false the call fails atomically if the file already exists (O_EXCL). When
-// force is true the key is written to a temp file first then renamed into place
-// so the previous key remains intact if the write fails.
-func writePrivateKeyFile(path string, data []byte, force bool) error {
-	if force {
-		// Write-then-rename: old key survives intact until the new one is safely on disk.
-		dir := filepath.Dir(path)
-		tmp, err := os.CreateTemp(dir, ".key-*.tmp")
-		if err != nil {
-			return fmt.Errorf("create temp key file in %q: %w", dir, err)
-		}
-		tmpName := tmp.Name()
-		if _, werr := tmp.Write(data); werr != nil {
-			cerr := tmp.Close()
-			os.Remove(tmpName)
-			return fmt.Errorf("write temp key file: %w", errors.Join(werr, cerr))
-		}
-		if cerr := tmp.Close(); cerr != nil {
-			os.Remove(tmpName)
-			return fmt.Errorf("close temp key file: %w", cerr)
-		}
-		// Explicit chmod guarantees 0600 regardless of process umask.
-		if chErr := os.Chmod(tmpName, 0o600); chErr != nil {
-			os.Remove(tmpName)
-			return fmt.Errorf("set permissions on key file %q: %w", path, chErr)
-		}
-		if rerr := os.Rename(tmpName, path); rerr != nil {
-			os.Remove(tmpName)
-			return fmt.Errorf("rename key file to %q: %w", path, rerr)
-		}
-		return nil
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		if os.IsExist(err) {
-			return fmt.Errorf("key file %q already exists (use -force to overwrite)", path)
-		}
-		return fmt.Errorf("create key file %q: %w", path, err)
-	}
-	if _, werr := f.Write(data); werr != nil {
-		cerr := f.Close()
-		os.Remove(path)
-		return fmt.Errorf("write key file %q: %w", path, errors.Join(werr, cerr))
-	}
-	if cerr := f.Close(); cerr != nil {
-		os.Remove(path)
-		return fmt.Errorf("close key file %q: %w", path, cerr)
-	}
-	// Explicit chmod guarantees 0600 regardless of process umask.
-	if chErr := os.Chmod(path, 0o600); chErr != nil {
-		os.Remove(path)
-		return fmt.Errorf("set permissions on key file %q: %w", path, chErr)
-	}
-	return nil
-}
-
-// writePubKeyFile writes data to path with 0644 permissions. When force is false
-// the call fails if the file already exists. When force is true the existing file
-// is removed first so a fresh inode is created with the correct 0644 mode.
-func writePubKeyFile(path string, data []byte, force bool) error {
-	if force {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove existing public key %q: %w", path, err)
-		}
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		if os.IsExist(err) {
-			return fmt.Errorf("public key file %q already exists (use -force to overwrite)", path)
-		}
-		return fmt.Errorf("create public key file %q: %w", path, err)
-	}
-	if _, werr := f.Write(data); werr != nil {
-		cerr := f.Close()
-		os.Remove(path)
-		return fmt.Errorf("write public key file %q: %w", path, errors.Join(werr, cerr))
-	}
-	if cerr := f.Close(); cerr != nil {
-		os.Remove(path)
-		return fmt.Errorf("close public key file %q: %w", path, cerr)
-	}
-	// Explicit chmod guarantees 0644 regardless of process umask.
-	if chErr := os.Chmod(path, 0o644); chErr != nil {
-		os.Remove(path)
-		return fmt.Errorf("set permissions on public key file %q: %w", path, chErr)
-	}
-	return nil
 }
 
 func cmdInit(args []string) {

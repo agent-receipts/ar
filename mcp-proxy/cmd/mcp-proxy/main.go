@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -838,23 +837,6 @@ func ensureDBDir(path string) error {
 		return fmt.Errorf("create database directory %q: %w", filepath.Dir(path), err)
 	}
 	return nil
-}
-
-// checkOpenFilePermissions is like checkKeyFilePermissions but operates on an
-// already-open file descriptor, eliminating the TOCTOU race between stat and
-// read. Returns "" on Windows or when f.Stat() fails.
-func checkOpenFilePermissions(f *os.File) string {
-	if runtime.GOOS == "windows" {
-		return ""
-	}
-	info, err := f.Stat()
-	if err != nil {
-		return ""
-	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return fmt.Sprintf("key file %q has permissions %04o — run: chmod 600 %q", f.Name(), perm, f.Name())
-	}
-	return ""
 }
 
 func generateToken(n int) string {
