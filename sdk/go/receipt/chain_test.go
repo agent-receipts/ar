@@ -132,11 +132,116 @@ func TestVerifyChainSurfacesHashError(t *testing.T) {
 	if result.BrokenAt != 1 {
 		t.Errorf("expected BrokenAt=1, got %d", result.BrokenAt)
 	}
+	if len(result.Receipts) != 3 {
+		t.Errorf("expected all 3 receipt entries, got %d", len(result.Receipts))
+	}
 	if !strings.Contains(result.Error, "hash compute failed at index 0") {
 		t.Errorf("expected error to contain 'hash compute failed at index 0', got: %s", result.Error)
 	}
 	if !strings.Contains(result.Error, "synthetic canonicalize failure") {
 		t.Errorf("expected error to contain 'synthetic canonicalize failure', got: %s", result.Error)
+	}
+}
+
+// TestHashComputeErrorAllReceiptsPresent verifies the length/brokenAt invariants
+// when hashReceipt fails mid-chain: all receipts must be in the result, and
+// brokenAt must point to the first broken index, not the early-exit point.
+func TestHashComputeErrorAllReceiptsPresent(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 5)
+
+	targetID := chain[0].ID
+	orig := hashReceipt
+	hashReceipt = func(r AgentReceipt) (string, error) {
+		if r.ID == targetID {
+			return "", errors.New("synthetic failure")
+		}
+		return orig(r)
+	}
+	t.Cleanup(func() { hashReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if result.BrokenAt != 1 {
+		t.Errorf("expected BrokenAt=1 (first broken index), got %d", result.BrokenAt)
+	}
+	if result.Length != 5 {
+		t.Errorf("expected Length=5, got %d", result.Length)
+	}
+	if len(result.Receipts) != 5 {
+		t.Errorf("expected 5 per-receipt entries (invariant), got %d", len(result.Receipts))
+	}
+	// Only receipt[1]'s hash link is broken; later ones resolve normally.
+	if result.Receipts[1].HashLinkValid {
+		t.Error("expected Receipts[1].HashLinkValid=false")
+	}
+	if !result.Receipts[2].HashLinkValid {
+		t.Error("expected Receipts[2].HashLinkValid=true (hash of receipt[1] computes fine)")
+	}
+}
+
+// TestSigComputeErrorContinuesIteration verifies that a signature-compute error
+// (Verify returns a non-nil error) does not early-exit the loop: all receipts
+// must be present, brokenAt is the first index that failed, and the error message
+// names the failure site.
+func TestSigComputeErrorContinuesIteration(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 5)
+
+	targetID := chain[1].ID
+	orig := verifyReceipt
+	verifyReceipt = func(r AgentReceipt, key string) (bool, error) {
+		if r.ID == targetID {
+			return false, errors.New("synthetic verify failure")
+		}
+		return orig(r, key)
+	}
+	t.Cleanup(func() { verifyReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if result.BrokenAt != 1 {
+		t.Errorf("expected BrokenAt=1, got %d", result.BrokenAt)
+	}
+	if result.Length != 5 {
+		t.Errorf("expected Length=5, got %d", result.Length)
+	}
+	if len(result.Receipts) != 5 {
+		t.Errorf("expected 5 per-receipt entries, got %d", len(result.Receipts))
+	}
+	if !strings.Contains(result.Error, "signature compute failed at index 1") {
+		t.Errorf("expected error to name failure site, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, "synthetic verify failure") {
+		t.Errorf("expected error to include cause, got: %s", result.Error)
+	}
+}
+
+// TestExpectedFinalHashMismatchError verifies the enriched error message includes
+// both the expected and computed hashes.
+func TestExpectedFinalHashMismatchError(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3)
+	realFinalHash, _ := HashReceipt(chain[2])
+
+	// Supply a deliberately wrong expected hash.
+	wrongHash := "sha256:" + strings.Repeat("0", 64)
+	result := VerifyChain(chain, kp.PublicKey, ChainVerifyOptions{ExpectedFinalHash: wrongHash})
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if !strings.Contains(result.Error, "final receipt hash mismatch at index 2") {
+		t.Errorf("expected index in error, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, wrongHash) {
+		t.Errorf("expected expected-hash in error, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, realFinalHash) {
+		t.Errorf("expected computed-hash in error, got: %s", result.Error)
 	}
 }
 

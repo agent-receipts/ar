@@ -10,6 +10,10 @@ import (
 // be exercised. In production, this variable is left pointing at HashReceipt.
 var hashReceipt = HashReceipt
 
+// verifyReceipt is overridable in tests so the error-return path of Verify can
+// be exercised without a malformed key. In production this points at Verify.
+var verifyReceipt = Verify
+
 // ReceiptVerification holds the verification result for a single receipt in a chain.
 type ReceiptVerification struct {
 	Index          int    `json:"index"`
@@ -100,25 +104,17 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 
 	results := make([]ReceiptVerification, 0, len(receipts))
 	brokenAt := -1
+	var firstSigErr string
+	var firstHashComputeErr string
 
 	for i, r := range receipts {
 		chain := r.CredentialSubject.Chain
 
-		sigValid, sigErr := Verify(r, publicKeyPEM)
+		sigValid, sigErr := verifyReceipt(r, publicKeyPEM)
 		if sigErr != nil {
-			results = append(results, ReceiptVerification{
-				Index:          i,
-				ReceiptID:      r.ID,
-				SignatureValid: false,
-				HashLinkValid:  false,
-				SequenceValid:  false,
-			})
-			return ChainVerification{
-				Valid:    false,
-				Length:   len(receipts),
-				Receipts: results,
-				BrokenAt: i,
-				Error:    sigErr.Error(),
+			sigValid = false
+			if firstSigErr == "" {
+				firstSigErr = "signature compute failed at index " + strconv.Itoa(i) + ": " + sigErr.Error()
 			}
 		}
 
@@ -128,23 +124,13 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		} else {
 			prevHash, err := hashReceipt(receipts[i-1])
 			if err != nil {
-				seqValid := chain.Sequence == receipts[i-1].CredentialSubject.Chain.Sequence+1
-				results = append(results, ReceiptVerification{
-					Index:          i,
-					ReceiptID:      r.ID,
-					SignatureValid: sigValid,
-					HashLinkValid:  false,
-					SequenceValid:  seqValid,
-				})
-				return ChainVerification{
-					Valid:    false,
-					Length:   len(receipts),
-					Receipts: results,
-					BrokenAt: i,
-					Error:    "hash compute failed at index " + strconv.Itoa(i-1) + ": " + err.Error(),
+				if firstHashComputeErr == "" {
+					firstHashComputeErr = "hash compute failed at index " + strconv.Itoa(i-1) + ": " + err.Error()
 				}
+				hashValid = false
+			} else {
+				hashValid = chain.PreviousReceiptHash != nil && *chain.PreviousReceiptHash == prevHash
 			}
-			hashValid = chain.PreviousReceiptHash != nil && *chain.PreviousReceiptHash == prevHash
 		}
 
 		seqValid := true
@@ -193,6 +179,13 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		Length:   len(receipts),
 		Receipts: results,
 		BrokenAt: brokenAt,
+	}
+	// Sig errors take precedence over hash-compute errors.
+	switch {
+	case firstSigErr != "":
+		cv.Error = firstSigErr
+	case firstHashComputeErr != "":
+		cv.Error = firstHashComputeErr
 	}
 
 	// Response-hash verification (spec §4.3.2).
@@ -251,7 +244,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			} else if lastHash != opt.ExpectedFinalHash {
 				cv.Valid = false
 				cv.BrokenAt = last
-				cv.Error = "final receipt hash does not match expected value"
+				cv.Error = "final receipt hash mismatch at index " + strconv.Itoa(last) + ": expected " + opt.ExpectedFinalHash + ", got " + lastHash
 			}
 		}
 
