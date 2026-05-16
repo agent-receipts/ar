@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -18,8 +16,6 @@ import (
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
-	"github.com/agent-receipts/ar/sdk/go/receipt"
-	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
 func TestBuildApprovalDeniedMessageTimeout(t *testing.T) {
@@ -472,85 +468,6 @@ func TestDiagnoseConfigUnreachableApproverIsUnhealthy(t *testing.T) {
 	}
 }
 
-func writeFileWithPerm(t *testing.T, dir string, perm os.FileMode) string {
-	t.Helper()
-	path := filepath.Join(dir, "key.pem")
-	if err := os.WriteFile(path, []byte("data"), 0o600); err != nil {
-		t.Fatalf("create test file: %v", err)
-	}
-	if err := os.Chmod(path, perm); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	return path
-}
-
-func TestCheckOpenFilePermissions0600OK(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	path := writeFileWithPerm(t, t.TempDir(), 0o600)
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer f.Close()
-	if got := checkOpenFilePermissions(f); got != "" {
-		t.Errorf("expected no warning for 0600, got %q", got)
-	}
-}
-
-func TestCheckOpenFilePermissions0400OK(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	path := writeFileWithPerm(t, t.TempDir(), 0o400)
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer f.Close()
-	if got := checkOpenFilePermissions(f); got != "" {
-		t.Errorf("expected no warning for 0400, got %q", got)
-	}
-}
-
-func TestCheckOpenFilePermissions0644Warns(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	path := writeFileWithPerm(t, t.TempDir(), 0o644)
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer f.Close()
-	got := checkOpenFilePermissions(f)
-	if got == "" {
-		t.Fatalf("expected warning for 0644, got empty string")
-	}
-	if !strings.Contains(got, path) {
-		t.Errorf("warning should contain path, got %q", got)
-	}
-	if !strings.Contains(got, "chmod 600") {
-		t.Errorf("warning should mention chmod 600, got %q", got)
-	}
-}
-
-func TestCheckOpenFilePermissions0666Warns(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits not enforced on Windows")
-	}
-	path := writeFileWithPerm(t, t.TempDir(), 0o666)
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer f.Close()
-	if got := checkOpenFilePermissions(f); got == "" {
-		t.Errorf("expected warning for 0666, got empty string")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // resolveVersion
 // ---------------------------------------------------------------------------
@@ -945,62 +862,6 @@ func TestRecordRejectedToolCallWithApprovalWait(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runFollowLoop — JSON output path
-// ---------------------------------------------------------------------------
-
-func TestRunFollowLoopJSONOutput(t *testing.T) {
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-
-	kp, err := receipt.GenerateKeyPair()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	startRowID, err := s.MaxRowID()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	w := newNotifyWriter()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	done := make(chan error, 1)
-	go func() {
-		done <- runFollowLoop(ctx, s, startRowID, store.Query{}, 10*time.Millisecond, true, w)
-	}()
-
-	storeFollowReceipt(t, s, kp, 1, "chain-json-follow", nil)
-
-	// Wait for the JSON line to appear.
-	deadline := time.Now().Add(3 * time.Second)
-	var out string
-	for time.Now().Before(deadline) {
-		out = w.waitForWrite(t, 3*time.Second)
-		if strings.Contains(out, "chain-json-follow") {
-			break
-		}
-	}
-	if !strings.Contains(out, "chain-json-follow") {
-		t.Fatalf("JSON follow output missing chain ID: %q", out)
-	}
-	// Must be valid NDJSON.
-	line := strings.TrimSpace(strings.Split(out, "\n")[0])
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(line), &parsed); err != nil {
-		t.Errorf("follow JSON output is not valid JSON: %v\nline: %q", err, line)
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Errorf("runFollowLoop returned unexpected error after cancel: %v", err)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // ensureDir (non-ensureDBDir variant)
 // ---------------------------------------------------------------------------
 
@@ -1077,34 +938,6 @@ func TestTruncateLong(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// reverseReceipts
-// ---------------------------------------------------------------------------
-
-func TestReverseReceiptsEmpty(t *testing.T) {
-	var s []receipt.AgentReceipt
-	reverseReceipts(s) // must not panic
-}
-
-func TestReverseReceiptsSingle(t *testing.T) {
-	s := []receipt.AgentReceipt{{ID: "a"}}
-	reverseReceipts(s)
-	if s[0].ID != "a" {
-		t.Errorf("single-element reverse changed value: %q", s[0].ID)
-	}
-}
-
-func TestReverseReceiptsMultiple(t *testing.T) {
-	s := []receipt.AgentReceipt{{ID: "a"}, {ID: "b"}, {ID: "c"}}
-	reverseReceipts(s)
-	want := []string{"c", "b", "a"}
-	for i, w := range want {
-		if s[i].ID != w {
-			t.Errorf("reverse[%d] = %q, want %q", i, s[i].ID, w)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
 // emitStartupBanner — block rules and disabled rules branches
 // ---------------------------------------------------------------------------
 
@@ -1136,18 +969,8 @@ func TestStartupBannerWithDisabledRules(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// openReceiptStore and openAuditStore (non-fatal paths via temp files)
+// openAuditStore (non-fatal path via temp file)
 // ---------------------------------------------------------------------------
-
-func TestOpenReceiptStoreValid(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "receipts.db")
-	s := openReceiptStore(path)
-	if s == nil {
-		t.Fatal("openReceiptStore returned nil for valid path")
-	}
-	s.Close()
-}
 
 func TestOpenAuditStoreValid(t *testing.T) {
 	dir := t.TempDir()

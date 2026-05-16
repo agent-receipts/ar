@@ -7,28 +7,22 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
-	"github.com/agent-receipts/ar/mcp-proxy/configs"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/proxy"
 	"github.com/agent-receipts/ar/sdk/go/emitter"
-	"github.com/agent-receipts/ar/sdk/go/receipt"
-	receiptStore "github.com/agent-receipts/ar/sdk/go/store"
-	"github.com/agent-receipts/ar/sdk/go/taxonomy"
 	"github.com/google/uuid"
 )
 
@@ -92,24 +86,12 @@ func main() {
 func serve() {
 	var (
 		dbPath             = flag.String("db", defaultDBPath("audit.db"), "SQLite audit database path")
-		receiptDB          = flag.String("receipt-db", defaultDBPath("receipts.db"), "SQLite receipt store path")
-		keyPath            = flag.String("key", "", "Ed25519 private key (PEM file)")
-		taxonomyPath       = flag.String("taxonomy", "", "Taxonomy mappings (JSON file). Merged with bundled taxonomies; user mappings win on conflict.")
-		bundledTaxonomy    = flag.Bool("bundled-taxonomies", true, "Include bundled taxonomies (e.g. GitHub, Atlassian). Set to false to use only -taxonomy.")
 		rulesPath          = flag.String("rules", "", "Policy rules (YAML file)")
 		redactPatternsPath = flag.String("redact-patterns", "", "Path to YAML file with custom redaction patterns")
 		serverName         = flag.String("name", "", "Server name for audit trail")
-		issuerDID          = flag.String("issuer", "did:agent:mcp-proxy", "Issuer DID")
-		issuerName         = flag.String("issuer-name", "", "Issuer name (e.g. Claude Code, Codex)")
-		issuerModel        = flag.String("issuer-model", "", "AI model identifier (e.g. claude-sonnet-4-6)")
-		operatorID         = flag.String("operator-id", "", "Operator DID (organisation running the agent)")
-		operatorName       = flag.String("operator-name", "", "Operator name (e.g. Anthropic)")
-		principalDID       = flag.String("principal", "did:user:unknown", "Principal DID")
-		chainID            = flag.String("chain", "", "Chain ID (auto-generated if empty)")
 		httpAddr           = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
 		approvalWait       = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
-		strictPermissions  = flag.Bool("strict-permissions", false, "Fatal error if the private key file has permissions wider than 0600 (group/world-accessible)")
-		socketPath         = flag.String("socket", emitter.DefaultSocketPath(), "Unix-domain socket for the agent-receipts daemon (ADR-0010). Defaults to AGENTRECEIPTS_SOCKET if set; explicit --socket wins. Empty string (--socket=\"\") disables the emitter.")
+		socketPath         = flag.String("socket", emitter.DefaultSocketPath(), "Unix-domain socket for the agent-receipts daemon (ADR-0010). Defaults to AGENTRECEIPTS_SOCKET if set; explicit --socket wins. Pass --socket=\"\" to disable emission entirely. Emit errors are logged but do not block tool calls.")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
@@ -145,11 +127,6 @@ func serve() {
 		*serverName = parts[len(parts)-1]
 	}
 
-	// Chain ID defaults to new UUID.
-	if *chainID == "" {
-		*chainID = uuid.New().String()
-	}
-
 	// Open audit store.
 	if err := ensureDBDir(*dbPath); err != nil {
 		log.Fatalf("mcp-proxy: create audit db directory: %v", err)
@@ -166,84 +143,26 @@ func serve() {
 	}
 	defer auditDB.EndSession(sessionID)
 
-	// Wire the fire-and-forget daemon emitter (ADR-0010). The emitter is
-	// optional: when --socket is empty the proxy continues without forwarding
-	// events to the daemon (backwards-compatible default for installations
-	// that have not yet deployed the daemon). AGENTRECEIPTS_SOCKET sets the
-	// default for --socket via emitter.DefaultSocketPath; an explicit
-	// --socket flag always wins, and --socket="" disables the emitter
-	// regardless of the env var.
+	// Wire the daemon emitter (ADR-0010). The daemon is the sole receipt writer;
+	// the proxy is a thin emitter. WithStrictErrors() makes Emit return an error
+	// when the daemon is unreachable, which propagates to the handler as a log
+	// line. An empty --socket is still accepted for backward compatibility with
+	// installations that have not yet deployed the daemon.
 	var em *emitter.Emitter
 	if sp := *socketPath; sp != "" {
 		var initErr error
 		em, initErr = emitter.New(
 			emitter.WithSocketPath(sp),
 			emitter.WithSessionID(sessionID),
+			emitter.WithStrictErrors(),
 		)
 		if initErr != nil {
-			// Log but don't abort: running without daemon is valid.
-			log.Printf("mcp-proxy: emitter init: %v (daemon forwarding disabled)", initErr)
-			em = nil
-		} else {
-			defer em.Close()
-			log.Printf("mcp-proxy: emitter targeting daemon socket %s", sp)
+			log.Fatalf("mcp-proxy: emitter init: %v", initErr)
 		}
-	}
-
-	// Open receipt store.
-	if err := ensureDBDir(*receiptDB); err != nil {
-		log.Fatalf("mcp-proxy: create receipt db directory: %v", err)
-	}
-	rStore, err := receiptStore.Open(*receiptDB)
-	if err != nil {
-		log.Fatalf("mcp-proxy: open receipt store: %v", err)
-	}
-	defer rStore.Close()
-
-	// Load or generate key pair.
-	var kp receipt.KeyPair
-	if *keyPath != "" {
-		f, err := os.Open(*keyPath)
-		if err != nil {
-			log.Fatalf("mcp-proxy: read key: %v", err)
-		}
-		defer f.Close()
-		if warn := checkOpenFilePermissions(f); warn != "" {
-			if *strictPermissions {
-				log.Fatalf("mcp-proxy: insecure key permissions: %s", warn)
-			}
-			log.Printf("[WARN] mcp-proxy: %s", warn)
-		}
-		privPEM, err := io.ReadAll(f)
-		if err != nil {
-			log.Fatalf("mcp-proxy: read key: %v", err)
-		}
-		kp.PrivateKey = string(privPEM)
+		defer em.Close()
+		log.Printf("mcp-proxy: emitter targeting daemon socket %s", sp)
 	} else {
-		kp, err = receipt.GenerateKeyPair()
-		if err != nil {
-			log.Fatalf("mcp-proxy: generate key: %v", err)
-		}
-		log.Printf("mcp-proxy: generated ephemeral key pair (public key printed below)")
-		fmt.Fprintln(os.Stderr, kp.PublicKey)
-	}
-
-	// Load taxonomy mappings. User-provided -taxonomy entries are placed
-	// first so they win on tool_name conflict — ClassifyToolCall iterates
-	// in order and stops on first match.
-	var mappings []taxonomy.TaxonomyMapping
-	if *taxonomyPath != "" {
-		mappings, err = taxonomy.LoadTaxonomyConfig(*taxonomyPath)
-		if err != nil {
-			log.Fatalf("mcp-proxy: load taxonomy: %v", err)
-		}
-	}
-	if *bundledTaxonomy {
-		bundled, err := configs.BundledTaxonomies()
-		if err != nil {
-			log.Fatalf("mcp-proxy: load bundled taxonomies: %v", err)
-		}
-		mappings = append(mappings, bundled...)
+		log.Printf("mcp-proxy: --socket is empty; receipts will NOT be emitted to the daemon")
 	}
 
 	// Load policy rules.
@@ -291,11 +210,6 @@ func serve() {
 	approvalToken := generateToken(32)
 	approvals := audit.NewApprovalManager()
 	approvalURL := ""
-
-	// Receipt chain state.
-	sequence := 0
-	var prevReceiptHash *string
-	var seqMu sync.Mutex
 
 	// Pending tool call requests (keyed by JSON-RPC id).
 	type pendingCall struct {
@@ -577,11 +491,6 @@ func serve() {
 				}
 
 				redactedResult := redactor.Redact(resultStr)
-				// Keep pre-encryption copy for response_hash computation.
-				receiptResponseBody := json.RawMessage(nil)
-				if redactedResult != "" && json.Valid([]byte(redactedResult)) {
-					receiptResponseBody = json.RawMessage(redactedResult)
-				}
 				redactedError := redactor.Redact(errorStr)
 				if encryptor != nil {
 					if enc, encErr := encryptor.Encrypt(redactedResult); encErr != nil {
@@ -632,134 +541,28 @@ func serve() {
 					}
 				}
 
-				// Emit receipt — hash the request parameters, not the response.
-				classification := taxonomy.ClassifyToolCall(pc.toolName, mappings)
-
-				// Fall back to prefix-based classifier when taxonomy has no mapping,
-				// and align the risk level with the resolved operation type.
-				actionType := classification.ActionType
-				riskLevel := classification.RiskLevel
-				if actionType == "unknown" {
-					actionType = audit.ClassifyOperation(pc.toolName)
-					switch actionType {
-					case "read":
-						riskLevel = receipt.RiskLow
-					case "write":
-						riskLevel = receipt.RiskMedium
-					case "delete":
-						riskLevel = receipt.RiskHigh
-					case "execute":
-						riskLevel = receipt.RiskHigh
-					}
-				}
-
-				status := receipt.StatusSuccess
-				if msg.Error != nil {
-					status = receipt.StatusFailure
-				}
-
-				var argsHash string
-				if canonical, canonErr := receipt.Canonicalize(pc.arguments); canonErr == nil {
-					argsHash = receipt.SHA256Hash(canonical)
-				} else {
-					log.Printf("mcp-proxy: canonicalize args for hash: %v", canonErr)
-				}
-
-				receiptStart := time.Now()
-				seqMu.Lock()
-				sequence++
-				currentSeq := sequence
-				currentPrevHash := prevReceiptHash
-
-				issuer := receipt.Issuer{
-					ID:    *issuerDID,
-					Name:  *issuerName,
-					Model: *issuerModel,
-				}
-				if *operatorID != "" || *operatorName != "" {
-					issuer.Operator = &receipt.Operator{
-						ID:   *operatorID,
-						Name: *operatorName,
-					}
-				}
-
-				unsigned := receipt.Create(receipt.CreateInput{
-					Issuer:    issuer,
-					Principal: receipt.Principal{ID: *principalDID},
-					Action: receipt.Action{
-						Type:           actionType,
-						ToolName:       pc.toolName,
-						RiskLevel:      riskLevel,
-						ParametersHash: argsHash,
-						Target:         &receipt.ActionTarget{System: *serverName},
-					},
-					Outcome:      receipt.Outcome{Status: status},
-					ResponseBody: receiptResponseBody,
-					Chain: receipt.Chain{
-						Sequence:            currentSeq,
-						PreviousReceiptHash: currentPrevHash,
-						ChainID:             *chainID,
-					},
-				})
-
-				signed, err := receipt.Sign(unsigned, kp.PrivateKey, *issuerDID+"#key-1")
-				if err != nil {
-					log.Printf("mcp-proxy: sign receipt: %v", err)
-					sequence-- // Rollback on sign failure too.
-					seqMu.Unlock()
-				} else {
-					h, err := receipt.HashReceipt(signed)
-					if err != nil {
-						log.Printf("mcp-proxy: hash receipt: %v", err)
-						sequence-- // Rollback.
-						seqMu.Unlock()
-					} else {
-						if storeErr := rStore.Insert(signed, h); storeErr != nil {
-							log.Printf("mcp-proxy: store receipt: %v", storeErr)
-							sequence-- // Rollback — don't advance chain for unstored receipts.
-							seqMu.Unlock()
-						} else {
-							prevReceiptHash = &h
-							seqMu.Unlock()
-						}
-					}
-				}
-
-				// Update tool call with receipt signing duration.
-				if tcID > 0 {
-					receiptSignUs := time.Since(receiptStart).Microseconds()
-					if updateErr := auditDB.UpdateReceiptSignUs(tcID, receiptSignUs); updateErr != nil {
-						log.Printf("mcp-proxy: update receipt sign timing: %v", updateErr)
-					}
-				}
-
-				// Forward the completed tool call to the daemon emitter
-				// (ADR-0010 fire-and-forget). We use the pre-redaction
-				// arguments map held in pc.arguments and the pre-encryption
-				// result string so the daemon receives raw JSON the same way
-				// the in-process receipt signer does. errorStr is raw JSON
-				// (the JSON-RPC error object from msg.Error).
+				// Emit the completed tool call to the daemon (ADR-0010). The daemon
+				// is the sole receipt writer; the proxy is a thin emitter. We use the
+				// pre-redaction arguments map held in pc.arguments and the
+				// pre-encryption result string so the daemon receives raw JSON.
+				// errorStr is raw JSON (the JSON-RPC error object from msg.Error).
 				//
-				// decision is always "allowed" here because reaching this
-				// branch means the proxy did NOT block the call — the policy
-				// engine permitted it through. The upstream's success-vs-
-				// failure outcome is communicated separately via the Error
-				// field; the daemon derives outcome.status from both decision
-				// and the presence of a non-empty error (allowed+error →
-				// failure).
-				if em != nil {
-					var outputRaw json.RawMessage
-					if resultStr != "" && json.Valid([]byte(resultStr)) {
-						outputRaw = json.RawMessage(resultStr)
-					}
-					var inputRaw json.RawMessage
-					if b, marshalErr := json.Marshal(pc.arguments); marshalErr == nil {
-						inputRaw = json.RawMessage(b)
-					} else {
-						log.Printf("mcp-proxy: marshal arguments for daemon: %v; emitting nil input", marshalErr)
-					}
-					emitToContext(em, *serverName, pc.toolName, inputRaw, outputRaw, errorStr, "allowed")
+				// decision is always "allowed" here: reaching this branch means the
+				// proxy did NOT block the call. The upstream success-vs-failure
+				// outcome is communicated separately via errorStr; the daemon derives
+				// outcome.status from both decision and the presence of a non-empty
+				// error (allowed+error → failure).
+				var outputRaw json.RawMessage
+				if resultStr != "" && json.Valid([]byte(resultStr)) {
+					outputRaw = json.RawMessage(resultStr)
 				}
+				var inputRaw json.RawMessage
+				if b, marshalErr := json.Marshal(pc.arguments); marshalErr == nil {
+					inputRaw = json.RawMessage(b)
+				} else {
+					log.Printf("mcp-proxy: marshal arguments for daemon: %v; emitting nil input", marshalErr)
+				}
+				emitToContext(em, *serverName, pc.toolName, inputRaw, outputRaw, errorStr, "allowed")
 			}
 		}
 
@@ -767,7 +570,7 @@ func serve() {
 	}
 
 	p := proxy.New(command, commandArgs, handler)
-	log.Printf("mcp-proxy: session %s, server %s, chain %s", sessionID, *serverName, *chainID)
+	log.Printf("mcp-proxy: session %s, server %s", sessionID, *serverName)
 	runErr := p.Run()
 	log.Printf("mcp-proxy: session %s ended", sessionID)
 	if runErr != nil {
@@ -1034,23 +837,6 @@ func ensureDBDir(path string) error {
 		return fmt.Errorf("create database directory %q: %w", filepath.Dir(path), err)
 	}
 	return nil
-}
-
-// checkOpenFilePermissions is like checkKeyFilePermissions but operates on an
-// already-open file descriptor, eliminating the TOCTOU race between stat and
-// read. Returns "" on Windows or when f.Stat() fails.
-func checkOpenFilePermissions(f *os.File) string {
-	if runtime.GOOS == "windows" {
-		return ""
-	}
-	info, err := f.Stat()
-	if err != nil {
-		return ""
-	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return fmt.Sprintf("key file %q has permissions %04o — run: chmod 600 %q", f.Name(), perm, f.Name())
-	}
-	return ""
 }
 
 func generateToken(n int) string {

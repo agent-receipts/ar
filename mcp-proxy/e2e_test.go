@@ -11,9 +11,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/agent-receipts/ar/sdk/go/receipt"
-	receiptStore "github.com/agent-receipts/ar/sdk/go/store"
 )
 
 // buildBinary compiles a Go package into the given directory and returns the binary path.
@@ -56,9 +53,7 @@ func readResponse(t *testing.T, scanner *bufio.Scanner) map[string]any {
 	return resp
 }
 
-// waitForExit closes stdin to signal EOF and waits for the proxy process to
-// exit. This ensures the proxy has released all database locks before the test
-// opens the database.
+// waitForExit closes stdin to signal EOF and waits for the proxy process to exit.
 func waitForExit(t *testing.T, stdin io.WriteCloser, cmd *exec.Cmd) {
 	t.Helper()
 	stdin.Close()
@@ -68,31 +63,20 @@ func waitForExit(t *testing.T, stdin io.WriteCloser, cmd *exec.Cmd) {
 }
 
 // startProxy builds and starts the proxy with a mock MCP server, returning
-// the stdin writer, stdout scanner, command, and keypair.
-func startProxy(t *testing.T, chainID string) (io.WriteCloser, *bufio.Scanner, *exec.Cmd, receipt.KeyPair, string) {
+// the stdin writer, stdout scanner, command, and audit DB path.
+// --socket="" disables the emitter; receipts now go to the daemon (ADR-0010).
+func startProxy(t *testing.T) (io.WriteCloser, *bufio.Scanner, *exec.Cmd, string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 
 	mockBin := buildBinary(t, "./testdata", tmpDir, "mock-server")
 	proxyBin := buildBinary(t, "./cmd/mcp-proxy", tmpDir, "mcp-proxy")
 
-	kp, err := receipt.GenerateKeyPair()
-	if err != nil {
-		t.Fatal(err)
-	}
-	keyPath := filepath.Join(tmpDir, "key.pem")
-	if err := os.WriteFile(keyPath, []byte(kp.PrivateKey), 0600); err != nil {
-		t.Fatal(err)
-	}
-
 	auditDBPath := filepath.Join(tmpDir, "audit.db")
-	receiptDBPath := filepath.Join(tmpDir, "receipts.db")
 
 	cmd := exec.Command(proxyBin,
 		"--db", auditDBPath,
-		"--receipt-db", receiptDBPath,
-		"--key", keyPath,
-		"--chain", chainID,
+		"--socket", "", // no daemon in e2e — receipts go to daemon in production
 		"--http", "127.0.0.1:0",
 		"--", mockBin,
 	)
@@ -121,12 +105,11 @@ func startProxy(t *testing.T, chainID string) (io.WriteCloser, *bufio.Scanner, *
 	// Wait for the proxy to start the child process.
 	time.Sleep(500 * time.Millisecond)
 
-	return stdinPipe, scanner, cmd, kp, receiptDBPath
+	return stdinPipe, scanner, cmd, auditDBPath
 }
 
 func TestE2EProxyToolCallFlow(t *testing.T) {
-	chainID := "e2e-test-chain"
-	stdin, scanner, cmd, kp, receiptDBPath := startProxy(t, chainID)
+	stdin, scanner, cmd, auditDBPath := startProxy(t)
 
 	// Send tools/call for read_file.
 	sendJSON(t, stdin, map[string]any{
@@ -154,52 +137,16 @@ func TestE2EProxyToolCallFlow(t *testing.T) {
 		t.Fatalf("expected success for write_file, got error: %v", resp2["error"])
 	}
 
-	// Close stdin to signal EOF and wait for the proxy to exit so it
-	// releases all database locks before we open the receipt store.
 	waitForExit(t, stdin, cmd)
 
-	// Open the receipt store and verify the chain.
-	rStore, err := receiptStore.Open(receiptDBPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rStore.Close()
-
-	chain, err := rStore.GetChain(chainID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(chain) != 2 {
-		t.Fatalf("expected 2 receipts, got %d", len(chain))
-	}
-
-	// Verify chain integrity.
-	result := receipt.VerifyChain(chain, kp.PublicKey)
-	if !result.Valid {
-		t.Fatalf("chain verification failed: broken at %d, error: %s", result.BrokenAt, result.Error)
-	}
-
-	// Verify sequence numbers.
-	if chain[0].CredentialSubject.Chain.Sequence != 1 {
-		t.Errorf("receipt 0: expected sequence 1, got %d", chain[0].CredentialSubject.Chain.Sequence)
-	}
-	if chain[1].CredentialSubject.Chain.Sequence != 2 {
-		t.Errorf("receipt 1: expected sequence 2, got %d", chain[1].CredentialSubject.Chain.Sequence)
-	}
-
-	// First receipt should have no previous hash.
-	if chain[0].CredentialSubject.Chain.PreviousReceiptHash != nil {
-		t.Error("receipt 0: expected nil PreviousReceiptHash")
-	}
-	// Second receipt should have a previous hash.
-	if chain[1].CredentialSubject.Chain.PreviousReceiptHash == nil {
-		t.Error("receipt 1: expected non-nil PreviousReceiptHash")
+	// Audit DB must exist (proxy committed session and tool calls).
+	if _, err := os.Stat(auditDBPath); err != nil {
+		t.Errorf("expected audit.db to exist after proxy session: %v", err)
 	}
 }
 
 func TestE2EProxyBlockedCall(t *testing.T) {
-	chainID := "e2e-test-blocked"
-	stdin, scanner, cmd, _, receiptDBPath := startProxy(t, chainID)
+	stdin, scanner, cmd, _ := startProxy(t)
 
 	// Send a tool call that should be blocked: delete_secrets has risk >= 70.
 	sendJSON(t, stdin, map[string]any{
@@ -225,22 +172,5 @@ func TestE2EProxyBlockedCall(t *testing.T) {
 		t.Errorf("expected error code -32001, got %v", errMap["code"])
 	}
 
-	// Close stdin and wait for the proxy to exit so it releases all
-	// database locks before we open the receipt store.
 	waitForExit(t, stdin, cmd)
-
-	// Verify no receipts were created for the blocked call.
-	rStore, err := receiptStore.Open(receiptDBPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rStore.Close()
-
-	chain, err := rStore.GetChain(chainID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(chain) != 0 {
-		t.Errorf("expected 0 receipts for blocked call, got %d", len(chain))
-	}
 }
