@@ -88,6 +88,14 @@ type Pipeline struct {
 	// design that supersedes this flag.
 	ParameterDisclosure bool
 
+	// Redactor is applied to text fields before they are persisted in the
+	// receipt body: outcome.error is redacted; parameters_disclosure
+	// input/output strings are also redacted when ParameterDisclosure is
+	// enabled. Input and output are never stored as raw text otherwise — only
+	// their SHA-256 hashes go into parameters_hash / response_hash, so those
+	// hashes are always over the original emitter payload. Nil = no redaction.
+	Redactor *Redactor
+
 	// traceMu serialises writes to TraceLog. Process is invoked concurrently
 	// from the listener accept loop, so unguarded fmt.Fprintf calls would
 	// interleave bytes from different frames in the buffer (and race the
@@ -415,18 +423,37 @@ func (p *Pipeline) buildAndSign(
 
 	// Populate plaintext disclosure after hashing so the hash always covers the
 	// raw bytes, not any string conversion. Only runs when explicitly opted in.
+	// Redaction is applied to the stored text so secrets are sanitised even
+	// when the operator enables disclosure mode.
 	if p.ParameterDisclosure {
 		if hasJSONPayload(f.Input) {
-			disclosure["input"] = string(f.Input)
+			inp := string(f.Input)
+			if p.Redactor != nil {
+				inp = p.Redactor.Redact(inp)
+			}
+			disclosure["input"] = inp
 		}
 		if hasJSONPayload(f.Output) {
-			disclosure["output"] = string(f.Output)
+			out := string(f.Output)
+			if p.Redactor != nil {
+				out = p.Redactor.Redact(out)
+			}
+			disclosure["output"] = out
 		}
+	}
+
+	// Redaction MUST happen AFTER hashing. The hash commits to the raw
+	// canonical bytes; redaction only sanitises the human-readable string
+	// fields written into the receipt body. The error field is not hashed, so
+	// it is redacted unconditionally when a Redactor is set.
+	errText := f.Error
+	if p.Redactor != nil {
+		errText = p.Redactor.Redact(errText)
 	}
 
 	outcome := receipt.Outcome{
 		Status: status,
-		Error:  f.Error,
+		Error:  errText,
 	}
 	if hasJSONPayload(f.Output) {
 		// Hash Output here rather than via receipt.CreateInput.ResponseBody

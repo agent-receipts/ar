@@ -49,6 +49,7 @@ func main() {
 		IssuerID:             envOrDefault("AGENTRECEIPTS_ISSUER_ID", "did:agent-receipts-daemon:local"),
 		VerificationMethodID: envOrDefault("AGENTRECEIPTS_VERIFICATION_METHOD", "did:agent-receipts-daemon:local#k1"),
 		ParameterDisclosure:  os.Getenv("AGENTRECEIPTS_PARAMETER_DISCLOSURE") == "1",
+		RedactPatternsPath:   os.Getenv("AGENTRECEIPTS_REDACT_PATTERNS"),
 	}
 
 	initKeys := flag.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
@@ -61,6 +62,7 @@ func main() {
 	flag.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	flag.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
 	flag.BoolVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "Include plaintext tool input/output in parameters_disclosure (WARNING: stores unredacted payloads; see issue #280) (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
+	flag.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults) (env: AGENTRECEIPTS_REDACT_PATTERNS)")
 	flag.Parse()
 
 	if *showVersion {
