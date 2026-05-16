@@ -89,7 +89,7 @@ type Pipeline struct {
 	ParameterDisclosure bool
 
 	// Redactor is applied to text fields before they are persisted in the
-	// receipt body: outcome.error is always redacted; parameters_disclosure
+	// receipt body: outcome.error is redacted; parameters_disclosure
 	// input/output strings are also redacted when ParameterDisclosure is
 	// enabled. Input and output are never stored as raw text otherwise — only
 	// their SHA-256 hashes go into parameters_hash / response_hash, so those
