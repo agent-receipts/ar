@@ -1,0 +1,64 @@
+name: "Release: sdk-go"
+
+on:
+  push:
+    tags:
+      - "sdk/go/v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Deployment environment lets you attach protection rules (required
+    # reviewers, wait timer, branch restrictions) to gate who can trigger
+    # a release. Configure at:
+    # https://github.com/agent-receipts/ar/settings/environments
+    environment: release-sdk-go
+    defaults:
+      run:
+        working-directory: sdk/go
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.26"
+
+      - name: Prepare version
+        run: |
+          VERSION="${GITHUB_REF_NAME#sdk/go/}"
+          echo "SDK_GO_VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Reject local replace directives
+        run: |
+          go mod edit -json | python3 -c '
+          import json, re, sys
+          mod = json.load(sys.stdin)
+          for entry in mod.get("Replace") or []:
+              path = entry.get("New", {}).get("Path", "")
+              if (path in (".", "..") or path.startswith("./") or path.startswith("../")
+                  or path.startswith("/") or re.match(r"^[A-Za-z]:[\\\\/]", path)):
+                  print(f"::error::go.mod contains a local replace directive ({path}) — remove it before releasing")
+                  sys.exit(1)
+          '
+
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./...
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Mark pre-release tags (e.g. v0.9.0-alpha.1) so they don't show
+          # up as "latest" on the GitHub Releases page.
+          PRERELEASE_ARG=()
+          if [[ "${SDK_GO_VERSION}" == *-* ]]; then
+            PRERELEASE_ARG+=(--prerelease)
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "sdk-go ${SDK_GO_VERSION}" \
+            --generate-notes \
+            "${PRERELEASE_ARG[@]}"
