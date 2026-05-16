@@ -258,7 +258,7 @@ if [[ "$MODULE" == "hook" || "$MODULE" == "mcp-proxy" || "$MODULE" == "daemon" ]
 else
   PRERELEASE_FLAG=()
   [[ "$PRERELEASE" == "true" ]] && PRERELEASE_FLAG=("--prerelease")
-  gh release create "$TAG" --title "$MODULE v$VERSION" --generate-notes "${PRERELEASE_FLAG[@]}"
+  gh release create "$TAG" --title "$MODULE v$VERSION" --generate-notes "${PRERELEASE_FLAG[@]+"${PRERELEASE_FLAG[@]}"}"
   echo ""
   echo "==> Released $MODULE v$VERSION"
   echo "    ${REPO_URL}/releases/tag/$TAG"
