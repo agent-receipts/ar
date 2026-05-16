@@ -402,7 +402,10 @@ type Query struct {
     Status     *receipt.OutcomeStatus
     After      *string
     Before     *string
+    // When nil, all matching rows are returned (no default cap).
     Limit      *int
+    // When true, returns newest receipts first; ties broken by sequence descending.
+    NewestFirst bool
 }
 
 type Stats struct {

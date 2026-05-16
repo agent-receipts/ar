@@ -276,7 +276,6 @@ describe("ReceiptStore", () => {
 			// absent when limit is undefined. This would fail with the old
 			// DEFAULT_QUERY_LIMIT = 10000 because only 10000 rows would be returned.
 			const freshStore = openStore(":memory:");
-			// @ts-expect-error reaches into private db for batch insert performance
 			const db: DatabaseSync = (freshStore as unknown as { db: DatabaseSync })
 				.db;
 			const stmt = db.prepare(

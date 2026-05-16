@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
@@ -707,6 +708,13 @@ func TestQueryAfterRowIDNilLimitReturnsAllRows(t *testing.T) {
 	}
 	if len(results) != n {
 		t.Errorf("QueryAfterRowID with nil Limit: got %d rows, want %d", len(results), n)
+	}
+}
+
+func TestBuildQueryAfterRowIDSQLNilLimitOmitsLIMIT(t *testing.T) {
+	sql, _ := buildQueryAfterRowIDSQL(Query{}, 0)
+	if strings.Contains(sql, "LIMIT") {
+		t.Errorf("buildQueryAfterRowIDSQL with nil Limit must not contain LIMIT, got: %s", sql)
 	}
 }
 

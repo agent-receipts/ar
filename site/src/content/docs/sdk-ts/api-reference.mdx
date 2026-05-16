@@ -316,7 +316,13 @@ interface ReceiptQuery {
   status?: OutcomeStatus;
   after?: string;
   before?: string;
+  /** When omitted, all matching rows are returned (no default cap). */
   limit?: number;
+  /**
+   * Sort order. Default `"asc"` (oldest first). Use `"desc"` for newest first;
+   * ties on timestamp are broken by sequence descending.
+   */
+  order?: "asc" | "desc";
 }
 ```
 
