@@ -105,7 +105,9 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	results := make([]ReceiptVerification, 0, len(receipts))
 	brokenAt := -1
 	var firstSigErr string
+	var firstSigErrAt int = -1
 	var firstHashComputeErr string
+	var firstHashComputeErrAt int = -1
 
 	for i, r := range receipts {
 		chain := r.CredentialSubject.Chain
@@ -115,6 +117,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			sigValid = false
 			if firstSigErr == "" {
 				firstSigErr = "signature compute failed at index " + strconv.Itoa(i) + ": " + sigErr.Error()
+				firstSigErrAt = i
 			}
 		}
 
@@ -126,6 +129,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			if err != nil {
 				if firstHashComputeErr == "" {
 					firstHashComputeErr = "hash compute failed at index " + strconv.Itoa(i-1) + ": " + err.Error()
+					firstHashComputeErrAt = i
 				}
 				hashValid = false
 			} else {
@@ -153,15 +157,22 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		}
 	}
 
-	// Sig errors take precedence over hash-compute errors; when both are present
-	// the hash-compute error is discarded (a single Error field can only surface one).
+	// Pick whichever compute error occurred first in the chain. When both appear
+	// at the same index (same receipt), the sig error takes precedence.
 	// Compute this before the terminal check so early returns preserve it.
 	var loopErr string
+	var loopErrAt int = -1
 	switch {
+	case firstSigErr != "" && firstHashComputeErr != "":
+		if firstSigErrAt <= firstHashComputeErrAt {
+			loopErr, loopErrAt = firstSigErr, firstSigErrAt
+		} else {
+			loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
+		}
 	case firstSigErr != "":
-		loopErr = firstSigErr
+		loopErr, loopErrAt = firstSigErr, firstSigErrAt
 	case firstHashComputeErr != "":
-		loopErr = firstHashComputeErr
+		loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
 	}
 
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
@@ -171,12 +182,14 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		ch := r.CredentialSubject.Chain
 		if ch.Terminal != nil && *ch.Terminal {
 			if i < len(receipts)-1 {
-				if brokenAt == -1 {
-					brokenAt = i + 1
+				terminalViolationAt := i + 1
+				if brokenAt == -1 || terminalViolationAt < brokenAt {
+					brokenAt = terminalViolationAt
 				}
-				// Compute errors take precedence; fall back to the terminal violation message.
+				// Use compute error only if it occurred at or before the terminal
+				// violation; otherwise the terminal violation message takes precedence.
 				errMsg := loopErr
-				if errMsg == "" {
+				if loopErrAt == -1 || loopErrAt > terminalViolationAt {
 					errMsg = "receipt after terminal: receipt at index " + strconv.Itoa(i+1) + " follows a terminal receipt at index " + strconv.Itoa(i)
 				}
 				return ChainVerification{

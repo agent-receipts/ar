@@ -795,6 +795,75 @@ func TestResponseHashNoBodyInMap(t *testing.T) {
 	}
 }
 
+// TestTerminalViolationBeforeComputeError verifies that when a terminal violation
+// occurs at an earlier index than a hash-compute error, brokenAt reflects the
+// terminal violation index and the error message names the terminal violation.
+func TestTerminalViolationBeforeComputeError(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	// Build: receipt[0] is terminal, receipt[1..3] are normal — terminal violation
+	// at terminalViolationAt=1 (receipt[1] follows the terminal receipt[0]).
+	terminalChain := buildChainWithTerminal(t, kp, 1)
+
+	// Append three more receipts after the terminal one.
+	var prevHash *string
+	h, err := HashReceipt(terminalChain[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevHash = &h
+	extra := make([]AgentReceipt, 3)
+	for j := 0; j < 3; j++ {
+		seq := 2 + j
+		unsigned := Create(CreateInput{
+			Issuer:    Issuer{ID: "did:agent:test"},
+			Principal: Principal{ID: "did:user:test"},
+			Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+			Outcome:   Outcome{Status: StatusSuccess},
+			Chain:     Chain{Sequence: seq, PreviousReceiptHash: prevHash, ChainID: "chain-1"},
+		})
+		signed, signErr := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if signErr != nil {
+			t.Fatal(signErr)
+		}
+		extra[j] = signed
+		hh, hashErr := HashReceipt(signed)
+		if hashErr != nil {
+			t.Fatal(hashErr)
+		}
+		prevHash = &hh
+	}
+	chain := append(terminalChain, extra...)
+
+	// Inject a hash-compute error on receipt[2] — this fires when processing
+	// receipt[3] (i=3, computing hash of receipts[2]), so loopErrAt=3.
+	// Terminal violation is at terminalViolationAt=1 (receipt[0] is terminal).
+	// The bug: before the fix, brokenAt was left at loopErrAt=3 and the error
+	// message was the hash-compute error even though terminal violation came first.
+	targetID := chain[2].ID
+	orig := hashReceipt
+	hashReceipt = func(r AgentReceipt) (string, error) {
+		if r.ID == targetID {
+			return "", errors.New("synthetic hash failure")
+		}
+		return orig(r)
+	}
+	t.Cleanup(func() { hashReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if result.BrokenAt != 1 {
+		t.Errorf("expected BrokenAt=1 (terminal violation index), got %d", result.BrokenAt)
+	}
+	if !strings.Contains(result.Error, "receipt after terminal") {
+		t.Errorf("expected terminal violation error to win, got: %s", result.Error)
+	}
+	if strings.Contains(result.Error, "hash compute") {
+		t.Errorf("hash-compute error must not appear when terminal violation comes first, got: %s", result.Error)
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || findStr(s, sub))
 }
