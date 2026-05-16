@@ -61,6 +61,7 @@ func main() {
 	flag.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	flag.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
 	flag.BoolVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "Include plaintext tool input/output in parameters_disclosure (WARNING: stores unredacted payloads; see issue #280) (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
+	flag.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults)")
 	flag.Parse()
 
 	if *showVersion {

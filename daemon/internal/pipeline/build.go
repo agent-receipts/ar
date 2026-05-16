@@ -88,6 +88,14 @@ type Pipeline struct {
 	// design that supersedes this flag.
 	ParameterDisclosure bool
 
+	// Redactor is applied to the error string before it is persisted in the
+	// receipt body. Input and output are never stored as text — only their
+	// SHA-256 hashes are written to parameters_hash / response_hash — so
+	// redaction of those fields is not needed. Hashes are always computed from
+	// the raw bytes so they remain verifiable against the original emitter
+	// payload. Nil means no redaction.
+	Redactor *Redactor
+
 	// traceMu serialises writes to TraceLog. Process is invoked concurrently
 	// from the listener accept loop, so unguarded fmt.Fprintf calls would
 	// interleave bytes from different frames in the buffer (and race the
@@ -424,9 +432,18 @@ func (p *Pipeline) buildAndSign(
 		}
 	}
 
+	// Redaction MUST happen AFTER hashing. The hash commits to the raw
+	// canonical bytes; redaction only sanitises the human-readable string
+	// fields written into the receipt body. The error field is not hashed, so
+	// it is redacted unconditionally when a Redactor is set.
+	errText := f.Error
+	if p.Redactor != nil {
+		errText = p.Redactor.Redact(errText)
+	}
+
 	outcome := receipt.Outcome{
 		Status: status,
-		Error:  f.Error,
+		Error:  errText,
 	}
 	if hasJSONPayload(f.Output) {
 		// Hash Output here rather than via receipt.CreateInput.ResponseBody

@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 
 	"github.com/agent-receipts/ar/daemon/internal/chain"
@@ -65,6 +66,15 @@ type Config struct {
 	// WARNING: stores unredacted payloads — see issue #280 for the encrypted
 	// design that supersedes this flag.
 	ParameterDisclosure bool
+
+	// RedactPatternsPath is an optional path to a YAML file of additional
+	// redaction patterns applied to receipt body fields after hashing. When
+	// empty, only the built-in patterns are used. File format:
+	//
+	//   patterns:
+	//     - name: my-secret
+	//       pattern: 'MY_SECRET_[A-Z0-9]+'
+	RedactPatternsPath string
 }
 
 // DefaultSocketPath returns the per-OS default socket path. Phase 1 resolves
@@ -333,6 +343,14 @@ func Run(ctx context.Context, cfg Config) error {
 	pp.ErrorLog = cfg.Logger.Printf
 	pp.ParameterDisclosure = cfg.ParameterDisclosure
 
+	// Always enable redaction with the built-in patterns. If the operator
+	// supplied a patterns file, load and merge the custom patterns.
+	customPatterns, err := loadCustomRedactPatterns(cfg.RedactPatternsPath, cfg.Logger)
+	if err != nil {
+		return err
+	}
+	pp.Redactor = pipeline.NewRedactor(customPatterns)
+
 	ln, err := socket.Listen(socket.Options{
 		Path:     cfg.SocketPath,
 		Handler:  func(ctx context.Context, f socket.Frame) error { return pp.Process(f) },
@@ -590,4 +608,20 @@ func validateConfig(cfg *Config) error {
 		return errors.New("Config.VerificationMethodID is required")
 	}
 	return nil
+}
+
+// loadCustomRedactPatterns loads additional redaction patterns from a YAML
+// file. Returns nil (no custom patterns) when path is empty. A non-empty path
+// that fails to parse is a startup error — misconfigured redaction would
+// silently allow secrets into receipts, which is worse than refusing to start.
+func loadCustomRedactPatterns(path string, logger *log.Logger) ([]*regexp.Regexp, error) {
+	if path == "" {
+		return nil, nil
+	}
+	patterns, err := pipeline.LoadPatternFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("load redact patterns: %w", err)
+	}
+	logger.Printf("loaded %d custom redaction pattern(s) from %s", len(patterns), path)
+	return patterns, nil
 }
