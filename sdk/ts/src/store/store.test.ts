@@ -317,7 +317,7 @@ describe("ReceiptStore", () => {
 					created: "2024-01-01T00:00:00Z",
 					verificationMethod: "did:issuer#k1",
 					proofPurpose: "assertionMethod",
-					proofValue: "u" + "A".repeat(86),
+					proofValue: `u${"A".repeat(86)}`,
 				},
 			});
 			const n = 15_000;
