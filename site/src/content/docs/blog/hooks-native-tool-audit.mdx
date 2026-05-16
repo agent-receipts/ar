@@ -1,0 +1,29 @@
+---
+title: "Native Tool Calls in the Audit Trail"
+description: "How the Claude Code hook captures Bash, Read, Write, Edit and other native tools — and why this matters for a complete agent audit."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+<!-- DRAFT — stub for third blog post in the series -->
+
+<!-- Story arc:
+  - MCP proxy covers MCP tool calls. But Claude Code's native tools (Bash, Read,
+    Write, Edit, WebFetch, WebSearch) don't go through any MCP server — they're
+    built into Claude Code itself. Without the hook, those calls are invisible
+    to the audit trail.
+  - The gap: a receipt chain that captures every GitHub API call but misses every
+    file write is not a complete audit.
+  - The hook: agent-receipts-hook is a PostToolUse hook binary. Claude Code calls
+    it after every tool completes, passing a JSON payload describing the call.
+    The hook forwards to the daemon — same socket, same chain, same receipts.
+  - Installation is one settings.json change. No proxy to configure, no MCP
+    server to wrap.
+  - Show a real Bash receipt from this session. Compare it to the side-by-side
+    MCP + hook receipt pair (the pull_request_read demo) to show how they land
+    in the same chain.
+  - Note: hook is PostToolUse only today. PreToolUse (policy/blocking) is on the
+    roadmap. The current hook is audit-only.
+  - Close: with the hook in place, the daemon chain has every tool call from a
+    Claude Code session — native and MCP — in one verifiable sequence.
+-->
