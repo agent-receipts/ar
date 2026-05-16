@@ -374,8 +374,13 @@ func (p *Pipeline) buildAndSign(
 	// ts_emit is dropped (it is untrusted self-report and would not add audit
 	// value); the daemon's authoritative receive-time is the `now` value
 	// already stamped into action.timestamp, issuanceDate, and proof.created.
-	// Mirroring any of these into parameters_disclosure could accidentally
-	// persist PII pulled from emitter-controlled bytes, so we don't.
+	//
+	// Exception: when the operator explicitly enables ParameterDisclosure, the
+	// emitter-controlled input/output bytes are intentionally added below.
+	// That opt-in is for full-fidelity audit trails where the operator has
+	// already accepted the trade-off. PII exposure and the absence of a
+	// redaction mechanism are tracked in issue #423 — operators should not
+	// enable this option until that is resolved.
 	disclosure := map[string]string{
 		"peer.platform": peer.Platform,
 		"peer.pid":      strconv.FormatInt(int64(peer.PID), 10),
