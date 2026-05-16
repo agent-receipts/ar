@@ -190,14 +190,47 @@ def test_query_explicit_limit_respected() -> None:
 
 
 def test_query_no_default_limit() -> None:
-    """No limit set means all rows are returned — no silent cap."""
-    store = open_store(":memory:")
-    for i in range(5):
-        r = make_receipt(id=f"urn:receipt:nl{i}", sequence=i + 1)
-        store.insert(r, hash_receipt(r))
+    """No limit set means all rows are returned — no silent cap.
 
+    Batch-inserts 15 000 rows via raw SQL to prove the LIMIT clause is absent.
+    This would fail with the old DEFAULT_QUERY_LIMIT = 10_000 because only
+    10 000 rows would be returned.
+    """
+    store = open_store(":memory:")
+    n = 15_000
+    # Generate one valid receipt JSON and reuse it for all rows (table id is
+    # unique per row; receipt_json content only needs to be deserializable).
+    base_receipt = make_receipt(id="urn:receipt:bulk-base", sequence=1)
+    base_json = base_receipt.model_dump_json()
+    rows = [
+        (
+            f"urn:receipt:bulk-{i}",
+            "chain-bulk",
+            i,
+            "filesystem.file.read",
+            "Read",
+            "low",
+            "success",
+            f"2024-01-01T{i // 3600:02d}:{(i % 3600) // 60:02d}:{i % 60:02d}Z",
+            "did:issuer",
+            "did:user",
+            base_json,
+            f"sha256:bulk{i}",
+            None,
+        )
+        for i in range(1, n + 1)
+    ]
+    store._conn.executemany(  # noqa: SLF001
+        """INSERT INTO receipts
+           (id, chain_id, sequence, action_type, tool_name, risk_level, status,
+            timestamp, issuer_id, principal_id, receipt_json, receipt_hash,
+            previous_receipt_hash)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        rows,
+    )
+    store._conn.commit()  # noqa: SLF001
     results = store.query(ReceiptQuery())
-    assert len(results) == 5
+    assert len(results) == n
     store.close()
 
 

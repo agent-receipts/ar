@@ -349,9 +349,9 @@ func TestQueryReceiptsNoDefaultLimit(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()
 
-	// Insert more than 10000 rows to prove the cap is gone. Inserting 10001
-	// would be slow; instead we insert a small batch and confirm that nil Limit
-	// returns all of them without any cap applied.
+	// A small batch here proves the integration path; the real regression guard
+	// for the removed 10k cap is TestBuildQueryReceiptsSQLNoLimit in
+	// store_sql_test.go (white-box SQL assertion in the store package).
 	const n = 5
 	for i := 1; i <= n; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", nil)
