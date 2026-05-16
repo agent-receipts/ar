@@ -43,8 +43,17 @@ export interface ReceiptQuery {
 	after?: string;
 	/** Return receipts with timestamp <= before (ISO 8601). */
 	before?: string;
-	/** Maximum number of results. */
+	/**
+	 * Maximum number of results. When omitted, all matching rows are returned
+	 * (no default cap is applied).
+	 */
 	limit?: number;
+	/**
+	 * Sort order for results. Default is "asc" (oldest first) to preserve
+	 * historical behavior. Use "desc" to get the most recent receipts first;
+	 * ties on timestamp are broken by sequence descending.
+	 */
+	order?: "asc" | "desc";
 }
 
 /**
@@ -61,8 +70,6 @@ export interface StoreStats {
 interface ReceiptRow {
 	receipt_json: string;
 }
-
-const DEFAULT_QUERY_LIMIT = 10000;
 
 /**
  * Parse a receipt JSON string from the store, with error context.
@@ -220,14 +227,18 @@ export class ReceiptStore {
 		const where =
 			conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-		const limit = filters.limit ?? DEFAULT_QUERY_LIMIT;
-		params.push(limit);
+		const dir = filters.order === "desc" ? "DESC" : "ASC";
+		const orderClause = `ORDER BY timestamp ${dir}, sequence ${dir}`;
 
-		const rows = this.db
-			.prepare(
-				`SELECT receipt_json FROM receipts ${where} ORDER BY timestamp ASC LIMIT ?`,
-			)
-			.all(...params) as unknown as ReceiptRow[];
+		let sql: string;
+		if (filters.limit !== undefined) {
+			params.push(filters.limit);
+			sql = `SELECT receipt_json FROM receipts ${where} ${orderClause} LIMIT ?`;
+		} else {
+			sql = `SELECT receipt_json FROM receipts ${where} ${orderClause}`;
+		}
+
+		const rows = this.db.prepare(sql).all(...params) as unknown as ReceiptRow[];
 
 		return rows.map((r) => parseReceiptJson(r.receipt_json, "query"));
 	}

@@ -345,6 +345,86 @@ func TestQueryReceiptsOrdering(t *testing.T) {
 	}
 }
 
+func TestQueryReceiptsNoDefaultLimit(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	// Insert more than 10000 rows to prove the cap is gone. Inserting 10001
+	// would be slow; instead we insert a small batch and confirm that nil Limit
+	// returns all of them without any cap applied.
+	const n = 5
+	for i := 1; i <= n; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-1", nil)
+		h, _ := receipt.HashReceipt(r)
+		if err := s.Insert(r, h); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	// nil Limit must return all rows.
+	results, err := s.QueryReceipts(Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != n {
+		t.Errorf("expected %d results with no limit, got %d", n, len(results))
+	}
+
+	// Explicit Limit still works.
+	lim := 3
+	limited, err := s.QueryReceipts(Query{Limit: &lim})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(limited) != lim {
+		t.Errorf("expected %d results with explicit limit, got %d", lim, len(limited))
+	}
+}
+
+func TestQueryReceiptsDescSequenceTiebreaker(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	// Two receipts share the same timestamp but differ in sequence.
+	// With NewestFirst the one with the higher sequence must come first.
+	sharedTS := "2024-06-01T12:00:00Z"
+	for _, seq := range []int{1, 2} {
+		unsigned := receipt.Create(receipt.CreateInput{
+			Issuer:    receipt.Issuer{ID: "did:agent:test"},
+			Principal: receipt.Principal{ID: "did:user:test"},
+			Action: receipt.Action{
+				Type:      "filesystem.file.read",
+				RiskLevel: receipt.RiskLow,
+				Timestamp: sharedTS,
+			},
+			Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+			Chain:   receipt.Chain{Sequence: seq, ChainID: "chain-tie"},
+		})
+		signed, err := receipt.Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, _ := receipt.HashReceipt(signed)
+		if err := s.Insert(signed, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	desc, err := s.QueryReceipts(Query{NewestFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desc) != 2 {
+		t.Fatalf("expected 2 receipts, got %d", len(desc))
+	}
+	if got := desc[0].CredentialSubject.Chain.Sequence; got != 2 {
+		t.Errorf("tiebreaker: expected sequence 2 first, got %d", got)
+	}
+	if got := desc[1].CredentialSubject.Chain.Sequence; got != 1 {
+		t.Errorf("tiebreaker: expected sequence 1 second, got %d", got)
+	}
+}
+
 func TestQueryReceiptsCombinedFilters(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()

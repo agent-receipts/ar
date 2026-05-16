@@ -64,7 +64,9 @@ type Query struct {
 	Status     *receipt.OutcomeStatus
 	After      *string // ISO 8601 timestamp
 	Before     *string // ISO 8601 timestamp
-	Limit      *int    // Default 10000
+	// Limit caps the number of returned receipts. When nil, all matching rows
+	// are returned (no default cap is applied).
+	Limit *int
 	// NewestFirst reverses the default ascending-timestamp ordering so the
 	// most recent receipts are returned first. Default is false (ascending)
 	// to preserve historical behavior.
@@ -305,9 +307,9 @@ func (s *Store) MaxRowID() (int64, error) {
 // is the largest rowid in the result set, or afterRowID when no rows match —
 // callers feed it back in to poll for subsequent inserts.
 //
-// NewestFirst is ignored (follow-mode rows are always chronological). Limit
-// defaults to 10000 like QueryReceipts but is typically set much lower when
-// polling.
+// NewestFirst is ignored (follow-mode rows are always chronological). When
+// Limit is nil all matching rows are returned; callers polling in follow mode
+// typically set an explicit small limit to bound per-poll latency.
 //
 // Callers that want to bound query latency (e.g. so Ctrl-C in follow mode
 // stops a busy/locked query promptly) should use QueryAfterRowIDContext.
@@ -409,19 +411,23 @@ func buildQueryReceiptsSQL(q Query) (string, []any) {
 		where = "WHERE " + strings.Join(conds, " AND ")
 	}
 
-	limit := 10000
-	if q.Limit != nil {
-		limit = *q.Limit
-	}
 	order := "ASC"
 	if q.NewestFirst {
 		order = "DESC"
 	}
+	orderClause := fmt.Sprintf("ORDER BY timestamp %s, sequence %s", order, order)
+	if q.Limit != nil {
+		query := fmt.Sprintf(
+			"SELECT receipt_json FROM receipts %s %s LIMIT ?",
+			where, orderClause,
+		)
+		args = append(args, *q.Limit)
+		return query, args
+	}
 	query := fmt.Sprintf(
-		"SELECT receipt_json FROM receipts %s ORDER BY timestamp %s LIMIT ?",
-		where, order,
+		"SELECT receipt_json FROM receipts %s %s",
+		where, orderClause,
 	)
-	args = append(args, limit)
 	return query, args
 }
 
@@ -455,14 +461,16 @@ func buildQueryAfterRowIDSQL(q Query, afterRowID int64) (string, []any) {
 		args = append(args, *q.Before)
 	}
 
-	limit := 10000
 	if q.Limit != nil {
-		limit = *q.Limit
+		args = append(args, *q.Limit)
+		query := fmt.Sprintf(
+			"SELECT rowid, receipt_json FROM receipts WHERE %s ORDER BY rowid ASC LIMIT ?",
+			strings.Join(conds, " AND "),
+		)
+		return query, args
 	}
-	args = append(args, limit)
-
 	query := fmt.Sprintf(
-		"SELECT rowid, receipt_json FROM receipts WHERE %s ORDER BY rowid ASC LIMIT ?",
+		"SELECT rowid, receipt_json FROM receipts WHERE %s ORDER BY rowid ASC",
 		strings.Join(conds, " AND "),
 	)
 	return query, args

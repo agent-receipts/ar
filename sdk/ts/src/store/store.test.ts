@@ -177,6 +177,60 @@ describe("ReceiptStore", () => {
 			});
 			expect(results).toHaveLength(2);
 		});
+
+		it("returns all rows ascending by default (no implicit cap)", () => {
+			// The three rows were inserted in beforeEach; no limit means all 3.
+			const results = store.query({});
+			expect(results).toHaveLength(3);
+			// Default order is ascending by timestamp.
+			expect(results[0]?.id).toBe("urn:receipt:1");
+			expect(results[2]?.id).toBe("urn:receipt:3");
+		});
+
+		it("returns rows in DESC order when order is 'desc'", () => {
+			const results = store.query({ order: "desc" });
+			expect(results).toHaveLength(3);
+			expect(results[0]?.id).toBe("urn:receipt:3");
+			expect(results[2]?.id).toBe("urn:receipt:1");
+		});
+
+		it("returns rows in ASC order when order is 'asc' (explicit)", () => {
+			const results = store.query({ order: "asc" });
+			expect(results).toHaveLength(3);
+			expect(results[0]?.id).toBe("urn:receipt:1");
+		});
+
+		it("desc order with sequence tiebreaker when timestamps are equal", () => {
+			// Insert two extra receipts with the same timestamp but different sequences.
+			store.insert(
+				makeReceipt({
+					id: "urn:receipt:tie-1",
+					sequence: 10,
+					actionType: "filesystem.file.read",
+					riskLevel: "low",
+					status: "success",
+					timestamp: "2026-03-29T13:00:00Z",
+				}),
+				"sha256:tie1",
+			);
+			store.insert(
+				makeReceipt({
+					id: "urn:receipt:tie-2",
+					sequence: 11,
+					actionType: "filesystem.file.read",
+					riskLevel: "low",
+					status: "success",
+					timestamp: "2026-03-29T13:00:00Z",
+				}),
+				"sha256:tie2",
+			);
+
+			const results = store.query({ order: "desc" });
+			// The two tied rows should come first (most recent timestamp),
+			// with the higher sequence preceding the lower.
+			expect(results[0]?.id).toBe("urn:receipt:tie-2");
+			expect(results[1]?.id).toBe("urn:receipt:tie-1");
+		});
 	});
 
 	describe("corrupt receipt validation", () => {

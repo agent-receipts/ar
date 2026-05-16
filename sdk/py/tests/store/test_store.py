@@ -177,6 +177,94 @@ def test_query_no_filters() -> None:
     store.close()
 
 
+def test_query_no_default_limit() -> None:
+    """No limit set means all rows are returned — no silent cap."""
+    store = open_store(":memory:")
+    for i in range(5):
+        r = make_receipt(id=f"urn:receipt:nl{i}", sequence=i + 1)
+        store.insert(r, hash_receipt(r))
+
+    results = store.query(ReceiptQuery())
+    assert len(results) == 5
+    store.close()
+
+
+def test_query_order_asc_default() -> None:
+    """Default ordering is ascending by timestamp (oldest first)."""
+    store = open_store(":memory:")
+    r1 = make_receipt(
+        id="urn:receipt:ord1",
+        timestamp="2026-01-01T00:00:00Z",
+        chain_id="cord",
+        sequence=1,
+    )
+    r2 = make_receipt(
+        id="urn:receipt:ord2",
+        timestamp="2026-06-01T00:00:00Z",
+        chain_id="cord",
+        sequence=2,
+        previous_hash=hash_receipt(r1),
+    )
+    store.insert(r1, hash_receipt(r1))
+    store.insert(r2, hash_receipt(r2))
+
+    results = store.query(ReceiptQuery())
+    assert results[0].id == "urn:receipt:ord1"
+    assert results[1].id == "urn:receipt:ord2"
+    store.close()
+
+
+def test_query_order_desc() -> None:
+    """newest_first=True returns most recent receipts first."""
+    store = open_store(":memory:")
+    r1 = make_receipt(
+        id="urn:receipt:desc1",
+        timestamp="2026-01-01T00:00:00Z",
+        chain_id="cdesc",
+        sequence=1,
+    )
+    r2 = make_receipt(
+        id="urn:receipt:desc2",
+        timestamp="2026-06-01T00:00:00Z",
+        chain_id="cdesc",
+        sequence=2,
+        previous_hash=hash_receipt(r1),
+    )
+    store.insert(r1, hash_receipt(r1))
+    store.insert(r2, hash_receipt(r2))
+
+    results = store.query(ReceiptQuery(newest_first=True))
+    assert results[0].id == "urn:receipt:desc2"
+    assert results[1].id == "urn:receipt:desc1"
+    store.close()
+
+
+def test_query_desc_sequence_tiebreaker() -> None:
+    """When timestamps are equal, higher sequence comes first in DESC order."""
+    store = open_store(":memory:")
+    shared_ts = "2026-06-01T12:00:00Z"
+    r1 = make_receipt(
+        id="urn:receipt:tie1",
+        timestamp=shared_ts,
+        chain_id="ctie",
+        sequence=1,
+    )
+    r2 = make_receipt(
+        id="urn:receipt:tie2",
+        timestamp=shared_ts,
+        chain_id="ctie",
+        sequence=2,
+        previous_hash=hash_receipt(r1),
+    )
+    store.insert(r1, hash_receipt(r1))
+    store.insert(r2, hash_receipt(r2))
+
+    results = store.query(ReceiptQuery(newest_first=True))
+    assert results[0].id == "urn:receipt:tie2"
+    assert results[1].id == "urn:receipt:tie1"
+    store.close()
+
+
 def test_stats() -> None:
     store = open_store(":memory:")
     r1 = make_receipt(
