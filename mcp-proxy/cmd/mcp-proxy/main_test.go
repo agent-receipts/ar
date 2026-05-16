@@ -56,23 +56,12 @@ func withHomeDirResolver(t *testing.T, resolver func() (string, error)) {
 	t.Cleanup(func() { userHomeDir = prev })
 }
 
-// withXDGDataHome temporarily sets XDG_DATA_HOME to dir (or unsets it when dir
-// is empty) and restores the previous value on cleanup.
+// withXDGDataHome temporarily sets XDG_DATA_HOME to dir and restores the
+// previous value on cleanup. Pass "" to disable XDG override (xdgDataHome
+// treats an empty value the same as unset).
 func withXDGDataHome(t *testing.T, dir string) {
 	t.Helper()
-	prev, had := os.LookupEnv("XDG_DATA_HOME")
-	if dir == "" {
-		os.Unsetenv("XDG_DATA_HOME")
-	} else {
-		os.Setenv("XDG_DATA_HOME", dir)
-	}
-	t.Cleanup(func() {
-		if had {
-			os.Setenv("XDG_DATA_HOME", prev)
-		} else {
-			os.Unsetenv("XDG_DATA_HOME")
-		}
-	})
+	t.Setenv("XDG_DATA_HOME", dir)
 }
 
 func TestDefaultDBPathUsesHomeDir(t *testing.T) {
