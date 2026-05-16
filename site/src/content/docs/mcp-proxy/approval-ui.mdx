@@ -157,7 +157,7 @@ done < <(tail -f /path/to/proxy.stderr)
 For local testing only, auto-approve every paused call. This defeats the point of the pause rule — do not run it on anything you care about:
 
 ```bash
-sqlite3 ~/.agent-receipts/audit.db \
+sqlite3 ~/.local/share/agent-receipts/audit.db \
   "SELECT approval_id FROM tool_calls WHERE policy_action='pause' AND approved_by IS NULL;" |
 while read -r id; do
   curl -sX POST "http://127.0.0.1:8081/api/tool-calls/$id/approve" \

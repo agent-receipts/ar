@@ -766,7 +766,7 @@ func cmdInit(args []string) {
 	force := fs.Bool("force", false, "Overwrite existing key files")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy init [-name <name>] [-force] [-no-approval] [-http-port <port>]\n\n")
-		fmt.Fprintf(os.Stderr, "  One-command setup: creates ~/.agent-receipts/, generates an Ed25519\n")
+		fmt.Fprintf(os.Stderr, "  One-command setup: creates ~/.local/share/agent-receipts/, generates an Ed25519\n")
 		fmt.Fprintf(os.Stderr, "  signing keypair with correct permissions, initialises the receipt\n")
 		fmt.Fprintf(os.Stderr, "  database, and prints a claude_desktop_config.json snippet to stdout.\n\n")
 		fmt.Fprintf(os.Stderr, "  Safe to re-run: warns and skips key generation if files already exist.\n\n")
@@ -783,11 +783,12 @@ func cmdInit(args []string) {
 		os.Exit(2)
 	}
 
-	home, err := userHomeDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "mcp-proxy init: resolve home directory: %v\n", err)
+	dir := xdgDataHome()
+	if dir == "" {
+		fmt.Fprintf(os.Stderr, "mcp-proxy init: resolve data directory: home directory unavailable\n")
 		os.Exit(1)
 	}
+	dir = filepath.Join(dir, "agent-receipts")
 
 	binPath, err := os.Executable()
 	if err != nil {
@@ -795,7 +796,6 @@ func cmdInit(args []string) {
 		binPath = "mcp-proxy"
 	}
 
-	dir := filepath.Join(home, ".agent-receipts")
 	if err := runInit(dir, *name, *force, *noApproval, *httpPort, binPath, os.Stderr, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-proxy init: %v\n", err)
 		os.Exit(1)
