@@ -196,7 +196,8 @@ export function verifyChain(
 		receipts: results,
 		brokenAt,
 	};
-	// Sig errors take precedence over hash-compute errors.
+	// Sig errors take precedence over hash-compute errors; when both are present
+	// the hash-compute error is discarded (a single error field can only surface one).
 	if (signatureError !== undefined) {
 		cv.error = signatureError;
 	} else if (hashComputeError !== undefined) {

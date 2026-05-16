@@ -163,6 +163,38 @@ describe("verifyChain", () => {
 		}
 	});
 
+	it("dual error: sig-compute takes precedence over hash-compute in error field", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(3, privateKey);
+		const targetId = chain[0]?.id;
+
+		const originalHash = hashModule.hashReceipt;
+		const originalVerify = signingModule.verifyReceipt;
+
+		const hashSpy = vi
+			.spyOn(hashModule, "hashReceipt")
+			.mockImplementation((r) => {
+				if (r.id === targetId) throw new Error("synthetic hash failure");
+				return originalHash(r);
+			});
+		const verifySpy = vi
+			.spyOn(signingModule, "verifyReceipt")
+			.mockImplementation((r, key) => {
+				if (r.id === targetId) throw new Error("synthetic sig failure");
+				return originalVerify(r, key);
+			});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.error).toMatch(/signature compute failed at index 0/);
+			expect(result.error).not.toMatch(/hash compute/);
+		} finally {
+			hashSpy.mockRestore();
+			verifySpy.mockRestore();
+		}
+	});
+
 	it("expectedFinalHash mismatch error includes expected and computed hashes", () => {
 		const { publicKey, privateKey } = generateKeyPair();
 		const chain = buildChain(3, privateKey);
