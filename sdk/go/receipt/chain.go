@@ -153,6 +153,17 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		}
 	}
 
+	// Sig errors take precedence over hash-compute errors; when both are present
+	// the hash-compute error is discarded (a single Error field can only surface one).
+	// Compute this before the terminal check so early returns preserve it.
+	var loopErr string
+	switch {
+	case firstSigErr != "":
+		loopErr = firstSigErr
+	case firstHashComputeErr != "":
+		loopErr = firstHashComputeErr
+	}
+
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
 	// If a receipt has terminal: true and is not the last receipt, that is a
 	// protocol violation: a receipt after a terminal predecessor exists.
@@ -163,12 +174,17 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 				if brokenAt == -1 {
 					brokenAt = i + 1
 				}
+				// Compute errors take precedence; fall back to the terminal violation message.
+				errMsg := loopErr
+				if errMsg == "" {
+					errMsg = "receipt after terminal: receipt at index " + strconv.Itoa(i+1) + " follows a terminal receipt at index " + strconv.Itoa(i)
+				}
 				return ChainVerification{
 					Valid:    false,
 					Length:   len(receipts),
 					Receipts: results,
 					BrokenAt: brokenAt,
-					Error:    "receipt after terminal: receipt at index " + strconv.Itoa(i+1) + " follows a terminal receipt at index " + strconv.Itoa(i),
+					Error:    errMsg,
 				}
 			}
 		}
@@ -179,14 +195,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		Length:   len(receipts),
 		Receipts: results,
 		BrokenAt: brokenAt,
-	}
-	// Sig errors take precedence over hash-compute errors; when both are present
-	// the hash-compute error is discarded (a single Error field can only surface one).
-	switch {
-	case firstSigErr != "":
-		cv.Error = firstSigErr
-	case firstHashComputeErr != "":
-		cv.Error = firstHashComputeErr
+		Error:    loopErr,
 	}
 
 	// Response-hash verification (spec §4.3.2).

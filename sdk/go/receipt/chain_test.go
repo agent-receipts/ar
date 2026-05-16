@@ -296,6 +296,47 @@ func TestExpectedFinalHashMismatchError(t *testing.T) {
 	}
 }
 
+// TestComputeErrorPreservedThroughTerminalCheck verifies that a sig-compute error
+// is still surfaced in ChainVerification.Error when the chain also has a
+// receipt-after-terminal violation (which previously returned early before the error
+// was applied).
+func TestComputeErrorPreservedThroughTerminalCheck(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	terminalChain := buildChainWithTerminal(t, kp, 2)
+
+	terminalHash, err := HashReceipt(terminalChain[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 3, PreviousReceiptHash: &terminalHash, ChainID: "chain-1"},
+	})
+	extraSigned, _ := Sign(extra, kp.PrivateKey, "did:agent:test#key-1")
+	chain := append(terminalChain, extraSigned)
+
+	targetID := chain[0].ID
+	orig := verifyReceipt
+	verifyReceipt = func(r AgentReceipt, key string) (bool, error) {
+		if r.ID == targetID {
+			return false, errors.New("synthetic sig failure")
+		}
+		return orig(r, key)
+	}
+	t.Cleanup(func() { verifyReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if !strings.Contains(result.Error, "signature compute failed at index 0") {
+		t.Errorf("compute error must surface through terminal check, got: %s", result.Error)
+	}
+}
+
 // --- ADR-0008 tests below ---
 
 // buildChainWithTerminal builds a chain of `count` receipts where the last
