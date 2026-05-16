@@ -28,6 +28,29 @@ ADR-0010 (Daemon Process Separation) was always meant to fix this: one daemon, o
 
 Here's what happens when Claude Code makes a GitHub MCP call today. The proxy intercepts it (it's an MCP call over stdio) and the hook fires after it completes (it's a PostToolUse event). Both emitters forward to the daemon, which assigns consecutive sequence numbers.
 
+```mermaid
+sequenceDiagram
+    participant CC as Claude Code
+    participant MP as mcp-proxy
+    participant MS as MCP Server
+    participant Hook as agent-receipts-hook
+    participant D as agent-receipts-daemon
+    participant DB as receipts.db
+
+    CC->>MP: tool call (stdio)
+    MP->>MS: forward (stdio)
+    MS-->>MP: response
+    MP-->>CC: response
+    MP--)D: emit frame · channel: mcp
+    CC--)Hook: PostToolUse event
+    Hook--)D: emit frame · channel: claude-code
+    Note over D: redact secrets in error / disclosure fields
+    D->>DB: INSERT seq 2046 · mcp.github.pull_request_read
+    D->>DB: INSERT seq 2047 · claude-code.mcp__github-audited__pull_request_read
+```
+
+Both frames carry the same `parameters_hash` — the daemon hashes inputs canonically before any emitter can tamper with them. The dashed arrows (fire-and-forget) mean neither emitter blocks waiting for the receipt to land.
+
 **Sequence 2046 — from the MCP proxy:**
 
 ```json
@@ -95,6 +118,22 @@ The `parameters_disclosure` feature has a history. It started as `parameterPrevi
 That question drove two things: the rename from `parameterPreview` → `parameterDisclosure` (the field carries disclosure, not a safe preview), and the redaction system now in the daemon. The idea was ported from the plugin to the main project precisely because the daemon is the right place for it — it's the only process that sees the raw payload, making it the only place where redaction can run unconditionally, regardless of which emitter sent the event.
 
 With `--parameter-disclosure` enabled, the daemon stores plaintext inputs and outputs in the receipt's `parameters_disclosure` field. Without redaction, this would be a liability: any secret that appears in a tool call argument or response would be persisted forever in a signed, immutable record.
+
+```mermaid
+sequenceDiagram
+    participant E as Emitter
+    participant D as agent-receipts-daemon
+    participant DB as receipts.db
+
+    E--)D: raw input · "api_key=sk-abc123..."
+    Note over D: 1 · canonicalise → parameters_hash
+    Note over D: 2 · redact → "api_key=[REDACTED]"
+    Note over D: 3 · sign receipt
+    D->>DB: parameters_hash: sha256:...
+    D->>DB: parameters_disclosure.input: "api_key=[REDACTED]"
+```
+
+The hash in step 1 commits to the original bytes. An auditor who later obtains the raw input can verify it matches. The redacted text in step 2 is what gets signed and stored — the secret never reaches the database.
 
 v0.10.0 adds redaction to the pipeline. Built-in patterns cover:
 
