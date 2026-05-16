@@ -88,12 +88,12 @@ type Pipeline struct {
 	// design that supersedes this flag.
 	ParameterDisclosure bool
 
-	// Redactor is applied to the error string before it is persisted in the
-	// receipt body. Input and output are never stored as text — only their
-	// SHA-256 hashes are written to parameters_hash / response_hash — so
-	// redaction of those fields is not needed. Hashes are always computed from
-	// the raw bytes so they remain verifiable against the original emitter
-	// payload. Nil means no redaction.
+	// Redactor is applied to text fields before they are persisted in the
+	// receipt body: outcome.error is always redacted; parameters_disclosure
+	// input/output strings are also redacted when ParameterDisclosure is
+	// enabled. Input and output are never stored as raw text otherwise — only
+	// their SHA-256 hashes go into parameters_hash / response_hash, so those
+	// hashes are always over the original emitter payload. Nil = no redaction.
 	Redactor *Redactor
 
 	// traceMu serialises writes to TraceLog. Process is invoked concurrently
@@ -423,12 +423,22 @@ func (p *Pipeline) buildAndSign(
 
 	// Populate plaintext disclosure after hashing so the hash always covers the
 	// raw bytes, not any string conversion. Only runs when explicitly opted in.
+	// Redaction is applied to the stored text so secrets are sanitised even
+	// when the operator enables disclosure mode.
 	if p.ParameterDisclosure {
 		if hasJSONPayload(f.Input) {
-			disclosure["input"] = string(f.Input)
+			inp := string(f.Input)
+			if p.Redactor != nil {
+				inp = p.Redactor.Redact(inp)
+			}
+			disclosure["input"] = inp
 		}
 		if hasJSONPayload(f.Output) {
-			disclosure["output"] = string(f.Output)
+			out := string(f.Output)
+			if p.Redactor != nil {
+				out = p.Redactor.Redact(out)
+			}
+			disclosure["output"] = out
 		}
 	}
 
