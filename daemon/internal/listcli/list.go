@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"syscall"
 	"text/tabwriter"
 
 	"github.com/agent-receipts/ar/daemon"
@@ -133,6 +134,9 @@ func writeTabular(stdout io.Writer, receipts []receipt.AgentReceipt) int {
 
 func exitFromFlush(w *tabwriter.Writer) int {
 	if err := w.Flush(); err != nil {
+		if errors.Is(err, syscall.EPIPE) || errors.Is(err, io.ErrClosedPipe) {
+			return ExitOK
+		}
 		return ExitUsageError
 	}
 	return ExitOK
