@@ -161,20 +161,22 @@ This is a deliberate design choice. Silent drops mean invisible audit gaps. A vi
 
 ---
 
-## Why PostToolUse and not PreToolUse?
+## Why PostToolUse and not the other ~20 hook events?
 
-This is the first question people ask. The short answer: audit first, policy second — and for good reason.
+Claude Code's [hooks system](https://code.claude.com/docs/en/hooks) has grown to around 20 lifecycle events: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStop`, `PreCompact`, `Notification`, `WorktreeCreate`, `WorktreeRemove`, and more. Each represents a different moment in the agent's lifecycle.
 
-`PreToolUse` hooks fire *before* the tool runs. Exiting non-zero blocks the call. That sounds powerful, but it changes the contract: you're no longer just observing, you're in the critical path. If the hook is slow, the agent is slow. If the hook crashes, the tool call fails — even for calls that should succeed. If the hook blocks something it shouldn't, the agent is broken in a way that's hard to debug.
+Agent Receipts currently handles `PostToolUse` only. That's deliberate.
 
-`PostToolUse` has none of these failure modes. The tool has already run. The hook fires after the fact. If it crashes or times out, the agent doesn't notice — the call completed, Claude Code continues. The audit trail has a gap, not a breakage.
+**Audit first, policy second.** `PreToolUse` can block a tool call by exiting non-zero — which puts the hook in the critical path. If it's slow, the agent is slow. If it crashes, the tool call fails. If it incorrectly blocks something, the agent breaks in ways that are hard to debug. `PostToolUse` has none of these failure modes: the tool has already run, the hook fires after the fact, and if it fails the agent doesn't notice. The audit trail has a gap, not a breakage.
 
-There's also an information argument. A `PostToolUse` hook sees the *output* — what the tool actually returned. A `PreToolUse` hook only sees the *intent* — what the agent asked for. For forensics and breach investigation, the output is often the more interesting half.
+**The output is more interesting than the intent.** A `PostToolUse` hook sees what the tool *returned*. A `PreToolUse` hook only sees what the agent *asked for*. For forensics and breach investigation, the output — what actually came back — is often the more useful half of the record.
 
-The current approach is deliberate: ship the audit foundation with the lowest possible blast radius, get it running in production, then add policy enforcement once the system is trusted. The MCP proxy already does `PreToolUse`-equivalent blocking for MCP calls. The hook will follow the same path once the audit baseline is solid.
+**Expanding deliberately.** `SessionStart`, `UserPromptSubmit`, and `Stop` are natural next candidates: they'd let the daemon chain record session boundaries and the prompts that triggered tool use, not just the tool calls themselves. But each new event type adds surface area — and there's a technical complication specific to short-lived hook processes (each hook invocation is a fresh process, so the ADR-0010 drop-counter mechanism needs adapting before expanding coverage).
+
+The MCP proxy already does `PreToolUse`-equivalent blocking for MCP calls. The hook will follow the same path — audit baseline first, then policy enforcement once it's proven in production.
 
 <Aside type="note">
-There's also a technical complication specific to short-lived hook processes: the drop-counter mechanism that makes backpressure visible in the chain doesn't work naturally when the emitter process exits after every call. That design question is being resolved before `PreToolUse` lands, so new event types don't inherit the silent-drop gap.
+The drop-counter mechanism that makes backpressure visible in the chain doesn't work naturally when the emitter process exits after every call. That design question is being resolved before new event types are added, so they don't inherit the silent-drop gap.
 </Aside>
 
 ---
