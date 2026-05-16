@@ -82,6 +82,12 @@ type Pipeline struct {
 	TraceLog io.Writer              // Optional trace log for testing; nil = silent
 	ErrorLog func(string, ...any)   // Optional error logger; nil = silent
 
+	// ParameterDisclosure, when true, includes plaintext tool input and output
+	// in the parameters_disclosure receipt field. Disabled by default.
+	// WARNING: stores unredacted payloads — see issue #280 for the encrypted
+	// design that supersedes this flag.
+	ParameterDisclosure bool
+
 	// traceMu serialises writes to TraceLog. Process is invoked concurrently
 	// from the listener accept loop, so unguarded fmt.Fprintf calls would
 	// interleave bytes from different frames in the buffer (and race the
@@ -400,6 +406,17 @@ func (p *Pipeline) buildAndSign(
 			return receipt.AgentReceipt{}, "", fmt.Errorf("hash input: %w", err)
 		}
 		action.ParametersHash = hash
+	}
+
+	// Populate plaintext disclosure after hashing so the hash always covers the
+	// raw bytes, not any string conversion. Only runs when explicitly opted in.
+	if p.ParameterDisclosure {
+		if hasJSONPayload(f.Input) {
+			disclosure["input"] = string(f.Input)
+		}
+		if hasJSONPayload(f.Output) {
+			disclosure["output"] = string(f.Output)
+		}
 	}
 
 	outcome := receipt.Outcome{

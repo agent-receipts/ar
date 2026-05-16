@@ -814,6 +814,97 @@ func TestProcess_DropCountChainContinues(t *testing.T) {
 	}
 }
 
+// TestProcess_ParameterDisclosureEnabled verifies that when ParameterDisclosure
+// is true, plaintext input and output are recorded in parameters_disclosure under
+// the "input" and "output" keys. The hash fields must still be present because
+// hashing runs before the disclosure block.
+func TestProcess_ParameterDisclosureEnabled(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+	p.ParameterDisclosure = true
+
+	inputJSON := json.RawMessage(`{"path":"/tmp/file","mode":"r"}`)
+	outputJSON := json.RawMessage(`{"bytes":42}`)
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "fs.read"},
+		Input:     inputJSON,
+		Output:    outputJSON,
+		Decision:  "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := receipts[0]
+	pd := r.CredentialSubject.Action.ParametersDisclosure
+
+	if got := pd["input"]; got != string(inputJSON) {
+		t.Errorf("parameters_disclosure[input] = %q, want %q", got, string(inputJSON))
+	}
+	if got := pd["output"]; got != string(outputJSON) {
+		t.Errorf("parameters_disclosure[output] = %q, want %q", got, string(outputJSON))
+	}
+	// Hashes must still be present — disclosure doesn't replace hashing.
+	if r.CredentialSubject.Action.ParametersHash == "" {
+		t.Error("parameters_hash must be present when input is set, even with disclosure enabled")
+	}
+	if r.CredentialSubject.Outcome.ResponseHash == "" {
+		t.Error("response_hash must be present when output is set, even with disclosure enabled")
+	}
+}
+
+// TestProcess_ParameterDisclosureDisabled verifies that when ParameterDisclosure
+// is false (the default), the "input" and "output" keys are absent from
+// parameters_disclosure even when the frame carries non-null input and output.
+func TestProcess_ParameterDisclosureDisabled(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+	// ParameterDisclosure defaults to false; no assignment needed.
+
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "fs.read"},
+		Input:     json.RawMessage(`{"path":"/tmp/file","mode":"r"}`),
+		Output:    json.RawMessage(`{"bytes":42}`),
+		Decision:  "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pd := receipts[0].CredentialSubject.Action.ParametersDisclosure
+
+	if _, ok := pd["input"]; ok {
+		t.Errorf("parameters_disclosure must not contain \"input\" when ParameterDisclosure is false, got %q", pd["input"])
+	}
+	if _, ok := pd["output"]; ok {
+		t.Errorf("parameters_disclosure must not contain \"output\" when ParameterDisclosure is false, got %q", pd["output"])
+	}
+}
+
 // failOnNthInsert wraps a ReceiptStore and returns an error on the Nth Insert.
 type failOnNthInsert struct {
 	store.ReceiptStore

@@ -48,6 +48,7 @@ func main() {
 		ChainID:              envOrDefault("AGENTRECEIPTS_CHAIN_ID", "default"),
 		IssuerID:             envOrDefault("AGENTRECEIPTS_ISSUER_ID", "did:agent-receipts-daemon:local"),
 		VerificationMethodID: envOrDefault("AGENTRECEIPTS_VERIFICATION_METHOD", "did:agent-receipts-daemon:local#k1"),
+		ParameterDisclosure:  os.Getenv("AGENTRECEIPTS_PARAMETER_DISCLOSURE") == "1",
 	}
 
 	initKeys := flag.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
@@ -59,6 +60,7 @@ func main() {
 	flag.StringVar(&cfg.ChainID, "chain-id", cfg.ChainID, "Chain id to write under (env: AGENTRECEIPTS_CHAIN_ID)")
 	flag.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	flag.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
+	flag.BoolVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "Include plaintext tool input/output in parameters_disclosure (WARNING: stores unredacted payloads; see issue #280) (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
 	flag.Parse()
 
 	if *showVersion {
