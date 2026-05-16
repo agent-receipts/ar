@@ -161,13 +161,21 @@ This is a deliberate design choice. Silent drops mean invisible audit gaps. A vi
 
 ---
 
-## Current scope and roadmap
+## Why PostToolUse and not PreToolUse?
 
-The hook today handles `PostToolUse` only — it fires after a tool has already run. This makes it audit-only: it records what happened but cannot influence what runs.
+This is the first question people ask. The short answer: audit first, policy second — and for good reason.
 
-`PreToolUse` hooks (which fire before the tool runs and can block it by exiting non-zero) are on the roadmap. That opens the door to policy enforcement at the native tool level — the same pattern the MCP proxy uses today for MCP calls. Once both `Pre` and `PostToolUse` are covered, the hook becomes a full policy + audit layer for native tools.
+`PreToolUse` hooks fire *before* the tool runs. Exiting non-zero blocks the call. That sounds powerful, but it changes the contract: you're no longer just observing, you're in the critical path. If the hook is slow, the agent is slow. If the hook crashes, the tool call fails — even for calls that should succeed. If the hook blocks something it shouldn't, the agent is broken in a way that's hard to debug.
 
-Until then: install the hook, get the audit trail, know what your agent ran.
+`PostToolUse` has none of these failure modes. The tool has already run. The hook fires after the fact. If it crashes or times out, the agent doesn't notice — the call completed, Claude Code continues. The audit trail has a gap, not a breakage.
+
+There's also an information argument. A `PostToolUse` hook sees the *output* — what the tool actually returned. A `PreToolUse` hook only sees the *intent* — what the agent asked for. For forensics and breach investigation, the output is often the more interesting half.
+
+The current approach is deliberate: ship the audit foundation with the lowest possible blast radius, get it running in production, then add policy enforcement once the system is trusted. The MCP proxy already does `PreToolUse`-equivalent blocking for MCP calls. The hook will follow the same path once the audit baseline is solid.
+
+<Aside type="note">
+There's also a technical complication specific to short-lived hook processes: the drop-counter mechanism that makes backpressure visible in the chain doesn't work naturally when the emitter process exits after every call. That design question is being resolved before `PreToolUse` lands, so new event types don't inherit the silent-drop gap.
+</Aside>
 
 ---
 
