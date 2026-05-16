@@ -3,11 +3,7 @@ package proxy_test
 import (
 	"bufio"
 	"bytes"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
@@ -31,45 +27,18 @@ func buildTestBinary(t *testing.T, pkg, tmpDir, name string) string {
 	return out
 }
 
-// writeKeyFile generates an Ed25519 private key and writes it as a PKCS8 PEM file.
-func writeKeyFile(t *testing.T, dir string) string {
-	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	der, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		t.Fatalf("marshal key: %v", err)
-	}
-	keyPath := filepath.Join(dir, "key.pem")
-	f, err := os.OpenFile(keyPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		t.Fatalf("create key file: %v", err)
-	}
-	defer f.Close()
-	if err := pem.Encode(f, &pem.Block{Type: "PRIVATE KEY", Bytes: der}); err != nil {
-		t.Fatalf("encode key: %v", err)
-	}
-	return keyPath
-}
-
 // startParallelProxy starts the mcp-proxy binary with fakeserverBin as upstream
 // and returns stdin/stdout pipes, a stderr buffer, and the command.
 func startParallelProxy(t *testing.T, proxyBin, fakeserverBin string, extraEnv []string) (io.WriteCloser, io.ReadCloser, *bytes.Buffer, *exec.Cmd) {
 	t.Helper()
 	tmpDir := t.TempDir()
 
-	keyPath := writeKeyFile(t, tmpDir)
 	auditDB := filepath.Join(tmpDir, "audit.db")
-	receiptDB := filepath.Join(tmpDir, "receipts.db")
 
 	cmd := exec.Command(proxyBin,
 		"--db", auditDB,
-		"--receipt-db", receiptDB,
-		"--key", keyPath,
-		"--chain", "parallel-test",
 		"--http", "none",
+		"--socket", "", // no daemon in test environment
 		"--", fakeserverBin,
 	)
 	cmd.Env = append(os.Environ(), extraEnv...)

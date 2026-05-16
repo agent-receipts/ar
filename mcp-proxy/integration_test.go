@@ -9,13 +9,13 @@ import (
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
-	"github.com/agent-receipts/ar/sdk/go/receipt"
-	receiptStore "github.com/agent-receipts/ar/sdk/go/store"
 	"github.com/agent-receipts/ar/sdk/go/taxonomy"
 )
 
 // TestAuditPipelineToolCall simulates the proxy handler's tool call pipeline:
-// classify -> score -> policy -> audit -> receipt emission.
+// classify -> score -> policy -> audit. Receipt emission now goes to the daemon
+// via the emitter (ADR-0010); see cmd/mcp-proxy/emitter_integration_test.go
+// for end-to-end daemon receipt tests.
 func TestAuditPipelineToolCall(t *testing.T) {
 	auditDB, err := audit.Open(":memory:")
 	if err != nil {
@@ -23,28 +23,12 @@ func TestAuditPipelineToolCall(t *testing.T) {
 	}
 	t.Cleanup(func() { auditDB.Close() })
 
-	rStore, err := receiptStore.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { rStore.Close() })
-
 	sessionID := "test-session"
 	if err := auditDB.CreateSession(sessionID, "test-server", "echo"); err != nil {
 		t.Fatal(err)
 	}
 
-	kp, err := receipt.GenerateKeyPair()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	engine := policy.NewEngine(policy.DefaultRules())
-	chainID := "test-chain-pipeline"
-	issuerDID := "did:agent:test"
-	principalDID := "did:user:test"
-	sequence := 0
-	var prevHash *string
 
 	// --- Tool call 1: read_file (low risk, should pass) ---
 
@@ -100,46 +84,13 @@ func TestAuditPipelineToolCall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Emit receipt for the passed tool call.
+	// Verify taxonomy classification resolves correctly.
 	classification := taxonomy.ClassifyToolCall(toolName, []taxonomy.TaxonomyMapping{
 		{ToolName: "read_file", ActionType: "filesystem.file.read"},
 	})
-
-	canonical, err := receipt.Canonicalize(args)
-	if err != nil {
-		t.Fatalf("canonicalize args: %v", err)
+	if classification.ActionType != "filesystem.file.read" {
+		t.Errorf("expected action type 'filesystem.file.read', got %q", classification.ActionType)
 	}
-	argsHash := receipt.SHA256Hash(canonical)
-
-	sequence++
-	unsigned := receipt.Create(receipt.CreateInput{
-		Issuer:    receipt.Issuer{ID: issuerDID},
-		Principal: receipt.Principal{ID: principalDID},
-		Action: receipt.Action{
-			Type:           classification.ActionType,
-			RiskLevel:      classification.RiskLevel,
-			ParametersHash: argsHash,
-		},
-		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
-		Chain: receipt.Chain{
-			Sequence:            sequence,
-			PreviousReceiptHash: prevHash,
-			ChainID:             chainID,
-		},
-	})
-
-	signed, err := receipt.Sign(unsigned, kp.PrivateKey, issuerDID+"#key-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	h, err := receipt.HashReceipt(signed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := rStore.Insert(signed, h); err != nil {
-		t.Fatal(err)
-	}
-	prevHash = &h
 
 	// --- Tool call 2: delete_secrets (high risk, should block) ---
 
@@ -180,108 +131,24 @@ func TestAuditPipelineToolCall(t *testing.T) {
 	if decision2.Action != "block" {
 		t.Errorf("expected policy action 'block' for delete_secrets, got %q", decision2.Action)
 	}
-
-	// Blocked calls do NOT generate receipts.
-
-	// --- Verify final state ---
-
-	chain, err := rStore.GetChain(chainID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(chain) != 1 {
-		t.Errorf("expected 1 receipt (blocked call should not produce one), got %d", len(chain))
-	}
-
-	result := receipt.VerifyChain(chain, kp.PublicKey)
-	if !result.Valid {
-		t.Fatalf("chain verification failed: broken at %d", result.BrokenAt)
-	}
 }
 
-// TestToolNameInReceipt verifies that the tool name is stored in the receipt
-// and that prefix-based classification provides the correct action type
-// when no taxonomy mapping exists (fixes #109).
-func TestToolNameInReceipt(t *testing.T) {
-	rStore, err := receiptStore.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { rStore.Close() })
-
-	kp, err := receipt.GenerateKeyPair()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+// TestToolClassificationFallback verifies that prefix-based classification
+// provides the correct action type when no taxonomy mapping exists.
+// Receipts are now emitted to the daemon (ADR-0010); this test exercises
+// the classification logic the proxy uses when building the emitter event.
+func TestToolClassificationFallback(t *testing.T) {
 	toolName := "list_issues"
-	args := map[string]any{"repo": "agent-receipts/ar"}
 
 	// Taxonomy has no mapping for list_issues → falls back to ClassifyOperation.
 	classification := taxonomy.ClassifyToolCall(toolName, nil)
-	actionType := classification.ActionType
-	riskLevel := classification.RiskLevel
-	if actionType == "unknown" {
-		actionType = audit.ClassifyOperation(toolName)
-		switch actionType {
-		case "read":
-			riskLevel = receipt.RiskLow
-		case "write":
-			riskLevel = receipt.RiskMedium
-		case "delete":
-			riskLevel = receipt.RiskHigh
-		case "execute":
-			riskLevel = receipt.RiskHigh
-		}
+	if classification.ActionType != "unknown" {
+		t.Errorf("expected 'unknown' from taxonomy for unmapped tool, got %q", classification.ActionType)
 	}
 
-	canonical, err := receipt.Canonicalize(args)
-	if err != nil {
-		t.Fatalf("canonicalize args: %v", err)
-	}
-	argsHash := receipt.SHA256Hash(canonical)
-
-	unsigned := receipt.Create(receipt.CreateInput{
-		Issuer:    receipt.Issuer{ID: "did:agent:test"},
-		Principal: receipt.Principal{ID: "did:user:test"},
-		Action: receipt.Action{
-			Type:           actionType,
-			ToolName:       toolName,
-			RiskLevel:      riskLevel,
-			ParametersHash: argsHash,
-		},
-		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
-		Chain:   receipt.Chain{Sequence: 1, ChainID: "test-chain-toolname"},
-	})
-
-	signed, err := receipt.Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	h, err := receipt.HashReceipt(signed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := rStore.Insert(signed, h); err != nil {
-		t.Fatal(err)
-	}
-
-	// Retrieve and verify the receipt.
-	got, err := rStore.GetByID(signed.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got == nil {
-		t.Fatal("expected receipt, got nil")
-	}
-	if got.CredentialSubject.Action.ToolName != "list_issues" {
-		t.Errorf("expected action.tool_name %q, got %q", "list_issues", got.CredentialSubject.Action.ToolName)
-	}
-	if got.CredentialSubject.Action.Type != "read" {
-		t.Errorf("expected action.type %q, got %q", "read", got.CredentialSubject.Action.Type)
-	}
-	if got.CredentialSubject.Action.RiskLevel != receipt.RiskLow {
-		t.Errorf("expected action.risk_level %q, got %q", receipt.RiskLow, got.CredentialSubject.Action.RiskLevel)
+	opType := audit.ClassifyOperation(toolName)
+	if opType != "read" {
+		t.Errorf("expected prefix fallback to 'read' for list_issues, got %q", opType)
 	}
 }
 
