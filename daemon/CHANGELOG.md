@@ -5,6 +5,47 @@ All notable changes to `agent-receipts-daemon` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-05-17
+
+### Added
+
+- **Receipt pipeline redaction** ([#426](https://github.com/agent-receipts/ar/pull/426),
+  closes [#423](https://github.com/agent-receipts/ar/issues/423)):
+  The daemon now redacts secrets from receipt body fields before persistence.
+  Built-in patterns cover GitHub PATs, OpenAI/Anthropic keys, AWS access key IDs,
+  bearer tokens, Slack tokens, PEM private keys, and URL query-string tokens.
+  JSON-aware key redaction additionally covers `password`, `token`, `api_key`,
+  `secret`, `authorization`, `private_key`, `jwt`, and 20+ other sensitive key names.
+  Redaction runs after hashing — `parameters_hash` and `response_hash` commit to
+  the raw canonical bytes; only the stored text fields (`outcome.error`,
+  `parameters_disclosure` when enabled) are sanitised.
+  Custom patterns can be added via `--redact-patterns <file.yaml>`
+  (env: `AGENTRECEIPTS_REDACT_PATTERNS`).
+
+- **`agent-receipts list` companion CLI command** ([#420](https://github.com/agent-receipts/ar/pull/420),
+  closes [#410](https://github.com/agent-receipts/ar/issues/410)):
+  `agent-receipts list` prints recent receipts from the daemon store in tabular
+  or JSON form. Flags: `--limit N` (default 50), `--json`, `--db`/`AGENTRECEIPTS_DB`.
+  Newest-first by default.
+
+### Changed
+
+- **mcp-proxy is now a thin emitter** ([#421](https://github.com/agent-receipts/ar/pull/421),
+  closes [#416](https://github.com/agent-receipts/ar/issues/416)):
+  The mcp-proxy no longer maintains its own `receipts.db` or signs receipts.
+  It forwards raw tool-call events to the daemon over the Unix socket
+  (the same pattern as `agent-receipts-hook`). The daemon is the sole receipt
+  writer. **Breaking change for mcp-proxy:** the `-receipt-db`, `-key`, `-chain`,
+  `-issuer*`, `-operator*`, `-principal`, `-taxonomy`, and `-bundled-taxonomies`
+  flags have been removed. The `mcp-proxy list`, `inspect`, `verify`, `export`,
+  and `stats` subcommands now print a deprecation notice pointing to
+  `agent-receipts list` / `agent-receipts verify`.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.9.1`
+  (DESC ordering and no silent 10k row cap in `QueryReceipts`).
+
 ## [0.9.1] - 2026-05-16
 
 ### Dependencies
