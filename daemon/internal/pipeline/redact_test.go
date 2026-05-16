@@ -107,10 +107,9 @@ func TestRedactor_CustomPatternsApplied(t *testing.T) {
 	}
 }
 
-// TestRedactor_CustomPatternsCheckedFirst verifies that user patterns are
-// applied before built-in patterns (though for non-overlapping patterns the
-// order only matters for coverage — the important thing is both apply).
-func TestRedactor_CustomPatternsCheckedFirst(t *testing.T) {
+// TestRedactor_BothBuiltinAndCustomPatternsApply verifies that both built-in
+// and user-supplied patterns are applied when a Redactor has both.
+func TestRedactor_BothBuiltinAndCustomPatternsApply(t *testing.T) {
 	yaml := `patterns:
   - name: corp-key
     pattern: 'MYCO-[A-Z0-9]+'
@@ -180,11 +179,11 @@ func TestPipeline_HashesComputedBeforeRedaction(t *testing.T) {
 	st := newTestStore(t)
 	state := chain.New("chain-1")
 
-	// Use a redactor that always replaces the entire string with [REDACTED].
-	// If hashing happened AFTER redaction, the hash would match "\"[REDACTED]\""
-	// rather than the real input — and the two pipelines below would produce
-	// identical hashes despite different raw inputs. We verify the opposite.
-	redactor := NewRedactor(nil) // built-ins are fine; the key point is hash stability
+	// Use the default redactor (built-in patterns only). The input contains an
+	// api_key and sk- pattern that the built-ins would redact if applied to the
+	// stored body — but input/output are only stored as hashes, never as text.
+	// We verify the hashes match the RAW (pre-redaction) canonical JSON.
+	redactor := NewRedactor(nil)
 
 	p := New(state, ks, st, "did:agent-receipts-daemon:test")
 	p.Redactor = redactor
@@ -242,6 +241,46 @@ func TestPipeline_HashesComputedBeforeRedaction(t *testing.T) {
 	}
 	if got := r.CredentialSubject.Outcome.ResponseHash; got != wantResponseHash {
 		t.Errorf("response_hash mismatch: got %q want %q (hash must be over raw output, not redacted)", got, wantResponseHash)
+	}
+}
+
+// TestPipeline_ErrorFieldIsRedactedInReceipt verifies the one field that IS
+// stored as text — outcome.error — is redacted before persistence when it
+// contains a recognisable secret shape.
+func TestPipeline_ErrorFieldIsRedactedInReceipt(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-error-redact")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+	p.Redactor = NewRedactor(nil)
+
+	secret := "ghp_" + strings.Repeat("x", 36)
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "failing-tool"},
+		Error:     `{"message":"auth failed: ` + secret + `"}`,
+		Decision:  "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	receipts, err := st.GetChain("chain-error-redact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	errField := receipts[0].CredentialSubject.Outcome.Error
+	if strings.Contains(errField, secret) {
+		t.Errorf("outcome.error contains raw secret — redaction did not run: %q", errField)
+	}
+	if !strings.Contains(errField, "[REDACTED]") {
+		t.Errorf("outcome.error does not contain [REDACTED]: %q", errField)
 	}
 }
 

@@ -48,7 +48,7 @@ var sensitiveKeys = map[string]bool{
 
 // builtinPatterns is the ordered list of regular-expression patterns the
 // default Redactor applies. They are applied after JSON-key redaction.
-// Unexported to prevent accidental mutation; use BuiltinPatterns for a copy.
+// Unexported to prevent accidental mutation.
 var builtinPatterns = []namedPattern{
 	{
 		name: "github-pat-classic",
