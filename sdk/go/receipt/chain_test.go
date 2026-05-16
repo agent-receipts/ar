@@ -219,6 +219,57 @@ func TestSigComputeErrorContinuesIteration(t *testing.T) {
 	if !strings.Contains(result.Error, "synthetic verify failure") {
 		t.Errorf("expected error to include cause, got: %s", result.Error)
 	}
+	// Non-target receipts must have their SignatureValid computed correctly.
+	if !result.Receipts[0].SignatureValid {
+		t.Error("expected Receipts[0].SignatureValid=true")
+	}
+	if result.Receipts[1].SignatureValid {
+		t.Error("expected Receipts[1].SignatureValid=false (injected error)")
+	}
+	for i := 2; i < 5; i++ {
+		if !result.Receipts[i].SignatureValid {
+			t.Errorf("expected Receipts[%d].SignatureValid=true", i)
+		}
+	}
+}
+
+// TestDualErrorSigTakesPrecedenceOverHashCompute verifies that when both a
+// signature-compute error and a hash-compute error occur in the same chain,
+// the signature error wins in ChainVerification.Error.
+func TestDualErrorSigTakesPrecedenceOverHashCompute(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3)
+
+	targetID := chain[0].ID
+
+	origVerify := verifyReceipt
+	verifyReceipt = func(r AgentReceipt, key string) (bool, error) {
+		if r.ID == targetID {
+			return false, errors.New("synthetic sig failure")
+		}
+		return origVerify(r, key)
+	}
+	t.Cleanup(func() { verifyReceipt = origVerify })
+
+	origHash := hashReceipt
+	hashReceipt = func(r AgentReceipt) (string, error) {
+		if r.ID == targetID {
+			return "", errors.New("synthetic hash failure")
+		}
+		return origHash(r)
+	}
+	t.Cleanup(func() { hashReceipt = origHash })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if !strings.Contains(result.Error, "signature compute failed at index 0") {
+		t.Errorf("expected sig error to win, got: %s", result.Error)
+	}
+	if strings.Contains(result.Error, "hash compute") {
+		t.Errorf("hash-compute error must be suppressed when sig error present, got: %s", result.Error)
+	}
 }
 
 // TestExpectedFinalHashMismatchError verifies the enriched error message includes

@@ -180,7 +180,8 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		Receipts: results,
 		BrokenAt: brokenAt,
 	}
-	// Sig errors take precedence over hash-compute errors.
+	// Sig errors take precedence over hash-compute errors; when both are present
+	// the hash-compute error is discarded (a single Error field can only surface one).
 	switch {
 	case firstSigErr != "":
 		cv.Error = firstSigErr
