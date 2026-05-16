@@ -181,6 +181,18 @@ The drop-counter mechanism that makes backpressure visible in the chain doesn't 
 
 ---
 
+## Why Go and not Rust?
+
+Rust would produce a smaller, faster binary with compile-time memory safety guarantees. It's a reasonable question.
+
+The honest answer is that the emitter is designed to be so thin that language choice barely matters. Its entire job is: read stdin, open a Unix socket, write a length-prefixed frame, close. The 25ms dial timeout and 100ms write timeout are the latency budget — not the language runtime. A Rust binary would hit those same wall-clock limits. The bottleneck is IPC, not CPU or memory.
+
+The safety argument for Rust is real but narrow here. There's no complex memory management in the emitter, no pointer arithmetic, no unsafe operations the Go runtime can't handle safely. The Go emitter has been running in production without memory-safety incidents because it genuinely doesn't do anything that requires Rust's guarantees.
+
+There's also a practical argument: the hook binary uses the Go emitter package directly, sharing code with the daemon, the SDK, and the proxy. Rust would mean a separate implementation of the IPC framing, the frame schema, and the timeout logic — more surface area for drift between the hook and every other emitter in the system.
+
+If the emitter ever needs to do heavy local processing before forwarding — structured field extraction, client-side pattern matching, local buffering for offline operation — that calculus changes. For fire-and-forget over a Unix socket, Go is more than adequate.
+
 ## The complete picture
 
 With both the MCP proxy and the hook in place, a Claude Code session produces one chain covering everything:
