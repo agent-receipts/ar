@@ -5,7 +5,7 @@ description: "How the Claude Code hook captures Bash, Read, Write, Edit and othe
 
 import { Aside } from '@astrojs/starlight/components';
 
-**Series: Auditing AI Agents** · Part 3 of 3 · [← One Chain, Two Channels, Zero Secrets](/blog/unified-chain-redaction-demo/)
+_Published 2026-05-28_ · **Series: Auditing AI Agents** · Part 3 of 3 · [← One Chain, Two Channels, Zero Secrets](/blog/unified-chain-redaction-demo/)
 
 ---
 
@@ -207,4 +207,4 @@ With both the MCP proxy and the hook in place, a Claude Code session produces on
 - Every native tool call — captured and receipted by the hook
 - All in one hash-chained sequence, signed by the daemon
 
-An agent that could previously obscure its activity by choosing native tools over MCP calls no longer has that option. The chain is complete.
+Without the hook, a Claude Code session's audit trail skips over whatever happened through native tools — file writes, shell commands, web fetches. With both in place, every tool call from the session lands in one signed, hash-chained sequence.
