@@ -113,7 +113,7 @@ Here's a real `Bash` receipt from a Claude Code session, captured while running 
     "type": "claude-code.Bash",
     "tool_name": "Bash",
     "risk_level": "medium",
-    "parameters_hash": "sha256:dc143db4ad2fd5df10685749c688e018610dfb254bd75bbf753ed3ddd84d97a2",
+    "parameters_hash": "sha256:dc143db4ad...",
     "parameters_disclosure": {
       "input": "{\"command\":\"echo \\\"Connecting with api_key=[REDACTED] to service\\\"\"}",
       "output": "{\"stdout\":\"Connecting with api_key=[REDACTED] to service\",\"stderr\":\"\"}",
@@ -122,10 +122,14 @@ Here's a real `Bash` receipt from a Claude Code session, captured while running 
       "peer.pid": "74389"
     }
   },
-  "outcome": { "status": "success" },
-  "chain": {
-    "sequence": 2051,
-    "chain_id": "default"
+  "credentialSubject": {
+    "outcome": { "status": "success" },
+    "chain": { "sequence": 2051, "chain_id": "default" }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "verificationMethod": "did:agent-receipts-daemon:local#k1",
+    "proofValue": "uZ8bqK5Zgr..."
   }
 }
 ```
