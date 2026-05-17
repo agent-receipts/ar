@@ -119,7 +119,7 @@ The daemon captures these at socket accept time, kernel-attested — the emitter
 
 The `parameters_disclosure` feature has a history. It started as `parameterPreview` inside the [OpenClaw plugin](https://github.com/agent-receipts/openclaw) — a way to store a sanitised preview of tool call parameters alongside the hash, so auditors could see *what* was called without needing to re-run the tool ([how the plugin works](/blog/openclaw-plugin-deep-dive/)). The [first end-to-end trial](https://jongerius.solutions/post/agent-receipts-openclaw-v0-trial/) put it to work in anger, and an obvious question surfaced almost immediately: what happens when a tool call argument contains an API key or a password? The preview stores it. Forever. In a signed record.
 
-That question drove two things: the rename from `parameterPreview` → `parameterDisclosure` (the field carries disclosure, not a safe preview), and the redaction system now in the daemon. The idea was ported from the plugin to the main project precisely because the daemon is the right place for it — it's the only process that sees the raw payload, making it the only place where redaction can run unconditionally, regardless of which emitter sent the event.
+That question drove two things: the rename from `parameterPreview` → `parameterDisclosure` (the field carries disclosure, not a safe preview), and the redaction system now in the daemon. The idea was ported from the plugin to the main project precisely because the daemon is the right place for it — every emitter funnels through the same daemon socket, so redaction applied there runs unconditionally, regardless of which emitter sent the event.
 
 With `--parameter-disclosure` enabled, the daemon stores plaintext inputs and outputs in the receipt's `parameters_disclosure` field. Without redaction, that's a liability — any secret in a tool call argument or response would end up in a signed, immutable record.
 
@@ -189,7 +189,7 @@ Every native tool call and every MCP tool call from a Claude Code session now la
 - Verify any receipt's signature and hash chain offline with `agent-receipts verify`
 - Inspect recent receipts with `agent-receipts list --json | jq ...`
 
-The daemon is the only process that ever sees raw inputs — emitters are fire-and-forget. If the daemon is down, the hook logs a visible non-blocking error and the tool call completes normally; no receipt is written for that call and the gap is visible in the chain on restart.
+The daemon is the only process that persists receipts and holds the signing key — emitters are fire-and-forget, no local storage. If the daemon is down, the hook logs a visible non-blocking error and the tool call completes normally; no receipt is written for that call and the gap is visible in the chain on restart.
 
 ---
 
