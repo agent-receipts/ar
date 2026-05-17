@@ -140,7 +140,7 @@ A few things worth noting:
 
 When the hook and the MCP proxy both fire for the same underlying call (an MCP tool call triggers both a proxy intercept and a PostToolUse event), you get two consecutive receipts in the chain:
 
-| seq | channel | action.type | parameters_hash |
+| seq | emitter | action.type | parameters_hash |
 |-----|---------|-------------|-----------------|
 | 2046 | mcp-proxy | `mcp.github.pull_request_read` | `sha256:2f9911...` |
 | 2047 | hook | `claude-code.mcp__github-audited__pull_request_read` | `sha256:2f9911...` |
@@ -155,28 +155,28 @@ The two receipts carry different `session_id` values — the hook forwards Claud
 
 ## Fail-hard, not silent
 
-When the daemon is unreachable, the hook exits non-zero. Claude Code surfaces this as a visible non-blocking error in the session — the tool call still completes, but the gap is visible rather than silent.
+When the daemon is unreachable, the hook exits non-zero. Claude Code surfaces this as a non-blocking error in the session — the tool call still completes, but the missing receipt is reported rather than swallowed.
 
 This is a deliberate design choice. Silent drops mean invisible audit gaps. A visible error means an operator knows to investigate whether the daemon is down.
 
 ---
 
-## Why PostToolUse and not the other ~20 hook events?
+## Why PostToolUse and not the other hook events?
 
-Claude Code's [hooks system](https://code.claude.com/docs/en/hooks) has grown to around 20 lifecycle events: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStop`, `PreCompact`, `Notification`, `WorktreeCreate`, `WorktreeRemove`, and more. Each represents a different moment in the agent's lifecycle.
+Claude Code's [hooks system](https://code.claude.com/docs/en/hooks) now exposes close to 30 lifecycle events: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStop`, `PreCompact`, `Notification`, `WorktreeCreate`, `WorktreeRemove`, and many more. Each represents a different moment in the agent's lifecycle.
 
-Agent Receipts currently handles `PostToolUse` only. That's deliberate.
+The recommended Agent Receipts configuration wires up `PostToolUse` only. That's deliberate.
 
-**Audit first, policy second.** `PreToolUse` can block a tool call by exiting non-zero — which puts the hook in the critical path. If it's slow, the agent is slow. If it crashes, the tool call fails. If it incorrectly blocks something, the agent breaks in ways that are hard to debug. `PostToolUse` has none of these failure modes: the tool has already run, the hook fires after the fact, and if it fails the agent doesn't notice. The audit trail has a gap, not a breakage.
+**Audit first, policy second.** `PreToolUse` can block a tool call by exiting non-zero — which puts the hook in the critical path. If it's slow, the agent is slow. If it crashes, the tool call fails. If it incorrectly blocks something, the agent breaks in ways that are hard to debug. `PostToolUse` has none of these failure modes: the tool has already run, the hook fires after the fact, and a failure to record surfaces as a non-blocking error rather than a broken tool call. The audit trail has a gap, not a breakage.
 
 **The output is more interesting than the intent.** A `PostToolUse` hook sees what the tool *returned*. A `PreToolUse` hook only sees what the agent *asked for*. For forensics and breach investigation, the output — what actually came back — is often the more useful half of the record.
 
-**Expanding deliberately.** `SessionStart`, `UserPromptSubmit`, and `Stop` are natural next candidates: they'd let the daemon chain record session boundaries and the prompts that triggered tool use, not just the tool calls themselves. But each new event type adds surface area — and there's a technical complication specific to short-lived hook processes (each hook invocation is a fresh process, so the ADR-0010 drop-counter mechanism needs adapting before expanding coverage).
+**Expanding deliberately.** `SessionStart`, `UserPromptSubmit`, and `Stop` are natural next candidates: they would let the chain record session boundaries and the prompts that triggered tool use, not just the tool calls themselves. Each new event type adds surface area, and there's a wire-format question to resolve first — see the note below.
 
 The MCP proxy already does `PreToolUse`-equivalent blocking for MCP calls. The hook will follow the same path — audit baseline first, then policy enforcement once it's proven in production.
 
 <Aside type="note">
-The drop-counter mechanism that makes backpressure visible in the chain doesn't work naturally when the emitter process exits after every call. That design question is being resolved before new event types are added, so they don't inherit the silent-drop gap.
+ADR-0010's drop-counter relies on a long-lived emitter to count and report frames the daemon couldn't ingest. A short-lived hook process has nowhere to keep that count between invocations. Resolving this is a prerequisite for broader event coverage, so new event types don't inherit a silent-drop gap.
 </Aside>
 
 ---
@@ -187,11 +187,13 @@ Rust would produce a smaller, faster binary with compile-time memory safety guar
 
 The honest answer is that the emitter is designed to be so thin that language choice barely matters. Its entire job is: read stdin, open a Unix socket, write a length-prefixed frame, close. The 25ms dial timeout and 100ms write timeout are the latency budget — not the language runtime. A Rust binary would hit those same wall-clock limits. The bottleneck is IPC, not CPU or memory.
 
-The safety argument for Rust is real but narrow here. There's no complex memory management in the emitter, no pointer arithmetic, no unsafe operations the Go runtime can't handle safely. The Go emitter has been running in production without memory-safety incidents because it genuinely doesn't do anything that requires Rust's guarantees.
+The safety argument for Rust is real but narrow here. The emitter does no manual memory management, no pointer arithmetic, no unsafe operations — nothing that exercises the failure modes Rust's borrow checker is designed to prevent. Go's runtime covers what little surface there is.
 
 There's also a practical argument: the hook binary uses the Go emitter package directly, sharing code with the daemon, the SDK, and the proxy. Rust would mean a separate implementation of the IPC framing, the frame schema, and the timeout logic — more surface area for drift between the hook and every other emitter in the system.
 
 If the emitter ever needs to do heavy local processing before forwarding — structured field extraction, client-side pattern matching, local buffering for offline operation — that calculus changes. For fire-and-forget over a Unix socket, Go is more than adequate.
+
+---
 
 ## The complete picture
 
