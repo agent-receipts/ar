@@ -23,7 +23,7 @@ A second limitation came from running more than one MCP proxy at once — the us
 
 ## The decision
 
-ADR-0010 split every integration into two roles.
+[ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md) split every integration into two roles.
 
 **Thin emitter** — the plugin, proxy, or SDK serialises the tool call, writes it to a local Unix socket, and moves on. Signing, storage, and chaining are the daemon's concern; the agent is never blocked waiting for the audit layer. If the daemon is running but backpressured, the emitter increments a local drop counter and flushes it on the next successful send, so the daemon can record the gap as an `events_dropped` receipt in the chain. If the daemon isn't running at all, events drop without trace — that case is detectable from outside the chain, via service-manager status and the absence of fresh receipts.
 
