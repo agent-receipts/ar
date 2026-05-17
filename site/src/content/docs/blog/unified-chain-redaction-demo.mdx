@@ -5,6 +5,10 @@ description: "How the Claude Code hook and MCP proxy write to the same auditable
 
 import { Aside } from '@astrojs/starlight/components';
 
+**Series: Auditing AI Agents** · Part 2 of 3 · [← Why Your Agent Can't Audit Itself](/blog/daemon-process-separation/) · [Native Tool Calls in the Audit Trail →](/blog/hooks-native-tool-audit/)
+
+---
+
 This post walks through two things that landed together in `agent-receipts-daemon v0.10.0`: a unified receipt chain that captures both native Claude Code tool calls and MCP tool calls in a single sequence, and automatic secret redaction before any payload reaches the database.
 
 Both were validated live. The receipts below are real.
