@@ -106,6 +106,7 @@ export function verifyChain(
 	let brokenAt = -1;
 	let previous: AgentReceipt | undefined;
 	let signatureError: string | undefined;
+	let hashComputeError: string | undefined;
 
 	for (let i = 0; i < receipts.length; i++) {
 		const receipt = receipts[i];
@@ -127,33 +128,18 @@ export function verifyChain(
 		if (previous === undefined) {
 			hashLinkValid = chain.previous_receipt_hash === null;
 		} else {
-			let previousHash: string;
+			let previousHash: string | undefined;
 			try {
 				previousHash = hashReceipt(previous);
 			} catch (e) {
 				const reason = e instanceof Error ? e.message : String(e);
-				const prevSeq = previous.credentialSubject.chain.sequence;
-				const curSeq = chain.sequence;
-				const seqValid =
-					Number.isSafeInteger(curSeq) &&
-					Number.isSafeInteger(prevSeq) &&
-					curSeq === prevSeq + 1;
-				results.push({
-					index: i,
-					receiptId: receipt.id,
-					signatureValid,
-					hashLinkValid: false,
-					sequenceValid: seqValid,
-				});
-				return {
-					valid: false,
-					length: receipts.length,
-					receipts: results,
-					brokenAt: i,
-					error: `hash compute failed at index ${i - 1}: ${reason}`,
-				};
+				if (hashComputeError === undefined) {
+					hashComputeError = `hash compute failed at index ${i - 1}: ${reason}`;
+				}
 			}
-			hashLinkValid = chain.previous_receipt_hash === previousHash;
+			hashLinkValid =
+				previousHash !== undefined &&
+				chain.previous_receipt_hash === previousHash;
 		}
 
 		let sequenceValid: boolean;
@@ -187,6 +173,11 @@ export function verifyChain(
 		previous = receipt;
 	}
 
+	// Sig errors take precedence over hash-compute errors; when both are present
+	// the hash-compute error is discarded (a single error field can only surface one).
+	// Compute this before the terminal check so early returns preserve it.
+	const loopError = signatureError ?? hashComputeError;
+
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
 	for (let i = 0; i < receipts.length - 1; i++) {
 		const r = receipts[i];
@@ -199,7 +190,7 @@ export function verifyChain(
 				receipts: results,
 				brokenAt,
 				responseHashNote: undefined,
-				error: signatureError,
+				error: loopError,
 			};
 		}
 	}
@@ -210,8 +201,8 @@ export function verifyChain(
 		receipts: results,
 		brokenAt,
 	};
-	if (signatureError !== undefined) {
-		cv.error = signatureError;
+	if (loopError !== undefined) {
+		cv.error = loopError;
 	}
 
 	// Response-hash verification (spec §4.3.2).
@@ -282,7 +273,7 @@ export function verifyChain(
 				...cv,
 				valid: false,
 				brokenAt: receipts.length - 1,
-				error: "final receipt hash does not match expected value",
+				error: `final receipt hash mismatch at index ${receipts.length - 1}: expected ${options.expectedFinalHash}, got ${lastHash}`,
 			};
 		}
 	}

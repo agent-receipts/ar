@@ -127,12 +127,89 @@ describe("verifyChain", () => {
 			const result = verifyChain(chain, publicKey);
 			expect(result.valid).toBe(false);
 			expect(result.brokenAt).toBe(1);
+			expect(result.receipts).toHaveLength(2);
 			expect(result.error).toMatch(/^hash compute failed at index 0:/);
 			expect(result.error).toContain("synthetic canonicalize failure");
 			expect(result.receipts[1]?.hashLinkValid).toBe(false);
 		} finally {
 			spy.mockRestore();
 		}
+	});
+
+	it("hash compute error mid-chain: all receipts present (invariant)", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(5, privateKey);
+		const targetId = chain[0]?.id;
+
+		const original = hashModule.hashReceipt;
+		const spy = vi.spyOn(hashModule, "hashReceipt").mockImplementation((r) => {
+			if (r.id === targetId) {
+				throw new Error("synthetic failure");
+			}
+			return original(r);
+		});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.brokenAt).toBe(1);
+			expect(result.length).toBe(5);
+			expect(result.receipts).toHaveLength(5);
+			// Only receipt[1]'s hash link is broken; later ones resolve normally.
+			expect(result.receipts[1]?.hashLinkValid).toBe(false);
+			expect(result.receipts[2]?.hashLinkValid).toBe(true);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("dual error: sig-compute takes precedence over hash-compute in error field", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(3, privateKey);
+		const targetId = chain[0]?.id;
+
+		const originalHash = hashModule.hashReceipt;
+		const originalVerify = signingModule.verifyReceipt;
+
+		const hashSpy = vi
+			.spyOn(hashModule, "hashReceipt")
+			.mockImplementation((r) => {
+				if (r.id === targetId) throw new Error("synthetic hash failure");
+				return originalHash(r);
+			});
+		const verifySpy = vi
+			.spyOn(signingModule, "verifyReceipt")
+			.mockImplementation((r, key) => {
+				if (r.id === targetId) throw new Error("synthetic sig failure");
+				return originalVerify(r, key);
+			});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.error).toMatch(/signature compute failed at index 0/);
+			expect(result.error).not.toMatch(/hash compute/);
+		} finally {
+			hashSpy.mockRestore();
+			verifySpy.mockRestore();
+		}
+	});
+
+	it("expectedFinalHash mismatch error includes expected and computed hashes", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(3, privateKey);
+		const last = chain.at(-1);
+		const realFinalHash = last != null ? hashReceipt(last) : "";
+		const wrongHash = `sha256:${"0".repeat(64)}`;
+
+		const result = verifyChain(chain, publicKey, {
+			expectedFinalHash: wrongHash,
+		});
+
+		expect(result.valid).toBe(false);
+		expect(result.error).toMatch(/final receipt hash mismatch at index 2/);
+		expect(result.error).toContain(wrongHash);
+		expect(result.error).toContain(realFinalHash);
 	});
 
 	it("surfaces verifyReceipt errors via the error field", () => {
@@ -341,6 +418,80 @@ describe("verifyChain", () => {
 
 		expect(result.valid).toBe(true);
 		expect(chain.at(-1)?.credentialSubject.chain.terminal).toBe(true);
+	});
+
+	it("hash compute error is preserved through terminal early return", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+		const extra = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const extraSigned = signReceipt(extra, privateKey, "did:agent:test#key-1");
+		const chain = [...terminalChain, extraSigned];
+		const targetId = chain[0]?.id;
+
+		const original = hashModule.hashReceipt;
+		const spy = vi.spyOn(hashModule, "hashReceipt").mockImplementation((r) => {
+			if (r.id === targetId) throw new Error("synthetic hash failure");
+			return original(r);
+		});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.error).toMatch(/hash compute failed at index 0/);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("compute error is preserved when terminal violation also present", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+		const extra = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const extraSigned = signReceipt(extra, privateKey, "did:agent:test#key-1");
+		const chain = [...terminalChain, extraSigned];
+		const targetId = chain[0]?.id;
+
+		const original = signingModule.verifyReceipt;
+		const spy = vi
+			.spyOn(signingModule, "verifyReceipt")
+			.mockImplementation((r, key) => {
+				if (r.id === targetId) throw new Error("synthetic sig failure");
+				return original(r, key);
+			});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			expect(result.error).toMatch(/signature compute failed at index 0/);
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
 	it("receipt after terminal is always invalid", () => {
