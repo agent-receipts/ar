@@ -5,13 +5,13 @@ description: "How the Claude Code hook and MCP proxy write to the same auditable
 
 import { Aside } from '@astrojs/starlight/components';
 
-**Series: Auditing AI Agents** · Part 2 of 3 · [← Why Your Agent Can't Audit Itself](/blog/daemon-process-separation/) · [Native Tool Calls in the Audit Trail →](/blog/hooks-native-tool-audit/)
+_Published 2026-05-17_ · **Series: Auditing AI Agents** · Part 2 of 3 · [← The audit boundary belongs outside the agent](/blog/daemon-process-separation/)
 
 ---
 
 This post walks through two things that landed together in `agent-receipts-daemon v0.10.0`: a unified receipt chain that captures both native Claude Code tool calls and MCP tool calls in a single sequence, and automatic secret redaction before any payload reaches the database.
 
-Both were validated live. The receipts below are real.
+The receipts below are real.
 
 ---
 
@@ -22,7 +22,7 @@ Before v0.10.0, the picture looked like this:
 - The **MCP proxy** signed and stored receipts in its own `receipts.db`
 - The **Claude Code hook** forwarded events to the daemon, which stored them in the daemon's `receipts.db`
 
-Two databases. Two chains. No way to correlate a native `Bash` call with the MCP tool call that triggered it, within the same audit trail.
+Two databases, two chains, and no way to correlate a native `Bash` call with the MCP tool call that triggered it inside the same audit trail.
 
 ADR-0010 (Daemon Process Separation) was always meant to fix this: one daemon, one chain, all emitters forwarding events to it. v0.10.0 completes that picture.
 
@@ -111,7 +111,7 @@ Both receipts include `parameters_disclosure.peer.*` — the OS-level credential
 }
 ```
 
-The daemon uses `LOCAL_PEERCRED` + `LOCAL_PEEREPID` on macOS to capture these at socket accept time. The emitter cannot forge them. `exe_path` is empty when the peer has already closed its end of the socket by the time the daemon resolves it: `LOCAL_PEEREPID` returns `ENOTCONN`, the pid is left at zero, and `proc_pidpath` is skipped. Short-lived emitters like the hook (one connection per frame, then exit) hit this path often; `uid`/`gid` still come through because `LOCAL_PEERCRED` snapshots them at connect time.
+The daemon captures these at socket accept time, kernel-attested — the emitter cannot forge them. `uid` and `gid` come from `LOCAL_PEERCRED`, which snapshots them the moment the connection lands; they always come through. `pid` and `exe_path` are looked up just after via `LOCAL_PEEREPID` + `proc_pidpath`. Short-lived emitters that have already disconnected by then — the hook in particular, one connection per frame — leave those two empty (`LOCAL_PEEREPID` returns `ENOTCONN`). The kernel always wins on uid/gid; pid/exe_path is best-effort by design.
 
 ---
 
@@ -121,7 +121,7 @@ The `parameters_disclosure` feature has a history. It started as `parameterPrevi
 
 That question drove two things: the rename from `parameterPreview` → `parameterDisclosure` (the field carries disclosure, not a safe preview), and the redaction system now in the daemon. The idea was ported from the plugin to the main project precisely because the daemon is the right place for it — it's the only process that sees the raw payload, making it the only place where redaction can run unconditionally, regardless of which emitter sent the event.
 
-With `--parameter-disclosure` enabled, the daemon stores plaintext inputs and outputs in the receipt's `parameters_disclosure` field. Without redaction, this would be a liability: any secret that appears in a tool call argument or response would be persisted forever in a signed, immutable record.
+With `--parameter-disclosure` enabled, the daemon stores plaintext inputs and outputs in the receipt's `parameters_disclosure` field. Without redaction, that's a liability — any secret in a tool call argument or response would end up in a signed, immutable record.
 
 ```mermaid
 sequenceDiagram
@@ -196,6 +196,5 @@ The daemon is the only process that ever sees raw inputs — emitters are fire-a
 ## What's next
 
 - **Centralised storage** — the daemon today writes to a local SQLite file. The natural next step is a remote sink: ship receipts from multiple agents and machines to a shared store — Postgres, S3, or an OTel-compatible backend — so cross-agent audit trails can be correlated in one place
-- **Breach-indicator flagging** (#436) — daemon-side pattern matching at emit time, writing indexed flags alongside receipts for efficient breach investigation queries without needing to decrypt stored payloads
-- **Daemon config file** (#441) — replacing plist/unit file edits with a single `daemon.toml`
 - **`parameters_disclosure` encryption** (#280) — replacing plaintext disclosure with asymmetric ciphertext so only the forensic key holder can read stored inputs; the redaction layer ships first so secrets are never written even in the interim
+- **Breach-indicator flagging** (#436) — daemon-side pattern matching at emit time, writing indexed flags alongside receipts for efficient breach investigation queries without needing to decrypt stored payloads
