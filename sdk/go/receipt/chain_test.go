@@ -132,11 +132,208 @@ func TestVerifyChainSurfacesHashError(t *testing.T) {
 	if result.BrokenAt != 1 {
 		t.Errorf("expected BrokenAt=1, got %d", result.BrokenAt)
 	}
+	if len(result.Receipts) != 3 {
+		t.Errorf("expected all 3 receipt entries, got %d", len(result.Receipts))
+	}
 	if !strings.Contains(result.Error, "hash compute failed at index 0") {
 		t.Errorf("expected error to contain 'hash compute failed at index 0', got: %s", result.Error)
 	}
 	if !strings.Contains(result.Error, "synthetic canonicalize failure") {
 		t.Errorf("expected error to contain 'synthetic canonicalize failure', got: %s", result.Error)
+	}
+}
+
+// TestHashComputeErrorAllReceiptsPresent verifies the length/brokenAt invariants
+// when hashReceipt fails mid-chain: all receipts must be in the result, and
+// brokenAt must point to the first broken index, not the early-exit point.
+func TestHashComputeErrorAllReceiptsPresent(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 5)
+
+	targetID := chain[0].ID
+	orig := hashReceipt
+	hashReceipt = func(r AgentReceipt) (string, error) {
+		if r.ID == targetID {
+			return "", errors.New("synthetic failure")
+		}
+		return orig(r)
+	}
+	t.Cleanup(func() { hashReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if result.BrokenAt != 1 {
+		t.Errorf("expected BrokenAt=1 (first broken index), got %d", result.BrokenAt)
+	}
+	if result.Length != 5 {
+		t.Errorf("expected Length=5, got %d", result.Length)
+	}
+	if len(result.Receipts) != 5 {
+		t.Errorf("expected 5 per-receipt entries (invariant), got %d", len(result.Receipts))
+	}
+	// Only receipt[1]'s hash link is broken; later ones resolve normally.
+	if result.Receipts[1].HashLinkValid {
+		t.Error("expected Receipts[1].HashLinkValid=false")
+	}
+	if !result.Receipts[2].HashLinkValid {
+		t.Error("expected Receipts[2].HashLinkValid=true (hash of receipt[1] computes fine)")
+	}
+}
+
+// TestSigComputeErrorContinuesIteration verifies that a signature-compute error
+// (Verify returns a non-nil error) does not early-exit the loop: all receipts
+// must be present, brokenAt is the first index that failed, and the error message
+// names the failure site.
+func TestSigComputeErrorContinuesIteration(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 5)
+
+	targetID := chain[1].ID
+	orig := verifyReceipt
+	verifyReceipt = func(r AgentReceipt, key string) (bool, error) {
+		if r.ID == targetID {
+			return false, errors.New("synthetic verify failure")
+		}
+		return orig(r, key)
+	}
+	t.Cleanup(func() { verifyReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if result.BrokenAt != 1 {
+		t.Errorf("expected BrokenAt=1, got %d", result.BrokenAt)
+	}
+	if result.Length != 5 {
+		t.Errorf("expected Length=5, got %d", result.Length)
+	}
+	if len(result.Receipts) != 5 {
+		t.Errorf("expected 5 per-receipt entries, got %d", len(result.Receipts))
+	}
+	if !strings.Contains(result.Error, "signature compute failed at index 1") {
+		t.Errorf("expected error to name failure site, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, "synthetic verify failure") {
+		t.Errorf("expected error to include cause, got: %s", result.Error)
+	}
+	// Non-target receipts must have their SignatureValid computed correctly.
+	if !result.Receipts[0].SignatureValid {
+		t.Error("expected Receipts[0].SignatureValid=true")
+	}
+	if result.Receipts[1].SignatureValid {
+		t.Error("expected Receipts[1].SignatureValid=false (injected error)")
+	}
+	for i := 2; i < 5; i++ {
+		if !result.Receipts[i].SignatureValid {
+			t.Errorf("expected Receipts[%d].SignatureValid=true", i)
+		}
+	}
+}
+
+// TestDualErrorSigTakesPrecedenceOverHashCompute verifies that when both a
+// signature-compute error and a hash-compute error occur in the same chain,
+// the signature error wins in ChainVerification.Error.
+func TestDualErrorSigTakesPrecedenceOverHashCompute(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3)
+
+	targetID := chain[0].ID
+
+	origVerify := verifyReceipt
+	verifyReceipt = func(r AgentReceipt, key string) (bool, error) {
+		if r.ID == targetID {
+			return false, errors.New("synthetic sig failure")
+		}
+		return origVerify(r, key)
+	}
+	t.Cleanup(func() { verifyReceipt = origVerify })
+
+	origHash := hashReceipt
+	hashReceipt = func(r AgentReceipt) (string, error) {
+		if r.ID == targetID {
+			return "", errors.New("synthetic hash failure")
+		}
+		return origHash(r)
+	}
+	t.Cleanup(func() { hashReceipt = origHash })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if !strings.Contains(result.Error, "signature compute failed at index 0") {
+		t.Errorf("expected sig error to win, got: %s", result.Error)
+	}
+	if strings.Contains(result.Error, "hash compute") {
+		t.Errorf("hash-compute error must be suppressed when sig error present, got: %s", result.Error)
+	}
+}
+
+// TestExpectedFinalHashMismatchError verifies the enriched error message includes
+// both the expected and computed hashes.
+func TestExpectedFinalHashMismatchError(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3)
+	realFinalHash, _ := HashReceipt(chain[2])
+
+	// Supply a deliberately wrong expected hash.
+	wrongHash := "sha256:" + strings.Repeat("0", 64)
+	result := VerifyChain(chain, kp.PublicKey, ChainVerifyOptions{ExpectedFinalHash: wrongHash})
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if !strings.Contains(result.Error, "final receipt hash mismatch at index 2") {
+		t.Errorf("expected index in error, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, wrongHash) {
+		t.Errorf("expected expected-hash in error, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, realFinalHash) {
+		t.Errorf("expected computed-hash in error, got: %s", result.Error)
+	}
+}
+
+// TestComputeErrorPreservedThroughTerminalCheck verifies that a sig-compute error
+// is still surfaced in ChainVerification.Error when the chain also has a
+// receipt-after-terminal violation (which previously returned early before the error
+// was applied).
+func TestComputeErrorPreservedThroughTerminalCheck(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	terminalChain := buildChainWithTerminal(t, kp, 2)
+
+	terminalHash, err := HashReceipt(terminalChain[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 3, PreviousReceiptHash: &terminalHash, ChainID: "chain-1"},
+	})
+	extraSigned, _ := Sign(extra, kp.PrivateKey, "did:agent:test#key-1")
+	chain := append(terminalChain, extraSigned)
+
+	targetID := chain[0].ID
+	orig := verifyReceipt
+	verifyReceipt = func(r AgentReceipt, key string) (bool, error) {
+		if r.ID == targetID {
+			return false, errors.New("synthetic sig failure")
+		}
+		return orig(r, key)
+	}
+	t.Cleanup(func() { verifyReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if !strings.Contains(result.Error, "signature compute failed at index 0") {
+		t.Errorf("compute error must surface through terminal check, got: %s", result.Error)
 	}
 }
 
@@ -595,6 +792,75 @@ func TestResponseHashNoBodyInMap(t *testing.T) {
 	}
 	if result.ResponseHashNote == "" {
 		t.Error("expected informational note when body is absent from map")
+	}
+}
+
+// TestTerminalViolationBeforeComputeError verifies that when a terminal violation
+// occurs at an earlier index than a hash-compute error, brokenAt reflects the
+// terminal violation index and the error message names the terminal violation.
+func TestTerminalViolationBeforeComputeError(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	// Build: receipt[0] is terminal, receipt[1..3] are normal — terminal violation
+	// at terminalViolationAt=1 (receipt[1] follows the terminal receipt[0]).
+	terminalChain := buildChainWithTerminal(t, kp, 1)
+
+	// Append three more receipts after the terminal one.
+	var prevHash *string
+	h, err := HashReceipt(terminalChain[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevHash = &h
+	extra := make([]AgentReceipt, 3)
+	for j := 0; j < 3; j++ {
+		seq := 2 + j
+		unsigned := Create(CreateInput{
+			Issuer:    Issuer{ID: "did:agent:test"},
+			Principal: Principal{ID: "did:user:test"},
+			Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+			Outcome:   Outcome{Status: StatusSuccess},
+			Chain:     Chain{Sequence: seq, PreviousReceiptHash: prevHash, ChainID: "chain-1"},
+		})
+		signed, signErr := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if signErr != nil {
+			t.Fatal(signErr)
+		}
+		extra[j] = signed
+		hh, hashErr := HashReceipt(signed)
+		if hashErr != nil {
+			t.Fatal(hashErr)
+		}
+		prevHash = &hh
+	}
+	chain := append(terminalChain, extra...)
+
+	// Inject a hash-compute error on receipt[2] — this fires when processing
+	// receipt[3] (i=3, computing hash of receipts[2]), so loopErrAt=3.
+	// Terminal violation is at terminalViolationAt=1 (receipt[0] is terminal).
+	// The bug: before the fix, brokenAt was left at loopErrAt=3 and the error
+	// message was the hash-compute error even though terminal violation came first.
+	targetID := chain[2].ID
+	orig := hashReceipt
+	hashReceipt = func(r AgentReceipt) (string, error) {
+		if r.ID == targetID {
+			return "", errors.New("synthetic hash failure")
+		}
+		return orig(r)
+	}
+	t.Cleanup(func() { hashReceipt = orig })
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Error("expected Valid: false")
+	}
+	if result.BrokenAt != 1 {
+		t.Errorf("expected BrokenAt=1 (terminal violation index), got %d", result.BrokenAt)
+	}
+	if !strings.Contains(result.Error, "receipt after terminal") {
+		t.Errorf("expected terminal violation error to win, got: %s", result.Error)
+	}
+	if strings.Contains(result.Error, "hash compute") {
+		t.Errorf("hash-compute error must not appear when terminal violation comes first, got: %s", result.Error)
 	}
 }
 

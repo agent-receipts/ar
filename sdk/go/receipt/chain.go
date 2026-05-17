@@ -10,6 +10,10 @@ import (
 // be exercised. In production, this variable is left pointing at HashReceipt.
 var hashReceipt = HashReceipt
 
+// verifyReceipt is overridable in tests so the error-return path of Verify can
+// be exercised without a malformed key. In production this points at Verify.
+var verifyReceipt = Verify
+
 // ReceiptVerification holds the verification result for a single receipt in a chain.
 type ReceiptVerification struct {
 	Index          int    `json:"index"`
@@ -100,25 +104,20 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 
 	results := make([]ReceiptVerification, 0, len(receipts))
 	brokenAt := -1
+	var firstSigErr string
+	var firstSigErrAt int = -1
+	var firstHashComputeErr string
+	var firstHashComputeErrAt int = -1
 
 	for i, r := range receipts {
 		chain := r.CredentialSubject.Chain
 
-		sigValid, sigErr := Verify(r, publicKeyPEM)
+		sigValid, sigErr := verifyReceipt(r, publicKeyPEM)
 		if sigErr != nil {
-			results = append(results, ReceiptVerification{
-				Index:          i,
-				ReceiptID:      r.ID,
-				SignatureValid: false,
-				HashLinkValid:  false,
-				SequenceValid:  false,
-			})
-			return ChainVerification{
-				Valid:    false,
-				Length:   len(receipts),
-				Receipts: results,
-				BrokenAt: i,
-				Error:    sigErr.Error(),
+			sigValid = false
+			if firstSigErr == "" {
+				firstSigErr = "signature compute failed at index " + strconv.Itoa(i) + ": " + sigErr.Error()
+				firstSigErrAt = i
 			}
 		}
 
@@ -128,23 +127,14 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		} else {
 			prevHash, err := hashReceipt(receipts[i-1])
 			if err != nil {
-				seqValid := chain.Sequence == receipts[i-1].CredentialSubject.Chain.Sequence+1
-				results = append(results, ReceiptVerification{
-					Index:          i,
-					ReceiptID:      r.ID,
-					SignatureValid: sigValid,
-					HashLinkValid:  false,
-					SequenceValid:  seqValid,
-				})
-				return ChainVerification{
-					Valid:    false,
-					Length:   len(receipts),
-					Receipts: results,
-					BrokenAt: i,
-					Error:    "hash compute failed at index " + strconv.Itoa(i-1) + ": " + err.Error(),
+				if firstHashComputeErr == "" {
+					firstHashComputeErr = "hash compute failed at index " + strconv.Itoa(i-1) + ": " + err.Error()
+					firstHashComputeErrAt = i
 				}
+				hashValid = false
+			} else {
+				hashValid = chain.PreviousReceiptHash != nil && *chain.PreviousReceiptHash == prevHash
 			}
-			hashValid = chain.PreviousReceiptHash != nil && *chain.PreviousReceiptHash == prevHash
 		}
 
 		seqValid := true
@@ -167,6 +157,24 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		}
 	}
 
+	// Pick whichever compute error occurred first in the chain. When both appear
+	// at the same index (same receipt), the sig error takes precedence.
+	// Compute this before the terminal check so early returns preserve it.
+	var loopErr string
+	var loopErrAt int = -1
+	switch {
+	case firstSigErr != "" && firstHashComputeErr != "":
+		if firstSigErrAt <= firstHashComputeErrAt {
+			loopErr, loopErrAt = firstSigErr, firstSigErrAt
+		} else {
+			loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
+		}
+	case firstSigErr != "":
+		loopErr, loopErrAt = firstSigErr, firstSigErrAt
+	case firstHashComputeErr != "":
+		loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
+	}
+
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
 	// If a receipt has terminal: true and is not the last receipt, that is a
 	// protocol violation: a receipt after a terminal predecessor exists.
@@ -174,15 +182,22 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		ch := r.CredentialSubject.Chain
 		if ch.Terminal != nil && *ch.Terminal {
 			if i < len(receipts)-1 {
-				if brokenAt == -1 {
-					brokenAt = i + 1
+				terminalViolationAt := i + 1
+				if brokenAt == -1 || terminalViolationAt < brokenAt {
+					brokenAt = terminalViolationAt
+				}
+				// Use compute error only if it occurred at or before the terminal
+				// violation; otherwise the terminal violation message takes precedence.
+				errMsg := loopErr
+				if loopErrAt == -1 || loopErrAt > terminalViolationAt {
+					errMsg = "receipt after terminal: receipt at index " + strconv.Itoa(i+1) + " follows a terminal receipt at index " + strconv.Itoa(i)
 				}
 				return ChainVerification{
 					Valid:    false,
 					Length:   len(receipts),
 					Receipts: results,
 					BrokenAt: brokenAt,
-					Error:    "receipt after terminal: receipt at index " + strconv.Itoa(i+1) + " follows a terminal receipt at index " + strconv.Itoa(i),
+					Error:    errMsg,
 				}
 			}
 		}
@@ -193,6 +208,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		Length:   len(receipts),
 		Receipts: results,
 		BrokenAt: brokenAt,
+		Error:    loopErr,
 	}
 
 	// Response-hash verification (spec §4.3.2).
@@ -251,7 +267,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			} else if lastHash != opt.ExpectedFinalHash {
 				cv.Valid = false
 				cv.BrokenAt = last
-				cv.Error = "final receipt hash does not match expected value"
+				cv.Error = "final receipt hash mismatch at index " + strconv.Itoa(last) + ": expected " + opt.ExpectedFinalHash + ", got " + lastHash
 			}
 		}
 
