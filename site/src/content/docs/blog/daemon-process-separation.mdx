@@ -1,5 +1,5 @@
 ---
-title: "Why Your Agent Can't Audit Itself"
+title: "The audit boundary belongs outside the agent"
 description: "The architectural problem with in-process receipt signing, and how daemon process separation restores the audit property."
 ---
 
@@ -7,19 +7,17 @@ description: "The architectural problem with in-process receipt signing, and how
 
 ---
 
-An agent that signs its own audit trail isn't being audited. It's writing its own report card.
-
-This sounds obvious when you say it out loud. It took building the first version of Agent Receipts to see it clearly.
+An agent that signs its own audit trail isn't being audited.
 
 ---
 
 ## The original design
 
-The first version of Agent Receipts worked like this: each MCP proxy instance loaded an Ed25519 signing key, maintained its own SQLite database, and signed and stored a receipt for every tool call it intercepted — all in the same process as the agent.
+The first version of Agent Receipts was deliberately small: each MCP proxy instance loaded an Ed25519 signing key, maintained its own SQLite database, and signed and stored a receipt for every tool call it intercepted — all in the same process as the agent.
 
-It produced real cryptographic signatures. The hash chain was valid. Receipts could be verified. But the security property was hollow: the process doing the auditing was the same process being audited. A compromised or misbehaving agent could suppress receipts, forge them, or simply not write them. The signing key was right there in memory.
+The cryptography worked. The audit property didn't. When the signing process and the audited process are the same, a process with access to its own signing key and receipt store can alter the record.
 
-There was a second problem. Running multiple MCP proxy instances — which is the normal case when an agent uses several MCP servers — meant multiple independent chains with no shared sequence space. Correlating a GitHub tool call with a filesystem tool call meant writing application-level join logic, not querying one table.
+The second limitation was fragmentation. Running multiple MCP proxy instances — the normal case when an agent uses several MCP servers — meant multiple independent chains with no shared sequence space. Correlating a GitHub tool call with a filesystem tool call meant writing application-level join logic, not querying one table.
 
 ---
 
@@ -27,7 +25,7 @@ There was a second problem. Running multiple MCP proxy instances — which is th
 
 ADR-0010 split every integration into two roles.
 
-**Thin emitter** — the plugin, proxy, or SDK fires an event describing the tool call. No signing. No storage. No crypto. Fire-and-forget over a local Unix socket. The agent is never blocked waiting for the audit layer. If the daemon is running but backpressured, the emitter increments a local drop counter and flushes it on the next successful send, so the daemon can record the gap as an `events_dropped` receipt in the chain. If the daemon isn't running at all, events drop without trace — that case is detectable from outside the chain, via service-manager status and the absence of fresh receipts.
+**Thin emitter** — the plugin, proxy, or SDK serialises the tool call, writes it to a local Unix socket, and moves on. Signing, storage, and chaining are the daemon's concern; the agent is never blocked waiting for the audit layer. If the daemon is running but backpressured, the emitter increments a local drop counter and flushes it on the next successful send, so the daemon can record the gap as an `events_dropped` receipt in the chain. If the daemon isn't running at all, events drop without trace — that case is detectable from outside the chain, via service-manager status and the absence of fresh receipts.
 
 **agent-receipts-daemon** — a separate process running as its own OS user, sole owner of the signing keys and the SQLite database. Receives events, captures peer credentials at the kernel level, canonicalises inputs (RFC 8785), hash-chains, signs (Ed25519), and persists.
 
@@ -49,13 +47,13 @@ graph LR
     PC --> CH --> KS --> DB
 ```
 
-The agent process no longer has access to the signing keys. It cannot read the database. It cannot forge, suppress, or tamper with its own receipts — not because we trust it, but because it structurally cannot.
+The agent process has no access to the signing keys or the database. The separation is structural.
 
 ---
 
 ## Peer credential capture
 
-The daemon doesn't trust the emitter's identity claims. At connection accept time it captures OS-level peer credentials from the socket itself:
+The daemon does not rely on the emitter's identity claims. At connection accept time it captures OS-level peer credentials from the socket itself:
 
 - **macOS**: `LOCAL_PEERCRED` for uid/gid, `LOCAL_PEEREPID` for pid, then `proc_pidpath` for the executable path
 - **Linux**: `SO_PEERCRED` for uid, gid, pid, then `/proc/<pid>/exe` for the executable path
@@ -68,15 +66,15 @@ These are kernel-attested. The connecting process cannot forge them. The daemon 
 
 Because all emitters connect to the same daemon socket, all receipts go into one chain with a global monotonic sequence. An agent session that uses three MCP servers and fires native tool calls via the Claude Code hook produces one chain — not four.
 
-Cross-channel correlation falls out naturally: find all receipts with the same `session_id` and you have the complete tool call history for that session, regardless of which emitter captured each call.
+Cross-channel correlation is one query: find all receipts with the same `session_id` and you have the complete tool call history for that session, regardless of which emitter captured each call.
 
 ---
 
 ## The tradeoff
 
-The daemon is a system service. That's friction the old `npm install` story didn't have. It requires installation, a signing key, and a service manager entry (launchd on macOS, systemd on Linux).
+The daemon is a system service. That's friction the old `npm install` flow didn't have. It requires installation, a signing key, and a service manager entry (launchd on macOS, systemd on Linux).
 
-That's the price of the security property. An in-process solution that's easy to install doesn't audit anything meaningful. A separate trusted process that requires setup does.
+That's the cost of a meaningful audit boundary. In-process signing is simpler to install; it isn't the audit boundary.
 
 Homebrew handles most of it:
 
