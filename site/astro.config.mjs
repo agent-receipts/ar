@@ -157,6 +157,10 @@ export default defineConfig({
           items: [
             { label: "All Posts", slug: "blog" },
             {
+              label: "Agent Security Tooling Landscape — April 2026",
+              slug: "blog/agent-security-tooling-landscape-april-2026",
+            },
+            {
               label: "OpenClaw Plugin: How It Works",
               slug: "blog/openclaw-plugin-deep-dive",
             },
