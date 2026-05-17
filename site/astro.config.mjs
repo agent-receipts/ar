@@ -168,6 +168,10 @@ export default defineConfig({
               label: "The audit boundary belongs outside the agent",
               slug: "blog/daemon-process-separation",
             },
+            {
+              label: "One Chain, Two Channels, Zero Secrets",
+              slug: "blog/unified-chain-redaction-demo",
+            },
           ],
         },
       ],
