@@ -3,7 +3,7 @@ title: "The audit boundary belongs outside the agent"
 description: "The architectural problem with in-process receipt signing, and how daemon process separation restores the audit property."
 ---
 
-**Series: Auditing AI Agents** · Part 1 of 3 · Next: [One Chain, Two Channels, Zero Secrets →](/blog/unified-chain-redaction-demo/)
+_Published 2026-05-17_ · **Series: Auditing AI Agents** · Part 1 of 3
 
 ---
 
@@ -113,5 +113,3 @@ That signing key — `did:agent-receipts-daemon:local#k1` — lives only in the 
 ## What comes next
 
 The daemon is the trust anchor for everything that follows: secret redaction before storage (already shipped), asymmetric payload encryption so only a forensic key holder can read stored inputs, centralised storage for cross-machine audit trails. All of it depends on having one trusted process that owns the keys and the chain.
-
-The next post is the demo — the unified chain and secret redaction working end to end, on real receipts.
