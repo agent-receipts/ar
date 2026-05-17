@@ -15,9 +15,9 @@ An agent that signs its own audit trail isn't being audited.
 
 The first version of Agent Receipts was deliberately small: each MCP proxy instance loaded an Ed25519 signing key, maintained its own SQLite database, and signed and stored a receipt for every tool call it intercepted — all in the same process as the agent.
 
-The cryptography worked. The audit property didn't. When the signing process and the audited process are the same, a process with access to its own signing key and receipt store can alter the record.
+The cryptography worked. The audit property didn't. When the signing process and the audited process are the same, the auditor is holding its own signing key. It can sign what it likes, drop what it doesn't, and nothing outside the process can disagree.
 
-The second limitation was fragmentation. Running multiple MCP proxy instances — the normal case when an agent uses several MCP servers — meant multiple independent chains with no shared sequence space. Correlating a GitHub tool call with a filesystem tool call meant writing application-level join logic, not querying one table.
+A second limitation came from running more than one MCP proxy at once — the usual case when an agent talks to several MCP servers. Each proxy kept its own chain, with no shared sequence between them. Correlating a GitHub tool call with a filesystem tool call meant application-level join logic instead of one query.
 
 ---
 
@@ -47,26 +47,26 @@ graph LR
     PC --> CH --> KS --> DB
 ```
 
-The agent process has no access to the signing keys or the database. The separation is structural.
+The agent process can't reach the signing keys or the database. The separation is structural, not policy.
 
 ---
 
 ## Peer credential capture
 
-The daemon does not rely on the emitter's identity claims. At connection accept time it captures OS-level peer credentials from the socket itself:
+The daemon doesn't take the emitter's word for who it is. The moment a connection lands on the socket, it asks the kernel directly:
 
 - **macOS**: `LOCAL_PEERCRED` for uid/gid, `LOCAL_PEEREPID` for pid, then `proc_pidpath` for the executable path
 - **Linux**: `SO_PEERCRED` for uid, gid, pid, then `/proc/<pid>/exe` for the executable path
 
-These are kernel-attested. The connecting process cannot forge them. The daemon records them on every receipt, so an auditor can verify not just *what* was called but *which process* called it — by uid, pid, and executable path.
+These come straight from the kernel. The connecting process can lie about anything in its payload, but not about who it is. The daemon stamps every receipt with that identity, so an auditor can answer not just *what* was called but *which process* called it — by uid, pid, and executable path.
 
 ---
 
 ## One chain, all channels
 
-Because all emitters connect to the same daemon socket, all receipts go into one chain with a global monotonic sequence. An agent session that uses three MCP servers and fires native tool calls via the Claude Code hook produces one chain — not four.
+Because every emitter connects to the same daemon socket, all receipts land in one chain with a single monotonic sequence. An agent session that talks to three MCP servers and fires native tool calls through the Claude Code hook produces one chain — not four.
 
-Cross-channel correlation is one query: find all receipts with the same `session_id` and you have the complete tool call history for that session, regardless of which emitter captured each call.
+Cross-channel correlation collapses to one query: every receipt for a session carries the same `session_id`, regardless of which emitter captured the call.
 
 ---
 
@@ -74,7 +74,7 @@ Cross-channel correlation is one query: find all receipts with the same `session
 
 The daemon is a system service. That's friction the old `npm install` flow didn't have. It requires installation, a signing key, and a service manager entry (launchd on macOS, systemd on Linux).
 
-That's the cost of a meaningful audit boundary. In-process signing is simpler to install; it isn't the audit boundary.
+That's the cost of an audit boundary that means something. In-process signing is simpler to install; it just isn't the audit boundary.
 
 Homebrew handles most of it:
 
@@ -87,7 +87,7 @@ brew services start agent-receipts-daemon
 
 ## What it looks like in practice
 
-The receipts are W3C Verifiable Credentials, Ed25519-signed, hash-chained. A real one from this session (hashes and signature abbreviated):
+Receipts are W3C Verifiable Credentials, Ed25519-signed, hash-chained. Here's a real one from this session, signature and hashes abbreviated:
 
 ```json
 {
@@ -106,7 +106,7 @@ The receipts are W3C Verifiable Credentials, Ed25519-signed, hash-chained. A rea
 }
 ```
 
-The signing key (`did:agent-receipts-daemon:local#k1`) lives only in the daemon. The agent process that triggered this call has never seen it.
+That signing key — `did:agent-receipts-daemon:local#k1` — lives only in the daemon. The agent process that triggered this call has never seen it.
 
 ---
 
@@ -114,4 +114,4 @@ The signing key (`did:agent-receipts-daemon:local#k1`) lives only in the daemon.
 
 The daemon is the trust anchor for everything that follows: secret redaction before storage (already shipped), asymmetric payload encryption so only a forensic key holder can read stored inputs, centralised storage for cross-machine audit trails. All of it depends on having one trusted process that owns the keys and the chain.
 
-The next post puts the first two together — a live demo of the unified chain and secret redaction working end to end.
+The next post is the demo — the unified chain and secret redaction working end to end, on real receipts.
