@@ -83,7 +83,7 @@ Both frames carry the same `parameters_hash` — the daemon hashes inputs canoni
 }
 ```
 
-Same `parameters_hash`. Same timestamp. Consecutive sequence numbers. Different emitters — one the proxy (pid 53707), one the hook (pid 74061) — both attested by the daemon's peer credential capture.
+Same `parameters_hash`. Consecutive sequence numbers, milliseconds apart. Different emitters — one the proxy (pid 53707), one the hook (pid 74061) — both attested by the daemon's peer credential capture.
 
 The `action.type` prefix tells you which channel produced each receipt: `mcp.*` for the proxy, `claude-code.*` for the hook.
 
@@ -107,13 +107,13 @@ Both receipts include `parameters_disclosure.peer.*` — the OS-level credential
 }
 ```
 
-The daemon uses `LOCAL_PEERCRED` + `LOCAL_PEEREPID` on macOS to capture these at socket accept time. The emitter cannot forge them. `exe_path` is empty for the hook channel because the hook process exits before the daemon can read its path from `proc_pidpath` — a known limitation for short-lived processes.
+The daemon uses `LOCAL_PEERCRED` + `LOCAL_PEEREPID` on macOS to capture these at socket accept time. The emitter cannot forge them. `exe_path` is empty when the peer has already closed its end of the socket by the time the daemon resolves it: `LOCAL_PEEREPID` returns `ENOTCONN`, the pid is left at zero, and `proc_pidpath` is skipped. Short-lived emitters like the hook (one connection per frame, then exit) hit this path often; `uid`/`gid` still come through because `LOCAL_PEERCRED` snapshots them at connect time.
 
 ---
 
 ## Secret redaction
 
-The `parameters_disclosure` feature has a history. It started as `parameterPreview` inside the [OpenClaw plugin](https://github.com/agent-receipts/openclaw) — a way to store a sanitised preview of tool call parameters alongside the hash, so auditors could see *what* was called without needing to re-run the tool ([how the plugin works](/blog/openclaw-plugin-deep-dive/)). The [first end-to-end trial](https://jongerius.solutions/post/agent-receipts-openclaw-v0-trial/) used it in anger. Using it surfaced an immediate question: what happens when a tool call argument contains an API key or a password? The preview stores it. Forever. In a signed record.
+The `parameters_disclosure` feature has a history. It started as `parameterPreview` inside the [OpenClaw plugin](https://github.com/agent-receipts/openclaw) — a way to store a sanitised preview of tool call parameters alongside the hash, so auditors could see *what* was called without needing to re-run the tool ([how the plugin works](/blog/openclaw-plugin-deep-dive/)). The [first end-to-end trial](https://jongerius.solutions/post/agent-receipts-openclaw-v0-trial/) put it to work in anger, and an obvious question surfaced almost immediately: what happens when a tool call argument contains an API key or a password? The preview stores it. Forever. In a signed record.
 
 That question drove two things: the rename from `parameterPreview` → `parameterDisclosure` (the field carries disclosure, not a safe preview), and the redaction system now in the daemon. The idea was ported from the plugin to the main project precisely because the daemon is the right place for it — it's the only process that sees the raw payload, making it the only place where redaction can run unconditionally, regardless of which emitter sent the event.
 
@@ -146,12 +146,10 @@ v0.10.0 adds redaction to the pipeline. Built-in patterns cover:
 - URL query-string tokens (`?token=`, `?api_key=`, ...)
 - JSON keys: `password`, `api_key`, `token`, `secret`, `authorization`, `jwt`, and 20+ more
 
-Redaction runs **after** hashing. The `parameters_hash` commits to the original canonical bytes — a verifier can still prove the exact inputs were used. Only the human-readable stored text is sanitised.
-
 Here's the live demo. This Bash command was run in a Claude Code session:
 
 ```bash
-echo "Connecting with api_key=sk-fakekey12345678901234 to service"
+sleep 1 && echo "Connecting with api_key=sk-fakekey12345678901234 to service"
 ```
 
 The resulting receipt:
@@ -166,7 +164,7 @@ The resulting receipt:
 }
 ```
 
-The secret is gone from both the command string and the stdout — caught in both places by the `sk-` pattern. The `parameters_hash` still proves what was actually executed. The receipt is signed and chain-linked.
+The secret is gone from both the command string and the stdout — caught in both places by the `sk-` pattern. The receipt is signed and chain-linked; the hash still commits to the original input, but the redacted form is the only text the database, and any subsequent reader, ever sees.
 
 Custom redaction patterns can be added via `--redact-patterns <file.yaml>` (or `AGENTRECEIPTS_REDACT_PATTERNS`):
 
