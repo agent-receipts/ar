@@ -92,6 +92,9 @@ def verify_chain(
     broken_at = -1
     previous: AgentReceipt | None = None
     signature_compute_error: str | None = None
+    signature_compute_error_at: int = -1
+    hash_compute_error: str | None = None
+    hash_compute_error_at: int = -1
 
     for i, receipt in enumerate(receipts):
         chain = receipt.credentialSubject.chain
@@ -104,6 +107,7 @@ def verify_chain(
                 signature_compute_error = (
                     f"signature compute failed at index {i}: {exc}"
                 )
+                signature_compute_error_at = i
 
         current_sequence = chain.sequence
         if previous is None:
@@ -117,24 +121,12 @@ def verify_chain(
         else:
             try:
                 previous_hash = hash_receipt(previous)
+                hash_link_valid = chain.previous_receipt_hash == previous_hash
             except (TypeError, ValueError) as exc:
-                results.append(
-                    ReceiptVerification(
-                        index=i,
-                        receipt_id=receipt.id,
-                        signature_valid=signature_valid,
-                        hash_link_valid=False,
-                        sequence_valid=sequence_valid,
-                    )
-                )
-                return ChainVerification(
-                    valid=False,
-                    length=len(receipts),
-                    receipts=results,
-                    broken_at=i,
-                    error=f"hash compute failed at index {i - 1}: {exc}",
-                )
-            hash_link_valid = chain.previous_receipt_hash == previous_hash
+                if hash_compute_error is None:
+                    hash_compute_error = f"hash compute failed at index {i - 1}: {exc}"
+                    hash_compute_error_at = i
+                hash_link_valid = False
 
         verification = ReceiptVerification(
             index=i,
@@ -152,33 +144,46 @@ def verify_chain(
 
         previous = receipt
 
-    # Signature-compute exception takes precedence over later structural checks:
-    # if a receipt could not be canonicalised for verification, the chain is
-    # already structurally broken and downstream checks (terminal placement,
-    # response_hash, expected_length, ...) are not meaningful.
-    if signature_compute_error is not None:
-        return ChainVerification(
-            valid=False,
-            length=len(receipts),
-            receipts=results,
-            broken_at=broken_at,
-            error=signature_compute_error,
-        )
+    # Pick the compute error that occurred earliest in the chain.
+    # When both are present, the one at the lower index wins (not always sig).
+    # Compute this before the terminal check so early returns can compare indices.
+    loop_error = ""
+    loop_error_at = -1
+    if signature_compute_error is not None and hash_compute_error is not None:
+        if signature_compute_error_at <= hash_compute_error_at:
+            loop_error = signature_compute_error
+            loop_error_at = signature_compute_error_at
+        else:
+            loop_error = hash_compute_error
+            loop_error_at = hash_compute_error_at
+    elif signature_compute_error is not None:
+        loop_error = signature_compute_error
+        loop_error_at = signature_compute_error_at
+    elif hash_compute_error is not None:
+        loop_error = hash_compute_error
+        loop_error_at = hash_compute_error_at
 
     # Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
     for i, receipt in enumerate(receipts[:-1]):
         if receipt.credentialSubject.chain.terminal is True:
-            if broken_at == -1:
-                broken_at = i + 1
+            terminal_violation_at = i + 1
+            if broken_at == -1 or terminal_violation_at < broken_at:
+                broken_at = terminal_violation_at
+            # Use compute-error message only when the error preceded the terminal
+            # violation; otherwise the terminal violation message takes priority.
+            if loop_error and loop_error_at <= terminal_violation_at:
+                error_msg = loop_error
+            else:
+                error_msg = (
+                    f"receipt after terminal: receipt at index {i + 1} "
+                    f"follows a terminal receipt at index {i}"
+                )
             return ChainVerification(
                 valid=False,
                 length=len(receipts),
                 receipts=results,
                 broken_at=broken_at,
-                error=(
-                    f"receipt after terminal: receipt at index {i + 1} "
-                    f"follows a terminal receipt at index {i}"
-                ),
+                error=error_msg,
             )
 
     cv = ChainVerification(
@@ -186,6 +191,7 @@ def verify_chain(
         length=len(receipts),
         receipts=results,
         broken_at=broken_at,
+        error=loop_error,
     )
 
     # Response-hash verification (spec §4.3.2).
@@ -241,7 +247,10 @@ def verify_chain(
         if last_hash != expected_final_hash:
             cv.valid = False
             cv.broken_at = last_index
-            cv.error = "final receipt hash does not match expected value"
+            cv.error = (
+                f"final receipt hash mismatch at index {last_index}: "
+                f"expected {expected_final_hash}, got {last_hash}"
+            )
             return cv
 
     if require_terminal:
