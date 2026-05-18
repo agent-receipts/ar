@@ -168,6 +168,10 @@ export default defineConfig({
               label: "The audit boundary belongs outside the agent",
               slug: "blog/daemon-process-separation",
             },
+            {
+              label: "Native Tool Calls in the Audit Trail",
+              slug: "blog/hooks-native-tool-audit",
+            },
           ],
         },
       ],
