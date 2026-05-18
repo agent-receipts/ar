@@ -63,19 +63,18 @@ func waitForExit(t *testing.T, stdin io.WriteCloser, cmd *exec.Cmd) {
 }
 
 // startProxy builds and starts the proxy with a mock MCP server, returning
-// the stdin writer, stdout scanner, command, and audit DB path.
-// --socket="" disables the emitter; receipts now go to the daemon (ADR-0010).
-func startProxy(t *testing.T) (io.WriteCloser, *bufio.Scanner, *exec.Cmd, string) {
+// the stdin writer, stdout scanner, and command.
+// --socket="" disables the emitter; receipts go to the daemon in production
+// (ADR-0010) but the daemon is out of scope for this e2e test, which exercises
+// the proxy's JSON-RPC forwarding and policy enforcement.
+func startProxy(t *testing.T) (io.WriteCloser, *bufio.Scanner, *exec.Cmd) {
 	t.Helper()
 	tmpDir := t.TempDir()
 
 	mockBin := buildBinary(t, "./testdata", tmpDir, "mock-server")
 	proxyBin := buildBinary(t, "./cmd/mcp-proxy", tmpDir, "mcp-proxy")
 
-	auditDBPath := filepath.Join(tmpDir, "audit.db")
-
 	cmd := exec.Command(proxyBin,
-		"--db", auditDBPath,
 		"--socket", "", // no daemon in e2e — receipts go to daemon in production
 		"--http", "127.0.0.1:0",
 		"--", mockBin,
@@ -105,11 +104,11 @@ func startProxy(t *testing.T) (io.WriteCloser, *bufio.Scanner, *exec.Cmd, string
 	// Wait for the proxy to start the child process.
 	time.Sleep(500 * time.Millisecond)
 
-	return stdinPipe, scanner, cmd, auditDBPath
+	return stdinPipe, scanner, cmd
 }
 
 func TestE2EProxyToolCallFlow(t *testing.T) {
-	stdin, scanner, cmd, auditDBPath := startProxy(t)
+	stdin, scanner, cmd := startProxy(t)
 
 	// Send tools/call for read_file.
 	sendJSON(t, stdin, map[string]any{
@@ -138,15 +137,10 @@ func TestE2EProxyToolCallFlow(t *testing.T) {
 	}
 
 	waitForExit(t, stdin, cmd)
-
-	// Audit DB must exist (proxy committed session and tool calls).
-	if _, err := os.Stat(auditDBPath); err != nil {
-		t.Errorf("expected audit.db to exist after proxy session: %v", err)
-	}
 }
 
 func TestE2EProxyBlockedCall(t *testing.T) {
-	stdin, scanner, cmd, _ := startProxy(t)
+	stdin, scanner, cmd := startProxy(t)
 
 	// Send a tool call that should be blocked: delete_secrets has risk >= 70.
 	sendJSON(t, stdin, map[string]any{
