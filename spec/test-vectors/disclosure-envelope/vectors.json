@@ -1,0 +1,118 @@
+{
+  "$comment": "Disclosure-envelope wire-format test vectors for parameters_disclosure as pinned by ADR-0012 (envelope canonical-shape amendment) and the sibling schema spec/schema/parameters-disclosure.schema.json. Each vector fixes the canonical JSON the hub re-verifier and the three SDKs (Go, TS, Py) MUST produce given (a) a plaintext parameters object, (b) a recipient X25519 public key (kid + raw key bytes), and (c) a deterministic HPKE ephemeral-key seed (`ikmE`, RFC 9180 §7.1.3 DeriveKeyPair). The seed makes the otherwise non-deterministic HPKE base-mode encryption byte-reproducible across implementations, which is what cross-SDK byte-identical interop requires. These are static expected outputs; wiring them into SDK test suites is a later track. See the companion README.md for the seed pattern and key provenance.",
+  "spec_version": "parameters-disclosure envelope v1",
+  "adr": "docs/adr/0012-payload-disclosure-policy.md",
+  "schema": "spec/schema/parameters-disclosure.schema.json",
+  "ciphersuite": {
+    "alg_tag": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+    "hpke_mode": "base",
+    "kem": "DHKEM(X25519, HKDF-SHA256) (0x0020)",
+    "kdf": "HKDF-SHA256 (0x0001)",
+    "aead": "AES-256-GCM (0x0002)",
+    "info": "",
+    "aad": ""
+  },
+  "encoding": {
+    "binary_fields": "unpadded base64url (RFC 4648 §5), matching ADR-0009 / spec §4 proofValue convention",
+    "json_canonicalisation": "RFC 8785 (JCS), matching ADR-0002 / ADR-0009",
+    "plaintext_canonicalisation": "RFC 8785 JCS over the parameters object before AEAD encryption"
+  },
+  "test_recipients": [
+    {
+      "name": "forensic-test-recipient-1",
+      "$comment": "Well-known X25519 test key. Public key matches RFC 7748 §6.1's Alice public-key example. Use only for spec test vectors; never as a real forensic key.",
+      "kid": "did:key:z6LSeu9HkTHSfLLeUs2nnzUSNedgDUevfNQUQUaHL9XJ7Z5W#enc-1",
+      "public_key_hex": "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a",
+      "private_key_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fbf48996eb7c",
+      "private_key_source": "RFC 7748 §6.1 (Alice). Documented here only so reviewers can run the decryption round-trip; this private key is famous and trivially recoverable from the RFC."
+    },
+    {
+      "name": "forensic-test-recipient-2",
+      "$comment": "Well-known X25519 test key. Public key matches RFC 7748 §6.1's Bob public-key example.",
+      "kid": "sha256:8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f",
+      "public_key_hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+      "private_key_hex": "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+      "private_key_source": "RFC 7748 §6.1 (Bob). Same caveat as recipient-1."
+    }
+  ],
+  "vectors": [
+    {
+      "name": "vector-1-single-recipient-small-payload",
+      "description": "Smallest realistic disclosure: a single string parameter. Demonstrates the envelope shape end-to-end with the forensic-test-recipient-1 key and the RFC 9180 §A.1.1 ephemeral seed.",
+      "recipient": "forensic-test-recipient-1",
+      "plaintext_object": {
+        "command": "echo \"build complete\""
+      },
+      "plaintext_canonical_jcs": "{\"command\":\"echo \\\"build complete\\\"\"}",
+      "hpke_ephemeral": {
+        "ikmE_hex": "7268600d403fce431561aef583ee1613527cff655c1343f29812e66706df3234",
+        "ikmE_source": "RFC 9180 §A.1.1 (DHKEM(X25519, HKDF-SHA256) base-mode test vector). The ephemeral key pair is deterministically derived from ikmE via HPKE DeriveKeyPair; using the RFC's published seed lets implementers cross-check the encapsulated key against RFC 9180 directly."
+      },
+      "envelope_canonical_jcs": "{\"alg\":\"hpke-x25519-hkdf-sha256-aes-256-gcm\",\"ct\":\"<ciphertext-bytes-base64url-unpadded>\",\"recipients\":[{\"enc\":\"<enc-bytes-base64url-unpadded>\",\"kid\":\"did:key:z6LSeu9HkTHSfLLeUs2nnzUSNedgDUevfNQUQUaHL9XJ7Z5W#enc-1\"}],\"v\":\"1\"}",
+      "envelope_object": {
+        "v": "1",
+        "alg": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+        "recipients": [
+          {
+            "kid": "did:key:z6LSeu9HkTHSfLLeUs2nnzUSNedgDUevfNQUQUaHL9XJ7Z5W#enc-1",
+            "enc": "<enc-bytes-base64url-unpadded>"
+          }
+        ],
+        "ct": "<ciphertext-bytes-base64url-unpadded>"
+      },
+      "round_trip": {
+        "decrypt_with_private_key_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fbf48996eb7c",
+        "expected_plaintext_canonical_jcs": "{\"command\":\"echo \\\"build complete\\\"\"}"
+      },
+      "computed_values_status": "placeholder",
+      "computed_values_note": "The `enc` and `ct` fields above are placeholders. The first SDK to implement HPKE base-mode encryption with the pinned ciphersuite and the RFC 9180 §A.1.1 ikmE will compute the concrete byte values and a follow-up PR fills them in. Holding placeholders here, rather than guessing, is deliberate: a wrong-looking vector that all three SDKs match would silently lock in a bug. The JCS-canonical *shape* (key order, encoding rule, alg string, kid form) is the load-bearing part this PR pins; the concrete ciphertext bytes are derivable once any one of the three SDKs ships the primitive. Reviewers who want to spot-check the shape today can compute HPKE base-mode with these inputs against RFC 9180 §A.1.1 and substitute the values into the schema; the schema constraints will accept any valid base64url for `enc` and `ct`."
+    },
+    {
+      "name": "vector-2-single-recipient-nested-payload",
+      "description": "Nested object plaintext to exercise JCS over the parameters before encryption. Different recipient so the kid field's fingerprint form is also covered.",
+      "recipient": "forensic-test-recipient-2",
+      "plaintext_object": {
+        "method": "POST",
+        "headers": { "content-type": "application/json", "x-request-id": "abc-123" },
+        "body": { "user": "otto", "delta": 42 }
+      },
+      "plaintext_canonical_jcs": "{\"body\":{\"delta\":42,\"user\":\"otto\"},\"headers\":{\"content-type\":\"application/json\",\"x-request-id\":\"abc-123\"},\"method\":\"POST\"}",
+      "hpke_ephemeral": {
+        "ikmE_hex": "909a9b35d3dc4713a5e72a4da274b55d3d3821a37e5d099e74a647db583a904b",
+        "ikmE_source": "Deterministic per-vector seed for cross-SDK reproducibility. Not from any external RFC — fixed in this file so all three SDKs produce identical envelopes for vector-2. Generated by SHA-256(\"agent-receipts/spec/test-vectors/disclosure-envelope/vector-2-ikmE-v1\")."
+      },
+      "envelope_canonical_jcs": "{\"alg\":\"hpke-x25519-hkdf-sha256-aes-256-gcm\",\"ct\":\"<ciphertext-bytes-base64url-unpadded>\",\"recipients\":[{\"enc\":\"<enc-bytes-base64url-unpadded>\",\"kid\":\"sha256:8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f\"}],\"v\":\"1\"}",
+      "envelope_object": {
+        "v": "1",
+        "alg": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+        "recipients": [
+          {
+            "kid": "sha256:8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f",
+            "enc": "<enc-bytes-base64url-unpadded>"
+          }
+        ],
+        "ct": "<ciphertext-bytes-base64url-unpadded>"
+      },
+      "round_trip": {
+        "decrypt_with_private_key_hex": "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+        "expected_plaintext_canonical_jcs": "{\"body\":{\"delta\":42,\"user\":\"otto\"},\"headers\":{\"content-type\":\"application/json\",\"x-request-id\":\"abc-123\"},\"method\":\"POST\"}"
+      },
+      "computed_values_status": "placeholder",
+      "computed_values_note": "Same placeholder pattern as vector-1. See README.md §\"Reproducibility and the placeholder ciphertexts\"."
+    }
+  ],
+  "shape_invariants": {
+    "$comment": "Properties every conformant SDK MUST hold over its produced envelopes, independently of the placeholder ciphertext values above. These are what the cross-SDK harness asserts.",
+    "rules": [
+      "RFC 8785 JCS over the envelope object sorts top-level keys as [alg, ct, recipients, v].",
+      "Inside each recipients[] entry, JCS sorts keys as [enc, kid].",
+      "`v` MUST be the JSON string \"1\", not the JSON number 1.",
+      "`alg` MUST be exactly the string \"hpke-x25519-hkdf-sha256-aes-256-gcm\" — no whitespace, no case variation, no version suffix.",
+      "`recipients` MUST be a JSON array of length 1 in v1. Length 0 is invalid; length >1 is reserved for a v2 multi-recipient envelope and MUST NOT appear with `v: \"1\"`.",
+      "`enc` and `ct` MUST be unpadded base64url (no `=` padding, no `+` or `/` characters).",
+      "No `nonce` field is present in v1 envelopes. HPKE single-shot derives the AEAD nonce from the KEM output internally; surfacing a redundant `nonce` field would be a v1 schema violation.",
+      "The HPKE `info` parameter is the empty string. The HPKE AAD is the empty string. v1 does not bind any out-of-band context into encryption; the surrounding signed receipt envelope already authenticates the disclosure field via its signature.",
+      "Plaintext is RFC 8785 JCS over the parameters object as a JSON object. Strings, numbers, arrays at the top level are not supported as plaintext in v1; wrap in an object."
+    ]
+  }
+}

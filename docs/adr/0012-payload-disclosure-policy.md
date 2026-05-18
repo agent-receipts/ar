@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-05-12). Implementation is partial — see *Implementation status* below.
+Accepted (2026-05-12), amended 2026-05-18 (see *Amendments*). Implementation is partial — see *Implementation status* below.
 
 ## Context
 
@@ -166,3 +166,53 @@ This gap is tracked as the remainder of **Phase A**. Phase B and Phase C are unc
 - [ADR-0009 (canonicalisation profile)](./0009-canonicalization-and-schema-consistency.md) — the disclosure envelope shape is exactly the kind of cross-SDK consistency this ADR is about.
 - [ADR-0010 (daemon process separation)](./0010-daemon-process-separation.md) — the daemon owns fan-out and the plaintext window; "operator-controlled" is a real boundary because of this ADR.
 - [ADR-0011 (Zod runtime validation)](./0011-zod-for-runtime-validation.md) — the disclosure envelope schema must be added to the Zod store-load validation in the TypeScript SDK.
+
+## Amendments
+
+### 2026-05-18: Envelope canonical shape and algorithm choice (proposed: HPKE)
+
+**Status of this amendment:** the canonicalisation, encoding, schema-versioning, and field-set decisions below are locked in. The cryptographic primitive choice (HPKE vs libsodium sealed-box) is **proposed**, not yet accepted: it requires explicit human sign-off before any SDK ships envelope-mode encryption. The amendment documents the proposal and the tradeoff so that sign-off can be made on the record.
+
+**Scope.** The original ADR commits to the envelope's *shape* and forward-compatibility properties (the table under *Forward-compatible envelope shape*) but defers `alg`, the AEAD primitive, and the `kid` registry mechanism to a follow-up. This amendment pins those for v1. It also pins the canonicalisation rules and produces cross-SDK test vectors. The amendment is the **user-facing gate** for [ADR-0017 (central receipt hub)](./0017-central-receipt-hub.md): the hub MUST reject pre-envelope disclosure shapes (plaintext map, redacted-plaintext map), which is unsafe to enforce until conformant envelope producers exist. The two sibling spec tracks landing in parallel are `did:key` resolution (consumed by ADR-0017's JWS auth) and the rotation-event canonical wire format (deferred in ADR-0015).
+
+**Locked in.**
+
+1. **JSON Schema.** [`spec/schema/parameters-disclosure.schema.json`](../../spec/schema/parameters-disclosure.schema.json) describes the envelope content. It is a sibling schema; the main receipt schema (`agent-receipt.schema.json`) is not yet amended to reference it, because that wiring requires the SDK implementations and the cross-SDK byte-identical harness to land first.
+2. **Field set for v1:** `v` (version string), `alg` (ciphersuite tag string), `recipients[]` (length 1 in v1), `ct` (AEAD ciphertext). No `nonce` field — see *Single-shot vs streaming HPKE* below.
+3. **Recipient descriptor:** `{ kid, enc }`. The original ADR's sketch named the encapsulated-key field `encap`; this amendment renames it to `enc` to match the RFC 9180 §4.1 vocabulary. The cost is one renamed field in a not-yet-shipped schema; the benefit is no perpetual translation between spec text and library APIs.
+4. **`v` is a JSON string, not an integer.** `"1"`, not `1`. This avoids any RFC 8785 number-encoding ambiguity at the verifier. The version-bump rule is: any change to the field set, encoding rule, AEAD/KEM/KDF, or canonicalisation rule is a v2. Bug-fixes to the *implementation* of v1 do not bump.
+5. **Encoding:** all binary fields are unpadded base64url (RFC 4648 §5), matching ADR-0009 / spec §4 `proofValue`. Standard base64 is not accepted; padding is not accepted.
+6. **Canonicalisation:** RFC 8785 JCS over the envelope (per ADR-0009) and over the plaintext parameters object before AEAD encryption. The latter is what makes the cross-SDK byte-identical claim meaningful — two SDKs that disagree about JCS produce different ciphertexts and the receipt's `parameters_hash` will mismatch.
+7. **`recipients` is always an array, length 1 in v1, max 1 in v1.** The array shape is forward-compatible with the Phase C multi-recipient extension; the v1 upper bound prevents a producer from accidentally shipping a multi-recipient envelope under a `v: "1"` label. v2 multi-recipient relaxes the upper bound and adds a per-recipient wrapped-key shape; `ct` remains a single shared ciphertext under a content-encryption key wrapped per recipient.
+8. **HPKE base-mode parameters for v1 (subject to the proposed-status caveat):** `info` = empty string; AAD = empty string. The surrounding signed receipt envelope already authenticates `parameters_disclosure` via signature; no out-of-band context binding is added at the HPKE layer.
+
+**Proposed (awaiting user sign-off): HPKE base-mode, ciphersuite `hpke-x25519-hkdf-sha256-aes-256-gcm`.** That is RFC 9180 base mode with KEM = DHKEM(X25519, HKDF-SHA256) (`0x0020`), KDF = HKDF-SHA256 (`0x0001`), AEAD = AES-256-GCM (`0x0002`). The `alg` field carries the human-readable tag rather than the numeric triple so verifiers dispatch on string equality; the numeric triple is recorded in the schema description as the cross-reference for implementers.
+
+**HPKE vs libsodium sealed-box — the one-pager.**
+
+| Axis | HPKE (RFC 9180) | libsodium sealed-box |
+|---|---|---|
+| Standardisation | IETF RFC, Feb 2022. Wire format and ciphersuite IDs are stable across implementations. | libsodium convention. No RFC; the wire format is "whatever libsodium does." |
+| Multi-recipient (ADR-0012 Phase C) | Composable: same ephemeral content-encryption key, wrapped to N recipients with one HPKE encapsulation each. Single `ct`. | Not native. Multi-recipient means N independent sealed-boxes per receipt — N ephemeral keys, N ciphertexts. Loses the single-`ct` property that the Phase C design rests on. |
+| Library maturity (Go / TS / Py) | Go: `github.com/cloudflare/circl/hpke` is mature. Py: `pyhpke` is workable. TS: `@hpke/core` is workable but younger than libsodium bindings. The gap is real and closing. | All three languages have mature libsodium bindings (`nacl` / `libsodium-wrappers` / `pynacl`). The maturity gap is in HPKE's favour as of 2026 but small. |
+| API surface for v1 single-recipient | More moving parts (KEM/KDF/AEAD triple, `info`, AAD). | Simplest possible API: `crypto_box_seal(plaintext, recipient_pk)`. |
+| Phase C migration cost if v1 ships sealed-box | High — multi-recipient is a wire-format change, not an additive change. Existing receipts carry single-`ct` semantics that the v2 design has to either preserve or fork. | n/a (HPKE was chosen). |
+
+**Recommendation: HPKE.** The library-maturity gap is real but small and shrinking, and the cross-SDK byte-identical test vectors this amendment produces will surface any divergence early. Sealed-box would be perfectly fine for v1 functionally, but would force a wire-format change at Phase C — exactly the kind of premature commitment we want to avoid on a permanent-once-signed receipt format. The IETF status of HPKE also matches the way the rest of the protocol pins on standards (RFC 8032, RFC 8785, RFC 8037).
+
+**Single-shot vs streaming HPKE — call made: single-shot, no `nonce` field.** RFC 9180 distinguishes single-shot encryption (one plaintext, one ciphertext, AEAD nonce derived internally from the KEM output) from streaming-mode encryption (multiple plaintexts under a single setup, application-managed nonce). Each receipt encrypts exactly one parameters object; there is no streaming use case. Single-shot makes the envelope smaller, removes one field worth of canonicalisation surface, and matches what HPKE libraries' "seal/open" APIs already do. Surfacing a `nonce` field in a single-shot envelope would be redundant at best and a footgun at worst (an implementer who supplies a custom nonce against a library that ignores it gets silently wrong behaviour). The schema therefore omits `nonce`; the *shape invariants* in the test vectors call this out so an SDK that adds the field by reflex fails fast.
+
+**Cross-reference to ADR-0017.** ADR-0017 §6 (precondition check, hub-side rejection of pre-envelope plaintext) MUST consume this schema. The hub rejects with HTTP 422 + diagnostic any `parameters_disclosure` that does not match `parameters-disclosure.schema.json` v1 (or, once shipped, v2). The daemon-attested additive metadata (`peer.*`, `emitter.drop_count`) and the legacy redacted-plaintext map (`input` / `output` under the `--parameter-disclosure` opt-in) are pre-envelope shapes and are rejected by §6 once the gate closes; a separate amendment to ADR-0010 will move the `peer.*` metadata to its dedicated namespace before the hub goes live.
+
+**Test vectors.** [`spec/test-vectors/disclosure-envelope/`](../../spec/test-vectors/disclosure-envelope/) ships two static vectors using well-known X25519 test keys (RFC 7748 §6.1) and the deterministic-`ikmE` pattern from RFC 9180 §7.1.3 / §A.1.1 to make HPKE byte-reproducible. The first revision carries placeholders for the concrete `enc` and `ct` byte values; the first SDK to ship the HPKE primitive fills them in via a follow-up PR. Placeholders are deliberate — a wrong-looking value that all three SDKs happen to load from the same fixture would silently lock in a bug.
+
+**Forward-compatibility note (Phase C extension story).** With `recipients` as an array and a single shared `ct`, the v2 multi-recipient extension is additive at the wire-format level: extend `recipients[].enc` to one HPKE encapsulation per recipient sharing the same content-encryption key (or move to HPKE's emerging multi-recipient mode if standardised), keep `ct` as the single AES-256-GCM ciphertext, and bump `v` to `"2"`. v1 verifiers reading a v2 envelope dispatch on `v` and refuse to decrypt; the receipt's chain signature still verifies, exactly as the original ADR's *Forward-compatible envelope shape* table promises. No re-encryption of historical receipts is ever required.
+
+**Out of scope for this amendment.**
+
+- SDK implementations of envelope encryption (Go / TS / Py). Tracked under #280.
+- Daemon rewire of `--parameter-disclosure` from redacted-plaintext to envelope. Tracked under #280.
+- Forensic-key CLI (export, import, rotate). Tracked under #280.
+- Reference of `parameters-disclosure.schema.json` from `agent-receipt.schema.json`. Lands with the SDK work, not the spec.
+- `kid` registry mechanism. v1 accepts either a `did:key` DID URL with a fragment or the `sha256:<hex>` fingerprint form; a normative registry is deferred.
+- Algorithm agility in `alg`. v1 pins exactly one ciphersuite. Additional ciphersuites require a new ADR-0012 amendment and a v2 envelope.
