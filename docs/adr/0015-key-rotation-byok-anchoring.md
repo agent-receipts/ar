@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-05-12). Phase A implementation in progress (`KeySource` interface present in `daemon/internal/keysource/`, file-backed adapter partial, `Rotate()` not yet implemented). Phase B (external anchor) and Phase C (HSM/KMS adapters) deferred — see *Implementation phasing* below.
+Accepted (2026-05-12). Phase A implementation in progress (`KeySource` interface present in `daemon/internal/keysource/`, file-backed adapter partial, `Rotate()` not yet implemented; the rotation-event anchor sink that Phase A also requires is not yet implemented). Phase B (checkpoint anchoring for tail-truncation detection) and Phase C (HSM/KMS adapters) deferred — see *Implementation phasing* below.
 
 ## Context
 

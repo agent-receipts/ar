@@ -108,8 +108,9 @@ What has landed:
 
 - The field has been renamed across SDKs from `parameters_preview` to `parameters_disclosure` (TS SDK ≥0.6.0; Go and Python SDKs carry the renamed field).
 - The config knob is named `parameterDisclosure` and the existing OpenClaw value space (`false | true | "high" | string[]`) is honoured at the config layer.
-- The daemon ships a `--parameter-disclosure` opt-in flag (PRs #427, #429); when enabled, the receipt pipeline writes redacted plaintext to `parameters_disclosure["input"]` and `parameters_disclosure["output"]` (`daemon/internal/pipeline/build.go`). **This is the legacy plaintext-in-body shape, not the envelope this ADR commits to** — it ships now because the field has redaction in front of it, and ships behind an explicit operator opt-in so it cannot be enabled silently.
-- The hash-only default holds: no channel populates `parameters_disclosure` unless the operator opts in.
+- The daemon already populates `parameters_disclosure` with daemon-attested metadata on every receipt: OS-attested peer credentials (`peer.platform`, `peer.pid`, `peer.uid`, `peer.gid`, `peer.exe_path`) on normal receipts and `emitter.drop_count` on `events_dropped` receipts (`daemon/internal/pipeline/build.go`). These are not plaintext tool payloads — they are operator-allowlisted additive metadata that the daemon vouches for, stashed in the existing field until ADR-0010's dedicated `peer` field lands (Phase 2).
+- The daemon ships a `--parameter-disclosure` opt-in flag (PRs #427, #429); when enabled, the receipt pipeline *additionally* writes redacted plaintext tool input/output to `parameters_disclosure["input"]` and `parameters_disclosure["output"]` on the same map. **This is the legacy plaintext-in-body shape, not the envelope this ADR commits to** — it ships behind an explicit operator opt-in so plaintext payload disclosure cannot be enabled silently. The peer/drop-count metadata above is unaffected by this flag.
+- The hash-only default for **tool input/output payloads** holds: no channel writes the plaintext input/output keys unless the operator opts in.
 
 What has **not** landed and is required before disclosure is enabled in any non-experimental channel:
 
@@ -117,7 +118,7 @@ What has **not** landed and is required before disclosure is enabled in any non-
 - The forensic key-pair lifecycle (auto-generation, on-disk layout next to the signing key, CLI for export/import).
 - Cross-SDK canonical-JSON equivalence tests for the envelope.
 
-Until those land, the `--parameter-disclosure` daemon flag is the only sanctioned way to populate the field, and it does so with **redacted plaintext** as an explicit interim step — not the envelope this ADR specifies. Callers other than the daemon's opt-in pipeline **MUST NOT** populate `parameters_disclosure` directly from raw tool arguments; the field is otherwise a forward-compatible placeholder for the envelope. The "plaintext-in-body" mode of the legacy TS `parameters_preview` (as an SDK-public surface) is explicitly removed as a supported behaviour (see *Consequences → existing TS field is repurposed*).
+Until those land, the `--parameter-disclosure` daemon flag is the only sanctioned way to populate the `input` / `output` keys, and it does so with **redacted plaintext** as an explicit interim step — not the envelope this ADR specifies. Callers other than the daemon's opt-in pipeline **MUST NOT** write plaintext tool arguments into `parameters_disclosure`; the field is otherwise a forward-compatible placeholder for the envelope (with the daemon-attested `peer.*` and `emitter.drop_count` metadata noted above as the only other sanctioned entries). The "plaintext-in-body" mode of the legacy TS `parameters_preview` (as an SDK-public surface) is explicitly removed as a supported behaviour (see *Consequences → existing TS field is repurposed*).
 
 This gap is tracked as the remainder of **Phase A**. Phase B and Phase C are unchanged and remain sequenced behind daemon work (ADR-0010) and enterprise pull respectively.
 
