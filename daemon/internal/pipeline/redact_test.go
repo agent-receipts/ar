@@ -61,6 +61,22 @@ func TestRedactor_BuiltinPatternsRedactKnownSecretShapes(t *testing.T) {
 			input: "-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAA\n-----END RSA PRIVATE KEY-----",
 			want:  "MIIBogIBAA",
 		},
+		{
+			name:  "jwt-bare",
+			input: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NSIsIm5hbWUiOiJBbGljZSJ9.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+			want:  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+		},
+		{
+			name:  "jwt-in-npmrc",
+			input: "//registry.npmjs.org/:_authToken=eyJ2ZXIiOjEsImlzdSI6MzQ1Njc4OTB9.eyJzdWIiOiJucG0tdXNlciIsImlhdCI6MTYwMDAwMDAwMH0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+			want:  "eyJ2ZXIiOjEsImlzdSI6MzQ1Njc4OTB9",
+			keep:  "//registry.npmjs.org/:_authToken=",
+		},
+		{
+			name:  "jwt-unsigned",
+			input: "token: eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0.",
+			want:  "eyJhbGciOiJub25lIn0",
+		},
 	}
 
 	for _, tc := range cases {
