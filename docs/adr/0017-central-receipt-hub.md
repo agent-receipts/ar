@@ -44,17 +44,65 @@ This is a project-wide rename; see *Consequences* for the follow-up sweep.
 
 ### 4. Auth: reuse the daemon's Ed25519 key via JWS
 
-The node signs each batch with a JWS (JSON Web Signature, [RFC 7515](https://www.rfc-editor.org/rfc/rfc7515)) using EdDSA over the node's existing daemon key. The JWS is sent in the `Authorization: Bearer <jws>` header; the payload is the SHA-256 of the JSONL batch body, so the wire form is a compact JWS with a small fixed-size payload regardless of batch size. The hub verifies the JWS against its trust store — a list of authorised node DIDs — and rejects unknown signers.
+The node signs each batch with a JWS (JSON Web Signature, [RFC 7515](https://www.rfc-editor.org/rfc/rfc7515)) using EdDSA over the node's existing daemon key. No new credentials. No API keys. No separate transport PKI. The same key that signs every receipt signs the batch that carries them; the hub's authorisation decision uses the same DID resolution path (per [ADR-0007](./0007-did-method-strategy.md)) the verifier already uses.
 
-No new credentials. No API keys. No separate transport PKI. The same key that signs every receipt signs the batch that carries them; the hub's authorisation decision uses the same DID resolution path (per [ADR-0007](./0007-did-method-strategy.md)) the verifier already uses.
+#### Wire shape
 
-**JWS chosen over HTTP Message Signatures (RFC 9421)** because:
+- **Compact JWS** carried in `Authorization: Bearer <jws>`. The HTTP body is the raw JSONL batch, untouched.
+- **Detached payload**: the JWS signs a small *claims object*, not the batch body. Body integrity binds via a `body_sha256` claim. Detached-claims is chosen over RFC 7797 detached-over-body so the hub can stream-parse a multi-MB body while validating the JWS upfront, and so batch metadata has a structured signed home.
 
-- JWS is a self-contained, transport-independent artifact. The hub can persist the JWS alongside the batch for later forensic verification; an operator replaying a batch from disk gets the same signature surface as the original POST. RFC 9421 signs the HTTP request itself (selected headers plus the message body via a content digest) — useful for end-to-end HTTP integrity, but the artifact dies with the request.
-- JWS aligns with the existing receipt envelope: [ADR-0003](./0003-w3c-vc-envelope-format.md) (W3C VC) already places us in the JOSE/JWS world. Adding RFC 9421 introduces a second signature framework for the same key for no integrity benefit.
-- EdDSA-over-Ed25519 is a single-line JWS header (`{"alg":"EdDSA"}`) that every JOSE library implements; RFC 9421's signature-input/signature-params machinery is more surface area for the same one-key, one-algorithm use case.
+#### JOSE header
 
-RFC 9421 remains a reasonable option *in addition to* JWS if a future deployment puts the hub behind an HTTP-aware gateway that wants to attest the transport hop. It is not the default.
+| Field | Value | Why |
+|---|---|---|
+| `alg` | `EdDSA` | Per ADR-0001; sole supported algorithm |
+| `kid` | node's DID URL | Hub resolves via ADR-0007 — no pre-shared key file |
+| `typ` | `agnt-rcpt-batch+jws` | Reject a misdirected receipt-JWS at the ingest endpoint |
+
+#### Signed claims
+
+| Claim | Purpose |
+|---|---|
+| `iat` / `exp` | Replay window. Default `exp = iat + 5min`, aligned to shipper cadence |
+| `batch_id` | UUID v4 per batch; hub uses for idempotent retry-after-partial-write |
+| `body_sha256` | `sha256:<hex>` of raw JSONL body. Binds JWS to specific bytes |
+| `batch_count` | Sanity check vs. parsed body |
+
+#### Hub-side verification order
+
+1. Parse JWS header; extract `kid`.
+2. Resolve `kid` via DID resolution (ADR-0007); reject if not in the trust list.
+3. Verify JWS signature (EdDSA) over header + claims.
+4. Check `iat`/`exp` against the hub clock with small tolerance.
+5. Stream body; compute SHA-256; compare to `body_sha256` claim.
+6. Look up `batch_id` in the recent-batches dedup table; if seen, return idempotent 200.
+7. Per-receipt: re-verify signature and chain link under the same node DID.
+
+#### Replay protection
+
+`iat`/`exp` window plus `batch_id` idempotency together cover replay: an attacker who captures a batch on the wire cannot replay outside the window, or inside the window after the hub has seen `batch_id`. `body_sha256` prevents body substitution under a reused JWS. Hub state cost is bounded — an ephemeral seen-set with TTL = window, sized by `node_count × batch_rate × window`.
+
+#### Key rotation interaction
+
+`kid` is the node's DID URL — stable across rotations per ADR-0007. The DID resolver returns the public key valid at the JWS `iat` timestamp; mid-flight rotations resolve naturally if the resolver retains key history, with the on-chain ADR-0015 rotation-event witness as a fallback. The hub never holds per-node key material out of band.
+
+#### What the JWS does *not* cover
+
+- **Confidentiality.** JWS is signing, not encryption. TLS handles wire confidentiality. If payload confidentiality matters (the redaction-policy flag from ADR-0012), wrap the body in JWE separately.
+- **Transport-path attestation.** JWS authenticates the node, not the network hop. See "RFC 9421 as an operator-side option" below for HTTP-hop attestation.
+- **Per-receipt re-signing.** Receipts are already individually signed (ADR-0001). The JWS is a *batch wrapper*; the hub re-verifies each receipt under the node DID before persisting.
+
+#### JWS vs RFC 9421, and why we land on a hybrid
+
+JWS and [RFC 9421 HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421) solve overlapping but distinct problems. JWS produces a self-contained signed artifact independent of the HTTP transport; RFC 9421 binds the signature to specific HTTP request components (method, target URI, selected headers, body via `Content-Digest` per [RFC 9530](https://www.rfc-editor.org/rfc/rfc9530)). The asymmetry that decides the design:
+
+- **JWS artifact survives transport.** A compact JWS is persistable in the hub's database and replayable for forensic verification years later, regardless of what reverse proxies or gateways did to the original request. An RFC 9421 signature is bound to the HTTP request that carried it; replay requires reconstructing the exact original method/target/header set, and any intermediary that mutated `Host`, `X-Forwarded-*`, `Date`, etc. either invalidates verification or forces those headers out of the covered set.
+- **Library maturity.** JOSE is a decade old with multiple mature libraries per language. RFC 9421 (Feb 2024) is younger, with uneven coverage across Go/TS/Py. Three SDKs implementing RFC 9421 independently is real interop risk; three SDKs reusing JOSE is not.
+- **Composition with ADR-0003.** Receipts already live in the JOSE/JWS world via the W3C VC envelope. JWS keeps us in one signing framework end-to-end.
+- **Transport-portability.** If we ever add a non-HTTP ingest path (Kafka, NATS, S3 file-drop, P2P agent-to-agent), the JWS travels unchanged. An RFC 9421 signature does not.
+- **What RFC 9421 is genuinely better at**: HTTP-hop attestation — proving the exact HTTP request reached the hub unmodified, with gateway re-signing patterns to compose across intermediaries. That property matters in deployments behind corporate API gateways but is *additional* to integrity, not a substitute for it.
+
+**Decision: JWS is the SDK-level signature; RFC 9421 is an operator-side option, not in SDK scope.** Every node SDK produces a JWS-signed batch; every hub verifies one. Operators with stricter HTTP-hop posture stack RFC 9421 between their gateway and the hub via an Nginx/Envoy module or sidecar — this is a deployment concern, handled outside the daemon binary. The hybrid keeps the SDK surface minimal and library-mature while leaving the door open for HTTP-hop attestation wherever an operator wants it. RFC 9421 is *additional* to the JWS, not a replacement, so adopting it later at a specific deployment does not break interop with SDKs that only know JWS.
 
 ### 5. Per-node chains preserved at the hub — no merged chain
 
@@ -147,10 +195,6 @@ hub agent-receipts daemon (--ingest mode)
 - **New API-key credential instead of reusing the daemon key.** Hub-issued bearer tokens or operator-issued API keys. Rejected: introduces a second secret per node, a second rotation story, a second compromise surface. The daemon's Ed25519 key is already the node's strongest authentication primitive; using it for transport auth via JWS reuses what is already there.
 
 - **Hub as trust root (no external anchoring).** Drop the S3 anchor and treat the hub's local store as the authoritative aggregation point. Rejected: a hub compromise then has no external check, and ADR-0015's post-compromise integrity claim has no anchor to land on. The whole point of the sink is to be something the hub does not control.
-
-## Open questions
-
-- **JWS vs HTTP Message Signatures (RFC 9421).** Proposal above is JWS, justified in §4. Open for community input — primarily on whether deployments that put the hub behind an HTTP-aware gateway would prefer the gateway to sign at the HTTP layer rather than relaying a JWS. The two are not mutually exclusive; the question is the default.
 
 ## Related ADRs
 
