@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -151,11 +153,14 @@ func serve() {
 	approvalURL := ""
 
 	// Pending tool call requests (keyed by JSON-RPC id). We only need to
-	// carry the tool name and arguments from the request to the response
-	// so we can populate the daemon emitter event on completion.
+	// carry the tool name and the already-marshaled argument bytes from the
+	// request to the response so we can populate the daemon emitter event
+	// on completion. Storing the bytes (rather than the unmarshaled map)
+	// keeps the block/pause/success emit paths identical and avoids a
+	// second `json.Marshal` per call.
 	type pendingCall struct {
-		toolName  string
-		arguments map[string]any
+		toolName string
+		argJSON  json.RawMessage
 	}
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
@@ -193,7 +198,10 @@ func serve() {
 	// -http=none is NOT treated as misconfiguration.
 	emitStartupBanner(engine.Describe(), approvalURL, approverDisabled, httpExplicit)
 
-	handler := func(direction string, raw []byte, msg *proxy.Message) *proxy.HandlerResult {
+	// `raw` is unused now that the daemon owns persistence/redaction; the
+	// parameter is kept (named `_`) because proxy.HandlerFn dictates the
+	// signature.
+	handler := func(direction string, _ []byte, msg *proxy.Message) *proxy.HandlerResult {
 		jsonrpcID := ""
 		if msg != nil {
 			jsonrpcID = msg.IDString()
@@ -214,12 +222,20 @@ func serve() {
 					RiskScore:     riskScore,
 				})
 
-				argJSON, _ := json.Marshal(params.Arguments)
+				argJSON, marshalErr := json.Marshal(params.Arguments)
+				if marshalErr != nil {
+					// Defensive: params.Arguments came out of json.Unmarshal
+					// (proxy.Message), so re-marshaling cannot realistically
+					// fail. Log and emit nil input rather than dropping the
+					// receipt entirely.
+					log.Printf("mcp-proxy: marshal arguments for daemon: %v; emitting nil input", marshalErr)
+					argJSON = nil
+				}
 
 				pendingMu.Lock()
 				pendingCalls[jsonrpcID] = &pendingCall{
-					toolName:  toolName,
-					arguments: params.Arguments,
+					toolName: toolName,
+					argJSON:  argJSON,
 				}
 				pendingMu.Unlock()
 
@@ -229,7 +245,7 @@ func serve() {
 					pendingMu.Lock()
 					delete(pendingCalls, jsonrpcID)
 					pendingMu.Unlock()
-					emitToContext(em, *serverName, toolName, json.RawMessage(argJSON), nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied")
+					emitToContext(em, *serverName, toolName, argJSON, nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied")
 					return &proxy.HandlerResult{
 						Block:          true,
 						ClientResponse: proxy.MakeErrorResponse(msg.ID, -32001, fmt.Sprintf("blocked by policy: %s", decision.Reason)),
@@ -255,7 +271,7 @@ func serve() {
 						pendingMu.Lock()
 						delete(pendingCalls, jsonrpcID)
 						pendingMu.Unlock()
-						emitToContext(em, *serverName, toolName, json.RawMessage(argJSON), nil, message, "denied")
+						emitToContext(em, *serverName, toolName, argJSON, nil, message, "denied")
 						return &proxy.HandlerResult{
 							Block: true,
 							ClientResponse: proxy.MakeErrorResponseWithData(
@@ -319,13 +335,7 @@ func serve() {
 				if resultStr != "" && json.Valid([]byte(resultStr)) {
 					outputRaw = json.RawMessage(resultStr)
 				}
-				var inputRaw json.RawMessage
-				if b, marshalErr := json.Marshal(pc.arguments); marshalErr == nil {
-					inputRaw = json.RawMessage(b)
-				} else {
-					log.Printf("mcp-proxy: marshal arguments for daemon: %v; emitting nil input", marshalErr)
-				}
-				emitToContext(em, *serverName, pc.toolName, inputRaw, outputRaw, errorStr, "allowed")
+				emitToContext(em, *serverName, pc.toolName, pc.argJSON, outputRaw, errorStr, "allowed")
 			}
 		}
 
@@ -529,19 +539,34 @@ func xdgDataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
-// noteLegacyAuditDB logs a one-line INFO message at startup if the legacy
-// proxy-owned audit DB is still on disk. Before v0.9.0 the proxy maintained
-// its own SQLite store at $XDG_DATA_HOME/agent-receipts/audit.db; the daemon
-// is now the sole writer and the file is safe to delete. The proxy does not
-// remove it automatically — operators may want to inspect or archive it.
+// noteLegacyAuditDB prints a one-line nudge to stderr at startup if the
+// legacy proxy-owned audit DB is still on disk. Before v0.9.0 the proxy
+// maintained its own SQLite store at $XDG_DATA_HOME/agent-receipts/audit.db;
+// the daemon is now the sole writer and the file is safe to delete. The
+// proxy does not remove it automatically — operators may want to inspect or
+// archive it.
+//
+// Uses fmt.Fprintf rather than log.Printf so the [INFO] tag is not wrapped
+// by the standard log timestamp prefix (matching emitStartupBanner's style).
+// Errors from os.Stat other than ErrNotExist (e.g. a permissions error on
+// the parent directory) still warrant a soft notice so operators in that
+// state are not silently denied the warning.
 func noteLegacyAuditDB() {
 	dh := xdgDataHome()
 	if dh == "" {
 		return
 	}
 	legacy := filepath.Join(dh, "agent-receipts", "audit.db")
-	if _, err := os.Stat(legacy); err == nil {
-		log.Printf("mcp-proxy: [INFO] legacy audit DB at %s is no longer used; safe to delete. Receipts now live in the daemon's store (see `agent-receipts list`).", legacy)
+	_, err := os.Stat(legacy)
+	switch {
+	case err == nil:
+		fmt.Fprintf(os.Stderr,
+			"mcp-proxy: [INFO] legacy audit DB at %s is no longer used; safe to delete. Receipts now live in the daemon's store (see `agent-receipts list`).\n",
+			legacy)
+	case !errors.Is(err, fs.ErrNotExist):
+		fmt.Fprintf(os.Stderr,
+			"mcp-proxy: [INFO] could not check for legacy audit DB at %s: %v (the file may exist but be unreadable; the daemon's store is authoritative regardless).\n",
+			legacy, err)
 	}
 }
 
