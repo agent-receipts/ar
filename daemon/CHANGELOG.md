@@ -5,6 +5,21 @@ All notable changes to `agent-receipts-daemon` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-05-18
+
+### Security
+
+- **Redact bare JWT tokens in receipts** ([#451](https://github.com/agent-receipts/ar/pull/451),
+  closes [#450](https://github.com/agent-receipts/ar/issues/450)):
+  The pipeline redactor missed JWTs that were not prefixed with `Bearer ` and
+  not embedded in a URL query string. Concretely, `cat ~/.npmrc` from a Claude
+  Code `Bash` tool call produced a receipt with the npm `_authToken=eyJ…` value
+  in cleartext. Added a `jwt` built-in pattern (`eyJ…\.eyJ…\.…`) anchored on
+  the base64url-encoded `{"` prefix of the header and payload segments, which
+  keeps the pattern specific to real JWTs and avoids matching arbitrary dotted
+  base64 strings. The signature segment may be empty (covers unsigned
+  `alg=none` tokens).
+
 ## [0.10.0] - 2026-05-17
 
 ### Added
