@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-05-12) — Phase A only. Phase B (`did:web` resolution) and the pluggable resolver interface are designed but not yet scheduled. See *Implementation phasing* below.
+Accepted (2026-05-12) — **decision only**. Phase A (the work described in *Implementation phasing* below) is **scoped but not started**: `did:key` resolution is not implemented in any SDK and `did:agent:` / `did:user:` placeholders still appear in the spec, examples, and the daemon's `did:user:unknown` default (`daemon/internal/pipeline/build.go`). Phase B and Phase C are deferred behind Phase A.
 
 ## Context
 
@@ -44,7 +44,7 @@ A tiered approach:
 
 ## Implementation phasing
 
-- **Phase A (now).** All SDKs implement `did:key` generation and resolution as a built-in capability. Existing `did:agent:` / `did:user:` placeholders in examples and test vectors are replaced with `did:key` equivalents. The protocol's verification algorithm is updated to require `did:key` resolution as an explicit step.
+- **Phase A (scoped, not started).** All SDKs implement `did:key` generation and resolution as a built-in capability. Existing `did:agent:` / `did:user:` placeholders in examples and test vectors are replaced with `did:key` equivalents, and the daemon's hardcoded `did:user:unknown` default in `daemon/internal/pipeline/build.go` is removed. The protocol's verification algorithm is updated to require `did:key` resolution as an explicit step. Trigger to start: someone is in a position to do the SDK + spec + daemon work end-to-end; absent that, this remains a decision without an owner.
 - **Phase B (deferred).** `did:web` resolution lands in all SDKs along with the pluggable resolver interface. Trigger conditions: (a) a production deployment needs organizational anchoring; (b) a verifier needs to validate receipts whose issuer has rotated keys (ADR-0015 Phase A reaches the daemon); (c) `did:web` is required for cross-org interoperability with a named consumer.
 - **Phase C (deferred).** Verifier-side DID Document caching/pinning, historical resolution for long-lived receipts, and `did:tdw` evaluation.
 

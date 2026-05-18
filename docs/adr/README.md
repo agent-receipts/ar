@@ -20,14 +20,14 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0004](0004-sqlite-for-local-receipt-storage.md) | SQLite for Local Receipt Storage | Accepted |
 | [ADR-0005](0005-independent-sdk-implementations.md) | Independent SDK Implementations (Not Code Generation) | Accepted |
 | [ADR-0006](0006-yaml-for-policy-rules.md) | YAML for Policy Rule Configuration (mcp-proxy) | Accepted |
-| [ADR-0007](0007-did-method-strategy.md) | DID Method Strategy | Accepted (Phase A) |
+| [ADR-0007](0007-did-method-strategy.md) | DID Method Strategy | Accepted (decision only; Phase A scoped, not started) |
 | [ADR-0008](0008-response-hashing-and-chain-completeness.md) | Response Hashing and Chain Completeness | Accepted |
 | [ADR-0009](0009-canonicalization-and-schema-consistency.md) | Canonicalisation Profile and VC Field Name Commitment | Accepted |
 | [ADR-0010](0010-daemon-process-separation.md) | Daemon Process Separation for Signing and Storage | Accepted |
 | [ADR-0011](0011-zod-for-runtime-validation.md) | Zod for runtime schema validation | Accepted |
-| [ADR-0012](0012-payload-disclosure-policy.md) | Payload Disclosure Policy (`parameterDisclosure`) | Accepted (partial impl) |
-| [ADR-0013](0013-claude-code-hook-channel.md) | claude_code_hook Emission Channel | Proposed (deferred) |
-| [ADR-0014](0014-codex-hook-channel.md) | codex_hook Emission Channel | Proposed (deferred) |
+| [ADR-0012](0012-payload-disclosure-policy.md) | Payload Disclosure Policy (`parameterDisclosure`) | Accepted (partial impl; plaintext opt-in shipped, envelope pending) |
+| [ADR-0013](0013-claude-code-hook-channel.md) | claude_code_hook Emission Channel | Accepted (Phase A shipped in `hook/` v0.10.0) |
+| [ADR-0014](0014-codex-hook-channel.md) | codex_hook Emission Channel | Proposed (substrate shipped, Codex reader pending) |
 | [ADR-0015](0015-key-rotation-byok-anchoring.md) | Key Rotation, BYOK Abstraction, and External Anchoring | Accepted (Phase A in progress) |
 | [ADR-0016](0016-mcp-proxy-audit-encryption.md) | Audit Store Encryption at Rest (mcp-proxy) | Accepted |
 

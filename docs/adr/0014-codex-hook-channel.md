@@ -2,15 +2,20 @@
 
 ## Status
 
-Proposed — **deferred pending integration demand** (2026-05-12). The design is recorded so it is not re-derived from scratch when needed; no implementation work is scheduled. Revisit when a user or downstream caller requests Codex receipt emission, or in tandem with ADR-0013 if `claude_code_hook` is implemented first. See *Deferral note* below.
+Proposed — substrate shipped, Codex format reader not implemented (2026-05-18). ADR-0013's hook binary (`hook/cmd/agent-receipts-hook/`) shipped on 2026-05-16 with a `formats` map ready to accept additional runtimes; adding Codex is a single-entry registration plus a `readCodex` implementation. No code work is scheduled. See *Implementation note* below.
 
-## Deferral note
+## Implementation note
 
-This ADR is intentionally parked alongside ADR-0013. Codex inherits the same hook-channel substrate Claude Code would and adds a coverage-block schema specific to Codex's sandbox model; building either channel in isolation duplicates work, and there is no current pull for either.
+The substrate this ADR depends on already exists: `hook/cmd/agent-receipts-hook/main.go` defines `formats["claude-code"] = readClaudeCode`, and the dispatch is structured to accept additional runtimes without binary or interface changes. Landing Codex means:
 
-Trigger conditions for picking this back up: (a) a user, customer, or maintainer asks for Codex receipt emission; (b) ADR-0013 is being implemented and the shared hook substrate should be landed once for both channels; or (c) Codex's sandbox-coverage model becomes interesting to a separate workstream (e.g. an audit/compliance integration) that needs receipts as evidence.
+1. Implementing `readCodex` (analogous to `readClaudeCode` in `hook/cmd/agent-receipts-hook/claude_code.go`) to parse Codex's PreToolUse / PostToolUse stdin frames.
+2. Registering it as `formats["codex"]`.
+3. Extending the `detect()` function to recognise Codex-shaped payloads (and/or accepting `--format codex`).
+4. Implementing the coverage-block schema this ADR specifies — the Codex-specific piece that doesn't fall out of the substrate for free.
 
-If picked up alongside ADR-0013, consider collapsing both into a single "agent hook channel" ADR — most of the design is shared, and the Codex-specific concerns (sandbox coverage, hook-gap enumeration) are well-suited to being a section within a unified document rather than a parallel ADR.
+Trigger conditions for picking this up: (a) a user, customer, or maintainer asks for Codex receipt emission; (b) Codex's sandbox-coverage model becomes interesting to a separate workstream (audit/compliance, threat-model integration) that needs receipts as evidence.
+
+If implemented, consider whether ADR-0013 and ADR-0014 should collapse into a single "agent hook channel" ADR — most of the design is now shared at the substrate level, and the Codex-specific concerns (sandbox coverage, hook-gap enumeration) read naturally as a section within a unified document rather than a parallel ADR. The shipped one-binary-many-formats shape makes that consolidation more natural than it was when these ADRs were drafted.
 
 ## Context
 

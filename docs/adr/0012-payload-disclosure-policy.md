@@ -108,7 +108,8 @@ What has landed:
 
 - The field has been renamed across SDKs from `parameters_preview` to `parameters_disclosure` (TS SDK ≥0.6.0; Go and Python SDKs carry the renamed field).
 - The config knob is named `parameterDisclosure` and the existing OpenClaw value space (`false | true | "high" | string[]`) is honoured at the config layer.
-- The hash-only default holds: no channel populates `parameters_disclosure` by default.
+- The daemon ships a `--parameter-disclosure` opt-in flag (PRs #427, #429); when enabled, the receipt pipeline writes redacted plaintext to `parameters_disclosure["input"]` and `parameters_disclosure["output"]` (`daemon/internal/pipeline/build.go`). **This is the legacy plaintext-in-body shape, not the envelope this ADR commits to** — it ships now because the field has redaction in front of it, and ships behind an explicit operator opt-in so it cannot be enabled silently.
+- The hash-only default holds: no channel populates `parameters_disclosure` unless the operator opts in.
 
 What has **not** landed and is required before disclosure is enabled in any non-experimental channel:
 
@@ -116,7 +117,7 @@ What has **not** landed and is required before disclosure is enabled in any non-
 - The forensic key-pair lifecycle (auto-generation, on-disk layout next to the signing key, CLI for export/import).
 - Cross-SDK canonical-JSON equivalence tests for the envelope.
 
-Until those land, callers **MUST NOT** populate `parameters_disclosure` from raw tool arguments — the field exists as a forward-compatible placeholder, not a plaintext-payload channel. The "plaintext-in-body" mode of the legacy TS `parameters_preview` is explicitly removed as a supported behaviour (see *Consequences → existing TS field is repurposed*).
+Until those land, the `--parameter-disclosure` daemon flag is the only sanctioned way to populate the field, and it does so with **redacted plaintext** as an explicit interim step — not the envelope this ADR specifies. Callers other than the daemon's opt-in pipeline **MUST NOT** populate `parameters_disclosure` directly from raw tool arguments; the field is otherwise a forward-compatible placeholder for the envelope. The "plaintext-in-body" mode of the legacy TS `parameters_preview` (as an SDK-public surface) is explicitly removed as a supported behaviour (see *Consequences → existing TS field is repurposed*).
 
 This gap is tracked as the remainder of **Phase A**. Phase B and Phase C are unchanged and remain sequenced behind daemon work (ADR-0010) and enterprise pull respectively.
 

@@ -2,15 +2,27 @@
 
 ## Status
 
-Proposed — **deferred pending integration demand** (2026-05-12). The design is recorded so it is not re-derived from scratch when needed; no implementation work is scheduled. Revisit when a user or downstream caller requests Claude Code receipt emission. See *Deferral note* below.
+Accepted (2026-05-12). Phase A shipped 2026-05-16 in `hook/` v0.10.0 (`agent-receipts-hook` binary). See *Implementation status* below — design landed with one delta (single binary + format map, not per-runtime binaries) and PostToolUse / PreToolUse only (SessionStart and UserPromptSubmit not yet implemented).
 
-## Deferral note
+## Implementation status (as of 2026-05-18)
 
-This ADR is intentionally parked. The architectural decision is sound and the design is complete enough to start from, but there is no current user or integration pulling for a Claude Code receipt channel. Surface area is large (plugin shape, emitter binary, per-session drop files, runtime-directory handling, hook-event mapping) and the protocol-level value is small until someone is going to consume the receipts.
+Shipped:
 
-Trigger conditions for picking this back up: (a) a user, customer, or maintainer asks for Claude Code receipt emission; (b) ADR-0014 (`codex_hook`) is being implemented and we want to land the shared hook substrate once; or (c) the channel-space enumeration in ADR-0010 needs to be extended in a way that benefits from a concrete second example.
+- `hook/cmd/agent-receipts-hook/` — short-lived binary, reads JSON from stdin, maps to `emitter.Event`, forwards to `agent-receipts-daemon` over AF_UNIX. Released as `hook/v0.10.0` (2026-05-16); installable via `brew install agent-receipts/tap/agent-receipts-hook`.
+- **PostToolUse** mapped to `decision: "allowed"`; **PreToolUse** mapped to `decision: "pending"` — full intent + outcome pairs when both are configured in `~/.claude/settings.json`.
+- Runtime detection from the stdin payload (`hook_event_name`), with `CLAUDE_SESSION_ID` env var as a fallback signal (`hook/cmd/agent-receipts-hook/main.go`).
+- Fail-hard exit semantics once a runtime is identified (exit 1 + stderr); silent exit 0 only when no runtime can be detected.
 
-If picked up, also revisit whether ADR-0013 and ADR-0014 should collapse into a single "agent hook channel" ADR — the designs overlap enough that one document may serve both better than two parallel ones.
+Design deltas from this ADR (worth recording, not blockers):
+
+- **One binary, runtime dispatch via a `formats` map**, rather than one binary per runtime. `formats["claude-code"] = readClaudeCode` in `hook/cmd/agent-receipts-hook/main.go`; adding ADR-0014's Codex reader is a one-entry change to the same map. Cleaner than the per-runtime emitter shape the ADR enumerated.
+- **Channel string is `claude-code`** (dash) in `emitter.Event.Channel`, not `claude_code_hook` (the ADR title's convention). Consistent with how the binary names its formats; the ADR title is conceptual, the channel value is what verifiers see.
+- **`tool_use_id` is parsed but not forwarded.** The emitter wire format has no correlation-ID field. Noted in `hook/cmd/agent-receipts-hook/claude_code.go` as pending an ADR-0010 amendment; not a defect in this ADR but tracked here for visibility.
+
+Not yet shipped:
+
+- **SessionStart** and **UserPromptSubmit** hook events. The ADR enumerates both; only PostToolUse and PreToolUse are wired. SessionStart's `session_id` scoping is partially covered today because the existing event readers extract `session_id` from the stdin frame, but no dedicated event-type emission exists.
+- **Per-session drop-counter persistence** described in the ADR's design isn't in the binary. The hook is purely stateless and exits immediately — drop accounting would have to live in the daemon if added later.
 
 ## Context
 
