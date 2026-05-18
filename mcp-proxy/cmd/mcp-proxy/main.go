@@ -150,12 +150,12 @@ func serve() {
 	approvals := audit.NewApprovalManager()
 	approvalURL := ""
 
-	// Pending tool call requests (keyed by JSON-RPC id).
+	// Pending tool call requests (keyed by JSON-RPC id). We only need to
+	// carry the tool name and arguments from the request to the response
+	// so we can populate the daemon emitter event on completion.
 	type pendingCall struct {
-		toolName    string
-		arguments   map[string]any
-		timestamp   time.Time
-		forwardedAt time.Time
+		toolName  string
+		arguments map[string]any
 	}
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
@@ -216,12 +216,10 @@ func serve() {
 
 				argJSON, _ := json.Marshal(params.Arguments)
 
-				requestedAt := time.Now()
 				pendingMu.Lock()
 				pendingCalls[jsonrpcID] = &pendingCall{
 					toolName:  toolName,
 					arguments: params.Arguments,
-					timestamp: requestedAt,
 				}
 				pendingMu.Unlock()
 
@@ -285,14 +283,6 @@ func serve() {
 				if decision.Action == "flag" {
 					log.Printf("mcp-proxy: FLAGGED %s (rule: %s, risk: %d)", toolName, decision.RuleName, riskScore)
 				}
-
-				// Record when request is forwarded to upstream so we can derive
-				// the upstream round-trip time for diagnostics if needed.
-				pendingMu.Lock()
-				if pc, ok := pendingCalls[jsonrpcID]; ok {
-					pc.forwardedAt = time.Now()
-				}
-				pendingMu.Unlock()
 			}
 		}
 
