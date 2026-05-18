@@ -12,12 +12,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
@@ -47,32 +45,11 @@ func main() {
 		case "-version", "--version":
 			fmt.Printf("mcp-proxy %s\n", resolveVersion())
 			return
-		case "list":
-			cmdList(os.Args[2:])
-			return
-		case "inspect":
-			cmdInspect(os.Args[2:])
-			return
-		case "verify":
-			cmdVerify(os.Args[2:])
-			return
-		case "export":
-			cmdExport(os.Args[2:])
-			return
-		case "stats":
-			cmdStats(os.Args[2:])
-			return
-		case "timing":
-			cmdTiming(os.Args[2:])
-			return
 		case "doctor":
 			cmdDoctor(os.Args[2:])
 			return
 		case "init":
 			cmdInit(os.Args[2:])
-			return
-		case "audit-secrets":
-			cmdAuditSecrets(os.Args[2:])
 			return
 		case "serve":
 			os.Args = append(os.Args[:1], os.Args[2:]...)
@@ -85,18 +62,17 @@ func main() {
 
 func serve() {
 	var (
-		dbPath             = flag.String("db", defaultDBPath("audit.db"), "SQLite audit database path")
-		rulesPath          = flag.String("rules", "", "Policy rules (YAML file)")
-		redactPatternsPath = flag.String("redact-patterns", "", "Path to YAML file with custom redaction patterns")
-		serverName         = flag.String("name", "", "Server name for audit trail")
-		httpAddr           = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
-		approvalWait       = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
-		socketPath         = flag.String("socket", emitter.DefaultSocketPath(), "Unix-domain socket for the agent-receipts daemon (ADR-0010). Defaults to AGENTRECEIPTS_SOCKET if set; explicit --socket wins. Pass --socket=\"\" to disable emission entirely. Emit errors are logged but do not block tool calls.")
+		rulesPath    = flag.String("rules", "", "Policy rules (YAML file)")
+		serverName   = flag.String("name", "", "Server name for audit trail")
+		httpAddr     = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
+		approvalWait = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
+		socketPath   = flag.String("socket", emitter.DefaultSocketPath(), "Unix-domain socket for the agent-receipts daemon (ADR-0010). Defaults to AGENTRECEIPTS_SOCKET if set; explicit --socket wins. Pass --socket=\"\" to disable emission entirely. Emit errors are logged but do not block tool calls.")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
-		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with audit, receipts, and policy enforcement.\n\n")
-		fmt.Fprintf(os.Stderr, "Subcommands: serve, list, inspect, verify, export, stats, timing, doctor, init, audit-secrets\n\n")
+		fmt.Fprintf(os.Stderr, "  Wraps an MCP server with policy enforcement and forwards tool-call\n")
+		fmt.Fprintf(os.Stderr, "  events to the agent-receipts daemon for signing and persistence.\n\n")
+		fmt.Fprintf(os.Stderr, "Subcommands: serve, doctor, init\n\n")
 		fmt.Fprintf(os.Stderr, "  -version\n\tPrint version and exit\n")
 		flag.PrintDefaults()
 	}
@@ -127,21 +103,12 @@ func serve() {
 		*serverName = parts[len(parts)-1]
 	}
 
-	// Open audit store.
-	if err := ensureDBDir(*dbPath); err != nil {
-		log.Fatalf("mcp-proxy: create audit db directory: %v", err)
-	}
-	auditDB, err := audit.Open(*dbPath)
-	if err != nil {
-		log.Fatalf("mcp-proxy: open audit db: %v", err)
-	}
-	defer auditDB.Close()
-
 	sessionID := uuid.New().String()
-	if err := auditDB.CreateSession(sessionID, *serverName, command); err != nil {
-		log.Fatalf("mcp-proxy: create session: %v", err)
-	}
-	defer auditDB.EndSession(sessionID)
+
+	// One-shot legacy notice. Operators upgrading from <v0.9.0 may have a
+	// ~/.local/share/agent-receipts/audit.db left from the old local store;
+	// the daemon's store at the same directory is authoritative now.
+	noteLegacyAuditDB()
 
 	// Wire the daemon emitter (ADR-0010). The daemon is the sole receipt writer;
 	// the proxy is a thin emitter. WithStrictErrors() makes Emit return an error
@@ -168,6 +135,7 @@ func serve() {
 	// Load policy rules.
 	var rules []policy.Rule
 	if *rulesPath != "" {
+		var err error
 		rules, err = policy.LoadRules(*rulesPath)
 		if err != nil {
 			log.Fatalf("mcp-proxy: load rules: %v", err)
@@ -177,35 +145,6 @@ func serve() {
 	}
 	engine := policy.NewEngine(rules)
 
-	// Build redactor (built-ins + optional custom patterns).
-	var customPatterns []*regexp.Regexp
-	if *redactPatternsPath != "" {
-		np, err := audit.LoadPatterns(*redactPatternsPath)
-		if err != nil {
-			log.Fatalf("mcp-proxy: load redact patterns: %v", err)
-		}
-		for _, p := range np {
-			customPatterns = append(customPatterns, p.Re)
-		}
-	}
-	redactor := audit.NewRedactor(customPatterns)
-
-	// Encryption.
-	var encryptor *audit.Encryptor
-	if key := os.Getenv("BEACON_ENCRYPTION_KEY"); key != "" {
-		salt, err := auditDB.EncryptionSalt()
-		if err != nil {
-			log.Fatalf("mcp-proxy: init encryption salt: %v", err)
-		}
-		encryptor, err = audit.NewEncryptor(key, salt)
-		if err != nil {
-			log.Fatalf("mcp-proxy: init encryption: %v", err)
-		}
-	}
-
-	// Intent tracker.
-	intentTracker := audit.NewIntentTracker(auditDB, sessionID, 5*time.Second)
-
 	// Approval channels for pause actions.
 	approvalToken := generateToken(32)
 	approvals := audit.NewApprovalManager()
@@ -213,19 +152,10 @@ func serve() {
 
 	// Pending tool call requests (keyed by JSON-RPC id).
 	type pendingCall struct {
-		msgID          int64
-		toolName       string
-		arguments      map[string]any
-		rawArgs        string
-		opType         string
-		riskScore      int
-		reasons        []string
-		policyAct      string
-		approvedBy     string
-		timestamp      time.Time
-		policyEvalUs   int64
-		approvalWaitUs int64
-		forwardedAt    time.Time
+		toolName    string
+		arguments   map[string]any
+		timestamp   time.Time
+		forwardedAt time.Time
 	}
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
@@ -264,45 +194,9 @@ func serve() {
 	emitStartupBanner(engine.Describe(), approvalURL, approverDisabled, httpExplicit)
 
 	handler := func(direction string, raw []byte, msg *proxy.Message) *proxy.HandlerResult {
-		method := ""
 		jsonrpcID := ""
 		if msg != nil {
-			method = msg.Method
 			jsonrpcID = msg.IDString()
-		}
-
-		// Redact and optionally encrypt before storing.
-		rawStr := string(raw)
-		if len(rawStr) > 512*1024 {
-			// Truncate at a rune boundary to avoid invalid UTF-8.
-			truncated := rawStr[:512*1024]
-			for i := len(truncated) - 1; i >= len(truncated)-4 && i >= 0; i-- {
-				if utf8.RuneStart(truncated[i]) {
-					truncated = truncated[:i]
-					break
-				}
-			}
-			rawStr = truncated + "...[truncated]"
-		}
-		redactedRaw := redactor.Redact(rawStr)
-		skipAudit := false
-		if encryptor != nil {
-			enc, encErr := encryptor.Encrypt(redactedRaw)
-			if encErr != nil {
-				log.Printf("mcp-proxy: encrypt message: %v", encErr)
-				skipAudit = true
-			} else {
-				redactedRaw = enc
-			}
-		}
-
-		var msgID int64
-		if !skipAudit {
-			var err error
-			msgID, err = auditDB.LogMessage(sessionID, direction, jsonrpcID, method, redactedRaw)
-			if err != nil {
-				log.Printf("mcp-proxy: log message: %v", err)
-			}
 		}
 
 		// Client → Server: intercept tool calls.
@@ -311,45 +205,25 @@ func serve() {
 			if params != nil {
 				toolName := proxy.StripMCPPrefix(params.Name)
 				opType := audit.ClassifyOperation(toolName)
-				riskScore, reasons := audit.ScoreRisk(toolName, params.Arguments)
+				riskScore, _ := audit.ScoreRisk(toolName, params.Arguments)
 
-				evalStart := time.Now()
 				decision := engine.Evaluate(policy.EvalContext{
 					ToolName:      toolName,
 					ServerName:    *serverName,
 					OperationType: opType,
 					RiskScore:     riskScore,
 				})
-				policyEvalUs := time.Since(evalStart).Microseconds()
 
 				argJSON, _ := json.Marshal(params.Arguments)
-				redactedArgs := redactor.Redact(string(argJSON))
-				if encryptor != nil {
-					enc, encErr := encryptor.Encrypt(redactedArgs)
-					if encErr != nil {
-						log.Printf("mcp-proxy: encrypt args: %v", encErr)
-					} else {
-						redactedArgs = enc
-					}
-				}
 
 				requestedAt := time.Now()
 				pendingMu.Lock()
 				pendingCalls[jsonrpcID] = &pendingCall{
-					msgID:        msgID,
-					toolName:     toolName,
-					arguments:    params.Arguments,
-					rawArgs:      redactedArgs,
-					opType:       opType,
-					riskScore:    riskScore,
-					reasons:      reasons,
-					policyAct:    decision.Action,
-					timestamp:    requestedAt,
-					policyEvalUs: policyEvalUs,
+					toolName:  toolName,
+					arguments: params.Arguments,
+					timestamp: requestedAt,
 				}
 				pendingMu.Unlock()
-
-				var approvedBy string
 
 				if decision.Action == "block" {
 					log.Printf("mcp-proxy: BLOCKED %s (rule: %s, risk: %d)", toolName, decision.RuleName, riskScore)
@@ -357,20 +231,7 @@ func serve() {
 					pendingMu.Lock()
 					delete(pendingCalls, jsonrpcID)
 					pendingMu.Unlock()
-					recordRejectedToolCall(auditDB, sessionID, rejectedCall{
-						requestMsgID: msgID,
-						toolName:     toolName,
-						arguments:    redactedArgs,
-						opType:       opType,
-						riskScore:    riskScore,
-						reasons:      reasons,
-						policyAction: "block",
-						requestedAt:  requestedAt,
-						policyEvalUs: policyEvalUs,
-					})
-					if em != nil {
-						emitToContext(em, *serverName, toolName, json.RawMessage(argJSON), nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied")
-					}
+					emitToContext(em, *serverName, toolName, json.RawMessage(argJSON), nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied")
 					return &proxy.HandlerResult{
 						Block:          true,
 						ClientResponse: proxy.MakeErrorResponse(msg.ID, -32001, fmt.Sprintf("blocked by policy: %s", decision.Reason)),
@@ -396,21 +257,7 @@ func serve() {
 						pendingMu.Lock()
 						delete(pendingCalls, jsonrpcID)
 						pendingMu.Unlock()
-						recordRejectedToolCall(auditDB, sessionID, rejectedCall{
-							requestMsgID:   msgID,
-							toolName:       toolName,
-							arguments:      redactedArgs,
-							opType:         opType,
-							riskScore:      riskScore,
-							reasons:        reasons,
-							policyAction:   "rejected",
-							requestedAt:    requestedAt,
-							policyEvalUs:   policyEvalUs,
-							approvalWaitUs: approvalWaitUs,
-						})
-						if em != nil {
-							emitToContext(em, *serverName, toolName, json.RawMessage(argJSON), nil, message, "denied")
-						}
+						emitToContext(em, *serverName, toolName, json.RawMessage(argJSON), nil, message, "denied")
 						return &proxy.HandlerResult{
 							Block: true,
 							ClientResponse: proxy.MakeErrorResponseWithData(
@@ -431,29 +278,16 @@ func serve() {
 							),
 						}
 					}
-					approvedBy = "http"
 					log.Printf("mcp-proxy: APPROVED %s", toolName)
 					emitPolicyEvent(toolName, decision.RuleName, riskScore, "pause", approvalURL, "approved", approvalWaitUs/1000)
-					pendingMu.Lock()
-					if pc, ok := pendingCalls[jsonrpcID]; ok {
-						pc.approvalWaitUs = approvalWaitUs
-					}
-					pendingMu.Unlock()
-				}
-
-				if approvedBy != "" {
-					pendingMu.Lock()
-					if pc, ok := pendingCalls[jsonrpcID]; ok {
-						pc.approvedBy = approvedBy
-					}
-					pendingMu.Unlock()
 				}
 
 				if decision.Action == "flag" {
 					log.Printf("mcp-proxy: FLAGGED %s (rule: %s, risk: %d)", toolName, decision.RuleName, riskScore)
 				}
 
-				// Record when request is forwarded to upstream for upstream_us calculation.
+				// Record when request is forwarded to upstream so we can derive
+				// the upstream round-trip time for diagnostics if needed.
 				pendingMu.Lock()
 				if pc, ok := pendingCalls[jsonrpcID]; ok {
 					pc.forwardedAt = time.Now()
@@ -462,7 +296,7 @@ func serve() {
 			}
 		}
 
-		// Server → Client: pair response with request.
+		// Server → Client: pair response with request and emit to daemon.
 		if direction == "server_to_client" && msg != nil && msg.IsResponse() {
 			pendingMu.Lock()
 			pc, ok := pendingCalls[jsonrpcID]
@@ -472,15 +306,6 @@ func serve() {
 			pendingMu.Unlock()
 
 			if ok {
-				now := time.Now()
-
-				// Compute upstream duration: time between forwarding and receiving response.
-				var upstreamUs *int64
-				if !pc.forwardedAt.IsZero() {
-					u := now.Sub(pc.forwardedAt).Microseconds()
-					upstreamUs = &u
-				}
-
 				resultStr := ""
 				errorStr := ""
 				if msg.Result != nil {
@@ -490,68 +315,16 @@ func serve() {
 					errorStr = string(msg.Error)
 				}
 
-				redactedResult := redactor.Redact(resultStr)
-				redactedError := redactor.Redact(errorStr)
-				if encryptor != nil {
-					if enc, encErr := encryptor.Encrypt(redactedResult); encErr != nil {
-						log.Printf("mcp-proxy: encrypt result: %v", encErr)
-					} else {
-						redactedResult = enc
-					}
-					if enc, encErr := encryptor.Encrypt(redactedError); encErr != nil {
-						log.Printf("mcp-proxy: encrypt error: %v", encErr)
-					} else {
-						redactedError = enc
-					}
-				}
-
-				policyEvalUs := &pc.policyEvalUs
-				var approvalWaitUs *int64
-				if pc.approvalWaitUs > 0 {
-					approvalWaitUs = &pc.approvalWaitUs
-				}
-
-				tcID, err := auditDB.InsertToolCall(audit.ToolCallRecord{
-					SessionID:      sessionID,
-					RequestMsgID:   pc.msgID,
-					ResponseMsgID:  msgID,
-					ToolName:       pc.toolName,
-					Arguments:      pc.rawArgs,
-					Result:         redactedResult,
-					Error:          redactedError,
-					OperationType:  pc.opType,
-					RiskScore:      pc.riskScore,
-					RiskReasons:    pc.reasons,
-					PolicyAction:   pc.policyAct,
-					ApprovedBy:     pc.approvedBy,
-					RequestedAt:    pc.timestamp,
-					RespondedAt:    now,
-					PolicyEvalUs:   policyEvalUs,
-					ApprovalWaitUs: approvalWaitUs,
-					UpstreamUs:     upstreamUs,
-				})
-				if err != nil {
-					log.Printf("mcp-proxy: insert tool call: %v", err)
-				}
-
-				// Track intent (only if tool call was stored).
-				if err == nil {
-					if trackErr := intentTracker.Track(tcID, pc.timestamp); trackErr != nil {
-						log.Printf("mcp-proxy: track intent: %v", trackErr)
-					}
-				}
-
-				// Emit the completed tool call to the daemon (ADR-0010). The daemon
-				// is the sole receipt writer; the proxy is a thin emitter. We use the
-				// pre-redaction arguments map held in pc.arguments and the
-				// pre-encryption result string so the daemon receives raw JSON.
-				// errorStr is raw JSON (the JSON-RPC error object from msg.Error).
+				// Forward the completed tool call to the daemon (ADR-0010). The
+				// daemon is the sole receipt writer: it owns redaction, hashing,
+				// signing, and persistence. We pass raw input/output JSON so the
+				// daemon's redactor sees the same bytes it will hash.
 				//
-				// decision is always "allowed" here: reaching this branch means the
-				// proxy did NOT block the call. The upstream success-vs-failure
-				// outcome is communicated separately via errorStr; the daemon derives
-				// outcome.status from both decision and the presence of a non-empty
-				// error (allowed+error → failure).
+				// decision is always "allowed" here: reaching this branch means
+				// the proxy did NOT block the call. Upstream success-vs-failure
+				// is communicated via errorStr; the daemon derives
+				// outcome.status from both decision and the presence of a
+				// non-empty error (allowed+error → failure).
 				var outputRaw json.RawMessage
 				if resultStr != "" && json.Valid([]byte(resultStr)) {
 					outputRaw = json.RawMessage(resultStr)
@@ -740,48 +513,8 @@ func emitPolicyEvent(tool, rule string, risk int, action, approverURL, outcome s
 		tool, rule, risk, action, approver, outcome, durationMs)
 }
 
-// rejectedCall is the subset of pendingCall fields needed to persist a
-// tool_calls row for a call that never reached the upstream server.
-type rejectedCall struct {
-	requestMsgID   int64
-	toolName       string
-	arguments      string
-	opType         string
-	riskScore      int
-	reasons        []string
-	policyAction   string
-	requestedAt    time.Time
-	policyEvalUs   int64
-	approvalWaitUs int64
-}
-
-func recordRejectedToolCall(db *audit.Store, sessionID string, rc rejectedCall) {
-	var approvalWait *int64
-	if rc.approvalWaitUs > 0 {
-		w := rc.approvalWaitUs
-		approvalWait = &w
-	}
-	eval := rc.policyEvalUs
-	if _, err := db.InsertToolCall(audit.ToolCallRecord{
-		SessionID:     sessionID,
-		RequestMsgID:  rc.requestMsgID,
-		ToolName:      rc.toolName,
-		Arguments:     rc.arguments,
-		OperationType: rc.opType,
-		RiskScore:     rc.riskScore,
-		RiskReasons:   rc.reasons,
-		PolicyAction:  rc.policyAction,
-		RequestedAt:   rc.requestedAt,
-		// RespondedAt intentionally zero — no upstream call happened.
-		PolicyEvalUs:   &eval,
-		ApprovalWaitUs: approvalWait,
-	}); err != nil {
-		log.Printf("mcp-proxy: insert rejected tool call: %v", err)
-	}
-}
-
-// userHomeDir is overridable in tests so the fallback path in defaultDBPath
-// can be exercised deterministically (clearing $HOME isn't enough on Unix —
+// userHomeDir is overridable in tests so xdgDataHome and noteLegacyAuditDB can
+// be exercised deterministically (clearing $HOME isn't enough on Unix —
 // os.UserHomeDir can still resolve via /etc/passwd).
 var userHomeDir = os.UserHomeDir
 
@@ -792,8 +525,8 @@ var userHomeDir = os.UserHomeDir
 // Per the XDG Base Directory spec, $XDG_DATA_HOME must be an absolute path;
 // a relative value is treated as invalid and ignored, falling back to the
 // $HOME/.local/share default. This protects against a misconfigured
-// environment silently relocating the receipt store under the working
-// directory of whichever process happened to start the proxy.
+// environment silently relocating files under the working directory of
+// whichever process happened to start the proxy.
 func xdgDataHome() string {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if dataHome != "" && filepath.IsAbs(dataHome) {
@@ -806,37 +539,20 @@ func xdgDataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
-// defaultDBPath returns an absolute path under the XDG data directory
-// (`$XDG_DATA_HOME/agent-receipts/<name>`, defaulting to
-// `~/.local/share/agent-receipts/<name>`) for the given filename. MCP clients
-// (Claude Desktop, Claude Code, Codex) spawn the proxy with an unwritable
-// cwd, so a relative default would crash on first open. Falls back to the
-// bare filename only if the data home directory cannot be resolved — callers
-// are expected to surface a clear error when that fallback is hit.
-func defaultDBPath(name string) string {
+// noteLegacyAuditDB logs a one-line INFO message at startup if the legacy
+// proxy-owned audit DB is still on disk. Before v0.9.0 the proxy maintained
+// its own SQLite store at $XDG_DATA_HOME/agent-receipts/audit.db; the daemon
+// is now the sole writer and the file is safe to delete. The proxy does not
+// remove it automatically — operators may want to inspect or archive it.
+func noteLegacyAuditDB() {
 	dh := xdgDataHome()
 	if dh == "" {
-		return name
+		return
 	}
-	return filepath.Join(dh, "agent-receipts", name)
-}
-
-// ensureDir creates the parent directory of path at 0o700 permissions.
-func ensureDir(path string) error {
-	dir := filepath.Dir(path)
-	if dir == "" || dir == "." {
-		return nil
+	legacy := filepath.Join(dh, "agent-receipts", "audit.db")
+	if _, err := os.Stat(legacy); err == nil {
+		log.Printf("mcp-proxy: [INFO] legacy audit DB at %s is no longer used; safe to delete. Receipts now live in the daemon's store (see `agent-receipts list`).", legacy)
 	}
-	return os.MkdirAll(dir, 0o700)
-}
-
-// ensureDBDir creates the parent directory of path with 0o700 permissions.
-// SQLite can create the database file itself but not the directory holding it.
-func ensureDBDir(path string) error {
-	if err := ensureDir(path); err != nil {
-		return fmt.Errorf("create database directory %q: %w", filepath.Dir(path), err)
-	}
-	return nil
 }
 
 func generateToken(n int) string {

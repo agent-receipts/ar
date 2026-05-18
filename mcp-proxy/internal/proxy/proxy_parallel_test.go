@@ -31,12 +31,7 @@ func buildTestBinary(t *testing.T, pkg, tmpDir, name string) string {
 // and returns stdin/stdout pipes, a stderr buffer, and the command.
 func startParallelProxy(t *testing.T, proxyBin, fakeserverBin string, extraEnv []string) (io.WriteCloser, io.ReadCloser, *bytes.Buffer, *exec.Cmd) {
 	t.Helper()
-	tmpDir := t.TempDir()
-
-	auditDB := filepath.Join(tmpDir, "audit.db")
-
 	cmd := exec.Command(proxyBin,
-		"--db", auditDB,
 		"--http", "none",
 		"--socket", "", // no daemon in test environment
 		"--", fakeserverBin,

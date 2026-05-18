@@ -9,6 +9,50 @@ This file starts at 0.6.2; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.9.0] - 2026-05-18
+
+### Removed (breaking)
+
+- **Local `audit.db` and parallel redaction/encryption layer**
+  ([#453](https://github.com/agent-receipts/ar/issues/453)). Finishes the
+  thin-emitter migration started in
+  [#421](https://github.com/agent-receipts/ar/pull/421): the proxy no longer
+  maintains its own SQLite store and no longer redacts or encrypts at rest.
+  The daemon is the sole writer and the sole redactor.
+  - Deleted packages: `internal/audit/{store,redact,redact_config,encrypt,intent}.go`
+    and their tests (~2500 LoC).
+  - Deleted CLI subcommand stubs (already deprecated in v0.8.0):
+    `mcp-proxy list/inspect/verify/export/stats/timing/audit-secrets`. Use
+    `agent-receipts list/verify` instead.
+  - Removed flags: `-db`, `-redact-patterns`. The proxy no longer accepts
+    these; passing them now exits with `flag provided but not defined`.
+  - Removed env var: `BEACON_ENCRYPTION_KEY` (the proxy had no remaining
+    at-rest data to encrypt once `audit.db` went away).
+  - Rejected tool calls (policy `block` and approval `deny/timeout`) are
+    still audited — the proxy already emits `Decision: "denied"` to the
+    daemon for these, so the daemon mints receipts for them.
+
+### Changed
+
+- **Startup nudge for legacy `audit.db`**: if
+  `$XDG_DATA_HOME/agent-receipts/audit.db` is present on serve startup, the
+  proxy logs one `[INFO]` line stating the file is no longer used and is
+  safe to delete. The proxy does NOT remove it — operators may want to
+  archive or inspect it first. Receipts going forward live in the daemon's
+  store (`agent-receipts list`).
+
+### Migration
+
+Operators upgrading from <0.9.0:
+- Remove `-db` / `-redact-patterns` / `BEACON_ENCRYPTION_KEY` from any
+  config snippets, systemd units, or wrapper scripts.
+- Delete `~/.local/share/agent-receipts/audit.db` (or wherever
+  `$XDG_DATA_HOME` resolved) at your leisure — the daemon's store at the
+  same directory continues to be authoritative.
+- If you were relying on `mcp-proxy list/inspect/verify/export/stats/timing`
+  output, switch to the equivalent `agent-receipts` CLI commands shipped
+  with the daemon.
+
 ## [0.8.0] - 2026-05-15
 
 ### Tests

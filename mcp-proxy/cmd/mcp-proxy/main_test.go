@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -60,93 +59,91 @@ func withXDGDataHome(t *testing.T, dir string) {
 	t.Setenv("XDG_DATA_HOME", dir)
 }
 
-func TestDefaultDBPathUsesHomeDir(t *testing.T) {
+func TestXDGDataHomeUsesHomeDir(t *testing.T) {
 	home := t.TempDir()
 	withHomeDirResolver(t, func() (string, error) { return home, nil })
 	withXDGDataHome(t, "") // ensure XDG_DATA_HOME does not override
 
-	got := defaultDBPath("audit.db")
-	want := filepath.Join(home, ".local", "share", "agent-receipts", "audit.db")
+	got := xdgDataHome()
+	want := filepath.Join(home, ".local", "share")
 	if got != want {
-		t.Fatalf("defaultDBPath(audit.db) = %q, want %q", got, want)
+		t.Fatalf("xdgDataHome() = %q, want %q", got, want)
 	}
 }
 
-func TestDefaultDBPathRespectsXDGDataHome(t *testing.T) {
+func TestXDGDataHomeRespectsAbsoluteEnv(t *testing.T) {
 	xdgDir := t.TempDir()
 	withXDGDataHome(t, xdgDir)
 
-	got := defaultDBPath("audit.db")
-	want := filepath.Join(xdgDir, "agent-receipts", "audit.db")
-	if got != want {
-		t.Fatalf("defaultDBPath(audit.db) = %q, want %q", got, want)
+	if got := xdgDataHome(); got != xdgDir {
+		t.Fatalf("xdgDataHome() = %q, want %q", got, xdgDir)
 	}
 }
 
-func TestDefaultDBPathIgnoresRelativeXDGDataHome(t *testing.T) {
+func TestXDGDataHomeIgnoresRelativeEnv(t *testing.T) {
 	home := t.TempDir()
 	withHomeDirResolver(t, func() (string, error) { return home, nil })
 	withXDGDataHome(t, "relative/xdg") // relative — must be ignored per XDG spec
 
-	got := defaultDBPath("audit.db")
-	want := filepath.Join(home, ".local", "share", "agent-receipts", "audit.db")
+	got := xdgDataHome()
+	want := filepath.Join(home, ".local", "share")
 	if got != want {
-		t.Fatalf("defaultDBPath(audit.db) = %q, want %q; expected relative XDG_DATA_HOME to be ignored", got, want)
+		t.Fatalf("xdgDataHome() = %q, want %q; expected relative XDG_DATA_HOME to be ignored", got, want)
 	}
 }
 
-func TestDefaultDBPathFallsBackOnResolverError(t *testing.T) {
+func TestXDGDataHomeFallsBackOnResolverError(t *testing.T) {
 	withHomeDirResolver(t, func() (string, error) { return "", errors.New("no home") })
 	withXDGDataHome(t, "") // ensure XDG_DATA_HOME does not override
 
-	if got := defaultDBPath("audit.db"); got != "audit.db" {
-		t.Fatalf("expected fallback to bare filename, got %q", got)
+	if got := xdgDataHome(); got != "" {
+		t.Fatalf("xdgDataHome() with resolver error = %q, want empty string", got)
 	}
 }
 
-func TestDefaultDBPathFallsBackOnEmptyHome(t *testing.T) {
-	withHomeDirResolver(t, func() (string, error) { return "", nil })
-	withXDGDataHome(t, "") // ensure XDG_DATA_HOME does not override
-
-	if got := defaultDBPath("audit.db"); got != "audit.db" {
-		t.Fatalf("expected fallback for empty home, got %q", got)
-	}
-}
-
-func TestDefaultDBPathRejectsRelativeHome(t *testing.T) {
+func TestXDGDataHomeRejectsRelativeHome(t *testing.T) {
 	withHomeDirResolver(t, func() (string, error) { return "relative/path", nil })
 	withXDGDataHome(t, "") // ensure XDG_DATA_HOME does not override
 
-	if got := defaultDBPath("audit.db"); got != "audit.db" {
-		t.Fatalf("expected fallback for non-absolute home, got %q", got)
+	if got := xdgDataHome(); got != "" {
+		t.Fatalf("xdgDataHome() with relative HOME = %q, want empty string", got)
 	}
 }
 
-func TestEnsureDBDirCreatesParent(t *testing.T) {
-	root := t.TempDir()
-	dbPath := filepath.Join(root, "nested", "sub", "audit.db")
+// TestNoteLegacyAuditDB verifies the one-line legacy-DB nudge: emit when the
+// pre-v0.9.0 file is present, stay silent otherwise. The proxy MUST NOT delete
+// the file — operators may want to archive it.
+func TestNoteLegacyAuditDBPresent(t *testing.T) {
+	home := t.TempDir()
+	withHomeDirResolver(t, func() (string, error) { return home, nil })
+	withXDGDataHome(t, "") // resolve via HOME
 
-	if err := ensureDBDir(dbPath); err != nil {
-		t.Fatalf("ensureDBDir: %v", err)
+	legacy := filepath.Join(home, ".local", "share", "agent-receipts", "audit.db")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(legacy, []byte("legacy"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
 	}
 
-	info, err := os.Stat(filepath.Dir(dbPath))
-	if err != nil {
-		t.Fatalf("stat parent dir: %v", err)
+	out := captureStderr(t, noteLegacyAuditDB)
+	if !strings.Contains(out, "legacy audit DB") || !strings.Contains(out, "safe to delete") {
+		t.Errorf("expected legacy-DB notice, got: %s", out)
 	}
-	if !info.IsDir() {
-		t.Fatalf("parent is not a directory")
-	}
-	if runtime.GOOS != "windows" {
-		if perm := info.Mode().Perm(); perm != 0o700 {
-			t.Fatalf("parent dir perm = %o, want 0700", perm)
-		}
+	// Critically, the file must still exist after the nudge.
+	if _, err := os.Stat(legacy); err != nil {
+		t.Errorf("noteLegacyAuditDB should not remove the file, got stat err: %v", err)
 	}
 }
 
-func TestEnsureDBDirNoOpForBareFilename(t *testing.T) {
-	if err := ensureDBDir("audit.db"); err != nil {
-		t.Fatalf("ensureDBDir for bare filename should be a no-op, got %v", err)
+func TestNoteLegacyAuditDBAbsent(t *testing.T) {
+	home := t.TempDir()
+	withHomeDirResolver(t, func() (string, error) { return home, nil })
+	withXDGDataHome(t, "")
+
+	out := captureStderr(t, noteLegacyAuditDB)
+	if strings.Contains(out, "legacy audit DB") {
+		t.Errorf("did not expect legacy-DB notice when file absent, got: %s", out)
 	}
 }
 
@@ -383,42 +380,6 @@ func TestBuildApprovalDeniedMessageNoApprover(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected %q in message, got %q", want, got)
 		}
-	}
-}
-
-func TestRecordRejectedToolCallPersists(t *testing.T) {
-	db, err := audit.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	sessionID := "test-sess"
-	if err := db.CreateSession(sessionID, "srv", "cmd"); err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	recordRejectedToolCall(db, sessionID, rejectedCall{
-		toolName:     "create_pull_request",
-		policyAction: "rejected",
-		opType:       "write",
-		riskScore:    70,
-		requestedAt:  time.Now(),
-	})
-
-	st, err := db.TimingStats(sessionID, 10)
-	if err != nil {
-		t.Fatalf("TimingStats: %v", err)
-	}
-	if len(st.PolicyActions) != 1 {
-		t.Fatalf("expected 1 policy-action row, got %d", len(st.PolicyActions))
-	}
-	row := st.PolicyActions[0]
-	if row.ToolName != "create_pull_request" {
-		t.Errorf("tool name = %q", row.ToolName)
-	}
-	if row.Rejected != 1 {
-		t.Errorf("expected Rejected=1, got %d", row.Rejected)
 	}
 }
 
@@ -825,119 +786,6 @@ func TestDiagnoseConfigBadRulesFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// recordRejectedToolCall with approvalWaitUs
-// ---------------------------------------------------------------------------
-
-func TestRecordRejectedToolCallWithApprovalWait(t *testing.T) {
-	db, err := audit.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	sessionID := "sess-approval-wait"
-	if err := db.CreateSession(sessionID, "srv", "cmd"); err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	recordRejectedToolCall(db, sessionID, rejectedCall{
-		toolName:       "push_to_prod",
-		policyAction:   "rejected",
-		opType:         "execute",
-		riskScore:      80,
-		requestedAt:    time.Now(),
-		approvalWaitUs: 5000000, // 5 seconds
-	})
-
-	st, err := db.TimingStats(sessionID, 10)
-	if err != nil {
-		t.Fatalf("TimingStats: %v", err)
-	}
-	if len(st.PolicyActions) != 1 {
-		t.Fatalf("expected 1 policy-action row, got %d", len(st.PolicyActions))
-	}
-	if st.PolicyActions[0].ToolName != "push_to_prod" {
-		t.Errorf("tool name = %q", st.PolicyActions[0].ToolName)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// ensureDir (non-ensureDBDir variant)
-// ---------------------------------------------------------------------------
-
-func TestEnsureDir(t *testing.T) {
-	root := t.TempDir()
-	target := filepath.Join(root, "a", "b", "file.txt")
-	if err := ensureDir(target); err != nil {
-		t.Fatalf("ensureDir: %v", err)
-	}
-	info, err := os.Stat(filepath.Join(root, "a", "b"))
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("ensureDir did not create directory")
-	}
-}
-
-func TestEnsureDirBareFilename(t *testing.T) {
-	// dir component is "." — should be a no-op.
-	if err := ensureDir("file.db"); err != nil {
-		t.Fatalf("ensureDir for bare filename should be no-op: %v", err)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// fmtOptInt
-// ---------------------------------------------------------------------------
-
-func TestFmtOptIntNil(t *testing.T) {
-	if got := fmtOptInt(nil); got != "-" {
-		t.Errorf("fmtOptInt(nil) = %q, want %q", got, "-")
-	}
-}
-
-func TestFmtOptIntValue(t *testing.T) {
-	v := int64(42)
-	if got := fmtOptInt(&v); got != "42" {
-		t.Errorf("fmtOptInt(&42) = %q, want %q", got, "42")
-	}
-}
-
-func TestFmtOptIntZero(t *testing.T) {
-	v := int64(0)
-	if got := fmtOptInt(&v); got != "0" {
-		t.Errorf("fmtOptInt(&0) = %q, want %q", got, "0")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// truncate
-// ---------------------------------------------------------------------------
-
-func TestTruncateShort(t *testing.T) {
-	if got := truncate("hello", 10); got != "hello" {
-		t.Errorf("truncate short = %q, want %q", got, "hello")
-	}
-}
-
-func TestTruncateExact(t *testing.T) {
-	if got := truncate("hello", 5); got != "hello" {
-		t.Errorf("truncate exact = %q, want %q", got, "hello")
-	}
-}
-
-func TestTruncateLong(t *testing.T) {
-	got := truncate("hello world", 8)
-	if !strings.HasSuffix(got, "...") {
-		t.Errorf("truncate long = %q, want suffix ...", got)
-	}
-	if len(got) != 8 {
-		t.Errorf("truncate long len = %d, want 8", len(got))
-	}
-}
-
-// ---------------------------------------------------------------------------
 // emitStartupBanner — block rules and disabled rules branches
 // ---------------------------------------------------------------------------
 
@@ -966,20 +814,6 @@ func TestStartupBannerWithDisabledRules(t *testing.T) {
 	if !strings.Contains(out, "disabled") {
 		t.Errorf("expected 'disabled' in banner when rules are disabled, got: %s", out)
 	}
-}
-
-// ---------------------------------------------------------------------------
-// openAuditStore (non-fatal path via temp file)
-// ---------------------------------------------------------------------------
-
-func TestOpenAuditStoreValid(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "audit.db")
-	s := openAuditStore(path)
-	if s == nil {
-		t.Fatal("openAuditStore returned nil for valid path")
-	}
-	s.Close()
 }
 
 // ---------------------------------------------------------------------------

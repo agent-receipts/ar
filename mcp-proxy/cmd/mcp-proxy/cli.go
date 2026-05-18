@@ -11,129 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
 )
-
-func receiptSubcmdDeprecated(subcommand string) {
-	fmt.Fprintf(os.Stderr, "mcp-proxy %s: this subcommand has been removed.\n", subcommand)
-	fmt.Fprintf(os.Stderr, "\n")
-	fmt.Fprintf(os.Stderr, "mcp-proxy no longer maintains its own receipts.db. Receipts are now\n")
-	fmt.Fprintf(os.Stderr, "written exclusively by the agent-receipts daemon.\n")
-	fmt.Fprintf(os.Stderr, "\n")
-	fmt.Fprintf(os.Stderr, "Use the agent-receipts CLI instead:\n")
-	fmt.Fprintf(os.Stderr, "  agent-receipts list\n")
-	fmt.Fprintf(os.Stderr, "  agent-receipts inspect <receipt-id>\n")
-	fmt.Fprintf(os.Stderr, "  agent-receipts verify --key <pub.pem> <chain-id>\n")
-	fmt.Fprintf(os.Stderr, "  agent-receipts export <chain-id>\n")
-	fmt.Fprintf(os.Stderr, "  agent-receipts stats\n")
-	os.Exit(1)
-}
-
-func cmdList(_ []string) {
-	receiptSubcmdDeprecated("list")
-}
-
-func cmdInspect(_ []string) {
-	receiptSubcmdDeprecated("inspect")
-}
-
-func cmdVerify(_ []string) {
-	receiptSubcmdDeprecated("verify")
-}
-
-func cmdExport(_ []string) {
-	receiptSubcmdDeprecated("export")
-}
-
-func cmdStats(_ []string) {
-	receiptSubcmdDeprecated("stats")
-}
-
-func openAuditStore(path string) *audit.Store {
-	if err := ensureDBDir(path); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating audit store directory: %v\n", err)
-		os.Exit(1)
-	}
-	s, err := audit.Open(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening audit store: %v\n", err)
-		os.Exit(1)
-	}
-	return s
-}
-
-func cmdTiming(args []string) {
-	fs := flag.NewFlagSet("timing", flag.ExitOnError)
-	db := fs.String("db", defaultDBPath("audit.db"), "Audit database path")
-	session := fs.String("session", "", "Filter by session ID")
-	asJSON := fs.Bool("json", false, "Output as JSON")
-	limit := fs.Int("limit", 20, "Max tools to show")
-	fs.Parse(args)
-
-	s := openAuditStore(*db)
-	defer s.Close()
-
-	st, err := s.TimingStats(*session, *limit)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if *asJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		enc.Encode(st)
-		return
-	}
-
-	if st.Total == st.TimedTotal {
-		fmt.Printf("Tool call timing (%d calls)\n", st.Total)
-	} else {
-		fmt.Printf("Tool call timing (%d calls, %d with duration)\n", st.Total, st.TimedTotal)
-	}
-
-	if len(st.ByTool) > 0 {
-		fmt.Println("\nPer-tool averages:")
-		fmt.Printf("%-30s %6s %12s %10s %11s %13s %10s\n", "TOOL", "COUNT", "UPSTREAM(us)", "POLICY(us)", "RECEIPT(us)", "APPROVAL(us)", "TOTAL(ms)")
-		for _, tt := range st.ByTool {
-			fmt.Printf("%-30s %6d %12s %10s %11s %13s %10s\n",
-				truncate(tt.ToolName, 30),
-				tt.Count,
-				fmtOptInt(tt.AvgUpstreamUs),
-				fmtOptInt(tt.AvgPolicyUs),
-				fmtOptInt(tt.AvgReceiptUs),
-				fmtOptInt(tt.AvgApprovalUs),
-				fmtOptInt(tt.AvgDurationMs),
-			)
-		}
-	}
-
-	if len(st.Percentiles) > 0 {
-		fmt.Println("\nPercentiles:")
-		fmt.Printf("%-15s %10s %10s %10s\n", "PHASE", "p50", "p95", "p99")
-		for _, name := range []string{"upstream", "policy_eval", "receipt_sign", "duration_ms"} {
-			if p, ok := st.Percentiles[name]; ok {
-				unit := "(us)"
-				if name == "duration_ms" {
-					unit = "(ms)"
-				}
-				fmt.Printf("%-15s %10d %10d %10d %s\n", name, p.P50, p.P95, p.P99, unit)
-			}
-		}
-	}
-
-	if len(st.PolicyActions) > 0 {
-		fmt.Println("\nPolicy actions:")
-		fmt.Printf("%-30s %6s %6s %6s %6s %10s\n", "TOOL", "PASS", "FLAG", "PAUSE", "BLOCK", "REJECTED")
-		for _, pa := range st.PolicyActions {
-			fmt.Printf("%-30s %6d %6d %6d %6d %10d\n",
-				truncate(pa.ToolName, 30),
-				pa.Pass, pa.Flag, pa.Pause, pa.Block, pa.Rejected,
-			)
-		}
-	}
-}
 
 // DoctorReport is the structured output of `mcp-proxy doctor`. Exposed for
 // test-only consumers; the CLI renders it to text or JSON.
@@ -291,20 +170,6 @@ func cmdDoctor(args []string) {
 		fmt.Printf("  - %s\n", issue)
 	}
 	os.Exit(1)
-}
-
-func fmtOptInt(v *int64) string {
-	if v == nil {
-		return "-"
-	}
-	return fmt.Sprintf("%d", *v)
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
 }
 
 func cmdInit(args []string) {
