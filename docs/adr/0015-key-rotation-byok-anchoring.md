@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted (2026-05-12). Phase A implementation in progress (`KeySource` interface present in `daemon/internal/keysource/`, file-backed adapter partial, `Rotate()` not yet implemented; the rotation-event anchor sink that Phase A also requires is not yet implemented). Phase B (checkpoint anchoring for tail-truncation detection) and Phase C (HSM/KMS adapters) deferred — see *Implementation phasing* below.
 
 ## Context
 
@@ -124,6 +124,21 @@ Implementation phasing keeps the integrity claim honest:
 
 - **Phase A** (the ADR's first implementation): rotation events anchored. Tail integrity is named as a known gap until Phase B.
 - **Phase B** (follow-on issue): checkpoint anchoring lands. Tail integrity claim becomes defensible. Threat model ([#155](https://github.com/agent-receipts/ar/issues/155)) updates concurrently to assert the conditional integrity guarantee.
+- **Phase C** (follow-on issue, deferred): HSM (PKCS#11) and cloud-KMS adapters land as additional `KeySource` backends. Trigger conditions: (a) an enterprise deployment requires key custody outside the file system; (b) the file-backed adapter is mature enough that the interface is unlikely to change.
+
+### Implementation status (as of 2026-05-12)
+
+What has landed:
+
+- `KeySource` interface skeleton at `daemon/internal/keysource/keysource.go` with the `Sign` / `PublicKey` / `Init` / `Teardown` operations defined per this ADR.
+- File-backed adapter scaffolding (signing key load from `~/.agent-receipts/signing.pem`), used by the daemon for the existing single-key signing path.
+
+What has **not** landed and is in scope for Phase A:
+
+- `Rotate()` currently returns `ErrNotImplemented`. No rotation event schema, no `key_rotated` synthetic receipt emission path, no verifier-side rotation traversal.
+- The external anchor write contract for rotation events. Until the anchor sink exists, **the post-compromise integrity guarantee is not honoured** and any rotation work that lands before it is partial.
+
+Phase B (checkpoint anchoring) and Phase C (HSM/KMS adapters) are explicitly deferred and not on a schedule.
 
 ## Consequences
 
@@ -143,7 +158,7 @@ Implementation phasing keeps the integrity claim honest:
 - **Old public keys (or their resolution records) must be retained for verification of historical chain segments.** Retired *private* signing keys SHOULD be destroyed once rotation is anchored externally — unlike ADR-0012's forensic decryption keypair (which legitimately requires private-key retention to read historical encrypted payloads), signing verifiers only need the public key. Reducing private-key blast radius is a positive consequence of rotation, not a tax on it.
 - **Rotation event itself is signed with the outgoing key.** Standard cryptographic-rotation idiom, but documented because operators rotating in response to suspected compromise need to understand they are authenticating the transition with the key they are already retiring. The mitigation is anchoring every rotation event to the external sink, so a compromised daemon cannot forge a backdated rotation that the anchor does not know about.
 - **The `KeySource` interface cannot encode every backend's idiosyncrasies.** KMS rate limits, HSM lockouts, cloud throttling all surface as backend-specific errors with a structured `transient` flag; the daemon's retry/halt policy is uniform across adapters but the operator's alerting must be backend-aware.
-- **Sink configuration is now a load-bearing operational concern, not an optional feature.** Operators who skip configuring an external sink keep the chain integrity guarantees they had before this ADR — but lose the post-compromise integrity guarantee that motivates the design. The `KeySource` work and the anchor work are both required for the full claim.
+- **Sink configuration becomes a load-bearing operational concern from Phase A onward.** Operators who skip configuring an external sink keep the chain integrity guarantees they had before this ADR — but lose the post-compromise integrity guarantee that motivates the design. The `KeySource` work and the anchor work are both required for the full claim; Phase A delivers both for rotation events, Phase B extends the same property to tail integrity via checkpoints.
 
 ## Alternatives considered
 
