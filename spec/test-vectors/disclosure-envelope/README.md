@@ -67,14 +67,20 @@ Each entry in `vectors[]` has:
 
 Vectors use **well-known X25519 test keys only**:
 
-- `forensic-test-recipient-1` uses the Alice key pair from RFC 7748 §6.1.
+- `forensic-test-recipient-1` uses the Alice key pair from [RFC 7748 §6.1](https://www.rfc-editor.org/rfc/rfc7748#section-6.1).
 - `forensic-test-recipient-2` uses the Bob key pair from RFC 7748 §6.1.
 
+Only the **public keys** are inlined in `vectors.json` (under `public_key_hex`).
+The **private keys** are not inlined — even though the RFC publishes them as
+plaintext, raw 32-byte hex literals that look like X25519 secret keys trip
+secret-scanning tooling regardless of provenance, and inlining them encourages
+cargo-cult reuse outside the test context. Reviewers running the decryption
+round-trip fetch the private keys from RFC 7748 §6.1 directly.
+
 These keys are famous, trivially recoverable from the RFC, and explicitly
-unsuitable for production. They are used here so reviewers can run the
-decryption round-trip without us shipping a fresh test-key generator. **Do not
-regenerate them from fresh random keys; the point of pinning these is that
-reviewers can reproduce the expected outputs by hand from the RFC.**
+unsuitable for production. **Do not regenerate them from fresh random keys;
+the point of pinning these is that reviewers can reproduce the expected
+outputs by hand from the RFC.**
 
 ## The deterministic-seed pattern for the HPKE ephemeral key
 
@@ -121,8 +127,15 @@ output bytes. This is deliberate:
 
 Reviewers who want to spot-check today can compute HPKE base-mode against
 RFC 9180 §A.1.1 by hand or with any conformant HPKE library and substitute
-the values into the structure above. The schema constraints will accept any
-valid unpadded base64url for `enc` and `ct`.
+the values into the structure above. The schema constraints accept any
+valid unpadded-base64url string of the right length for `enc` (43 chars,
+the encoded size of a 32-byte X25519 public key) and any unpadded-base64url
+string of `minLength: 22` for `ct`. The placeholder strings in the current
+vectors (`<enc-bytes-base64url-unpadded>` / `<ciphertext-bytes-base64url-unpadded>`)
+deliberately fail those checks — by design, since they should fail loudly if
+copy-pasted into production. A vector's `computed_values_status` flips from
+`"placeholder"` to `"computed"` when a follow-up PR fills in real values, and
+from that point the vector is also expected to validate against the schema.
 
 ## What the vectors test
 

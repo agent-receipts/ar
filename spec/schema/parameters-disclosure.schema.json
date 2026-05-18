@@ -25,7 +25,9 @@
     },
     "ct": {
       "type": "string",
-      "description": "AEAD ciphertext including the 16-byte GCM authentication tag, encoded as unpadded base64url (RFC 4648 §5). Plaintext is the RFC 8785 canonical JSON serialisation of the parameters object. The HPKE AAD is the empty string for v1 (single-shot, no out-of-band context binding beyond the receipt envelope itself, which already commits to `parameters_disclosure` by signature). Encoding follows the spec-wide ADR-0009 convention of unpadded base64url for binary fields (see spec §4 `proofValue`); standard base64 is not accepted."
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "minLength": 22,
+      "description": "AEAD ciphertext including the 16-byte GCM authentication tag, encoded as unpadded base64url (RFC 4648 §5). The `pattern` enforces the base64url alphabet only — no `=` padding, no `+` or `/`. The `minLength` of 22 floors the value at the encoded size of the 16-byte GCM tag alone (the smallest possible AEAD output, which occurs only for an empty plaintext; v1 forbids empty plaintexts via the *shape invariants*, so real values will always exceed this). Plaintext is the RFC 8785 canonical JSON serialisation of the parameters object. The HPKE AAD is the empty string for v1 (single-shot, no out-of-band context binding beyond the receipt envelope itself, which already commits to `parameters_disclosure` by signature). Encoding follows the spec-wide ADR-0009 convention of unpadded base64url for binary fields (see spec §4 `proofValue`); standard base64 is not accepted."
     }
   },
   "$defs": {
@@ -41,7 +43,8 @@
         },
         "enc": {
           "type": "string",
-          "description": "HPKE encapsulated key output (RFC 9180 §4.1, `enc`). For the DHKEM(X25519, HKDF-SHA256) KEM this is the 32-byte X25519 ephemeral public key, encoded as unpadded base64url. The HPKE specification names this field `enc`; this schema uses the same name rather than an invented alternative (e.g. `wrapped_key`, `epk`, `encap`) so implementers can map directly to library APIs without translation. The original ADR-0012 sketch listed `encap` — that name is superseded here; see the ADR amendment for the rationale."
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "HPKE encapsulated key output (RFC 9180 §4.1, `enc`). For the DHKEM(X25519, HKDF-SHA256) KEM this is the 32-byte X25519 ephemeral public key, encoded as unpadded base64url. The `pattern` constrains the value to exactly 43 base64url-alphabet characters — the encoded length of 32 raw bytes with no padding (`ceil(32 * 4 / 3)` rounded up, minus 1 padding character that would normally complete the final 4-char block). The HPKE specification names this field `enc`; this schema uses the same name rather than an invented alternative (e.g. `wrapped_key`, `epk`, `encap`) so implementers can map directly to library APIs without translation. The original ADR-0012 sketch listed `encap` — that name is superseded here; see the ADR amendment for the rationale."
         }
       }
     }
