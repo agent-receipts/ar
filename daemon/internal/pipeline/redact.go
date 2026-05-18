@@ -87,6 +87,16 @@ var builtinPatterns = []namedPattern{
 		re:   regexp.MustCompile(`Bearer\s+[A-Za-z0-9._\-/+=]{20,}`),
 	},
 	{
+		// JWT: three base64url segments separated by dots. Both the header
+		// and payload are base64url-encoded JSON objects, which always begin
+		// with `eyJ` (the encoding of `{"`). Anchoring both of the first two
+		// segments to `eyJ` keeps the pattern specific to JWTs and avoids
+		// matching arbitrary dotted base64 strings. The signature segment may
+		// be empty for unsigned (alg=none) JWTs.
+		name: "jwt",
+		re:   regexp.MustCompile(`eyJ[A-Za-z0-9_=\-]+\.eyJ[A-Za-z0-9_=\-]+\.[A-Za-z0-9_=\-]*`),
+	},
+	{
 		name: "slack-token",
 		re:   regexp.MustCompile(`xox[bpras]-[A-Za-z0-9\-]+`),
 	},
