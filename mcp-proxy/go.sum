@@ -2,6 +2,8 @@ github.com/agent-receipts/ar/daemon v0.9.1 h1:C8OyE04+mymOlWBIWsFeNqYNord/udkLmy
 github.com/agent-receipts/ar/daemon v0.9.1/go.mod h1:aboC9nI890QcajbomkWAOUXBa3BeQ9KocdA+y8+WOv8=
 github.com/agent-receipts/ar/sdk/go v0.9.0 h1:UfFy16p/zaIgS31kmvC+c9dDthaINnSqSkIvfSQjyg4=
 github.com/agent-receipts/ar/sdk/go v0.9.0/go.mod h1:UW18urf7kPUlg49FcJe76/FuvS0mr+qYIVmMQ7ePECs=
+github.com/agent-receipts/ar/sdk/go v0.10.0 h1:Xs7riowo2ffVi3bchARFqkTed2dg9aMuFeGUFbIK6HU=
+github.com/agent-receipts/ar/sdk/go v0.10.0/go.mod h1:eZtzPQoFElpjDbflAmFhDYy+UrmqMTKJt9v3GE7gp1o=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e h1:ijClszYn+mADRFY17kjQEVQ1XRhq2/JR1M3sGqeJoxs=
