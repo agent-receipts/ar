@@ -13,8 +13,8 @@ test suite.
 
 The envelope is HPKE base-mode with the ciphersuite
 `hpke-x25519-hkdf-sha256-aes-256-gcm` (RFC 9180 §7, IDs `0x0020 / 0x0001 / 0x0002`).
-That choice is **proposed**, not yet locked — see the ADR-0012 amendment for
-the HPKE-vs-sealed-box tradeoff and the open user-sign-off question.
+That choice is **accepted** — see the ADR-0012 amendment for the HPKE-vs-sealed-box
+tradeoff and the rationale.
 
 Each vector pins, simultaneously:
 

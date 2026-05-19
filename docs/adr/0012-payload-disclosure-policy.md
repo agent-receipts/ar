@@ -169,9 +169,9 @@ This gap is tracked as the remainder of **Phase A**. Phase B and Phase C are unc
 
 ## Amendments
 
-### 2026-05-18: Envelope canonical shape and algorithm choice (proposed: HPKE)
+### 2026-05-18: Envelope canonical shape and algorithm choice (accepted: HPKE)
 
-**Status of this amendment:** the canonicalisation, encoding, schema-versioning, and field-set decisions below are locked in. The cryptographic primitive choice (HPKE vs libsodium sealed-box) is **proposed**, not yet accepted: it requires explicit human sign-off before any SDK ships envelope-mode encryption. The amendment documents the proposal and the tradeoff so that sign-off can be made on the record.
+**Status of this amendment:** all decisions below are locked in, including the cryptographic primitive choice (HPKE base-mode, ciphersuite `hpke-x25519-hkdf-sha256-aes-256-gcm`). The HPKE-vs-sealed-box tradeoff and the recommendation are documented in the *HPKE vs libsodium sealed-box* section below for the record.
 
 **Scope.** The original ADR commits to the envelope's *shape* and forward-compatibility properties (the table under *Forward-compatible envelope shape*) but defers `alg`, the AEAD primitive, and the `kid` registry mechanism to a follow-up. This amendment pins those for v1. It also pins the canonicalisation rules and produces cross-SDK test vectors. The amendment is the **user-facing gate** for [ADR-0017 (central receipt hub, draft)](https://github.com/agent-receipts/ar/blob/claude/draft-adr-0017-Ko7cn/docs/adr/0017-central-receipt-hub.md): the hub MUST reject pre-envelope disclosure shapes (plaintext map, redacted-plaintext map), which is unsafe to enforce until conformant envelope producers exist. The two sibling spec tracks landing in parallel are `did:key` resolution (consumed by ADR-0017's JWS auth) and the rotation-event canonical wire format (deferred in ADR-0015).
 
@@ -186,9 +186,9 @@ This gap is tracked as the remainder of **Phase A**. Phase B and Phase C are unc
 5. **Encoding:** all binary fields are unpadded base64url (RFC 4648 §5), matching ADR-0009 / spec §4 `proofValue`. Standard base64 is not accepted; padding is not accepted.
 6. **Canonicalisation:** RFC 8785 JCS over the envelope (per ADR-0009) and over the plaintext parameters object before AEAD encryption. The latter is what makes the cross-SDK byte-identical claim meaningful — two SDKs that disagree about JCS produce different ciphertexts and the receipt's `parameters_hash` will mismatch.
 7. **`recipients` is always an array, length 1 in v1, max 1 in v1.** The array shape is forward-compatible with the Phase C multi-recipient extension; the v1 upper bound prevents a producer from accidentally shipping a multi-recipient envelope under a `v: "1"` label. v2 multi-recipient relaxes the upper bound and adds a per-recipient wrapped-key shape; `ct` remains a single shared ciphertext under a content-encryption key wrapped per recipient.
-8. **HPKE base-mode parameters for v1 (subject to the proposed-status caveat):** `info` = empty string; AAD = empty string. The surrounding signed receipt envelope already authenticates `parameters_disclosure` via signature; no out-of-band context binding is added at the HPKE layer.
+8. **HPKE base-mode parameters for v1:** `info` = empty string; AAD = empty string. The surrounding signed receipt envelope already authenticates `parameters_disclosure` via signature; no out-of-band context binding is added at the HPKE layer.
 
-**Proposed (awaiting user sign-off): HPKE base-mode, ciphersuite `hpke-x25519-hkdf-sha256-aes-256-gcm`.** That is RFC 9180 base mode with KEM = DHKEM(X25519, HKDF-SHA256) (`0x0020`), KDF = HKDF-SHA256 (`0x0001`), AEAD = AES-256-GCM (`0x0002`). The `alg` field carries the human-readable tag rather than the numeric triple so verifiers dispatch on string equality; the numeric triple is recorded in the schema description as the cross-reference for implementers.
+**Accepted: HPKE base-mode, ciphersuite `hpke-x25519-hkdf-sha256-aes-256-gcm`.** That is RFC 9180 base mode with KEM = DHKEM(X25519, HKDF-SHA256) (`0x0020`), KDF = HKDF-SHA256 (`0x0001`), AEAD = AES-256-GCM (`0x0002`). The `alg` field carries the human-readable tag rather than the numeric triple so verifiers dispatch on string equality; the numeric triple is recorded in the schema description as the cross-reference for implementers.
 
 **HPKE vs libsodium sealed-box — the one-pager.**
 
