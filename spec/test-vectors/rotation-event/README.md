@@ -31,8 +31,20 @@ test vectors. They MUST NOT be used in production.
 | Outgoing (signs the rotation) | TEST 2 | `3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c` |
 | Incoming | TEST 3 | `fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025` |
 
-Outgoing secret seed (TEST 2):
-`4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb`.
+The outgoing secret seed is published at [RFC 8032 §7.1, TEST 2](https://www.rfc-editor.org/rfc/rfc8032#section-7.1).
+It is **not** inlined here — even though the value is famous and public, secret-scanning
+tooling commonly trips on raw seed hex regardless of provenance. Reviewers reproducing
+the signature use the seed as published by the RFC.
+
+## Chain position
+
+The vector represents a **genesis-position** rotation: `chain.sequence = 1` and
+`chain.previous_receipt_hash = null`. This is the simplest position that exercises the
+`credentialSubject.keyRotation` field end-to-end without requiring a separate predecessor
+receipt to be shipped alongside. A rotation at a non-genesis position would require
+including the predecessor (so verifiers can recompute its `hashReceipt` and check it
+matches the successor's `previous_receipt_hash`); that is deliberately out of scope for a
+wire-format pin.
 
 ## Derived values (recomputable from the keys above)
 
@@ -41,12 +53,12 @@ Outgoing secret seed (TEST 2):
 - `new_public_key` (multibase-`u` base64url of the 32 raw bytes, per ADR-0001):
   `u_FHNjmIYoaONpH7QAjDwWAgW7RO6MwOsXeuRFUiQgCU`
 - RFC 8785 canonical bytes of the receipt body (`proof` removed) hash to
-  `sha256:17e1384171b42a9ec356daebe773238cd8d8d0f476ff53f3313e7bf17bf5b517`.
+  `sha256:6983c9bd6fb24e844b90f7616315a914fdedc5fef8126e11d46149ba2f320457`.
   This is the value the next receipt in the chain would carry as
   `previous_receipt_hash`.
 - Ed25519 signature over those canonical bytes, signed by the outgoing key,
   base64url-encoded with the multibase `u` prefix:
-  `uTGn6rMIL7sGgZ22QRf9zOvNuqQINhvVgD-KQsnjHNS-E_FvouEeHPEv2tcDxmta1gauGp2-OXU3UGyFVr19tBA`
+  `uqwcXwDOGW3UKEMyboz6NzEHqcG7C6HdXnMJvn_wR6tsZLdH2i8zYBS-yFRAOu_6JePCJdP80E6BR41AHSi9eCw`
 
 ## Out of scope
 

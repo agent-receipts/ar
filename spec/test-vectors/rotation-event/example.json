@@ -12,8 +12,8 @@
     },
     "chain": {
       "chain_id": "chain_rotation_fixture_001",
-      "previous_receipt_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "sequence": 42
+      "previous_receipt_hash": null,
+      "sequence": 1
     },
     "keyRotation": {
       "event_type": "key_rotated",
@@ -42,7 +42,7 @@
   "proof": {
     "created": "2026-05-18T10:00:01Z",
     "proofPurpose": "assertionMethod",
-    "proofValue": "uTGn6rMIL7sGgZ22QRf9zOvNuqQINhvVgD-KQsnjHNS-E_FvouEeHPEv2tcDxmta1gauGp2-OXU3UGyFVr19tBA",
+    "proofValue": "uqwcXwDOGW3UKEMyboz6NzEHqcG7C6HdXnMJvn_wR6tsZLdH2i8zYBS-yFRAOu_6JePCJdP80E6BR41AHSi9eCw",
     "type": "Ed25519Signature2020",
     "verificationMethod": "did:agent:rotation-fixture-issuer#key-1"
   },
