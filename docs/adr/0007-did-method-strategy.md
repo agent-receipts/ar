@@ -58,16 +58,22 @@ part of Phase A and is out of scope for this ADR. Static test vectors live in
 ### DID format
 
 ```
-did:key:z<multibase-base58btc(0xed01 || ed25519-pubkey-bytes)>
+did:key:z<base58btc(0xed01 || ed25519-pubkey-bytes)>
 ```
 
+- The leading `z` is the literal multibase prefix character, applied verbatim
+  (not produced by the `base58btc(...)` function below). This avoids the
+  double-`z` mistake that arises when a multibase helper that *already*
+  includes the prefix is composed under the formula.
+- `base58btc(...)` is the Bitcoin base58 character-encoding of the raw byte
+  string `0xed01 || ed25519-pubkey-bytes`, with no leading prefix character of
+  its own. The full identifier is the literal `did:key:z` concatenated with
+  the base58btc output.
 - `0xed01` is the unsigned-varint multicodec identifier for an Ed25519 public key
   (the byte sequence `0xed 0x01`, not a two-byte big-endian integer).
 - `ed25519-pubkey-bytes` is the 32 raw bytes of the Ed25519 public key per
   RFC 8032 §5.1.5. No PEM, SPKI, JWK, or other wrapper is permitted in the
   encoded payload.
-- The multibase prefix is the single ASCII character `z`, indicating base58btc
-  encoding of the concatenated multicodec-prefixed key bytes. No padding.
 - Implementations MUST produce and accept exactly this form; they MUST reject
   any other multibase prefix, any multicodec other than `0xed01`, and any
   decoded payload length other than 34 bytes (2-byte prefix + 32-byte key).
@@ -78,7 +84,11 @@ Given an input string `did`:
 
 1. Reject unless `did` begins with the literal ASCII prefix `did:key:z`.
 2. Multibase-decode the substring after `did:key:` using base58btc (the `z`
-   prefix). Reject on any non-alphabet character.
+   prefix). Reject any character outside the base58btc alphabet — note that
+   `0`, `O`, `I`, and `l` are explicitly excluded from base58btc to avoid
+   visual ambiguity even though they are otherwise alphanumeric. A conformant
+   base58btc decoder enforces this; implementations MAY simply propagate that
+   decoder's error rather than checking characters separately.
 3. Verify the decoded payload is exactly 34 bytes.
 4. Verify the first two bytes are `0xed 0x01`. Reject otherwise.
 5. The remaining 32 bytes are the Ed25519 public key. No further validation of

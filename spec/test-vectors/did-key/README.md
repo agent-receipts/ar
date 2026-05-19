@@ -11,13 +11,17 @@ are not yet wired into any test suite.
 
 ```
 {
-  "spec_version": "did:key v0.7",
-  "adr":          "docs/adr/0007-did-method-strategy.md",
+  "$comment":              "<descriptive header text>",
+  "spec_version":          "did:key v0.7",
+  "adr":                   "docs/adr/0007-did-method-strategy.md",
   "multicodec_prefix_hex": "ed01",
   "multibase_prefix":      "z (base58btc)",
-  "vectors": [ { ... }, ... ]
+  "vectors":               [ { ... }, ... ]
 }
 ```
+
+Consumers building a strict schema MAY ignore unknown top-level fields; the
+load-bearing keys are `vectors`, `multicodec_prefix_hex`, and `multibase_prefix`.
 
 Each entry in `vectors[]` has:
 
