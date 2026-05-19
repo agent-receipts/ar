@@ -327,6 +327,28 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 		operatorName = ev.OperatorName
 	}
 
+	// Validate merged identity before marshalling. operator_name requires
+	// operator_id (daemon enforces the same rule; catching it here surfaces
+	// a clear error instead of a silent daemon-side rejection).
+	if operatorName != "" && operatorID == "" {
+		e.dropCount.Add(pendingDrops)
+		return fmt.Errorf("emitter: operator_name requires operator_id")
+	}
+	// Mirror the daemon's per-field length cap so oversized values are caught
+	// at the emitter rather than silently rejected by the daemon after the write.
+	const maxIdentityField = 256
+	for _, f := range [4]struct{ name, val string }{
+		{"issuer_name", issuerName},
+		{"issuer_model", issuerModel},
+		{"operator_id", operatorID},
+		{"operator_name", operatorName},
+	} {
+		if len(f.val) > maxIdentityField {
+			e.dropCount.Add(pendingDrops)
+			return fmt.Errorf("emitter: %s exceeds %d bytes (got %d)", f.name, maxIdentityField, len(f.val))
+		}
+	}
+
 	body, err := json.Marshal(frame{
 		Version:      SupportedFrameVersion,
 		TsEmit:       time.Now().UTC().Format(time.RFC3339Nano),

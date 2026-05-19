@@ -22,7 +22,7 @@ var readComm = func(pid int) (string, error) {
 // the best-guess Identity. Source is "auto:<key>" on a registry hit, or
 // "unknown" when the parent process is not in the built-in registry.
 //
-// TODO: consider env-marker secondary checks for cases where /proc gives no
+// TODO(#462): env-marker secondary checks for cases where /proc gives no
 // useful result (e.g. process name aliased by a wrapper shell):
 //   - CLAUDECODE (Claude Code SDK)
 //   - CURSOR_TRACE_ID (Cursor)

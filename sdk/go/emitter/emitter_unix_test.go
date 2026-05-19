@@ -1065,6 +1065,7 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 			WithLogger(silentLogger()),
 			WithIdentity(Identity{
 				IssuerName:   "Default Host",
+				OperatorID:   "did:web:default.com",
 				OperatorName: "Default Operator",
 			}),
 		)
@@ -1078,6 +1079,7 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 			Tool:         Tool{Name: "bash"},
 			Decision:     "allowed",
 			IssuerName:   "Per-Event Host",
+			OperatorID:   "did:web:override.com",
 			OperatorName: "Per-Event Operator",
 		}); err != nil {
 			t.Fatalf("Emit: %v", err)
@@ -1090,6 +1092,9 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 		}
 		if got.IssuerName != "Per-Event Host" {
 			t.Errorf("issuer_name = %q; want per-event value %q", got.IssuerName, "Per-Event Host")
+		}
+		if got.OperatorID != "did:web:override.com" {
+			t.Errorf("operator_id = %q; want per-event value %q", got.OperatorID, "did:web:override.com")
 		}
 		if got.OperatorName != "Per-Event Operator" {
 			t.Errorf("operator_name = %q; want per-event value %q", got.OperatorName, "Per-Event Operator")
