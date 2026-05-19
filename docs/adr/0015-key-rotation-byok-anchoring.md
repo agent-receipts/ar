@@ -174,3 +174,52 @@ Phase B (checkpoint anchoring) and Phase C (HSM/KMS adapters) are explicitly def
 - [ADR-0007 (DID method strategy)](./0007-did-method-strategy.md) — public-key resolution path for the genesis (first) signing key and for each receipt's `proof.verificationMethod` (the outgoing key at any rotation). The incoming key at a rotation is carried inline in the rotation event, so DID resolution is not on the rotation chain-traversal path itself.
 - [ADR-0010 (daemon process separation)](./0010-daemon-process-separation.md) — substrate this ADR sits on; the daemon is the only thing that holds a `KeySource`.
 - [ADR-0012 (payload disclosure policy)](./0012-payload-disclosure-policy.md) — separate keypair (forensic encryption), separate lifecycle. Informs the "do not reuse keys across purposes" property recorded here.
+
+## Amendments
+
+### 2026-05-18: Amendment — rotation event envelope placement (`credentialSubject.keyRotation`)
+
+**Status of this amendment:** *Accepted* (2026-05-19). Placement option (a) `credentialSubject.keyRotation` is the wire format for rotation events. The fields above (`event_type`, `new_public_key`, `old_key_fingerprint`, `new_key_fingerprint`, `old_algorithm`, `new_algorithm`, `signed_with`) and their semantics are unchanged by this amendment — only their envelope-side carriage is pinned. This amendment closes the gap the original *Rotation event schema* section flagged with "Wire-format placement is out of scope for this ADR." See ADR-0017 *Preconditions* (rotation-event canonical wire format) for the consumer that requires this pin.
+
+**Decision.** Rotation events live at `credentialSubject.keyRotation` — a dedicated sub-object on `credentialSubject`, additive to today's `principal` / `action` / `outcome` / `chain` layout. The seven fields from *Rotation event schema* above map into `keyRotation` verbatim; no field is renamed.
+
+**Why option (a) `credentialSubject.keyRotation`.** Today's `spec/schema/agent-receipt.schema.json` declares `additionalProperties: false` on the root and on most nested objects, but the `credentialSubject` definition itself omits that constraint. [ADR-0003 §"Subset compliance"](./0003-w3c-vc-envelope-format.md#subset-compliance) calls this out explicitly: extension fields within `credentialSubject` are permitted by the schema. Adding `keyRotation` as a sibling of `principal` / `action` / `outcome` / `chain` therefore lands as a strictly additive change — no `additionalProperties` flip, no breakage of the verifier-side allowlist for existing receipts. Tightening the schema with a normative `keyRotation` `$ref` lands as a follow-up once this placement is accepted, paired with the version bump under *Schema version implication* below.
+
+**Why not option (b) `action.type = "key_rotated"`.** The `action` block today represents an external tool call: it carries `target.system`, `target.resource`, `parameters_hash`, `risk_level`, and `timestamp`; the broader receipt carries `outcome.response_hash` (added in 0.2.0). Reusing it as a polymorphic envelope for daemon-internal events erodes the type's clarity — `target` and `parameters_hash` have no meaning for a rotation, and verifiers downstream of the daemon would either have to ignore them or invent meanings. Daemon-internal events and tool calls are different vocabularies; collapsing them into one is the wrong abstraction.
+
+**Why not option (c) a new top-level envelope field.** Top-level fields sit at the same layer as `@context`, `id`, `type`, `issuer`, `issuanceDate`, `credentialSubject`, `proof`. The schema's root **does** set `additionalProperties: false` (the root object's `additionalProperties` constraint), so adding a top-level `keyRotation` field forces every verifier in the wild to bump its allowed-keys set or fail closed. That is the biggest possible blast radius for what is conceptually a sub-namespace of the existing credential subject. Reserve top-level extension for cases where a sub-namespace genuinely cannot represent the semantics — rotation events are not that case.
+
+**What lives in `keyRotation` (normative).**
+
+| Field | Type | Description |
+|---|---|---|
+| `event_type` | string | Constant `"key_rotated"`. |
+| `new_public_key` | string | Incoming public key inline, raw bytes per the algorithm's canonical encoding, multibase-`u`-prefixed base64url (same encoding ADR-0001 defines for `proof.proofValue`, applied here to raw public-key bytes). For Ed25519, the 32 raw bytes per RFC 8032 §5.1.5. |
+| `old_key_fingerprint` | string | `sha256:<lowercase hex>` of the outgoing public key (raw bytes — *not* SPKI/PEM, *not* a backend handle). |
+| `new_key_fingerprint` | string | `sha256:<lowercase hex>` of the incoming public key (same canonical-bytes rule). |
+| `old_algorithm` | string | Algorithm tag of the outgoing key (e.g. `"ed25519"`). |
+| `new_algorithm` | string | Algorithm tag of the incoming key. Equal to `old_algorithm` for same-algorithm rotations. |
+| `signed_with` | string | Constant `"old"`. The receipt's `proof.proofValue` is computed with the outgoing key. |
+
+`keyRotation` is **optional**. A receipt that is not a rotation event MUST NOT include it. A receipt that is a rotation event MUST include all seven fields.
+
+The receipt's `action.type` SHOULD be `"agent.key.rotate"` (taxonomy entry to be registered alongside the schema-integration follow-up) so that downstream filters can locate rotation receipts without parsing `credentialSubject.keyRotation`. The presence of `keyRotation` is authoritative; `action.type` is the index hint.
+
+**Verifier-side traversal (normative).** Restating ADR-0015 *Rotation event schema* steps 1–3 against this placement:
+
+1. **Detect.** If `credentialSubject.keyRotation` is present, the receipt is a rotation event. Otherwise it is a normal receipt and rotation traversal does not apply.
+2. **Verify the rotation event's own signature.** Obtain the *outgoing* public key: for the genesis rotation, resolve it from `proof.verificationMethod` via ADR-0007; for any subsequent rotation, it is the `keyRotation.new_public_key` carried forward from the previous rotation event (no external registry lookup). Compute `sha256` of its raw bytes and check it equals `keyRotation.old_key_fingerprint` (index check; non-equality is a hard error). Verify the receipt's signature using the outgoing key under `keyRotation.old_algorithm`. The signature covers the canonical bytes of the receipt with `proof` removed (per ADR-0003 deviation 2).
+3. **Bind the incoming key.** Decode `keyRotation.new_public_key` (multibase `u` → raw bytes). Compute `sha256` of those raw bytes and check it equals `keyRotation.new_key_fingerprint` (consistency check; non-equality is a hard error).
+4. **Continue chain traversal.** Treat any receipt with `chain.previous_receipt_hash` pointing at this receipt as signed by the incoming public key under `keyRotation.new_algorithm`, until the next rotation event.
+
+The rotation event remains a self-contained witness of the key transition: step 2 verifies the outgoing key signs over the field (step 3) that step 4 will rely on. No external key registry is consulted on the rotation chain-traversal path.
+
+**Backward compatibility.** Existing `0.1.0` and `0.2.0` receipts do not carry `credentialSubject.keyRotation`. Verifiers MUST treat absence of `keyRotation` as "no rotation in this receipt," not as malformed. This is the same `present-or-absent` discipline ADR-0008 establishes for `outcome.response_hash` and `chain.terminal`. No existing receipt's canonical bytes change as a result of this amendment — `keyRotation` is purely additive and is only emitted by issuers that opt in to rotation event emission.
+
+**Canonical form and signature.** RFC 8785 governs unchanged (per ADR-0009). The receipt body (with `proof` removed) is canonicalised, signed by the outgoing key, and the signature is encoded as the receipt's `proof.proofValue` in multibase-`u` base64url (per ADR-0001). The same `hashReceipt` helper SDKs already use for `chain.previous_receipt_hash` and the anchor `checkpoint.tip_hash` (per [ADR-0008](./0008-response-hashing-and-chain-completeness.md) and ADR-0015's *External anchor write contract*) applies without modification.
+
+A worked example with all values recomputable from RFC 8032 §7.1 test keys is at `spec/test-vectors/rotation-event/example.json`. Its canonical-bytes SHA-256 is `sha256:6983c9bd6fb24e844b90f7616315a914fdedc5fef8126e11d46149ba2f320457`.
+
+**Schema version implication.** Adding `keyRotation` to the canonical receipt body is a wire-format change in the sense that issuers gain a new field to emit, even though no existing receipt's bytes are affected. Recommend a `0.2.1 → 0.3.0` schema-version bump under the same rationale ADR-0008 used for `0.1.0 → 0.2.0`: schema version as a security signal — verifiers that see `0.3.0` know the issuer is operating in an environment where rotation events are expressible, while `0.2.0` / `0.2.1` receipts retain their original meaning unchanged. The version-enum extension (`"0.3.0"` added to the `version` schema property) and the `keyRotation` `$ref` integration are deliberately **not** part of this PR; they land in a follow-up gated on this placement being accepted.
+
+**Cross-references for the consumer track.** ADR-0017 §"Preconditions" names "rotation event canonical wire format" as a precondition for hub implementation; this amendment closes that precondition. The two sibling spec PRs — `did:key` resolution and the disclosure envelope — derisk the other two preconditions independently.
