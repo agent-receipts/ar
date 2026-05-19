@@ -19,7 +19,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1048,12 +1047,16 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 		}
 
 		frames := rl.waitForFrames(t, 1, 2*time.Second)
-		// Verify the raw JSON does not contain the identity keys at all
-		// (omitempty should suppress them entirely).
-		raw := string(frames[0])
+		// Unmarshal into a map to verify that the identity keys are absent
+		// entirely (omitempty should suppress them), not just absent from
+		// string content.
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(frames[0], &got); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
 		for _, key := range []string{"issuer_name", "issuer_model", "operator_id", "operator_name"} {
-			if strings.Contains(raw, `"`+key+`"`) {
-				t.Errorf("frame JSON contains %q but should be omitted when empty: %s", key, raw)
+			if _, present := got[key]; present {
+				t.Errorf("frame JSON contains %q but should be omitted when empty", key)
 			}
 		}
 	})

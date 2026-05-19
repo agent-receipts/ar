@@ -132,8 +132,9 @@ func serve() {
 	if id.OperatorName != "" && id.OperatorID == "" {
 		log.Fatalf("mcp-proxy: --operator-name (or AGENTRECEIPTS_OPERATOR_NAME) requires --operator-id (or AGENTRECEIPTS_OPERATOR_ID)")
 	}
-	if id.IssuerName != "" || id.OperatorName != "" {
-		log.Printf("mcp-proxy: host=%s issuer=%q operator=%q", id.Source, id.IssuerName, id.OperatorName)
+	if id.IssuerName != "" || id.IssuerModel != "" || id.OperatorID != "" || id.OperatorName != "" {
+		log.Printf("mcp-proxy: host=%s issuer=%q model=%q operator.id=%q operator.name=%q",
+			id.Source, id.IssuerName, id.IssuerModel, id.OperatorID, id.OperatorName)
 	}
 
 	sessionID := uuid.New().String()

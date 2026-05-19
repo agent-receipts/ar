@@ -53,6 +53,12 @@ import (
 // them at read time anyway.
 const MaxFrameSize = 1 << 20
 
+// MaxIdentityFieldLen is the maximum byte length of each identity field
+// (IssuerName, IssuerModel, OperatorID, OperatorName). The daemon enforces
+// the same limit; the emitter validates client-side so violations surface
+// before the write rather than as silent daemon-side rejections.
+const MaxIdentityFieldLen = 256
+
 // SupportedFrameVersion mirrors the daemon's pipeline.SupportedFrameVersion.
 // The wire format is versioned; bumping it requires a daemon-side
 // translator, so a single supported value is the only safe contract.
@@ -336,16 +342,15 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	}
 	// Mirror the daemon's per-field length cap so oversized values are caught
 	// at the emitter rather than silently rejected by the daemon after the write.
-	const maxIdentityField = 256
 	for _, f := range [4]struct{ name, val string }{
 		{"issuer_name", issuerName},
 		{"issuer_model", issuerModel},
 		{"operator_id", operatorID},
 		{"operator_name", operatorName},
 	} {
-		if len(f.val) > maxIdentityField {
+		if len(f.val) > MaxIdentityFieldLen {
 			e.dropCount.Add(pendingDrops)
-			return fmt.Errorf("emitter: %s exceeds %d bytes (got %d)", f.name, maxIdentityField, len(f.val))
+			return fmt.Errorf("emitter: %s exceeds %d bytes (got %d)", f.name, MaxIdentityFieldLen, len(f.val))
 		}
 	}
 

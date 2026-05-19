@@ -15,7 +15,7 @@ var readComm = func(pid int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimRight(string(b), "\n"), nil
+	return strings.ToLower(strings.TrimRight(string(b), "\n")), nil
 }
 
 // Detect inspects the parent process name via /proc/<ppid>/comm and returns
