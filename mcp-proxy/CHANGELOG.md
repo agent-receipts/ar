@@ -9,7 +9,7 @@ This file starts at 0.6.2; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
-## [Unreleased]
+## [0.10.0] - 2026-05-19
 
 ### Added
 
