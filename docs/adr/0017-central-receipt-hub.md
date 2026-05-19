@@ -245,6 +245,96 @@ hub agent-receipts daemon (--ingest mode)
      (per-node chain heads, signed by hub's daemon key)
 ```
 
+## Diagrams
+
+### (a) Receipt flow and signature chain (happy path)
+
+```mermaid
+sequenceDiagram
+    participant E as Emitter<br/>(SDK / hook / mcp-proxy)
+    participant D as Local daemon<br/>(node)
+    participant H as Hub daemon<br/>(--ingest mode)
+    participant S3 as S3 bucket<br/>(object lock)
+
+    E->>D: receipt JSON (over UDS SOCK_STREAM)
+    Note over D: canonicalise (RFC 8785)<br/>sign with node Ed25519 key → proofValue<br/>append to local SQLite chain
+    D->>D: persist receipt (source of truth)
+
+    Note over D: shipper goroutine flushes every 5s / 100 receipts
+    D->>H: HTTPS POST /v1/receipts<br/>body: JSONL batch (one receipt per line)<br/>Authorization: Bearer <JWS><br/>  header: alg=EdDSA, kid=node-DID, typ=agnt-rcpt-batch+jws<br/>  claims: iat/exp, body_sha256, batch_id, batch_count
+
+    Note over H: 1. parse JWS header, extract kid<br/>2. resolve kid via DID (ADR-0007), check trust list<br/>3. verify EdDSA signature over header+claims<br/>4. check iat/exp with ±5min tolerance<br/>5. stream body, verify SHA-256 matches body_sha256<br/>6. per-receipt: verify proofValue + chain link
+    H->>H: persist per-node chains to SQLite (idempotent on issuer_did+seq)
+
+    Note over H: anchor job: every 5min or 1000 receipts (whichever first)
+    H->>H: build checkpoint: (issuer.id, seq, tip_hash, pubkey_fingerprint)<br/>canonicalise (RFC 8785)<br/>sign with hub Ed25519 key → proofValue
+    H->>S3: PUT anchors/<issuer.id>/<seq:020d>.jcs.json<br/>(signed checkpoint, object-locked, immutable)
+```
+
+### (b) Trust relationships and verification roots
+
+```mermaid
+flowchart TD
+    ED["Emitter DID\n(per-emitter Ed25519 key)"]
+    ND["Node DID\n(daemon Ed25519 key)"]
+    HD["Hub DID\n(hub daemon Ed25519 key)"]
+    S3["S3 bucket\n(object lock)\n— trust root for anchoring claim —"]
+    TL["Trust list\n(operator-managed,\nsigned by hub DID)"]
+    R["Receipt\n(proofValue)"]
+    B["Batch JWS\n(wraps receipts)"]
+    CP["S3 checkpoint\n(per-node chain head)"]
+    V["Verifier\n(auditor / verify CLI)"]
+
+    ED -->|"signs"| R
+    ND -->|"signs"| B
+    B -->|"contains"| R
+    HD -->|"signs"| CP
+    CP -->|"written to"| S3
+    HD -->|"signs"| TL
+    H_box["Hub"] -->|"verifies node DID via"| TL
+
+    V -->|"verifies receipt proofValue directly via"| ED
+    V -->|"reads anchored chain heads from"| S3
+
+    style S3 fill:#2d6a4f,color:#fff,stroke:#1b4332
+    style ED fill:#1d3557,color:#fff,stroke:#457b9d
+    style ND fill:#1d3557,color:#fff,stroke:#457b9d
+    style HD fill:#1d3557,color:#fff,stroke:#457b9d
+
+    note1["Hub is NOT the trust root for receipts.\nVerifier checks emitter DID directly.\nA compromised hub cannot forge receipts —\nit can only suppress them (suppression is\nvisible in-chain via events_dropped)."]
+    note2["S3 bucket (object lock) is the trust root\nfor the anchoring claim only."]
+
+    style note1 fill:#fff3cd,color:#333,stroke:#ffc107
+    style note2 fill:#d1ecf1,color:#333,stroke:#17a2b8
+```
+
+### (c) Hub outage: backpressure and in-chain visibility
+
+```mermaid
+flowchart TD
+    A([Hub becomes unavailable]) --> B[Shipper retries with exponential backoff]
+    B --> C{Outbox full?\n~10 000 receipts}
+    C -- No --> B
+    C -- Yes --> D[Shipper returns EAGAIN\nto local emitters]
+    D --> E[Emitter increments drop counter\ncannot send new receipts to daemon]
+    E --> F[Daemon synthesises\nevents_dropped receipt\ndrop_count + reason: hub_backpressure\nper ADR-0010]
+    F --> G[events_dropped written to\nlocal chain — it is evidence,\nnot discarded]
+
+    G --> H{Hub recovers?}
+    H -- No --> D
+    H -- Yes --> I[Shipper drains outbox\nbackpressure clears\nEAGAIN stops]
+    I --> J[Outbox batches delivered to hub\nhub persists receipts]
+    J --> K([Audit trail: gap in hub view\nis visible as events_dropped\nin local chain])
+
+    style A fill:#c0392b,color:#fff,stroke:#922b21
+    style K fill:#27ae60,color:#fff,stroke:#1e8449
+    style G fill:#e67e22,color:#fff,stroke:#ca6f1e
+    style F fill:#e67e22,color:#fff,stroke:#ca6f1e
+
+    note["Hub outage does NOT silently corrupt the audit trail.\nThe outage is represented as evidence in the local chain.\nLocal chain remains authoritative throughout (§1 invariant)."]
+    style note fill:#fff3cd,color:#333,stroke:#ffc107
+```
+
 ## Security considerations
 
 ### Trust-list integrity is load-bearing
