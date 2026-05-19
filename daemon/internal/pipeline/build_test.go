@@ -186,6 +186,67 @@ func TestProcess_OutcomeStatus(t *testing.T) {
 	}
 }
 
+// TestProcess_MCPIsErrorOutcome covers the MCP CallToolResult envelope: a
+// JSON-RPC call that returns successfully but whose result body sets
+// "isError": true is a tool-level failure. The proxy reports it with
+// decision="allowed" and an empty error field (no JSON-RPC error was
+// returned), so the daemon must inspect the result body to derive
+// outcome.status. Non-mcp channels must keep their existing mapping —
+// other channels may use isError with different semantics.
+func TestProcess_MCPIsErrorOutcome(t *testing.T) {
+	mcpErrorOutput := json.RawMessage(`{"content":[{"type":"text","text":"401 Bad credentials"}],"isError":true}`)
+	mcpOKOutput := json.RawMessage(`{"content":[{"type":"text","text":"ok"}],"isError":false}`)
+	mcpImplicitOKOutput := json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
+
+	cases := []struct {
+		name    string
+		channel string
+		output  json.RawMessage
+		want    receipt.OutcomeStatus
+	}{
+		{"mcp isError true → failure", "mcp", mcpErrorOutput, receipt.StatusFailure},
+		{"mcp isError false → success", "mcp", mcpOKOutput, receipt.StatusSuccess},
+		{"mcp isError absent → success", "mcp", mcpImplicitOKOutput, receipt.StatusSuccess},
+		{"mcp empty output → success", "mcp", nil, receipt.StatusSuccess},
+		{"mcp malformed JSON → success (no escalation on parse failure)", "mcp", json.RawMessage(`"not-an-object"`), receipt.StatusSuccess},
+		// Other channels must not be reinterpreted: a top-level isError
+		// field there is not the MCP envelope.
+		{"non-mcp channel with isError true → success", "sdk", mcpErrorOutput, receipt.StatusSuccess},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ks := newTestKeySource(t)
+			st := newTestStore(t)
+			state := chain.New("chain-1")
+			p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+			body, err := json.Marshal(EmitterFrame{
+				Version:   "1",
+				TsEmit:    "2026-05-03T00:00:00Z",
+				SessionID: "s",
+				Channel:   tc.channel,
+				Tool:      EmitterTool{Server: "github", Name: "create_pull_request"},
+				Output:    tc.output,
+				Decision:  "allowed",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.Process(socket.Frame{Payload: body}); err != nil {
+				t.Fatalf("Process: %v", err)
+			}
+			receipts, err := st.GetChain("chain-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := receipts[0].CredentialSubject.Outcome.Status
+			if got != tc.want {
+				t.Errorf("status = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestProcess_AdvancesSequenceAndPrevHash(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)

@@ -292,6 +292,30 @@ func validateFrame(f *EmitterFrame) error {
 	return nil
 }
 
+// mcpOutputIsError reports whether an MCP tool response carries
+// `"isError": true`. The MCP `CallToolResult` envelope signals tool-level
+// failure with this flag; the surrounding JSON-RPC call still succeeds, so
+// f.Error is empty and the daemon would otherwise stamp outcome.status as
+// "success". See ADR-0010 and the MCP spec (CallToolResult).
+//
+// Gated on channel == "mcp" because the envelope is MCP-specific: other
+// channels may use a top-level `isError` field with different semantics, and
+// the daemon must not silently reinterpret them. Returns false on parse
+// failure, non-object output, missing field, or a non-true value — only an
+// explicit boolean true escalates to failure.
+func mcpOutputIsError(channel string, raw json.RawMessage) bool {
+	if channel != "mcp" || !hasJSONPayload(raw) {
+		return false
+	}
+	var env struct {
+		IsError *bool `json:"isError"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return false
+	}
+	return env.IsError != nil && *env.IsError
+}
+
 // hasJSONPayload reports whether raw is a JSON value other than null.
 // Whitespace and the literal "null" both count as no-payload.
 func hasJSONPayload(raw json.RawMessage) bool {
@@ -351,7 +375,7 @@ func (p *Pipeline) buildAndSign(
 	var status receipt.OutcomeStatus
 	switch f.Decision {
 	case "allowed":
-		if f.Error != "" {
+		if f.Error != "" || mcpOutputIsError(f.Channel, f.Output) {
 			status = receipt.StatusFailure
 		} else {
 			status = receipt.StatusSuccess

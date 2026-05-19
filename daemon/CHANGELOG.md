@@ -5,6 +5,19 @@ All notable changes to `agent-receipts-daemon` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **MCP tool-level failures now record `outcome.status: "failure"`**:
+  When an MCP tool call returned a `CallToolResult` envelope with
+  `"isError": true`, the JSON-RPC call still succeeded (no `Error` on the
+  emitter frame), so the daemon stamped the receipt with
+  `outcome.status: "success"`. The pipeline now inspects the result body for
+  the MCP `isError` flag on `channel == "mcp"` frames and maps it to
+  `failure`. Other channels are unaffected — a top-level `isError` outside
+  the MCP envelope is not reinterpreted.
+
 ## [0.10.1] - 2026-05-18
 
 ### Security
