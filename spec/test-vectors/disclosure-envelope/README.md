@@ -164,7 +164,4 @@ These are spec-side reference fixtures. Each SDK will gain its own HPKE
 encrypt/decrypt path and load these vectors in a follow-up track; the
 cross-language test harness in `cross-sdk-tests/` will be extended to assert
 SDK-produced envelopes byte-equal the `envelope_canonical_jcs` field here
-under RFC 8785 canonicalisation. The HPKE-vs-sealed-box choice remains open
-pending user sign-off on the ADR-0012 amendment — if the choice flips, this
-directory's vectors are regenerated (the schema and the file layout do not
-change; only `alg` and the cryptographic outputs do).
+under RFC 8785 canonicalisation. HPKE is the accepted choice for v1 (sign-off recorded in the ADR-0012 amendment).
