@@ -48,6 +48,118 @@ A tiered approach:
 - **Phase B (deferred).** `did:web` resolution lands in all SDKs along with the pluggable resolver interface. Trigger conditions: (a) a production deployment needs organizational anchoring; (b) a verifier needs to validate receipts whose issuer has rotated keys (ADR-0015 Phase A reaches the daemon); (c) `did:web` is required for cross-org interoperability with a named consumer.
 - **Phase C (deferred).** Verifier-side DID Document caching/pinning, historical resolution for long-lived receipts, and `did:tdw` evaluation.
 
+## Implementation spec — `did:key` v0.7 wire format
+
+This subsection is the normative wire shape that all SDKs and the hub re-verifier
+MUST conform to for `did:key`. It pins the format only — implementation lands as
+part of Phase A and is out of scope for this ADR. Static test vectors live in
+[`spec/test-vectors/did-key/vectors.json`](../../spec/test-vectors/did-key/vectors.json).
+
+### DID format
+
+```
+did:key:z<multibase-base58btc(0xed01 || ed25519-pubkey-bytes)>
+```
+
+- `0xed01` is the unsigned-varint multicodec identifier for an Ed25519 public key
+  (the byte sequence `0xed 0x01`, not a two-byte big-endian integer).
+- `ed25519-pubkey-bytes` is the 32 raw bytes of the Ed25519 public key per
+  RFC 8032 §5.1.5. No PEM, SPKI, JWK, or other wrapper is permitted in the
+  encoded payload.
+- The multibase prefix is the single ASCII character `z`, indicating base58btc
+  encoding of the concatenated multicodec-prefixed key bytes. No padding.
+- Implementations MUST produce and accept exactly this form; they MUST reject
+  any other multibase prefix, any multicodec other than `0xed01`, and any
+  decoded payload length other than 34 bytes (2-byte prefix + 32-byte key).
+
+### Resolution algorithm
+
+Given an input string `did`:
+
+1. Reject unless `did` begins with the literal ASCII prefix `did:key:z`.
+2. Multibase-decode the substring after `did:key:` using base58btc (the `z`
+   prefix). Reject on any non-alphabet character.
+3. Verify the decoded payload is exactly 34 bytes.
+4. Verify the first two bytes are `0xed 0x01`. Reject otherwise.
+5. The remaining 32 bytes are the Ed25519 public key. No further validation of
+   the curve point is required by this spec (RFC 8032 verification handles
+   malformed points at signature-check time); resolvers MAY perform additional
+   checks.
+6. Construct the DID Document per *DID Document shape* below using the same
+   `z`-prefixed substring (i.e., the value of `did` after `did:key:`) as both
+   the verification-method fragment and the `publicKeyMultibase` value.
+
+Resolution is purely a function of the input string. No network access, no
+caching state, no out-of-band knowledge is consulted.
+
+### DID Document shape
+
+The resolved DID Document for a `did:key` identifier `did:key:z<X>` is exactly:
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/multikey/v1"
+  ],
+  "id": "did:key:z<X>",
+  "verificationMethod": [
+    {
+      "id": "did:key:z<X>#z<X>",
+      "type": "Multikey",
+      "controller": "did:key:z<X>",
+      "publicKeyMultibase": "z<X>"
+    }
+  ],
+  "authentication":   ["did:key:z<X>#z<X>"],
+  "assertionMethod":  ["did:key:z<X>#z<X>"]
+}
+```
+
+Notes:
+
+- `type` is `Multikey` (current W3C recommendation), **not** the older
+  `Ed25519VerificationKey2020`. The hub and SDKs reject the older form to keep
+  one shape across the codebase.
+- `keyAgreement`, `capabilityInvocation`, and `capabilityDelegation` are
+  intentionally omitted. `did:key` permits deriving an X25519 key-agreement key
+  from the Ed25519 signing key; Agent Receipts does not use key agreement and
+  resolvers MUST NOT emit a `keyAgreement` entry.
+- Canonicalisation of this Document, when needed (e.g., for hashing), follows
+  [ADR-0009](./0009-canonicalization-and-schema-consistency.md). This ADR does
+  not introduce new canonicalisation rules.
+
+### Encoding parity with ADR-0001
+
+`did:key` and ADR-0001 receipt fingerprints both use multibase, but with
+different alphabets:
+
+| Surface                       | Multibase prefix | Alphabet   | Payload                                  |
+|-------------------------------|------------------|------------|------------------------------------------|
+| `did:key` identifier          | `z`              | base58btc  | `0xed01` ‖ 32-byte Ed25519 public key    |
+| Receipt `proofValue` (ADR-0001) | `u`            | base64url  | Raw 64-byte Ed25519 signature, no padding |
+
+A verifier that touches both surfaces MUST dispatch on the multibase prefix
+character before decoding. A `u`-prefixed string is never a valid `did:key`,
+and a `z`-prefixed string is never a valid receipt `proofValue`. Implementations
+MUST reject the wrong prefix at parse time rather than silently attempting the
+other decoder.
+
+### Worked example
+
+Public key (hex, RFC 8032 §7.1 TEST 1):
+`d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a`
+
+Multicodec-prefixed payload (hex, 34 bytes):
+`ed01 d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a`
+
+Multibase base58btc encoding with `z` prefix:
+`z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw`
+
+Final DID: `did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw`
+
+Resolved DID Document: see `vector-1-rfc8032-test-1` in the test-vectors file.
+
 ## Security Considerations
 
 ### Key-DID binding
@@ -82,3 +194,18 @@ If the protocol supports multiple DID methods, two deployments using different m
 - Key rotation semantics for receipt chains must be specified — either in this ADR or a companion ADR — before `did:web` can be recommended for production use.
 - Cross-SDK DID resolution test vectors are needed to ensure all three implementations resolve the same `did:key` identifiers to the same public keys.
 - The verification algorithm (spec §7.1, §7.3) must be updated to include DID resolution as an explicit step with defined error handling.
+
+## Amendments
+
+### 2026-05-18: Pin `did:key` v0.7 wire format and resolution algorithm
+
+Added the *Implementation spec — `did:key` v0.7 wire format* subsection above
+(DID format, resolution algorithm, DID Document shape, encoding parity with
+ADR-0001, and a worked example) plus the companion fixtures under
+[`spec/test-vectors/did-key/`](../../spec/test-vectors/did-key/). The Status,
+Decision, Resolved questions, and Implementation phasing sections are unchanged
+— Phase A is still scoped-but-not-started; this amendment only fixes the wire
+shape that Phase A and the central receipt hub (ADR-0017) will consume so the
+three SDKs and the hub re-verifier can implement against one normative
+description. No protocol or schema changes; documentation and JSON fixtures
+only.
