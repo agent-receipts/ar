@@ -130,7 +130,7 @@ RFC 9180 §A.1.1 by hand or with any conformant HPKE library and substitute
 the values into the structure above. The schema constraints accept any
 valid unpadded-base64url string of the right length for `enc` (43 chars,
 the encoded size of a 32-byte X25519 public key) and any unpadded-base64url
-string of `minLength: 22` for `ct`. The placeholder strings in the current
+string of `minLength: 24` for `ct` (v1 plaintext minimum is `{}` = 2 bytes; 2 + 16-byte GCM tag = 18 bytes = 24 base64url chars). The placeholder strings in the current
 vectors (`<enc-bytes-base64url-unpadded>` / `<ciphertext-bytes-base64url-unpadded>`)
 deliberately fail those checks — by design, since they should fail loudly if
 copy-pasted into production. A vector's `computed_values_status` flips from

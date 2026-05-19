@@ -107,7 +107,7 @@
       "`v` MUST be the JSON string \"1\", not the JSON number 1.",
       "`alg` MUST be exactly the string \"hpke-x25519-hkdf-sha256-aes-256-gcm\" — no whitespace, no case variation, no version suffix.",
       "`recipients` MUST be a JSON array of length 1 in v1. Length 0 is invalid; length >1 is reserved for a v2 multi-recipient envelope and MUST NOT appear with `v: \"1\"`.",
-      "`enc` MUST be exactly 43 unpadded-base64url characters (the encoding of a 32-byte X25519 public key). `ct` MUST be unpadded base64url with at least 22 characters (minimum AEAD output is the 16-byte GCM tag for a near-empty plaintext). Neither field carries `=` padding, `+`, or `/`.",
+      "`enc` MUST be exactly 43 unpadded-base64url characters (the encoding of a 32-byte X25519 public key). `ct` MUST be unpadded base64url with at least 24 characters (v1 plaintext is RFC 8785 canonical JSON of a parameters object, minimum `{}` = 2 bytes; 2 + 16-byte GCM tag = 18 bytes = 24 base64url chars). Neither field carries `=` padding, `+`, or `/`.",
       "No `nonce` field is present in v1 envelopes. HPKE single-shot derives the AEAD nonce from the KEM output internally; surfacing a redundant `nonce` field would be a v1 schema violation.",
       "The HPKE `info` parameter is the empty string. The HPKE AAD is the empty string. v1 does not bind any out-of-band context into encryption; the surrounding signed receipt envelope already authenticates the disclosure field via its signature.",
       "Plaintext is RFC 8785 JCS over the parameters object as a JSON object. Strings, numbers, arrays at the top level are not supported as plaintext in v1; wrap in an object."
