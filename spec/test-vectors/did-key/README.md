@@ -15,13 +15,15 @@ are not yet wired into any test suite.
   "spec_version":          "did:key v0.7",
   "adr":                   "docs/adr/0007-did-method-strategy.md",
   "multicodec_prefix_hex": "ed01",
-  "multibase_prefix":      "z (base58btc)",
+  "multibase_prefix":      "z",
+  "multibase_encoding":    "base58btc",
   "vectors":               [ { ... }, ... ]
 }
 ```
 
 Consumers building a strict schema MAY ignore unknown top-level fields; the
-load-bearing keys are `vectors`, `multicodec_prefix_hex`, and `multibase_prefix`.
+load-bearing keys are `vectors`, `multicodec_prefix_hex`, `multibase_prefix`, and
+`multibase_encoding`.
 
 Each entry in `vectors[]` has:
 
@@ -60,4 +62,4 @@ sources.
 These are spec-side reference fixtures. Each SDK will gain its own resolver and
 load these vectors in a follow-up track; the cross-language test harness in
 `cross-sdk-tests/` will be extended to assert SDK-resolved DID Documents
-byte-equal the `did_document` field here under RFC 8785 canonicalisation.
+byte-equal to the `did_document` field here under RFC 8785 canonicalisation.

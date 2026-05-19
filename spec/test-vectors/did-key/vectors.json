@@ -3,7 +3,8 @@
   "spec_version": "did:key v0.7",
   "adr": "docs/adr/0007-did-method-strategy.md",
   "multicodec_prefix_hex": "ed01",
-  "multibase_prefix": "z (base58btc)",
+  "multibase_prefix": "z",
+  "multibase_encoding": "base58btc",
   "vectors": [
     {
       "name": "vector-1-rfc8032-test-1",
