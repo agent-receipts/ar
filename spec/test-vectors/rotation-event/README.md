@@ -4,9 +4,9 @@ A worked example of a `credentialSubject.keyRotation` receipt, pinning the
 canonical wire form proposed in the
 [ADR-0015 amendment](../../../docs/adr/0015-key-rotation-byok-anchoring.md#2026-05-18-amendment-rotation-event-envelope-placement-credentialsubjectkeyrotation).
 
-The vector is intended for human review of the proposal — runnable cross-SDK
+The vector is intended for human review — runnable cross-SDK
 verification (alongside `cross-sdk-tests/v020_vectors.json` and friends) is a
-follow-up that depends on the placement decision being accepted.
+follow-up that depends on SDK implementations of `credentialSubject.keyRotation`.
 
 ## What this vector demonstrates
 

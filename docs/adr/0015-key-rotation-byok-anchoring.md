@@ -179,7 +179,7 @@ Phase B (checkpoint anchoring) and Phase C (HSM/KMS adapters) are explicitly def
 
 ### 2026-05-18: Amendment — rotation event envelope placement (`credentialSubject.keyRotation`)
 
-**Status of this amendment:** *Accepted* (2026-05-19). Placement option (a) `credentialSubject.keyRotation` is the wire format for rotation events. The fields above (`event_type`, `new_public_key`, `old_key_fingerprint`, `new_key_fingerprint`, `old_algorithm`, `new_algorithm`, `signed_with`) and their semantics are unchanged by this amendment — only their envelope-side carriage is pinned. This amendment closes the gap the original *Rotation event schema* section flagged with "Wire-format placement is out of scope for this ADR." See [ADR-0017 (draft)](https://github.com/agent-receipts/ar/blob/claude/draft-adr-0017-Ko7cn/docs/adr/0017-central-receipt-hub.md) *Preconditions* (rotation-event canonical wire format) for the consumer that requires this pin. The ADR-0017 file is not yet on `main` — the relative link will be repointed at `./0017-central-receipt-hub.md` once ADR-0017 lands.
+**Status of this amendment:** *Accepted* (2026-05-19). Placement option (a) `credentialSubject.keyRotation` is the wire format for rotation events. The fields above (`event_type`, `new_public_key`, `old_key_fingerprint`, `new_key_fingerprint`, `old_algorithm`, `new_algorithm`, `signed_with`) and their semantics are unchanged by this amendment — only their envelope-side carriage is pinned. This amendment closes the gap the original *Rotation event schema* section flagged with "Wire-format placement is out of scope for this ADR." See ADR-0017 *Preconditions* (rotation-event canonical wire format) for the consumer that requires this pin. The relative link `./0017-central-receipt-hub.md` will be added once ADR-0017 lands on `main`.
 
 **Decision.** Rotation events live at `credentialSubject.keyRotation` — a dedicated sub-object on `credentialSubject`, additive to today's `principal` / `action` / `outcome` / `chain` layout. The seven fields from *Rotation event schema* above map into `keyRotation` verbatim; no field is renamed.
 
@@ -189,7 +189,7 @@ Phase B (checkpoint anchoring) and Phase C (HSM/KMS adapters) are explicitly def
 
 **Why not option (c) a new top-level envelope field.** Top-level fields sit at the same layer as `@context`, `id`, `type`, `issuer`, `issuanceDate`, `credentialSubject`, `proof`. The schema's root **does** set `additionalProperties: false` (line 17 of the current schema), so adding a top-level `keyRotation` field forces every verifier in the wild to bump its allowed-keys set or fail closed. That is the biggest possible blast radius for what is conceptually a sub-namespace of the existing credential subject. Reserve top-level extension for cases where a sub-namespace genuinely cannot represent the semantics — rotation events are not that case.
 
-**What lives in `keyRotation` (normative, pending sign-off).**
+**What lives in `keyRotation` (normative).**
 
 | Field | Type | Description |
 |---|---|---|
@@ -222,4 +222,4 @@ A worked example with all values recomputable from RFC 8032 §7.1 test keys is a
 
 **Schema version implication.** Adding `keyRotation` to the canonical receipt body is a wire-format change in the sense that issuers gain a new field to emit, even though no existing receipt's bytes are affected. Recommend a `0.2.1 → 0.3.0` schema-version bump under the same rationale ADR-0008 used for `0.1.0 → 0.2.0`: schema version as a security signal — verifiers that see `0.3.0` know the issuer is operating in an environment where rotation events are expressible, while `0.2.0` / `0.2.1` receipts retain their original meaning unchanged. The version-enum extension (`"0.3.0"` added to the `version` schema property) and the `keyRotation` `$ref` integration are deliberately **not** part of this PR; they land in a follow-up gated on this placement being accepted.
 
-**Cross-references for the consumer track.** [ADR-0017 (draft)](https://github.com/agent-receipts/ar/blob/claude/draft-adr-0017-Ko7cn/docs/adr/0017-central-receipt-hub.md) §"Preconditions" names "rotation event canonical wire format" as a precondition for hub implementation; this amendment closes that precondition once accepted. The two sibling spec PRs — `did:key` resolution and the disclosure envelope — derisk the other two preconditions independently.
+**Cross-references for the consumer track.** ADR-0017 §"Preconditions" names "rotation event canonical wire format" as a precondition for hub implementation; this amendment closes that precondition. The two sibling spec PRs — `did:key` resolution and the disclosure envelope — derisk the other two preconditions independently.
