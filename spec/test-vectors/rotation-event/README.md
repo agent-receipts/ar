@@ -2,7 +2,7 @@
 
 A worked example of a `credentialSubject.keyRotation` receipt, pinning the
 canonical wire form proposed in the
-[ADR-0015 amendment](../../../docs/adr/0015-key-rotation-byok-anchoring.md#amendment-rotation-event-envelope-placement-credentialsubjectkeyrotation).
+[ADR-0015 amendment](../../../docs/adr/0015-key-rotation-byok-anchoring.md#2026-05-18-amendment-rotation-event-envelope-placement-credentialsubjectkeyrotation).
 
 The vector is intended for human review of the proposal — runnable cross-SDK
 verification (alongside `cross-sdk-tests/v020_vectors.json` and friends) is a
