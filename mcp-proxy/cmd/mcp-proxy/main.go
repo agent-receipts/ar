@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
+	"github.com/agent-receipts/ar/mcp-proxy/internal/host"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/policy"
 	"github.com/agent-receipts/ar/mcp-proxy/internal/proxy"
 	"github.com/agent-receipts/ar/sdk/go/emitter"
@@ -69,6 +70,10 @@ func serve() {
 		httpAddr     = flag.String("http", "none", "HTTP address for the approval listener (default: none — listener is off). Pass 127.0.0.1:0 for a random free port or 127.0.0.1:<port> to pin a port. See https://agentreceipts.ai/mcp-proxy/approval-ui/.")
 		approvalWait = flag.Duration("approval-timeout", 60*time.Second, "Maximum time to wait for HTTP approval when a policy rule pauses a tool call")
 		socketPath   = flag.String("socket", emitter.DefaultSocketPath(), "Unix-domain socket for the agent-receipts daemon (ADR-0010). Defaults to AGENTRECEIPTS_SOCKET if set; explicit --socket wins. Pass --socket=\"\" to disable emission entirely. Emit errors are logged but do not block tool calls.")
+		issuerName   = flag.String("issuer-name", envOr("AGENTRECEIPTS_ISSUER_NAME", ""), "Override detected issuer name (env: AGENTRECEIPTS_ISSUER_NAME)")
+		issuerModel  = flag.String("issuer-model", envOr("AGENTRECEIPTS_ISSUER_MODEL", ""), "AI model identifier (env: AGENTRECEIPTS_ISSUER_MODEL)")
+		operatorID   = flag.String("operator-id", envOr("AGENTRECEIPTS_OPERATOR_ID", ""), "Operator DID (env: AGENTRECEIPTS_OPERATOR_ID)")
+		operatorName = flag.String("operator-name", envOr("AGENTRECEIPTS_OPERATOR_NAME", ""), "Operator name (env: AGENTRECEIPTS_OPERATOR_NAME)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: mcp-proxy [flags] <command> [args...]\n")
@@ -105,6 +110,33 @@ func serve() {
 		*serverName = parts[len(parts)-1]
 	}
 
+	// Resolve issuer/operator identity: auto-detect the host, then apply any
+	// flag or env overrides. Flags take precedence over auto-detection.
+	id := host.Detect()
+	if *issuerName != "" {
+		id.IssuerName = *issuerName
+		id.Source = "flags"
+	}
+	if *issuerModel != "" {
+		id.IssuerModel = *issuerModel
+		id.Source = "flags"
+	}
+	if *operatorID != "" {
+		id.OperatorID = *operatorID
+		id.Source = "flags"
+	}
+	if *operatorName != "" {
+		id.OperatorName = *operatorName
+		id.Source = "flags"
+	}
+	if id.OperatorName != "" && id.OperatorID == "" {
+		log.Fatalf("mcp-proxy: --operator-name (or AGENTRECEIPTS_OPERATOR_NAME) requires --operator-id (or AGENTRECEIPTS_OPERATOR_ID)")
+	}
+	if id.IssuerName != "" || id.IssuerModel != "" || id.OperatorID != "" || id.OperatorName != "" {
+		log.Printf("mcp-proxy: host=%s issuer=%q model=%q operator.id=%q operator.name=%q",
+			id.Source, id.IssuerName, id.IssuerModel, id.OperatorID, id.OperatorName)
+	}
+
 	sessionID := uuid.New().String()
 
 	// One-shot legacy notice. Operators upgrading from <v0.9.0 may have a
@@ -124,6 +156,12 @@ func serve() {
 			emitter.WithSocketPath(sp),
 			emitter.WithSessionID(sessionID),
 			emitter.WithStrictErrors(),
+			emitter.WithIdentity(emitter.Identity{
+				IssuerName:   id.IssuerName,
+				IssuerModel:  id.IssuerModel,
+				OperatorID:   id.OperatorID,
+				OperatorName: id.OperatorName,
+			}),
 		)
 		if initErr != nil {
 			log.Fatalf("mcp-proxy: emitter init: %v", initErr)
@@ -568,6 +606,15 @@ func noteLegacyAuditDB() {
 			"mcp-proxy: [INFO] could not check for legacy audit DB at %s: %v (the file may exist but be unreadable; the daemon's store is authoritative regardless).\n",
 			legacy, err)
 	}
+}
+
+// envOr returns the value of the named environment variable, or fallback when
+// the variable is unset or empty.
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func generateToken(n int) string {

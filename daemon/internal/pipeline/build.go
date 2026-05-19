@@ -26,6 +26,12 @@ import (
 // (multibase prefix "u") rather than the W3C default base58btc ("z").
 const multibaseBase64URL = "u"
 
+// maxIdentityFieldLen caps the byte length of the four proxy-supplied identity
+// fields (IssuerName, IssuerModel, OperatorID, OperatorName). The 1 MiB socket
+// cap is the only ceiling today — this per-field limit catches runaway values
+// early and keeps error messages legible.
+const maxIdentityFieldLen = 256
+
 // SupportedFrameVersion is the only emitter-frame schema this daemon accepts.
 // Bumping it requires a migration plan and a daemon-side translator for the
 // old version; until that exists, accepting unknown versions would silently
@@ -53,16 +59,20 @@ const actionTypeEventsDropped = "agent_receipts.events_dropped"
 // events_dropped receipt with this count before the live receipt so the gap
 // is visible in the chain.
 type EmitterFrame struct {
-	Version   string          `json:"v"`
-	TsEmit    string          `json:"ts_emit"`
-	SessionID string          `json:"session_id"`
-	Channel   string          `json:"channel"`
-	Tool      EmitterTool     `json:"tool"`
-	Input     json.RawMessage `json:"input,omitempty"`
-	Output    json.RawMessage `json:"output,omitempty"`
-	Error     string          `json:"error,omitempty"`
-	Decision  string          `json:"decision"`
-	DropCount int64           `json:"drop_count,omitempty"`
+	Version      string          `json:"v"`
+	TsEmit       string          `json:"ts_emit"`
+	SessionID    string          `json:"session_id"`
+	Channel      string          `json:"channel"`
+	Tool         EmitterTool     `json:"tool"`
+	Input        json.RawMessage `json:"input,omitempty"`
+	Output       json.RawMessage `json:"output,omitempty"`
+	Error        string          `json:"error,omitempty"`
+	Decision     string          `json:"decision"`
+	DropCount    int64           `json:"drop_count,omitempty"`
+	IssuerName   string          `json:"issuer_name,omitempty"`
+	IssuerModel  string          `json:"issuer_model,omitempty"`
+	OperatorID   string          `json:"operator_id,omitempty"`
+	OperatorName string          `json:"operator_name,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -285,6 +295,23 @@ func validateFrame(f *EmitterFrame) error {
 	if f.DropCount < 0 {
 		return fmt.Errorf("drop_count %d is negative", f.DropCount)
 	}
+	// Validate proxy-supplied identity fields: cap length and enforce
+	// operator consistency (operator_name requires operator_id per spec).
+	if len(f.IssuerName) > maxIdentityFieldLen {
+		return fmt.Errorf("issuer_name exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.IssuerName))
+	}
+	if len(f.IssuerModel) > maxIdentityFieldLen {
+		return fmt.Errorf("issuer_model exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.IssuerModel))
+	}
+	if len(f.OperatorID) > maxIdentityFieldLen {
+		return fmt.Errorf("operator_id exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.OperatorID))
+	}
+	if len(f.OperatorName) > maxIdentityFieldLen {
+		return fmt.Errorf("operator_name exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.OperatorName))
+	}
+	if f.OperatorName != "" && f.OperatorID == "" {
+		return fmt.Errorf("operator_name set without operator_id")
+	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
 	// JSON syntax, so anything reaching this point is well-formed. The hash
@@ -493,11 +520,7 @@ func (p *Pipeline) buildAndSign(
 	}
 
 	return p.signAndHash(receipt.CreateInput{
-		Issuer: receipt.Issuer{
-			ID:        p.IssuerID,
-			Type:      "AgentReceiptsDaemon",
-			SessionID: f.SessionID,
-		},
+		Issuer:    issuerFromFrame(f, p.IssuerID),
 		Principal: receipt.Principal{ID: "did:user:unknown"},
 		Action:    action,
 		Outcome:   outcome,
@@ -509,10 +532,32 @@ func (p *Pipeline) buildAndSign(
 	}, now)
 }
 
+// issuerFromFrame builds the receipt Issuer from the emitter frame and the
+// daemon's own DID. Name, Model, and Operator come from the proxy; they are
+// empty/nil when an old proxy that predates this field set emits the frame.
+func issuerFromFrame(f *EmitterFrame, daemonID string) receipt.Issuer {
+	var op *receipt.Operator
+	if f.OperatorID != "" {
+		op = &receipt.Operator{ID: f.OperatorID, Name: f.OperatorName}
+	}
+	return receipt.Issuer{
+		ID:        daemonID,
+		Type:      "AgentReceiptsDaemon",
+		Name:      f.IssuerName,
+		Model:     f.IssuerModel,
+		Operator:  op,
+		SessionID: f.SessionID,
+	}
+}
+
 // buildAndSignDropReceipt constructs a synthetic events_dropped receipt.
 // seq and prevHash come directly from PairAlloc.FirstSeq/FirstPrev rather
 // than from a chain.Allocation, avoiding the ambiguous no-op Allocation that
 // would be needed to represent the first PairAlloc slot.
+//
+// Drop receipts are synthetic — the proxy didn't supply identity for the
+// gap, so Name/Model/Operator are deliberately left empty (vs. live
+// receipts which get them from the frame via issuerFromFrame).
 func (p *Pipeline) buildAndSignDropReceipt(
 	dropCount int64,
 	sessionID string,
