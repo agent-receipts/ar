@@ -50,7 +50,7 @@ wire-format pin.
 
 - `old_key_fingerprint`: `sha256:39f713d0a644253f04529421b9f51b9b08979d08295959c4f3990ee617f5139f`
 - `new_key_fingerprint`: `sha256:dac073e0123bdea59dd9b3bda9cf6037f63aca82627d7abcd5c4ac29dd74003e`
-- `new_public_key` (multibase-`u` base64url of the 32 raw bytes, per ADR-0001):
+- `new_public_key` (multibase-`u` base64url of the 32 raw bytes — same encoding ADR-0001 defines for `proof.proofValue`, applied here to raw public-key bytes):
   `u_FHNjmIYoaONpH7QAjDwWAgW7RO6MwOsXeuRFUiQgCU`
 - RFC 8785 canonical bytes of the receipt body (`proof` removed) hash to
   `sha256:6983c9bd6fb24e844b90f7616315a914fdedc5fef8126e11d46149ba2f320457`.
