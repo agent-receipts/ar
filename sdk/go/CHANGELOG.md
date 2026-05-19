@@ -9,6 +9,20 @@ This file starts at 0.6.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.10.0] - 2026-05-19
+
+### Added
+
+- **Issuer/operator identity fields on emitted frames** ([#461](https://github.com/agent-receipts/ar/pull/461)):
+  New `Identity` type and `WithIdentity()` constructor option let callers stamp
+  `issuer_name`, `issuer_model`, `operator_id`, and `operator_name` on every
+  emitted frame. Per-event fields on `Event` take precedence over the
+  emitter-level defaults set via `WithIdentity`. The emitter validates identity
+  fields before marshalling: `operator_name` requires `operator_id`, and each
+  field is capped at 256 bytes (`MaxIdentityFieldLen`), mirroring the daemon's
+  enforcement so violations surface at the emitter rather than being silently
+  rejected after the write.
+
 ## [0.9.0] - 2026-05-16
 
 ### Added
