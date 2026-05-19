@@ -9,6 +9,12 @@ This file starts at 0.6.2; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [Unreleased]
+
+### Added
+
+- **Issuer/operator identity on receipts**: auto-detect the host that launched the proxy (Claude Code, Codex, Cursor, Windsurf) from the parent process name on Linux, and stamp `receipt.Issuer.Name`, `receipt.Issuer.Model`, and `receipt.Issuer.Operator` on every emitted receipt. Override or supplement auto-detection with `--issuer-name`, `--issuer-model`, `--operator-id`, `--operator-name` flags (or the matching `AGENTRECEIPTS_*` env vars).
+
 ## [0.9.0] - 2026-05-18
 
 ### Removed (breaking)

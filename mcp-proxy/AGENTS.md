@@ -1,6 +1,6 @@
 # AGENTS.md
 
-MCP proxy that sits between an MCP client and server on stdin/stdout, intercepting every tool call to classify, score risk, evaluate policy, sign cryptographic receipts, redact sensitive data, and store an audit trail. Built with Go on [sdk/go](../sdk/go/).
+Thin MCP proxy: enforces policy on tool calls and forwards completed events to the [agent-receipts daemon](https://github.com/agent-receipts/ar/tree/main/daemon) for signing and persistence. The daemon is the sole writer; the proxy holds no SQLite store of its own (since v0.9.0 — see ADR-0010, [#421](https://github.com/agent-receipts/ar/pull/421), [#453](https://github.com/agent-receipts/ar/issues/453)).
 
 ## Getting started
 
@@ -14,11 +14,12 @@ go vet ./...                           # static analysis
 ## Project structure
 
 ```
-cmd/mcp-proxy/     # CLI entry point (serve, list, inspect, verify, export, stats, timing)
+cmd/mcp-proxy/     # CLI entry point (serve, doctor, init)
 internal/
   proxy/           # STDIO proxy, JSON-RPC parsing
-  audit/           # SQLite audit store, classifier, risk scorer, redaction, encryption, intent tracker
+  audit/           # Classifier, risk scorer, approval manager (no persistence)
   policy/          # YAML policy engine (pass/flag/pause/block)
+  host/            # Parent-process host detection (Claude Code, Codex, Cursor, Windsurf)
 configs/           # Default policy rules + bundled taxonomies (embedded into the binary via go:embed)
 ```
 
@@ -28,34 +29,35 @@ configs/           # Default policy rules + bundled taxonomies (embedded into th
 MCP Client → stdin/stdout → mcp-proxy → stdin/stdout → MCP Server
                                │
                                ├── JSON-RPC parser
-                               ├── Classifier + Risk scorer (0-100)
+                               ├── Classifier + Risk scorer
                                ├── Policy engine (YAML rules)
-                               ├── Approval workflow (HTTP)
-                               ├── Intent tracker (temporal grouping)
-                               ├── Receipt emitter (Ed25519, hash-chained)
-                               ├── Redaction (JSON-aware + pattern-based)
-                               ├── Encryption at rest (AES-256-GCM)
-                               └── SQLite audit store
+                               ├── Approval workflow (HTTP, in-memory)
+                               └── Daemon emitter (forwards completed events
+                                   to agent-receipts-daemon over AF_UNIX;
+                                   daemon owns redaction, hashing, signing,
+                                   chaining, and persistence)
 ```
+
+## Flags
+
+| Flag | Env | Default | Description |
+|------|-----|---------|-------------|
+| `-rules` | — | — | Policy rules YAML file |
+| `-name` | — | command basename | Server name for audit trail |
+| `-http` | — | `none` | HTTP address for approval listener |
+| `-approval-timeout` | — | `60s` | Max wait for HTTP approval |
+| `-socket` | `AGENTRECEIPTS_SOCKET` | platform default | Daemon Unix socket path |
+| `-issuer-name` | `AGENTRECEIPTS_ISSUER_NAME` | auto-detected | Override detected issuer name |
+| `-issuer-model` | `AGENTRECEIPTS_ISSUER_MODEL` | — | AI model identifier |
+| `-operator-id` | `AGENTRECEIPTS_OPERATOR_ID` | auto-detected | Operator DID |
+| `-operator-name` | `AGENTRECEIPTS_OPERATOR_NAME` | auto-detected | Operator display name |
+
+The proxy auto-detects the host (Claude Code, Codex, Cursor, Windsurf) from the parent process name on Linux. Flags and env vars take precedence over auto-detection.
 
 ## Conventions
 
 - All changes go through pull requests
 - Run `go vet ./...` before committing
-- Never break the MCP protocol — if parsing fails, forward the message raw
+- The proxy must never break the MCP protocol — if parsing fails, forward raw
 - Flush stdout after every proxied message
-- Pure Go SQLite via modernc.org/sqlite — no CGO
-- Tests sit alongside source files as `*_test.go`
-
-## Reference files
-
-- `internal/policy/engine.go` — policy evaluation: structured input/output, validation on init, composable matching logic
-- `internal/audit/classifier.go` — operation classification and risk scoring with priority ordering
-- `internal/audit/redact.go` — two-pass redaction pattern: JSON-aware key matching + regex-based secret detection
-
-## Testing
-
-- Run `go test ./...` to execute all tests
-- Run `go test -v ./internal/audit/` (or any subpackage) to test a single area
-- Tests cover: JSON-RPC parsing, classification, risk scoring, policy evaluation, redaction, encryption, receipt signing, and intent tracking
-- The proxy depends on `sdk/go` via a `replace` directive — if you change `sdk/go`, re-run proxy tests too
+- Redaction and persistence are daemon responsibilities — do not reintroduce a local store
