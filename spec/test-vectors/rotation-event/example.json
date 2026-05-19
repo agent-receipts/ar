@@ -1,0 +1,54 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://agentreceipts.ai/context/v1"
+  ],
+  "credentialSubject": {
+    "action": {
+      "id": "act_5dcf6679-7425-40de-944b-e07fc1f90b01",
+      "risk_level": "high",
+      "timestamp": "2026-05-18T10:00:00Z",
+      "type": "agent.key.rotate"
+    },
+    "chain": {
+      "chain_id": "chain_rotation_fixture_001",
+      "previous_receipt_hash": null,
+      "sequence": 1
+    },
+    "keyRotation": {
+      "event_type": "key_rotated",
+      "new_algorithm": "ed25519",
+      "new_key_fingerprint": "sha256:dac073e0123bdea59dd9b3bda9cf6037f63aca82627d7abcd5c4ac29dd74003e",
+      "new_public_key": "u_FHNjmIYoaONpH7QAjDwWAgW7RO6MwOsXeuRFUiQgCU",
+      "old_algorithm": "ed25519",
+      "old_key_fingerprint": "sha256:39f713d0a644253f04529421b9f51b9b08979d08295959c4f3990ee617f5139f",
+      "signed_with": "old"
+    },
+    "outcome": {
+      "status": "success"
+    },
+    "principal": {
+      "id": "did:agent:rotation-fixture-issuer",
+      "type": "OrganizationPrincipal"
+    }
+  },
+  "id": "urn:receipt:7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "issuanceDate": "2026-05-18T10:00:00Z",
+  "issuer": {
+    "id": "did:agent:rotation-fixture-issuer",
+    "name": "Rotation Fixture Issuer",
+    "type": "AIAgent"
+  },
+  "proof": {
+    "created": "2026-05-18T10:00:01Z",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "uqwcXwDOGW3UKEMyboz6NzEHqcG7C6HdXnMJvn_wR6tsZLdH2i8zYBS-yFRAOu_6JePCJdP80E6BR41AHSi9eCw",
+    "type": "Ed25519Signature2020",
+    "verificationMethod": "did:agent:rotation-fixture-issuer#key-1"
+  },
+  "type": [
+    "VerifiableCredential",
+    "AgentReceipt"
+  ],
+  "version": "0.2.1"
+}
