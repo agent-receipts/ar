@@ -73,3 +73,6 @@ wire-format pin.
 - No rotation event anchored to an external sink. ADR-0015 specifies that
   rotation events MUST be anchored before the local chain commits — this
   fixture is a *wire-format* vector and is silent on the anchor write contract.
+- No CI schema-validation coverage. The existing `cross-sdk-tests/spec_schema_test.go`
+  only validates `spec/examples/*.json`; extending the glob to include
+  `spec/test-vectors/**/*.json` is a follow-up.
