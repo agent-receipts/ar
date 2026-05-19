@@ -89,6 +89,14 @@ type Event struct {
 	Output   json.RawMessage
 	Error    string
 	Decision string
+
+	// optional issuer/operator identity fields — forwarded to the daemon so
+	// it can stamp receipt.Issuer.Name, receipt.Issuer.Model, and
+	// receipt.Issuer.Operator. When empty, the Emitter's Defaults are used.
+	IssuerName   string
+	IssuerModel  string
+	OperatorID   string
+	OperatorName string
 }
 
 // Option configures an Emitter at construction.
@@ -99,6 +107,17 @@ type config struct {
 	sessionID    string
 	logger       *slog.Logger
 	strictErrors bool
+	defaults     Identity
+}
+
+// Identity holds issuer/operator fields that the Emitter stamps on every
+// frame where the corresponding Event field is empty. Set once at construction
+// via WithIdentity; per-event overrides take precedence.
+type Identity struct {
+	IssuerName   string
+	IssuerModel  string
+	OperatorID   string
+	OperatorName string
 }
 
 // WithSocketPath overrides the daemon socket path. When unset, the path
@@ -143,6 +162,13 @@ func WithStrictErrors() Option {
 	return func(c *config) { c.strictErrors = true }
 }
 
+// WithIdentity sets default issuer/operator fields that are stamped on every
+// frame. Per-event fields on Event take precedence over these defaults.
+// Typically set once at construction from host auto-detection or CLI flags.
+func WithIdentity(id Identity) Option {
+	return func(c *config) { c.defaults = id }
+}
+
 // Emitter is the daemon-socket client. Construct with New, fire events
 // with Emit, release the socket with Close. Safe for concurrent Emit.
 type Emitter struct {
@@ -156,6 +182,7 @@ type Emitter struct {
 	sessionID    string
 	logger       *slog.Logger
 	strictErrors bool
+	defaults     Identity
 
 	mu     sync.Mutex
 	conn   net.Conn
@@ -192,6 +219,7 @@ func New(opts ...Option) (*Emitter, error) {
 		sessionID:    cfg.sessionID,
 		logger:       cfg.logger,
 		strictErrors: cfg.strictErrors,
+		defaults:     cfg.defaults,
 	}, nil
 }
 
@@ -204,16 +232,20 @@ func (e *Emitter) SessionID() string { return e.sessionID }
 // Defined locally so the emitter does not import a daemon-internal
 // package; the wire format is the contract, not the type definition.
 type frame struct {
-	Version   string          `json:"v"`
-	TsEmit    string          `json:"ts_emit"`
-	SessionID string          `json:"session_id"`
-	Channel   string          `json:"channel"`
-	Tool      frameTool       `json:"tool"`
-	Input     json.RawMessage `json:"input,omitempty"`
-	Output    json.RawMessage `json:"output,omitempty"`
-	Error     string          `json:"error,omitempty"`
-	Decision  string          `json:"decision"`
-	DropCount int64           `json:"drop_count,omitempty"`
+	Version      string          `json:"v"`
+	TsEmit       string          `json:"ts_emit"`
+	SessionID    string          `json:"session_id"`
+	Channel      string          `json:"channel"`
+	Tool         frameTool       `json:"tool"`
+	Input        json.RawMessage `json:"input,omitempty"`
+	Output       json.RawMessage `json:"output,omitempty"`
+	Error        string          `json:"error,omitempty"`
+	Decision     string          `json:"decision"`
+	DropCount    int64           `json:"drop_count,omitempty"`
+	IssuerName   string          `json:"issuer_name,omitempty"`
+	IssuerModel  string          `json:"issuer_model,omitempty"`
+	OperatorID   string          `json:"operator_id,omitempty"`
+	OperatorName string          `json:"operator_name,omitempty"`
 }
 
 type frameTool struct {
@@ -277,17 +309,39 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 	// restored (see the failure paths below) so it isn't lost.
 	pendingDrops := e.dropCount.Swap(0)
 
+	// Merge per-event identity fields over the emitter-level defaults.
+	issuerName := e.defaults.IssuerName
+	if ev.IssuerName != "" {
+		issuerName = ev.IssuerName
+	}
+	issuerModel := e.defaults.IssuerModel
+	if ev.IssuerModel != "" {
+		issuerModel = ev.IssuerModel
+	}
+	operatorID := e.defaults.OperatorID
+	if ev.OperatorID != "" {
+		operatorID = ev.OperatorID
+	}
+	operatorName := e.defaults.OperatorName
+	if ev.OperatorName != "" {
+		operatorName = ev.OperatorName
+	}
+
 	body, err := json.Marshal(frame{
-		Version:   SupportedFrameVersion,
-		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
-		SessionID: e.sessionID,
-		Channel:   ev.Channel,
-		Tool:      frameTool{Server: ev.Tool.Server, Name: ev.Tool.Name},
-		Input:     ev.Input,
-		Output:    ev.Output,
-		Error:     ev.Error,
-		Decision:  ev.Decision,
-		DropCount: pendingDrops,
+		Version:      SupportedFrameVersion,
+		TsEmit:       time.Now().UTC().Format(time.RFC3339Nano),
+		SessionID:    e.sessionID,
+		Channel:      ev.Channel,
+		Tool:         frameTool{Server: ev.Tool.Server, Name: ev.Tool.Name},
+		Input:        ev.Input,
+		Output:       ev.Output,
+		Error:        ev.Error,
+		Decision:     ev.Decision,
+		DropCount:    pendingDrops,
+		IssuerName:   issuerName,
+		IssuerModel:  issuerModel,
+		OperatorID:   operatorID,
+		OperatorName: operatorName,
 	})
 	if err != nil {
 		// Marshal failure is a caller bug, not a transient outage. Restore

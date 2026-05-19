@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -975,6 +976,172 @@ func TestEmit_NoStrictErrors_DialFailure(t *testing.T) {
 	}); err != nil {
 		t.Errorf("Emit without strict errors returned error %v; want nil (fire-and-forget)", err)
 	}
+}
+
+// TestEmit_WithIdentityDefaultsStampedOnFrame asserts that identity fields set
+// via WithIdentity are included in every emitted frame and absent when not set.
+func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
+	dir := shortSocketDir(t)
+
+	t.Run("identity fields present", func(t *testing.T) {
+		rl := newRecordingListener(t, dir)
+		em, err := New(
+			WithSocketPath(rl.path),
+			WithLogger(silentLogger()),
+			WithIdentity(Identity{
+				IssuerName:   "Claude Code",
+				IssuerModel:  "claude-opus-4-5",
+				OperatorID:   "did:web:anthropic.com",
+				OperatorName: "Anthropic",
+			}),
+		)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer em.Close()
+
+		if err := em.Emit(context.Background(), Event{
+			Channel:  "mcp",
+			Tool:     Tool{Name: "bash"},
+			Decision: "allowed",
+		}); err != nil {
+			t.Fatalf("Emit: %v", err)
+		}
+
+		frames := rl.waitForFrames(t, 1, 2*time.Second)
+		var got frame
+		if err := json.Unmarshal(frames[0], &got); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if got.IssuerName != "Claude Code" {
+			t.Errorf("issuer_name = %q; want %q", got.IssuerName, "Claude Code")
+		}
+		if got.IssuerModel != "claude-opus-4-5" {
+			t.Errorf("issuer_model = %q; want %q", got.IssuerModel, "claude-opus-4-5")
+		}
+		if got.OperatorID != "did:web:anthropic.com" {
+			t.Errorf("operator_id = %q; want %q", got.OperatorID, "did:web:anthropic.com")
+		}
+		if got.OperatorName != "Anthropic" {
+			t.Errorf("operator_name = %q; want %q", got.OperatorName, "Anthropic")
+		}
+	})
+
+	t.Run("identity fields absent when not set", func(t *testing.T) {
+		rl := newRecordingListener(t, dir)
+		em, err := New(
+			WithSocketPath(rl.path),
+			WithLogger(silentLogger()),
+			// no WithIdentity
+		)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer em.Close()
+
+		if err := em.Emit(context.Background(), Event{
+			Channel:  "mcp",
+			Tool:     Tool{Name: "bash"},
+			Decision: "allowed",
+		}); err != nil {
+			t.Fatalf("Emit: %v", err)
+		}
+
+		frames := rl.waitForFrames(t, 1, 2*time.Second)
+		// Verify the raw JSON does not contain the identity keys at all
+		// (omitempty should suppress them entirely).
+		raw := string(frames[0])
+		for _, key := range []string{"issuer_name", "issuer_model", "operator_id", "operator_name"} {
+			if strings.Contains(raw, `"`+key+`"`) {
+				t.Errorf("frame JSON contains %q but should be omitted when empty: %s", key, raw)
+			}
+		}
+	})
+
+	t.Run("per-event override takes precedence over default", func(t *testing.T) {
+		rl := newRecordingListener(t, dir)
+		em, err := New(
+			WithSocketPath(rl.path),
+			WithLogger(silentLogger()),
+			WithIdentity(Identity{
+				IssuerName:   "Default Host",
+				OperatorName: "Default Operator",
+			}),
+		)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer em.Close()
+
+		if err := em.Emit(context.Background(), Event{
+			Channel:      "mcp",
+			Tool:         Tool{Name: "bash"},
+			Decision:     "allowed",
+			IssuerName:   "Per-Event Host",
+			OperatorName: "Per-Event Operator",
+		}); err != nil {
+			t.Fatalf("Emit: %v", err)
+		}
+
+		frames := rl.waitForFrames(t, 1, 2*time.Second)
+		var got frame
+		if err := json.Unmarshal(frames[0], &got); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if got.IssuerName != "Per-Event Host" {
+			t.Errorf("issuer_name = %q; want per-event value %q", got.IssuerName, "Per-Event Host")
+		}
+		if got.OperatorName != "Per-Event Operator" {
+			t.Errorf("operator_name = %q; want per-event value %q", got.OperatorName, "Per-Event Operator")
+		}
+	})
+
+	t.Run("partial per-event override merges with defaults independently", func(t *testing.T) {
+		// Defaults: full operator identity. Event overrides only IssuerName.
+		// Verifies that per-field merge is independent: unset event fields fall
+		// through to the default, and the overridden field is taken from the event.
+		rl := newRecordingListener(t, dir)
+		em, err := New(
+			WithSocketPath(rl.path),
+			WithLogger(silentLogger()),
+			WithIdentity(Identity{
+				OperatorID:   "did:web:default.com",
+				OperatorName: "Default",
+			}),
+		)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer em.Close()
+
+		if err := em.Emit(context.Background(), Event{
+			Channel:    "mcp",
+			Tool:       Tool{Name: "bash"},
+			Decision:   "allowed",
+			IssuerName: "Override",
+			// IssuerModel, OperatorID, OperatorName not set — fall through to defaults.
+		}); err != nil {
+			t.Fatalf("Emit: %v", err)
+		}
+
+		frames := rl.waitForFrames(t, 1, 2*time.Second)
+		var got frame
+		if err := json.Unmarshal(frames[0], &got); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if got.IssuerName != "Override" {
+			t.Errorf("issuer_name = %q; want %q (per-event override)", got.IssuerName, "Override")
+		}
+		if got.OperatorID != "did:web:default.com" {
+			t.Errorf("operator_id = %q; want %q (from default)", got.OperatorID, "did:web:default.com")
+		}
+		if got.OperatorName != "Default" {
+			t.Errorf("operator_name = %q; want %q (from default)", got.OperatorName, "Default")
+		}
+		if got.IssuerModel != "" {
+			t.Errorf("issuer_model = %q; want empty (not in defaults, not in event)", got.IssuerModel)
+		}
+	})
 }
 
 func TestEmit_ConcurrentCallsAreSerialised(t *testing.T) {

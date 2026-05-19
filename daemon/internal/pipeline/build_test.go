@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1020,5 +1021,182 @@ func TestProcess_DropCountSyntheticFailureLiveReceiptPersists(t *testing.T) {
 	}
 	if got := receipts[0].CredentialSubject.Chain.Sequence; got != 1 {
 		t.Errorf("seq = %d, want 1", got)
+	}
+}
+
+// TestProcess_IssuerFieldsFromFrame verifies that IssuerName, IssuerModel, and
+// OperatorID/OperatorName from the emitter frame are stamped onto the receipt
+// Issuer, so proxy-supplied host identity flows through to every receipt.
+func TestProcess_IssuerFieldsFromFrame(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	body, err := json.Marshal(EmitterFrame{
+		Version:      "1",
+		TsEmit:       "2026-05-03T00:00:00Z",
+		SessionID:    "sess-abc",
+		Channel:      "mcp",
+		Tool:         EmitterTool{Name: "bash"},
+		Decision:     "allowed",
+		IssuerName:   "Claude Code",
+		IssuerModel:  "claude-opus-4-5",
+		OperatorID:   "did:web:anthropic.com",
+		OperatorName: "Anthropic",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts, want 1", len(receipts))
+	}
+	iss := receipts[0].Issuer
+	if iss.Name != "Claude Code" {
+		t.Errorf("Issuer.Name = %q, want %q", iss.Name, "Claude Code")
+	}
+	if iss.Model != "claude-opus-4-5" {
+		t.Errorf("Issuer.Model = %q, want %q", iss.Model, "claude-opus-4-5")
+	}
+	if iss.Operator == nil {
+		t.Fatal("Issuer.Operator is nil, want non-nil")
+	}
+	if iss.Operator.ID != "did:web:anthropic.com" {
+		t.Errorf("Issuer.Operator.ID = %q, want %q", iss.Operator.ID, "did:web:anthropic.com")
+	}
+	if iss.Operator.Name != "Anthropic" {
+		t.Errorf("Issuer.Operator.Name = %q, want %q", iss.Operator.Name, "Anthropic")
+	}
+	if iss.ID != "did:agent-receipts-daemon:test" {
+		t.Errorf("Issuer.ID = %q; daemon ID must not be overwritten", iss.ID)
+	}
+	if iss.SessionID != "sess-abc" {
+		t.Errorf("Issuer.SessionID = %q, want sess-abc", iss.SessionID)
+	}
+}
+
+// TestProcess_EmptyOperatorFieldsLeaveOperatorNil verifies that when
+// operator_id and operator_name are both absent from the frame, Issuer.Operator
+// remains nil rather than being set to a zero-value struct.
+func TestProcess_EmptyOperatorFieldsLeaveOperatorNil(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "s",
+		Channel:   "sdk",
+		Tool:      EmitterTool{Name: "noop"},
+		Decision:  "allowed",
+		// IssuerName set but no operator fields.
+		IssuerName: "Some Host",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipts[0].Issuer.Operator != nil {
+		t.Errorf("Issuer.Operator = %+v; want nil when operator fields are absent", receipts[0].Issuer.Operator)
+	}
+	if receipts[0].Issuer.Name != "Some Host" {
+		t.Errorf("Issuer.Name = %q, want \"Some Host\"", receipts[0].Issuer.Name)
+	}
+}
+
+// TestValidateFrame_RejectsOversizedIdentityField verifies that validateFrame
+// rejects frames where any identity field exceeds maxIdentityFieldLen bytes.
+// The receipt store must remain empty after the rejection.
+func TestValidateFrame_RejectsOversizedIdentityField(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	body, err := json.Marshal(EmitterFrame{
+		Version:    "1",
+		TsEmit:     "2026-05-03T00:00:00Z",
+		SessionID:  "s",
+		Channel:    "sdk",
+		Tool:       EmitterTool{Name: "t"},
+		Decision:   "allowed",
+		IssuerName: strings.Repeat("a", 257),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Process(socket.Frame{Payload: body})
+	if err == nil {
+		t.Fatal("expected error for oversized issuer_name, got nil")
+	}
+	if !strings.Contains(err.Error(), "issuer_name") {
+		t.Errorf("error %q should mention \"issuer_name\"", err.Error())
+	}
+	if !strings.Contains(err.Error(), "256") {
+		t.Errorf("error %q should mention the limit 256", err.Error())
+	}
+
+	// No receipt should have been stored.
+	receipts, getErr := st.GetChain("chain-1")
+	if getErr != nil {
+		t.Fatalf("GetChain: %v", getErr)
+	}
+	if len(receipts) != 0 {
+		t.Errorf("got %d receipts, want 0 (frame was rejected)", len(receipts))
+	}
+}
+
+// TestValidateFrame_RejectsPartialOperator verifies that validateFrame rejects
+// frames where operator_name is set without operator_id, preventing a receipt
+// with an empty operator.id from being signed.
+func TestValidateFrame_RejectsPartialOperator(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("chain-1")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	body, err := json.Marshal(EmitterFrame{
+		Version:      "1",
+		TsEmit:       "2026-05-03T00:00:00Z",
+		SessionID:    "s",
+		Channel:      "sdk",
+		Tool:         EmitterTool{Name: "t"},
+		Decision:     "allowed",
+		OperatorName: "Acme",
+		// OperatorID intentionally absent.
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Process(socket.Frame{Payload: body})
+	if err == nil {
+		t.Fatal("expected error for operator_name without operator_id, got nil")
+	}
+	if !strings.Contains(err.Error(), "operator_name") {
+		t.Errorf("error %q should mention \"operator_name\"", err.Error())
+	}
+
+	// No receipt should have been stored.
+	receipts, getErr := st.GetChain("chain-1")
+	if getErr != nil {
+		t.Fatalf("GetChain: %v", getErr)
+	}
+	if len(receipts) != 0 {
+		t.Errorf("got %d receipts, want 0 (frame was rejected)", len(receipts))
 	}
 }
