@@ -208,7 +208,7 @@ func TestProcess_MCPIsErrorOutcome(t *testing.T) {
 		{"mcp isError false → success", "mcp", mcpOKOutput, receipt.StatusSuccess},
 		{"mcp isError absent → success", "mcp", mcpImplicitOKOutput, receipt.StatusSuccess},
 		{"mcp empty output → success", "mcp", nil, receipt.StatusSuccess},
-		{"mcp malformed JSON → success (no escalation on parse failure)", "mcp", json.RawMessage(`"not-an-object"`), receipt.StatusSuccess},
+		{"mcp non-object output → success (no escalation on parse failure)", "mcp", json.RawMessage(`"not-an-object"`), receipt.StatusSuccess},
 		// Other channels must not be reinterpreted: a top-level isError
 		// field there is not the MCP envelope.
 		{"non-mcp channel with isError true → success", "sdk", mcpErrorOutput, receipt.StatusSuccess},
