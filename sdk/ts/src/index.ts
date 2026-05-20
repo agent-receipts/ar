@@ -62,6 +62,7 @@ export {
 } from "./receipt/types.js";
 export {
 	openStore,
+	openStoreReadOnly,
 	type ReceiptQuery,
 	ReceiptStore,
 	type StoreStats,

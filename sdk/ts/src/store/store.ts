@@ -107,10 +107,20 @@ function parseReceiptJson(json: string, context: string): AgentReceipt {
 export class ReceiptStore {
 	private db: DatabaseSync;
 
-	constructor(dbPath: string) {
+	/**
+	 * @param dbPath Path to the SQLite database file, or `":memory:"` for
+	 * an in-memory database. May also be a SQLite URI (e.g. for read-only
+	 * mode); in that case pass `{ skipInit: true }` to suppress schema
+	 * creation and migration.
+	 * @param options.skipInit When true, skip schema creation and
+	 * `tool_name` migration. Used by `openStoreReadOnly`.
+	 */
+	constructor(dbPath: string, options?: { skipInit?: boolean }) {
 		this.db = new DatabaseSync(dbPath);
-		this.db.exec(SCHEMA);
-		this.migrateToolName();
+		if (!options?.skipInit) {
+			this.db.exec(SCHEMA);
+			this.migrateToolName();
+		}
 	}
 
 	/**
@@ -295,4 +305,32 @@ export class ReceiptStore {
  */
 export function openStore(dbPath: string): ReceiptStore {
 	return new ReceiptStore(dbPath);
+}
+
+/**
+ * Open an existing receipt store at the given path in read-only mode.
+ *
+ * The database is opened with the SQLite URI `file:<abs-path>?mode=ro`,
+ * so no schema creation or migration writes are performed. This makes it
+ * safe to use alongside a running daemon that holds the write lock.
+ *
+ * The returned {@link ReceiptStore} supports all read operations
+ * (query, getById, getChain, stats). Calling insert() will throw a
+ * SQLite "attempt to write a readonly database" error.
+ *
+ * ":memory:" is rejected — a fresh in-memory database has no rows to read.
+ */
+export function openStoreReadOnly(dbPath: string): ReceiptStore {
+	if (dbPath === ":memory:") {
+		throw new Error(
+			'openStoreReadOnly: ":memory:" is not supported — there is nothing to read in a fresh in-memory database',
+		);
+	}
+	const abs = dbPath.startsWith("/") ? dbPath : `${process.cwd()}/${dbPath}`;
+	const encodedPath = abs
+		.split("/")
+		.map((segment) => encodeURIComponent(segment))
+		.join("/");
+	const uri = `file:${encodedPath}?mode=ro`;
+	return new ReceiptStore(uri, { skipInit: true });
 }

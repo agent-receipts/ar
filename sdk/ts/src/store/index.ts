@@ -4,6 +4,7 @@ export type {
 } from "../receipt/chain.js";
 export {
 	openStore,
+	openStoreReadOnly,
 	type ReceiptQuery,
 	ReceiptStore,
 	type StoreStats,

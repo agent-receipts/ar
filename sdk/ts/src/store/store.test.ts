@@ -1,8 +1,11 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeReceipt } from "../test-utils/receipts.js";
 import type { ReceiptStore } from "./store.js";
-import { openStore } from "./store.js";
+import { openStore, openStoreReadOnly } from "./store.js";
 
 describe("ReceiptStore", () => {
 	let store: ReceiptStore;
@@ -594,5 +597,73 @@ describe("ReceiptStore", () => {
 			expect(retrieved?.credentialSubject.action.tool_name).toBe("read_file");
 			migratedStore.close();
 		});
+	});
+});
+
+describe("openStoreReadOnly", () => {
+	let tmpDir: string;
+	let dbPath: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "ar-store-ro-test-"));
+		dbPath = join(tmpDir, "receipts.db");
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("queries receipts written by openStore", () => {
+		// Write two receipts via a regular read-write store.
+		const rw = openStore(dbPath);
+		const r1 = makeReceipt({ id: "urn:receipt:ro-1", sequence: 1 });
+		const r2 = makeReceipt({ id: "urn:receipt:ro-2", sequence: 2 });
+		rw.insert(r1, "sha256:ro1");
+		rw.insert(r2, "sha256:ro2");
+		rw.close();
+
+		// Open the same file read-only and verify both receipts are returned.
+		const ro = openStoreReadOnly(dbPath);
+		try {
+			const results = ro.query({});
+			expect(results).toHaveLength(2);
+			const ids = results.map((r) => r.id);
+			expect(ids).toContain("urn:receipt:ro-1");
+			expect(ids).toContain("urn:receipt:ro-2");
+		} finally {
+			ro.close();
+		}
+	});
+
+	it("throws on a non-existent path", () => {
+		const missing = join(tmpDir, "does-not-exist.db");
+		expect(() => openStoreReadOnly(missing)).toThrow();
+	});
+
+	it('throws with a clear message for ":memory:"', () => {
+		expect(() => openStoreReadOnly(":memory:")).toThrowError(
+			/openStoreReadOnly.*:memory:/,
+		);
+	});
+
+	it("throws when insert() is called on a read-only handle", () => {
+		// Seed the DB via a read-write store first so the schema exists.
+		const rw = openStore(dbPath);
+		rw.insert(
+			makeReceipt({ id: "urn:receipt:seed", sequence: 1 }),
+			"sha256:seed",
+		);
+		rw.close();
+
+		const ro = openStoreReadOnly(dbPath);
+		try {
+			const newReceipt = makeReceipt({
+				id: "urn:receipt:should-fail",
+				sequence: 2,
+			});
+			expect(() => ro.insert(newReceipt, "sha256:fail")).toThrow();
+		} finally {
+			ro.close();
+		}
 	});
 });
