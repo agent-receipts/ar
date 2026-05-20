@@ -81,7 +81,7 @@ The node signs each batch with a JWS (JSON Web Signature, [RFC 7515](https://www
 
 | Claim | Purpose |
 |---|---|
-| `iat` / `exp` | Replay window. Default `exp = iat + 5min`, aligned to shipper cadence and clock-skew tolerance (see below) |
+| `iat` / `exp` | Replay window. Both are **JWT NumericDate** (integer seconds since Unix epoch, per [RFC 7519 §2](https://www.rfc-editor.org/rfc/rfc7519#section-2)). Default `exp = iat + 300` (5 minutes). Hub validation: `iat <= hub_now + skew` AND `exp >= hub_now - skew` where `skew` is the configured tolerance (default 300s). |
 | `body_sha256` | `sha256:<hex>` of raw JSONL body. Binds JWS to specific bytes |
 | `batch_id` | UUID v4 per batch. Log-tracing aid only — not load-bearing for correctness (see *Replay protection* below) |
 | `batch_count` | Sanity check vs. parsed body |
@@ -89,7 +89,7 @@ The node signs each batch with a JWS (JSON Web Signature, [RFC 7515](https://www
 #### Hub-side verification order
 
 1. Parse JWS header; extract `kid`.
-2. Derive `base_did` by stripping any fragment and query component from `kid`; look up `base_did` in the trust list. Reject immediately if not found — no DID resolution for unauthorised `kid`s, avoiding unnecessary network I/O and eliminating the SSRF surface for attacker-chosen `kid` values.
+2. Derive `base_did` by stripping any path, query, and fragment component from `kid` (i.e. everything after the DID method-specific identifier — `scheme:method:id` only); look up `base_did` in the trust list. Reject immediately if not found — no DID resolution for unauthorised `kid`s, avoiding unnecessary network I/O and eliminating the SSRF surface for attacker-chosen `kid` values.
 3. Resolve the original `kid` (with fragment intact) via DID resolution (ADR-0007) to obtain the verification key for the specific `verificationMethod` referenced. (`base_did` is used for access control only; the full `kid` URL is used for key-material lookup.)
 4. Verify JWS signature (EdDSA) over header + claims. On signature failure, force-refresh the DID cache for this `kid` and retry once before rejecting — catches the "key just rotated, cache is stale" case.
 5. Check `iat`/`exp` against the hub clock with tolerance (see *Clock skew tolerance* below).
@@ -113,7 +113,7 @@ Shipper-retry semantics: on retry, the shipper **re-signs the JWS with a fresh `
 The hub holds a list of authorised node DIDs in an operator-managed file. Properties:
 
 - **Path** is operator config (default: `/etc/agent-receipts/trust.json`).
-- **Format** is a JSON document listing each authorised DID with metadata (`did`, `added_at`, optional `notes`). The `did` field stores the base DID with no fragment and no query component (e.g. `did:web:example.com`, not `did:web:example.com#key-1`). When the hub receives a JWS, it normalises `kid` by stripping any fragment before trust-list lookup — authorisation is on the DID identity, not a specific key reference.
+- **Format** is a JSON document listing each authorised DID with metadata (`did`, `added_at`, optional `notes`). The `did` field stores the base DID with no path, query, or fragment component (`scheme:method:id` only — e.g. `did:web:example.com`, not `did:web:example.com#key-1` or `did:web:example.com/path`). When the hub receives a JWS, it normalises `kid` to `base_did` by stripping path/query/fragment before trust-list lookup — authorisation is on the DID identity, not a specific key reference.
 - **Signed** by the hub's own daemon key (the same DID that signs anchored checkpoints). Trust-list tampering becomes a key-compromise problem, not a filesystem-ACL problem.
 - **Reloaded automatically** when the file's mtime changes — no daemon restart required to add or remove a DID.
 - **Validation on load**: a malformed or unsigned trust list does not silently become "empty" (which would refuse all ingest). It refuses to load and the hub continues with the last good trust list, logging loudly.
@@ -192,7 +192,7 @@ Same storage layout (SQLite per ADR-0004, one logical chain per node DID), same 
 
 ### 7. External anchoring: S3 with object lock for per-node chain heads
 
-The hub periodically writes per-node chain heads to an S3 bucket with object lock enabled. Each anchor write uses a hub-specific event type **`node_checkpoint`** (distinct from ADR-0015's plain `checkpoint` so parsers can unambiguously identify hub-emitted anchors) with payload `(issuer.id, node_did, seq, tip_hash, public_key_fingerprint)`, RFC 8785-canonicalised, signed by the hub's own daemon key, written via the ADR-0015 `Write(event_type, payload bytes) → error` contract. `issuer.id` is the hub's DID URL — the entity making the anchoring claim and the holder of the signing key. `node_did` is the node's DID URL — the same identifier used as `kid` in §4 — and is the index key for per-node anchor enumeration and chain lookup. This separation keeps signer identity (`issuer.id`) and anchored-chain identity (`node_did`) unambiguous; `public_key_fingerprint` is the hub's key fingerprint, matching `issuer.id`. Verifiers encountering `node_checkpoint` events in S3 should expect this extended tuple; plain `checkpoint` events (from non-hub daemons) carry only the base 4-tuple.
+The hub periodically writes per-node chain heads to an S3 bucket with object lock enabled. Each anchor write uses a hub-specific event type **`node_checkpoint`** (distinct from ADR-0015's plain `checkpoint` so parsers can unambiguously identify hub-emitted anchors) with payload `(issuer.id, node_did, seq, tip_hash, public_key_fingerprint)`, RFC 8785-canonicalised, signed by the hub's own daemon key, written via the ADR-0015 `Write(event_type, payload bytes) → error` contract. `issuer.id` is the hub's DID URL — the entity making the anchoring claim and the holder of the signing key. `node_did` is the node's DID URL — the same identifier used as `kid` in §4 — and is the index key for per-node anchor enumeration and chain lookup. This separation keeps signer identity (`issuer.id`) and anchored-chain identity (`node_did`) unambiguous; `public_key_fingerprint` is the hub's key fingerprint, matching `issuer.id`. Verifiers encountering `node_checkpoint` events in S3 should expect this extended tuple; plain `checkpoint` events (from non-hub daemons) carry only the base 4-tuple. **ADR-0015 amendment required:** `node_checkpoint` is a hub-specific extension to the ADR-0015 anchor contract, which currently defines only `rotation` and `checkpoint` event types. An ADR-0015 amendment registering `node_checkpoint` and its payload schema MUST land before the hub implementation gate opens (see *Preconditions*).
 
 S3 object lock provides the two properties ADR-0015 demands of a sink:
 
@@ -339,7 +339,7 @@ flowchart TD
     style note fill:#fff3cd,color:#333,stroke:#ffc107
 ```
 
-## Security considerations
+## Security Considerations
 
 ### Trust-list integrity is load-bearing
 
