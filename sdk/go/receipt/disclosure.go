@@ -85,11 +85,15 @@ func EncryptDisclosure(params map[string]any, recipientPublicKey []byte, kid str
 }
 
 // encryptDisclosureWithSeed is like EncryptDisclosure but derives the HPKE ephemeral
-// key from ikmE (the 32-byte seed bytes fed directly to the X25519 scalar slot, per
-// circl's internal GenerateKeyPair path). Use only in tests for reproducible vectors.
+// key deterministically from ikmE. circl's Sender.Setup reads ikmE from the io.Reader
+// and internally applies DHKEM(X25519) DeriveKeyPair (RFC 9180 §4.1) — HKDF over the
+// seed — to produce the ephemeral scalar; it does NOT use ikmE directly as the scalar.
+// This is confirmed by vector-1: ikmE = RFC 9180 §A.1.1 ikmE produces enc = pkEm from
+// that same RFC section, which is X25519(skEm, basepoint) where skEm = DeriveKeyPair(ikmE).
 //
-// ikmE MUST be 32 bytes. Production code MUST use EncryptDisclosure (random ephemeral
-// key per operation). Reusing ikmE across real encryptions breaks confidentiality.
+// Use only in tests for reproducible cross-SDK vectors. ikmE MUST be 32 bytes.
+// Production code MUST use EncryptDisclosure (random ephemeral key per operation).
+// Reusing ikmE across real encryptions breaks confidentiality.
 func encryptDisclosureWithSeed(params map[string]any, recipientPublicKey []byte, kid string, ikmE []byte) (*DisclosureEnvelope, error) {
 	if len(ikmE) != 32 {
 		return nil, fmt.Errorf("ikmE must be 32 bytes, got %d", len(ikmE))
@@ -144,6 +148,9 @@ func encryptWithReader(params map[string]any, recipientPublicKey []byte, kid str
 // envelope. recipientPrivateKey is the 32-byte X25519 forensic private key.
 // The returned map reflects the JCS-canonical plaintext written by EncryptDisclosure.
 func DecryptDisclosure(env *DisclosureEnvelope, recipientPrivateKey []byte) (map[string]any, error) {
+	if env == nil {
+		return nil, fmt.Errorf("disclosure envelope must not be nil")
+	}
 	if env.V != "1" {
 		return nil, fmt.Errorf("unsupported envelope version %q", env.V)
 	}

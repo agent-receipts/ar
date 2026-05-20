@@ -67,11 +67,11 @@ func TestGenerateForensicKeyPair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecryptDisclosure: %v", err)
 	}
-	if got["tool"] != "tool: read_file" {
-		// Check path only — tool key presence is enough
-		if got["path"] != "/tmp/test.txt" {
-			t.Errorf("decrypted path = %v, want /tmp/test.txt", got["path"])
-		}
+	if got["tool"] != "read_file" {
+		t.Errorf("decrypted tool = %v, want read_file", got["tool"])
+	}
+	if got["path"] != "/tmp/test.txt" {
+		t.Errorf("decrypted path = %v, want /tmp/test.txt", got["path"])
 	}
 }
 
@@ -113,7 +113,10 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	}
 
 	// No nonce field (v1 is single-shot; nonce is internal to HPKE).
-	b, _ := json.Marshal(env)
+	b, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
 	if strings.Contains(string(b), `"nonce"`) {
 		t.Error("v1 envelope must not contain a nonce field")
 	}
@@ -212,6 +215,11 @@ func TestDecryptValidationErrors(t *testing.T) {
 		Alg:        v1Alg,
 		Recipients: []DisclosureRecipient{{KID: "k", Enc: strings.Repeat("A", 43)}},
 		CT:         strings.Repeat("B", 24),
+	}
+
+	// nil envelope.
+	if _, err := DecryptDisclosure(nil, make([]byte, 32)); err == nil {
+		t.Error("expected error for nil envelope, got nil")
 	}
 
 	tests := []struct {
