@@ -1,4 +1,4 @@
-import * as nodePath from "node:path";
+import { resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { ZodError } from "zod";
 import { agentReceiptSchema } from "../receipt/schema.js";
@@ -330,7 +330,7 @@ export function openStoreReadOnly(dbPath: string): ReceiptStore {
 			'openStoreReadOnly: ":memory:" is not supported — there is nothing to read in a fresh in-memory database',
 		);
 	}
-	const abs = nodePath.resolve(dbPath);
+	const abs = resolve(dbPath);
 	const encodedPath = abs
 		.split("/")
 		.map((segment) => encodeURIComponent(segment))
