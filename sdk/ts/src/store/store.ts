@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { ZodError } from "zod";
 import { agentReceiptSchema } from "../receipt/schema.js";
@@ -109,21 +108,18 @@ export class ReceiptStore {
 	private db: DatabaseSync;
 
 	/**
-	 * Open or create a receipt store.
-	 *
-	 * - Pass a `string` path (or `":memory:"`) to open/create the database and
-	 *   run schema initialisation and migrations.
-	 * - Pass a pre-opened `DatabaseSync` instance to skip schema init and
-	 *   migration. The caller is responsible for ensuring the schema is
-	 *   already present (e.g. when opening read-only via a URI).
+	 * @param dbPath Path to the SQLite database file, or `":memory:"` for
+	 * an in-memory database. May also be a SQLite URI (e.g. for read-only
+	 * mode); in that case pass `{ skipInit: true }` to suppress schema
+	 * creation and migration.
+	 * @param options.skipInit When true, skip schema creation and
+	 * `tool_name` migration. Used by `openStoreReadOnly`.
 	 */
-	constructor(dbPathOrDb: string | DatabaseSync) {
-		if (typeof dbPathOrDb === "string") {
-			this.db = new DatabaseSync(dbPathOrDb);
+	constructor(dbPath: string, options?: { skipInit?: boolean }) {
+		this.db = new DatabaseSync(dbPath);
+		if (!options?.skipInit) {
 			this.db.exec(SCHEMA);
 			this.migrateToolName();
-		} else {
-			this.db = dbPathOrDb;
 		}
 	}
 
@@ -330,11 +326,11 @@ export function openStoreReadOnly(dbPath: string): ReceiptStore {
 			'openStoreReadOnly: ":memory:" is not supported — there is nothing to read in a fresh in-memory database',
 		);
 	}
-	const abs = resolve(dbPath);
+	const abs = dbPath.startsWith("/") ? dbPath : `${process.cwd()}/${dbPath}`;
 	const encodedPath = abs
 		.split("/")
 		.map((segment) => encodeURIComponent(segment))
 		.join("/");
 	const uri = `file:${encodedPath}?mode=ro`;
-	return new ReceiptStore(new DatabaseSync(uri));
+	return new ReceiptStore(uri, { skipInit: true });
 }
