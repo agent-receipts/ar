@@ -186,16 +186,16 @@ Same storage layout (SQLite per ADR-0004, one logical chain per node DID), same 
 
 ### 7. External anchoring: S3 with object lock for per-node chain heads
 
-The hub periodically writes per-node chain heads to an S3 bucket with object lock enabled. Each anchor write is a `checkpoint` event as defined by ADR-0015: `(issuer.id, seq, tip_hash, public_key_fingerprint)`, RFC 8785-canonicalised, signed by the hub's own daemon key, written via the ADR-0015 `Write(event_type, payload bytes) → error` contract. `issuer.id` here is the node's DID URL — the same identifier used as `kid` in §4 — so anchor enumeration and per-node-chain lookup share one index.
+The hub periodically writes per-node chain heads to an S3 bucket with object lock enabled. Each anchor write is a `checkpoint` event as defined by ADR-0015, extended with a `node_did` field: `(issuer.id, node_did, seq, tip_hash, public_key_fingerprint)`, RFC 8785-canonicalised, signed by the hub's own daemon key, written via the ADR-0015 `Write(event_type, payload bytes) → error` contract. `issuer.id` is the hub's DID URL — the entity making the anchoring claim and the holder of the signing key. `node_did` is the node's DID URL — the same identifier used as `kid` in §4 — and is the index key for per-node anchor enumeration and chain lookup. This separation keeps signer identity (`issuer.id`) and anchored-chain identity (`node_did`) unambiguous; `public_key_fingerprint` is the hub's key fingerprint, matching `issuer.id`.
 
 S3 object lock provides the two properties ADR-0015 demands of a sink:
 
 - **Append-only retention.** Object lock in compliance mode makes objects immutable for the configured retention period; a compromised hub cannot rewrite or delete previously-written checkpoints.
-- **Per-seq key uniqueness and immutability.** Each checkpoint is written to a unique path keyed by `seq` (`anchors/<url-encoded-issuer.id>/<seq:020d>.jcs.json`); no two checkpoints share a key, so there is no overwrite to protect against by construction. Object lock in compliance mode makes each written object immutable for the retention period — the hub cannot modify or delete a previously-written checkpoint. S3 stamps `LastModified` server-side for auditing; lexicographic ordering of the zero-padded `seq` key matches numeric ordering. S3 version IDs are not relied upon for ordering or dedup.
+- **Per-seq key uniqueness and immutability.** Each checkpoint is written to a unique path keyed by `node_did` and `seq` (`anchors/<url-encoded-node_did>/<seq:020d>.jcs.json`); no two checkpoints share a key, so there is no overwrite to protect against by construction. Object lock in compliance mode makes each written object immutable for the retention period — the hub cannot modify or delete a previously-written checkpoint. S3 stamps `LastModified` server-side for auditing; lexicographic ordering of the zero-padded `seq` key matches numeric ordering. S3 version IDs are not relied upon for ordering or dedup.
 
 The S3 bucket — not the hub — is the trust root for the anchoring claim. Hub compromise is bounded: the attacker controls future receipts and future anchors but cannot rewrite previously-anchored checkpoints, so a verifier with S3 read access can detect any divergence between the hub's current view of a chain and the most recent anchored tip. State explicitly: the integrity property survives total hub compromise as long as the S3 bucket's object-lock configuration was set before the compromise and the attacker did not also compromise the AWS account holding the bucket.
 
-**S3 key naming.** `<bucket>/anchors/<url-encoded-issuer.id>/<seq:020d>.jcs.json`. Zero-padded `seq` ensures lexicographic ordering matches numeric. `.jcs.json` makes the canonicalisation form (RFC 8785 / JCS) explicit at the URL layer so a verifier walking the bucket knows what to expect. Object-lock retention defaults to 1 year; operators with longer compliance horizons configure accordingly.
+**S3 key naming.** `<bucket>/anchors/<url-encoded-node_did>/<seq:020d>.jcs.json`. Zero-padded `seq` ensures lexicographic ordering matches numeric. `.jcs.json` makes the canonicalisation form (RFC 8785 / JCS) explicit at the URL layer so a verifier walking the bucket knows what to expect. Object-lock retention defaults to 1 year; operators with longer compliance horizons configure accordingly.
 
 **Anchor frequency.** Per node, the more recent of (a) every 5 minutes of wall clock during which receipts were ingested, or (b) every 1000 receipts ingested. Quiet nodes do not emit empty anchors; busy nodes do not let the detection window grow unbounded. Both knobs are tunable. The 5min/1000 default is the midpoint between per-batch anchoring (strongest guarantee, highest S3 write cost, anchor latency on the critical path) and hourly anchoring (cheapest, leaves a 60-minute invisible window between truncation and detection). Operators with stricter audit posture shorten the cadence; operators with cost-sensitive sinks lengthen it.
 
@@ -203,7 +203,7 @@ Cost grounding (so the knob is concrete): S3 PUT with object lock is approximate
 
 **Hub-side failure mode.** Hub-emitted checkpoints use ADR-0015's `queue` mode by default — staged in a local outbox if the sink is unreachable, flushed when it returns. Operators with stricter compliance posture configure `block` (hub stops ingesting if anchoring is unavailable); `drop` is also available per ADR-0015's menu for checkpoint events but means the truncation-detection window grows without bound during sink outages. Defaults align with ADR-0015 §"Checkpoint events".
 
-**Cold start.** A fresh hub joining a node mid-history records its join point. The hub's first anchored checkpoint for a node carries `joined_at_seq: <first_seq_observed>`. This is a hub-specific extension field appended to the base ADR-0015 checkpoint tuple `(issuer.id, seq, tip_hash, public_key_fingerprint)`; it appears only in hub-emitted checkpoints and its absence means the hub was present from the node's genesis. Verifiers reading the anchor stream know: anchored-tail-integrity applies from `joined_at_seq` onward; for receipts before that point only the node's local chain provides integrity. This composes with §1's invariant — we do not pretend the hub knows about pre-join history; we record the seam and let verifiers reason about it.
+**Cold start.** A fresh hub joining a node mid-history records its join point. The hub's first anchored checkpoint for a node carries `joined_at_seq: <first_seq_observed>`. This is a hub-specific extension field appended to the hub checkpoint tuple `(issuer.id, node_did, seq, tip_hash, public_key_fingerprint)`; it appears only in hub-emitted checkpoints and its absence means the hub was present from the node's genesis. Verifiers reading the anchor stream know: anchored-tail-integrity applies from `joined_at_seq` onward; for receipts before that point only the node's local chain provides integrity. This composes with §1's invariant — we do not pretend the hub knows about pre-join history; we record the seam and let verifiers reason about it.
 
 ### 8. Scope: single-tenant for v1
 
@@ -267,8 +267,8 @@ sequenceDiagram
     H->>H: persist per-node chains to SQLite (idempotent on issuer_did+seq)
 
     Note over H: anchor job: every 5min or 1000 receipts (whichever first)
-    H->>H: build checkpoint: (issuer.id, seq, tip_hash, pubkey_fingerprint)<br/>canonicalise (RFC 8785)<br/>sign with hub Ed25519 key → proofValue
-    H->>S3: PUT anchors/<issuer.id>/<seq:020d>.jcs.json<br/>(signed checkpoint, object-locked, immutable)
+    H->>H: build checkpoint: (issuer.id=hub-DID, node_did=node-DID, seq, tip_hash, pubkey_fingerprint)<br/>canonicalise (RFC 8785)<br/>sign with hub Ed25519 key → proofValue
+    H->>S3: PUT anchors/<node_did>/<seq:020d>.jcs.json<br/>(signed checkpoint, object-locked, immutable)
 ```
 
 ### (b) Trust relationships and verification roots
