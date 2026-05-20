@@ -89,17 +89,18 @@ The node signs each batch with a JWS (JSON Web Signature, [RFC 7515](https://www
 #### Hub-side verification order
 
 1. Parse JWS header; extract `kid`.
-2. Resolve `kid` via DID resolution (ADR-0007); reject if not in the trust list.
-3. Verify JWS signature (EdDSA) over header + claims. On signature failure, force-refresh the DID cache for this `kid` and retry once before rejecting — catches the "key just rotated, cache is stale" case.
-4. Check `iat`/`exp` against the hub clock with tolerance (see *Clock skew tolerance* below).
-5. Stream body; compute SHA-256; compare to `body_sha256` claim.
-6. Per-receipt: re-verify signature and chain link under the same node DID. Persistence is idempotent on `(issuer_did, seq)` — a duplicate receipt with matching chain link is a successful no-op; a duplicate `seq` with a mismatched `prev_hash` is a hard error.
+2. Normalise `kid` by stripping any fragment and query component; look up the base DID in the trust list. Reject immediately if not found — no DID resolution for unauthorised `kid`s, avoiding unnecessary network I/O and eliminating the SSRF surface for attacker-chosen `kid` values.
+3. Resolve `kid` via DID resolution (ADR-0007) to obtain the current verification key.
+4. Verify JWS signature (EdDSA) over header + claims. On signature failure, force-refresh the DID cache for this `kid` and retry once before rejecting — catches the "key just rotated, cache is stale" case.
+5. Check `iat`/`exp` against the hub clock with tolerance (see *Clock skew tolerance* below).
+6. Stream body; compute SHA-256; compare to `body_sha256` claim.
+7. Per-receipt: re-verify signature and chain link under the same node DID. Persistence is idempotent on `(issuer_did, seq)` — a duplicate receipt with matching chain link is a successful no-op; a duplicate `seq` with a mismatched `prev_hash` is a hard error.
 
-There is **no separate dedup table.** The chain-link check at step 6 *is* the dedup. A retried batch following hub crash is idempotent at the per-receipt layer; CPU on retries is the only cost.
+There is **no separate dedup table.** The chain-link check at step 7 *is* the dedup. A retried batch following hub crash is idempotent at the per-receipt layer; CPU on retries is the only cost.
 
 #### Replay protection
 
-`iat`/`exp` constrain the window. An attacker who captures a batch on the wire can only replay within that window. Replay inside the window is harmless: the receipts it contains either land at the hub (idempotent via §4 step 6, no duplication) or were already there (same result). `body_sha256` prevents body substitution under a reused JWS. `batch_id` is for log correlation, not for security — chain-link idempotency is what makes the protocol replay-safe.
+`iat`/`exp` constrain the window. An attacker who captures a batch on the wire can only replay within that window. Replay inside the window is harmless: the receipts it contains either land at the hub (idempotent via §4 step 7, no duplication) or were already there (same result). `body_sha256` prevents body substitution under a reused JWS. `batch_id` is for log correlation, not for security — chain-link idempotency is what makes the protocol replay-safe.
 
 #### Clock skew tolerance
 
@@ -230,7 +231,7 @@ This composes the existing in-chain-visibility pattern from ADR-0010 through the
 
 ```
 emitters (openclaw / hermes / mcp-proxy)
-   ↓ UDS SOCK_STREAM (JSONL, per ADR-0010)
+   ↓ UDS SOCK_STREAM (4-byte big-endian length-prefix framing, per ADR-0010)
 local agent-receipts daemon
    ├─ canonicalize / sign / hash-chain
    ├─ persist to local SQLite (source of truth)
@@ -239,14 +240,14 @@ local agent-receipts daemon
          ↓   body: JSONL batch
          ↓   header: Authorization: Bearer <JWS over claims incl. body_sha256>
 hub agent-receipts daemon (--ingest mode)
-   ├─ verify JWS (kid → DID resolution → trust list)
+   ├─ verify JWS (kid → trust list (base DID) → DID resolution → sig)
    ├─ verify body_sha256 matches body
    ├─ re-verify each receipt's signature + chain link
    ├─ reject pre-envelope plaintext disclosure (precondition check)
    └─ persist per-node chains to SQLite
          ↓ periodic anchor job (5min / 1000 receipts, whichever first)
    S3 bucket with object lock
-     <bucket>/anchors/<node_did>/<seq:020d>.jcs.json
+     <bucket>/anchors/<url-encoded-node_did>/<seq:020d>.jcs.json
      (per-node chain heads, signed by hub's daemon key)
 ```
 
@@ -342,7 +343,7 @@ flowchart TD
 
 ### Trust-list integrity is load-bearing
 
-The hub's authorisation decision is "is this `kid` in the trust list?" — so the trust list is structurally as important as the signing key. Mitigations:
+The hub's authorisation decision is "is this `kid`'s base DID (fragment stripped) in the trust list?" — so the trust list is structurally as important as the signing key. Mitigations:
 
 - Trust list is **signed** by the hub's own daemon key. An attacker with filesystem-write access to the trust list cannot add a DID; they would need the hub's signing key.
 - Trust list reload **validates the signature** before swapping in. A failed signature check keeps the previous good list in effect and logs loudly.
