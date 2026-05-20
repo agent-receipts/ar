@@ -4,6 +4,14 @@ export {
 	verifyChain,
 } from "./chain.js";
 export { type CreateReceiptInput, createReceipt } from "./create.js";
+export {
+	type DisclosureEnvelope,
+	type DisclosureRecipient,
+	decryptDisclosure,
+	encryptDisclosure,
+	type ForensicKeyPair,
+	generateForensicKeyPair,
+} from "./disclosure.js";
 export { canonicalize, hashReceipt, sha256 } from "./hash.js";
 export {
 	generateKeyPair,
