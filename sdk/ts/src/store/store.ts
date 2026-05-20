@@ -108,10 +108,23 @@ function parseReceiptJson(json: string, context: string): AgentReceipt {
 export class ReceiptStore {
 	private db: DatabaseSync;
 
-	constructor(dbPath: string) {
-		this.db = new DatabaseSync(dbPath);
-		this.db.exec(SCHEMA);
-		this.migrateToolName();
+	/**
+	 * Open or create a receipt store.
+	 *
+	 * - Pass a `string` path (or `":memory:"`) to open/create the database and
+	 *   run schema initialisation and migrations.
+	 * - Pass a pre-opened `DatabaseSync` instance to skip schema init and
+	 *   migration. The caller is responsible for ensuring the schema is
+	 *   already present (e.g. when opening read-only via a URI).
+	 */
+	constructor(dbPathOrDb: string | DatabaseSync) {
+		if (typeof dbPathOrDb === "string") {
+			this.db = new DatabaseSync(dbPathOrDb);
+			this.db.exec(SCHEMA);
+			this.migrateToolName();
+		} else {
+			this.db = dbPathOrDb;
+		}
 	}
 
 	/**
@@ -301,10 +314,9 @@ export function openStore(dbPath: string): ReceiptStore {
 /**
  * Open an existing receipt store at the given path in read-only mode.
  *
- * The database is opened with the SQLite URI
- * `file:<abs-path>?mode=ro&_pragma=busy_timeout(5000)`, so no schema
- * creation or migration writes are performed. This makes it safe to use
- * alongside a running daemon that holds the write lock.
+ * The database is opened with the SQLite URI `file:<abs-path>?mode=ro`,
+ * so no schema creation or migration writes are performed. This makes it
+ * safe to use alongside a running daemon that holds the write lock.
  *
  * The returned {@link ReceiptStore} supports all read operations
  * (query, getById, getChain, stats). Calling insert() will throw a
@@ -315,21 +327,14 @@ export function openStore(dbPath: string): ReceiptStore {
 export function openStoreReadOnly(dbPath: string): ReceiptStore {
 	if (dbPath === ":memory:") {
 		throw new Error(
-			"openStoreReadOnly: \":memory:\" is not supported — there is nothing to read in a fresh in-memory database",
+			'openStoreReadOnly: ":memory:" is not supported — there is nothing to read in a fresh in-memory database',
 		);
 	}
 	const abs = nodePath.resolve(dbPath);
-	// Percent-encode only characters that are meaningful in a URI query string
-	// (space, ?, #, &, =, %). Standard path separators and most printable
-	// characters are safe in the path component of a file: URI.
 	const encodedPath = abs
 		.split("/")
 		.map((segment) => encodeURIComponent(segment))
 		.join("/");
-	const uri = `file:${encodedPath}?mode=ro&_pragma=busy_timeout(5000)`;
-	const db = new DatabaseSync(uri, { open: false });
-	db.open({ readOnly: true });
-	const store = Object.create(ReceiptStore.prototype) as ReceiptStore;
-	(store as unknown as { db: DatabaseSync }).db = db;
-	return store;
+	const uri = `file:${encodedPath}?mode=ro`;
+	return new ReceiptStore(new DatabaseSync(uri));
 }
