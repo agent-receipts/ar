@@ -649,12 +649,18 @@ describe("openStoreReadOnly", () => {
 	it("throws when insert() is called on a read-only handle", () => {
 		// Seed the DB via a read-write store first so the schema exists.
 		const rw = openStore(dbPath);
-		rw.insert(makeReceipt({ id: "urn:receipt:seed", sequence: 1 }), "sha256:seed");
+		rw.insert(
+			makeReceipt({ id: "urn:receipt:seed", sequence: 1 }),
+			"sha256:seed",
+		);
 		rw.close();
 
 		const ro = openStoreReadOnly(dbPath);
 		try {
-			const newReceipt = makeReceipt({ id: "urn:receipt:should-fail", sequence: 2 });
+			const newReceipt = makeReceipt({
+				id: "urn:receipt:should-fail",
+				sequence: 2,
+			});
 			expect(() => ro.insert(newReceipt, "sha256:fail")).toThrow();
 		} finally {
 			ro.close();
