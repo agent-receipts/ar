@@ -13,17 +13,17 @@ import (
 const alicePubHex = "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
 
 // RFC 7748 §6.1 Alice private key (32 bytes, hex).
-// Not inlined in the spec vectors — fetch from RFC 7748 directly if reproducing.
-// Note: the RFC's hex representation groups bytes in a way that can be misread;
-// this is the correct 32-byte scalar verified against Alice's public key above.
-const alicePrivHex = "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"
+// These are published test vectors from an IETF RFC — not real secrets.
+// The RFC's hex grouping can be misread; this scalar is verified by
+// crypto/ecdh.X25519().NewPrivateKey(scalar).PublicKey().Bytes() == alicePubHex.
+const alicePrivHex = "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a" //nolint:gosec
 
 // RFC 7748 §6.1 Bob public key (32 bytes, hex).
 // Used as forensic-test-recipient-2 in spec/test-vectors/disclosure-envelope/vectors.json.
 const bobPubHex = "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"
 
-// RFC 7748 §6.1 Bob private key (32 bytes, hex).
-const bobPrivHex = "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb"
+// RFC 7748 §6.1 Bob private key (32 bytes, hex). Published IETF test vector, not a real secret.
+const bobPrivHex = "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb" //nolint:gosec
 
 // vector1IkmEHex is the ikmE for test vector 1 from RFC 9180 §A.1.1.
 const vector1IkmEHex = "7268600d403fce431561aef583ee1613527cff655c1343f29812e66706df3234"
@@ -220,6 +220,20 @@ func TestDecryptValidationErrors(t *testing.T) {
 	// nil envelope.
 	if _, err := DecryptDisclosure(nil, make([]byte, 32)); err == nil {
 		t.Error("expected error for nil envelope, got nil")
+	}
+
+	// Encryption-side validation errors.
+	alicePub := mustDecodeHex(t, alicePubHex)
+	validParams := map[string]any{"k": "v"}
+
+	if _, err := EncryptDisclosure(nil, alicePub, "kid"); err == nil {
+		t.Error("expected error for nil params")
+	}
+	if _, err := EncryptDisclosure(validParams, alicePub, ""); err == nil {
+		t.Error("expected error for empty kid")
+	}
+	if _, err := EncryptDisclosure(validParams, make([]byte, 16), "kid"); err == nil {
+		t.Error("expected error for short recipient public key")
 	}
 
 	tests := []struct {

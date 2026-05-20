@@ -59,7 +59,7 @@
         "ct": "YGn3i4NpiZxHjeZVggTP8lTxb0ZVdLl-2HjW31qsvo28PjQ_Lt_UQgAMidEXjzwhJPHM7OM"
       },
       "round_trip": {
-        "decrypt_with": "Alice secret key per RFC 7748 §6.1. The correct 32-byte hex scalar is 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a (verified: X25519(scalar, basepoint) = alice_pub above). The RFC's hex presentation uses a line-break convention that can be misread; this pinned value is authoritative for this vector.",
+        "decrypt_with": "Alice secret key per RFC 7748 §6.1 (fetched from the RFC, not inlined here). Note: the RFC's hex presentation uses a line-break grouping that can be misread; the correct scalar is verified in sdk/go/receipt/disclosure_test.go (alicePrivHex constant, cross-checked against alicePubHex).",
         "expected_plaintext_canonical_jcs": "{\"command\":\"echo \\\"build complete\\\"\"}"
       },
       "computed_values_status": "computed",
@@ -92,7 +92,7 @@
         "ct": "vJG1bfcwNTnyL7gqfzkIg8oDl08Rd0z2kp-HVcRypJDrYdPBwvHWbIwdhCXuYB4mKANMmKejzrsDHvaOnFAAHxVzB-f57sljHW5aDsb4kp5mhtM2SIAQwUj6VlVonllEdQquRKOl3hjbXEOwjQeXQUxvI7avsiWuk5z41na_Xx6vVJd96lb-59YV"
       },
       "round_trip": {
-        "decrypt_with": "Bob secret key per RFC 7748 §6.1: 5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb (verified: X25519(scalar, basepoint) = bob_pub above).",
+        "decrypt_with": "Bob secret key per RFC 7748 §6.1 (fetched from the RFC, not inlined here). Verified in sdk/go/receipt/disclosure_test.go (bobPrivHex constant, cross-checked against bobPubHex).",
         "expected_plaintext_canonical_jcs": "{\"body\":{\"delta\":42,\"user\":\"otto\"},\"headers\":{\"content-type\":\"application/json\",\"x-request-id\":\"abc-123\"},\"method\":\"POST\"}"
       },
       "computed_values_status": "computed",

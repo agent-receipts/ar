@@ -102,6 +102,16 @@ func encryptDisclosureWithSeed(params map[string]any, recipientPublicKey []byte,
 }
 
 func encryptWithReader(params map[string]any, recipientPublicKey []byte, kid string, rnd io.Reader) (*DisclosureEnvelope, error) {
+	if params == nil {
+		return nil, fmt.Errorf("params must not be nil; pass an empty map for no parameters")
+	}
+	if len(recipientPublicKey) != 32 {
+		return nil, fmt.Errorf("recipientPublicKey must be 32 bytes, got %d", len(recipientPublicKey))
+	}
+	if kid == "" {
+		return nil, fmt.Errorf("kid must not be empty")
+	}
+
 	suite := disclosureSuite()
 	kemID, _, _ := suite.Params()
 
@@ -194,6 +204,9 @@ func DecryptDisclosure(env *DisclosureEnvelope, recipientPrivateKey []byte) (map
 	var result map[string]any
 	if err := json.Unmarshal(plaintext, &result); err != nil {
 		return nil, fmt.Errorf("unmarshal decrypted params: %w", err)
+	}
+	if result == nil {
+		return nil, fmt.Errorf("decrypted plaintext is not a JSON object (got null)")
 	}
 	return result, nil
 }
