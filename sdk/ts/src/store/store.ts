@@ -1,4 +1,5 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import * as nodePath from "node:path";
 import { ZodError } from "zod";
 import { agentReceiptSchema } from "../receipt/schema.js";
 import type {
@@ -295,4 +296,40 @@ export class ReceiptStore {
  */
 export function openStore(dbPath: string): ReceiptStore {
 	return new ReceiptStore(dbPath);
+}
+
+/**
+ * Open an existing receipt store at the given path in read-only mode.
+ *
+ * The database is opened with the SQLite URI
+ * `file:<abs-path>?mode=ro&_pragma=busy_timeout(5000)`, so no schema
+ * creation or migration writes are performed. This makes it safe to use
+ * alongside a running daemon that holds the write lock.
+ *
+ * The returned {@link ReceiptStore} supports all read operations
+ * (query, getById, getChain, stats). Calling insert() will throw a
+ * SQLite "attempt to write a readonly database" error.
+ *
+ * ":memory:" is rejected — a fresh in-memory database has no rows to read.
+ */
+export function openStoreReadOnly(dbPath: string): ReceiptStore {
+	if (dbPath === ":memory:") {
+		throw new Error(
+			"openStoreReadOnly: \":memory:\" is not supported — there is nothing to read in a fresh in-memory database",
+		);
+	}
+	const abs = nodePath.resolve(dbPath);
+	// Percent-encode only characters that are meaningful in a URI query string
+	// (space, ?, #, &, =, %). Standard path separators and most printable
+	// characters are safe in the path component of a file: URI.
+	const encodedPath = abs
+		.split("/")
+		.map((segment) => encodeURIComponent(segment))
+		.join("/");
+	const uri = `file:${encodedPath}?mode=ro&_pragma=busy_timeout(5000)`;
+	const db = new DatabaseSync(uri, { open: false });
+	db.open({ readOnly: true });
+	const store = Object.create(ReceiptStore.prototype) as ReceiptStore;
+	(store as unknown as { db: DatabaseSync }).db = db;
+	return store;
 }
