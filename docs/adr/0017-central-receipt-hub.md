@@ -192,7 +192,7 @@ Same storage layout (SQLite per ADR-0004, one logical chain per node DID), same 
 
 ### 7. External anchoring: S3 with object lock for per-node chain heads
 
-The hub periodically writes per-node chain heads to an S3 bucket with object lock enabled. Each anchor write is a `checkpoint` event as defined by ADR-0015, extended with a `node_did` field: `(issuer.id, node_did, seq, tip_hash, public_key_fingerprint)`, RFC 8785-canonicalised, signed by the hub's own daemon key, written via the ADR-0015 `Write(event_type, payload bytes) → error` contract. `issuer.id` is the hub's DID URL — the entity making the anchoring claim and the holder of the signing key. `node_did` is the node's DID URL — the same identifier used as `kid` in §4 — and is the index key for per-node anchor enumeration and chain lookup. This separation keeps signer identity (`issuer.id`) and anchored-chain identity (`node_did`) unambiguous; `public_key_fingerprint` is the hub's key fingerprint, matching `issuer.id`.
+The hub periodically writes per-node chain heads to an S3 bucket with object lock enabled. Each anchor write uses a hub-specific event type **`node_checkpoint`** (distinct from ADR-0015's plain `checkpoint` so parsers can unambiguously identify hub-emitted anchors) with payload `(issuer.id, node_did, seq, tip_hash, public_key_fingerprint)`, RFC 8785-canonicalised, signed by the hub's own daemon key, written via the ADR-0015 `Write(event_type, payload bytes) → error` contract. `issuer.id` is the hub's DID URL — the entity making the anchoring claim and the holder of the signing key. `node_did` is the node's DID URL — the same identifier used as `kid` in §4 — and is the index key for per-node anchor enumeration and chain lookup. This separation keeps signer identity (`issuer.id`) and anchored-chain identity (`node_did`) unambiguous; `public_key_fingerprint` is the hub's key fingerprint, matching `issuer.id`. Verifiers encountering `node_checkpoint` events in S3 should expect this extended tuple; plain `checkpoint` events (from non-hub daemons) carry only the base 4-tuple.
 
 S3 object lock provides the two properties ADR-0015 demands of a sink:
 
@@ -273,7 +273,7 @@ sequenceDiagram
     H->>H: persist per-node chains to SQLite (idempotent on issuer_did+seq)
 
     Note over H: anchor job: every 5min or 1000 receipts (whichever first)
-    H->>H: build checkpoint: (issuer.id=hub-DID, node_did=node-DID, seq, tip_hash, pubkey_fingerprint)<br/>canonicalise (RFC 8785)<br/>sign with hub Ed25519 key → proofValue
+    H->>H: build node_checkpoint: (issuer.id=hub-DID, node_did=node-DID, seq, tip_hash, pubkey_fingerprint)<br/>canonicalise (RFC 8785)<br/>sign with hub Ed25519 key → proofValue
     H->>S3: PUT anchors/<url-encoded-node_did>/<seq:020d>.jcs.json<br/>(signed checkpoint, object-locked, immutable)
 ```
 
@@ -347,7 +347,7 @@ The hub's authorisation decision is "is this `kid`'s base DID (fragment stripped
 
 - Trust list is **signed** by the hub's own daemon key. An attacker with filesystem-write access to the trust list cannot add a DID; they would need the hub's signing key.
 - Trust list reload **validates the signature** before swapping in. A failed signature check keeps the previous good list in effect and logs loudly.
-- Trust-list **changes are themselves anchored**: appending a `trust_list_updated` event to the hub's local chain (signed by the hub key) and anchoring it to S3 alongside checkpoints makes the trust-list history something the hub cannot rewrite alone, even with key compromise post-anchor.
+- Trust-list **changes are recorded in-chain**: a `trust_list_updated` receipt is appended to the hub's local chain (signed by the hub key) on every trust-list reload that passes signature validation. It is captured by the next scheduled `node_checkpoint` anchor — no separate S3 write path. This keeps trust-list history visible to any auditor who walks the hub's chain and covered by the same anchor cadence as all other hub events.
 
 ### DID resolution is an external dependency
 
