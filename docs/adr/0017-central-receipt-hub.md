@@ -112,7 +112,7 @@ Shipper-retry semantics: on retry, the shipper **re-signs the JWS with a fresh `
 The hub holds a list of authorised node DIDs in an operator-managed file. Properties:
 
 - **Path** is operator config (default: `/etc/agent-receipts/trust.json`).
-- **Format** is a JSON document listing each authorised DID with metadata (`did`, `added_at`, optional `notes`).
+- **Format** is a JSON document listing each authorised DID with metadata (`did`, `added_at`, optional `notes`). The `did` field stores the base DID with no fragment and no query component (e.g. `did:web:example.com`, not `did:web:example.com#key-1`). When the hub receives a JWS, it normalises `kid` by stripping any fragment before trust-list lookup — authorisation is on the DID identity, not a specific key reference.
 - **Signed** by the hub's own daemon key (the same DID that signs anchored checkpoints). Trust-list tampering becomes a key-compromise problem, not a filesystem-ACL problem.
 - **Reloaded automatically** when the file's mtime changes — no daemon restart required to add or remove a DID.
 - **Validation on load**: a malformed or unsigned trust list does not silently become "empty" (which would refuse all ingest). It refuses to load and the hub continues with the last good trust list, logging loudly.
@@ -140,7 +140,12 @@ The tradeoff: aggressive caching means a compromised-then-rotated key keeps work
 
 #### Key rotation interaction
 
-`kid` is the node's DID URL — stable across rotations per ADR-0007. The DID resolver returns the public key valid at the JWS `iat` timestamp; mid-flight rotations resolve naturally if the resolver retains key history, with the on-chain ADR-0015 rotation-event witness as a fallback. The hub never holds per-node key material out of band.
+`kid` is the node's DID URL. Stability across rotations depends on the DID method:
+
+- **`did:web`**: the DID URL is stable across key rotations — rotation updates the DID document at the same URL, leaving the identifier unchanged. The DID resolver returns the public key valid at the JWS `iat` timestamp; mid-flight rotations resolve naturally if the resolver retains key history, with the on-chain ADR-0015 rotation-event witness as a fallback. This is the recommended method for production nodes.
+- **`did:key`**: the DID is derived from the key material and changes on rotation. A `did:key` node that rotates its signing key produces a new DID and must be re-onboarded in the trust list under the new DID (old entry retired via `retired_at`). Chain identity changes with the DID: receipts signed under the old DID remain verifiable against it but are logically a separate chain from the post-rotation history. `did:key` is permitted for development deployments per ADR-0007; production deployments should use `did:web` to preserve a stable node identity across key rotations.
+
+The hub never holds per-node key material out of band.
 
 #### What the JWS does *not* cover
 
@@ -241,7 +246,7 @@ hub agent-receipts daemon (--ingest mode)
    └─ persist per-node chains to SQLite
          ↓ periodic anchor job (5min / 1000 receipts, whichever first)
    S3 bucket with object lock
-     <bucket>/anchors/<issuer.id>/<seq:020d>.jcs.json
+     <bucket>/anchors/<node_did>/<seq:020d>.jcs.json
      (per-node chain heads, signed by hub's daemon key)
 ```
 
