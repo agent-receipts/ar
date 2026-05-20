@@ -1,7 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeReceipt } from "../test-utils/receipts.js";
 import type { ReceiptStore } from "./store.js";
@@ -605,12 +605,12 @@ describe("openStoreReadOnly", () => {
 	let dbPath: string;
 
 	beforeEach(() => {
-		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ar-store-ro-test-"));
-		dbPath = path.join(tmpDir, "receipts.db");
+		tmpDir = mkdtempSync(join(tmpdir(), "ar-store-ro-test-"));
+		dbPath = join(tmpDir, "receipts.db");
 	});
 
 	afterEach(() => {
-		fs.rmSync(tmpDir, { recursive: true, force: true });
+		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
 	it("queries receipts written by openStore", () => {
@@ -636,7 +636,7 @@ describe("openStoreReadOnly", () => {
 	});
 
 	it("throws on a non-existent path", () => {
-		const missing = path.join(tmpDir, "does-not-exist.db");
+		const missing = join(tmpDir, "does-not-exist.db");
 		expect(() => openStoreReadOnly(missing)).toThrow();
 	});
 
@@ -649,7 +649,7 @@ describe("openStoreReadOnly", () => {
 	it("throws when insert() is called on a read-only handle", () => {
 		// Seed the DB via a read-write store first so the schema exists.
 		const rw = openStore(dbPath);
-		rw.insert(makeReceipt({ id: "urn:receipt:seed" }), "sha256:seed");
+		rw.insert(makeReceipt({ id: "urn:receipt:seed", sequence: 1 }), "sha256:seed");
 		rw.close();
 
 		const ro = openStoreReadOnly(dbPath);
