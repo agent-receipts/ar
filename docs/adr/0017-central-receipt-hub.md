@@ -22,6 +22,8 @@ Hub implementation MUST NOT begin until each of the following has shipped. These
 
 3. **ADR-0012 Phase A envelope — disclosure carries ciphertext, not plaintext.** The asymmetric envelope (`v`, `alg`, `recipients`, `nonce`, `ct`) is shipped in all three SDKs and the daemon's `--parameter-disclosure` flag is rewired from redacted-plaintext to envelope. This is the **user-facing gate**: hub aggregation is unsafe before this lands because any opt-in plaintext disclosure on a node becomes, post-aggregation, a concentrated secrets corpus on the hub — a materially worse blast radius than per-node plaintext, and one that no operational control on the hub can recover.
 
+4. **ADR-0015 amendment — `node_checkpoint` event type registered.** ADR-0017 introduces `node_checkpoint` as a hub-specific anchor event type extending the ADR-0015 sink contract (which currently defines only `rotation` and `checkpoint`). An ADR-0015 amendment pinning the `node_checkpoint` payload schema and compatibility expectations MUST land before hub implementation begins so sink adapters and verifiers have a stable contract to target.
+
 Cross-track spec PRs that should land before the implementation phases above start in earnest:
 
 - `did:key` value shape and resolution algorithm, with cross-SDK test vectors.
@@ -182,7 +184,7 @@ Differences in `--ingest` mode versus default:
 
 - **Listens on HTTPS** for `POST /v1/receipts` in addition to (or instead of) the local UDS in default mode. Operators choosing "hub-only" disable the UDS listener; operators running a node-that-is-also-the-hub keep both.
 - **Verifies inbound batches** (JWS over batch claims, body digest, chain link verification per receipt, DID authorisation) before persisting. The default daemon's input is trusted local IPC (per ADR-0010); ingest input is untrusted network.
-- **Enforces disclosure-envelope precondition.** Hub MUST reject any inbound receipt whose `credentialSubject.action.parameters_disclosure` field is populated in a non-envelope shape (e.g. legacy plaintext or the interim redacted-plaintext from ADR-0012 Phase A partial). Reject with 422 and a diagnostic naming the offending receipt's `seq`. This is belt-and-braces against the *Preconditions* gate being violated by a misconfigured node; it ensures the hub never persists pre-#280 disclosure shapes even if a stale emitter sends them.
+- **Enforces disclosure-envelope precondition.** Once ADR-0012 Phase A has shipped (Precondition 3), `credentialSubject.action.parameters_disclosure` in a conformant receipt is either absent or an asymmetric envelope (carrying `v`, `alg`, `recipients`, `nonce`, `ct`). The hub MUST reject any inbound receipt where this field is present but lacks the envelope structure — specifically the legacy plaintext shape and the interim redacted-plaintext shape from ADR-0012 Phase A partial. Reject with 422 and a diagnostic naming the offending receipt's `seq`. Note: any daemon-attested operational metadata currently stored in `parameters_disclosure` (e.g. `peer.*` keys, `emitter.drop_count`) MUST be migrated to a separate schema location as part of the ADR-0012 Phase A implementation before hub ingest enforcement is enabled — this migration is in scope for Precondition 3.
 - **Owns the anchor schedule** (see §7). Default daemons do not anchor; only the hub does.
 - **Holds a configured trust list** of authorised node DIDs (see §4 *Trust list management*). Default daemons do not — they only know their own key.
 
