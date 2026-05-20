@@ -89,8 +89,8 @@ The node signs each batch with a JWS (JSON Web Signature, [RFC 7515](https://www
 #### Hub-side verification order
 
 1. Parse JWS header; extract `kid`.
-2. Normalise `kid` by stripping any fragment and query component; look up the base DID in the trust list. Reject immediately if not found — no DID resolution for unauthorised `kid`s, avoiding unnecessary network I/O and eliminating the SSRF surface for attacker-chosen `kid` values.
-3. Resolve `kid` via DID resolution (ADR-0007) to obtain the current verification key.
+2. Derive `base_did` by stripping any fragment and query component from `kid`; look up `base_did` in the trust list. Reject immediately if not found — no DID resolution for unauthorised `kid`s, avoiding unnecessary network I/O and eliminating the SSRF surface for attacker-chosen `kid` values.
+3. Resolve the original `kid` (with fragment intact) via DID resolution (ADR-0007) to obtain the verification key for the specific `verificationMethod` referenced. (`base_did` is used for access control only; the full `kid` URL is used for key-material lookup.)
 4. Verify JWS signature (EdDSA) over header + claims. On signature failure, force-refresh the DID cache for this `kid` and retry once before rejecting — catches the "key just rotated, cache is stale" case.
 5. Check `iat`/`exp` against the hub clock with tolerance (see *Clock skew tolerance* below).
 6. Stream body; compute SHA-256; compare to `body_sha256` claim.
@@ -182,7 +182,7 @@ Differences in `--ingest` mode versus default:
 
 - **Listens on HTTPS** for `POST /v1/receipts` in addition to (or instead of) the local UDS in default mode. Operators choosing "hub-only" disable the UDS listener; operators running a node-that-is-also-the-hub keep both.
 - **Verifies inbound batches** (JWS over batch claims, body digest, chain link verification per receipt, DID authorisation) before persisting. The default daemon's input is trusted local IPC (per ADR-0010); ingest input is untrusted network.
-- **Enforces disclosure-envelope precondition.** Hub MUST reject any inbound receipt whose `parameters_disclosure` field is populated in a non-envelope shape (e.g. legacy plaintext or the interim redacted-plaintext from ADR-0012 Phase A partial). Reject with 422 and a diagnostic naming the offending receipt's `seq`. This is belt-and-braces against the *Preconditions* gate being violated by a misconfigured node; it ensures the hub never persists pre-#280 disclosure shapes even if a stale emitter sends them.
+- **Enforces disclosure-envelope precondition.** Hub MUST reject any inbound receipt whose `credentialSubject.action.parameters_disclosure` field is populated in a non-envelope shape (e.g. legacy plaintext or the interim redacted-plaintext from ADR-0012 Phase A partial). Reject with 422 and a diagnostic naming the offending receipt's `seq`. This is belt-and-braces against the *Preconditions* gate being violated by a misconfigured node; it ensures the hub never persists pre-#280 disclosure shapes even if a stale emitter sends them.
 - **Owns the anchor schedule** (see §7). Default daemons do not anchor; only the hub does.
 - **Holds a configured trust list** of authorised node DIDs (see §4 *Trust list management*). Default daemons do not — they only know their own key.
 
@@ -269,12 +269,12 @@ sequenceDiagram
     Note over D: shipper goroutine flushes every 5s / 100 receipts
     D->>H: HTTPS POST /v1/receipts<br/>body: JSONL batch (one receipt per line)<br/>Authorization: Bearer <JWS><br/>  header: alg=EdDSA, kid=node-DID, typ=agnt-rcpt-batch+jws<br/>  claims: iat/exp, body_sha256, batch_id, batch_count
 
-    Note over H: 1. parse JWS header, extract kid<br/>2. resolve kid via DID (ADR-0007), check trust list<br/>3. verify EdDSA signature over header+claims<br/>4. check iat/exp with ±5min tolerance<br/>5. stream body, verify SHA-256 matches body_sha256<br/>6. per-receipt: verify proofValue + chain link
+    Note over H: 1. parse JWS header, extract kid<br/>2. derive base_did (strip fragment); check trust list; reject if not found<br/>3. resolve original kid via DID (ADR-0007) for verification key<br/>4. verify EdDSA signature over header+claims<br/>5. check iat/exp with ±5min tolerance<br/>6. stream body, verify SHA-256 matches body_sha256<br/>7. per-receipt: verify proofValue + chain link
     H->>H: persist per-node chains to SQLite (idempotent on issuer_did+seq)
 
     Note over H: anchor job: every 5min or 1000 receipts (whichever first)
     H->>H: build checkpoint: (issuer.id=hub-DID, node_did=node-DID, seq, tip_hash, pubkey_fingerprint)<br/>canonicalise (RFC 8785)<br/>sign with hub Ed25519 key → proofValue
-    H->>S3: PUT anchors/<node_did>/<seq:020d>.jcs.json<br/>(signed checkpoint, object-locked, immutable)
+    H->>S3: PUT anchors/<url-encoded-node_did>/<seq:020d>.jcs.json<br/>(signed checkpoint, object-locked, immutable)
 ```
 
 ### (b) Trust relationships and verification roots
