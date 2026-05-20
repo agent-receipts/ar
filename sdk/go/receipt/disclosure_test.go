@@ -236,6 +236,11 @@ func TestDecryptValidationErrors(t *testing.T) {
 		t.Error("expected error for short recipient public key")
 	}
 
+	// DecryptDisclosure: wrong private key length.
+	if _, err := DecryptDisclosure(&DisclosureEnvelope{V: "1", Alg: v1Alg, Recipients: []DisclosureRecipient{{KID: "k", Enc: strings.Repeat("A", 43)}}, CT: strings.Repeat("B", 24)}, make([]byte, 16)); err == nil {
+		t.Error("expected error for short recipient private key")
+	}
+
 	tests := []struct {
 		name    string
 		mutate  func(*DisclosureEnvelope) *DisclosureEnvelope

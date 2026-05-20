@@ -174,6 +174,10 @@ func DecryptDisclosure(env *DisclosureEnvelope, recipientPrivateKey []byte) (map
 	suite := disclosureSuite()
 	kemID, _, _ := suite.Params()
 
+	if len(recipientPrivateKey) != 32 {
+		return nil, fmt.Errorf("recipientPrivateKey must be 32 bytes, got %d", len(recipientPrivateKey))
+	}
+
 	privKey, err := kemID.Scheme().UnmarshalBinaryPrivateKey(recipientPrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal recipient private key: %w", err)
