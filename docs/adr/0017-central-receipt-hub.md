@@ -203,7 +203,7 @@ Cost grounding (so the knob is concrete): S3 PUT with object lock is approximate
 
 **Hub-side failure mode.** Hub-emitted checkpoints use ADR-0015's `queue` mode by default — staged in a local outbox if the sink is unreachable, flushed when it returns. Operators with stricter compliance posture configure `block` (hub stops ingesting if anchoring is unavailable); `drop` is also available per ADR-0015's menu for checkpoint events but means the truncation-detection window grows without bound during sink outages. Defaults align with ADR-0015 §"Checkpoint events".
 
-**Cold start.** A fresh hub joining a node mid-history records its join point. The hub's first anchored checkpoint for a node carries `joined_at_seq: <first_seq_observed>`. Verifiers reading the anchor stream know: anchored-tail-integrity applies from `joined_at_seq` onward; for receipts before that point only the node's local chain provides integrity. This composes with §1's invariant — we do not pretend the hub knows about pre-join history; we record the seam and let verifiers reason about it.
+**Cold start.** A fresh hub joining a node mid-history records its join point. The hub's first anchored checkpoint for a node carries `joined_at_seq: <first_seq_observed>`. This is a hub-specific extension field appended to the base ADR-0015 checkpoint tuple `(issuer.id, seq, tip_hash, public_key_fingerprint)`; it appears only in hub-emitted checkpoints and its absence means the hub was present from the node's genesis. Verifiers reading the anchor stream know: anchored-tail-integrity applies from `joined_at_seq` onward; for receipts before that point only the node's local chain provides integrity. This composes with §1's invariant — we do not pretend the hub knows about pre-join history; we record the seam and let verifiers reason about it.
 
 ### 8. Scope: single-tenant for v1
 
@@ -275,7 +275,6 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    ED["Emitter DID\n(per-emitter Ed25519 key)"]
     ND["Node DID\n(daemon Ed25519 key)"]
     HD["Hub DID\n(hub daemon Ed25519 key)"]
     S3["S3 bucket\n(object lock)\n— trust root for anchoring claim —"]
@@ -285,7 +284,7 @@ flowchart TD
     CP["S3 checkpoint\n(per-node chain head)"]
     V["Verifier\n(auditor / verify CLI)"]
 
-    ED -->|"signs"| R
+    ND -->|"signs"| R
     ND -->|"signs"| B
     B -->|"contains"| R
     HD -->|"signs"| CP
@@ -293,15 +292,14 @@ flowchart TD
     HD -->|"signs"| TL
     H_box["Hub"] -->|"verifies node DID via"| TL
 
-    V -->|"verifies receipt proofValue directly via"| ED
+    V -->|"verifies receipt proofValue directly via"| ND
     V -->|"reads anchored chain heads from"| S3
 
     style S3 fill:#2d6a4f,color:#fff,stroke:#1b4332
-    style ED fill:#1d3557,color:#fff,stroke:#457b9d
     style ND fill:#1d3557,color:#fff,stroke:#457b9d
     style HD fill:#1d3557,color:#fff,stroke:#457b9d
 
-    note1["Hub is NOT the trust root for receipts.\nVerifier checks emitter DID directly.\nA compromised hub cannot forge receipts —\nit can only suppress them (suppression is\nvisible in-chain via events_dropped)."]
+    note1["Hub is NOT the trust root for receipts.\nVerifier checks the node DID directly.\nA compromised hub cannot forge receipts —\nit can only suppress them (suppression is\nvisible in-chain via events_dropped).\nAgents/emitters send unsigned events over IPC;\nthe daemon (node) signs every receipt."]
     note2["S3 bucket (object lock) is the trust root\nfor the anchoring claim only."]
 
     style note1 fill:#fff3cd,color:#333,stroke:#ffc107
