@@ -133,6 +133,17 @@ export async function encryptDisclosureWithSeed(
 	kid: string,
 	ikmE: Uint8Array,
 ): Promise<DisclosureEnvelope> {
+	if (!isPlainObject(params)) {
+		throw new Error("params must be a plain object");
+	}
+	if (recipientPublicKey.byteLength !== 32) {
+		throw new Error(
+			`recipientPublicKey must be 32 bytes, got ${recipientPublicKey.byteLength}`,
+		);
+	}
+	if (!kid) {
+		throw new Error("kid must not be empty");
+	}
 	if (ikmE.byteLength !== 32) {
 		throw new Error(`ikmE must be 32 bytes, got ${ikmE.byteLength}`);
 	}
