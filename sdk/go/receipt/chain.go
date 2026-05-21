@@ -27,12 +27,38 @@ type ReceiptVerification struct {
 type ChainVerification struct {
 	Valid    bool                  `json:"valid"`
 	Length   int                   `json:"length"`
+	Status   string                `json:"status"` // "complete" | "interrupted" | "unknown" (spec §7.3.3).
 	Receipts []ReceiptVerification `json:"receipts"`
 	BrokenAt int                   `json:"broken_at"`       // -1 if chain is valid.
 	Error    string                `json:"error,omitempty"` // Non-empty if verification failed due to a key/proof error.
 	// ResponseHashNote is non-empty when one or more receipts carry response_hash
 	// but no response body was supplied for recomputation.
 	ResponseHashNote string `json:"response_hash_note,omitempty"`
+}
+
+// Chain termination status values (spec §7.3.3).
+const (
+	StatusComplete    = "complete"
+	StatusInterrupted = "interrupted"
+	StatusUnknown     = "unknown"
+)
+
+// classifyTerminationStatus inspects the wire form of the final receipt and
+// returns the chain's termination status (spec §7.3.3). Independent of
+// verification result — describes what the chain claims, not whether it's valid.
+func classifyTerminationStatus(receipts []AgentReceipt) string {
+	if len(receipts) == 0 {
+		return StatusUnknown
+	}
+	last := receipts[len(receipts)-1]
+	ch := last.CredentialSubject.Chain
+	if ch.Terminal == nil || !*ch.Terminal {
+		return StatusUnknown
+	}
+	if ch.Status == StatusInterrupted {
+		return StatusInterrupted
+	}
+	return StatusComplete
 }
 
 // ChainVerifyOptions holds optional parameters for VerifyChain.
@@ -95,12 +121,15 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			return ChainVerification{
 				Valid:    false,
 				Length:   0,
+				Status:   StatusUnknown,
 				BrokenAt: 0,
 				Error:    "expected chain length does not match: expected " + strconv.Itoa(*opt.ExpectedLength) + ", got 0",
 			}
 		}
-		return ChainVerification{Valid: true, Length: 0, BrokenAt: -1}
+		return ChainVerification{Valid: true, Length: 0, Status: StatusUnknown, BrokenAt: -1}
 	}
+
+	status := classifyTerminationStatus(receipts)
 
 	results := make([]ReceiptVerification, 0, len(receipts))
 	brokenAt := -1
@@ -195,6 +224,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 				return ChainVerification{
 					Valid:    false,
 					Length:   len(receipts),
+					Status:   status,
 					Receipts: results,
 					BrokenAt: brokenAt,
 					Error:    errMsg,
@@ -206,6 +236,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	cv := ChainVerification{
 		Valid:    brokenAt == -1,
 		Length:   len(receipts),
+		Status:   status,
 		Receipts: results,
 		BrokenAt: brokenAt,
 		Error:    loopErr,

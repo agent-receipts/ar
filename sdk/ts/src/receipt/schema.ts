@@ -121,8 +121,15 @@ const chainSchema = z
 		chain_id: z.string(),
 		// When present, MUST be true. Explicit false is not valid per the spec.
 		terminal: z.literal(true).optional(),
+		// Issuer-asserted termination reason. Only valid alongside terminal: true.
+		// Verifier-derived "unknown" is never written on the wire.
+		status: z.enum(["complete", "interrupted"]).optional(),
 	})
-	.passthrough();
+	.passthrough()
+	.refine((c) => c.status === undefined || c.terminal === true, {
+		message: "chain.status requires chain.terminal: true",
+		path: ["status"],
+	});
 
 // --- Credential Subject ---
 

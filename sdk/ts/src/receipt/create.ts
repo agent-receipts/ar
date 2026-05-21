@@ -34,6 +34,11 @@ export interface CreateReceiptInput {
 	responseBody?: unknown;
 	/** When true, sets chain.terminal: true on the receipt. Never emits false. */
 	terminal?: true;
+	/** Issuer-asserted termination reason. Only meaningful alongside
+	 *  `terminal: true`; passing `status` without `terminal: true` is a
+	 *  programming error and is ignored at construction (the verifier will
+	 *  reject the receipt as schema-invalid per spec §7.3.3). */
+	terminationStatus?: "complete" | "interrupted";
 }
 
 /**
@@ -58,9 +63,16 @@ export function createReceipt(input: CreateReceiptInput): UnsignedAgentReceipt {
 		...(responseHash !== undefined && { response_hash: responseHash }),
 	};
 
-	// Build chain with optional terminal.
+	// Build chain with optional terminal + termination status. The status
+	// field is only emitted alongside terminal: true (spec §7.3.3).
 	const chain: Chain = input.terminal
-		? { ...input.chain, terminal: true }
+		? {
+				...input.chain,
+				terminal: true,
+				...(input.terminationStatus !== undefined && {
+					status: input.terminationStatus,
+				}),
+			}
 		: { ...input.chain };
 
 	return {

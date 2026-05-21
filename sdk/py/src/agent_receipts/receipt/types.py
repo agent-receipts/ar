@@ -127,6 +127,10 @@ class Chain(BaseModel):
     previous_receipt_hash: str | None
     chain_id: str
     terminal: Literal[True] | None = None
+    # Issuer-asserted termination reason. Only meaningful alongside
+    # terminal=True; the verifier-derived "unknown" classification is never
+    # written on the wire. See spec §7.3.3.
+    status: Literal["complete", "interrupted"] | None = None
 
 
 class CredentialSubject(BaseModel):

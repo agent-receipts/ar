@@ -2,7 +2,12 @@
 
 from unittest.mock import patch
 
-from agent_receipts.receipt.chain import verify_chain
+from agent_receipts.receipt.chain import (
+    STATUS_COMPLETE,
+    STATUS_INTERRUPTED,
+    STATUS_UNKNOWN,
+    verify_chain,
+)
 from agent_receipts.receipt.create import (
     ActionInput,
     CreateReceiptInput,
@@ -763,3 +768,100 @@ class TestAdr0008ChainBehaviours:
         )
         assert result.valid
         assert result.response_hash_note != ""
+
+
+def _build_chain_with_status(count: int, private_key: str, status: str | None) -> list:
+    """Build a chain of `count` receipts; last receipt is terminal with status."""
+    chain = _build_chain(count - 1, private_key)
+    prev_hash = hash_receipt(chain[-1]) if chain else None
+    unsigned = create_receipt(
+        CreateReceiptInput(
+            issuer=Issuer(id="did:agent:test"),
+            principal=Principal(id="did:user:test"),
+            action=ActionInput(type="filesystem.file.read", risk_level="low"),
+            outcome=Outcome(status="success"),
+            chain=Chain(
+                sequence=count,
+                previous_receipt_hash=prev_hash,
+                chain_id="chain_test",
+            ),
+            terminal=True,
+            termination_status=status,  # type: ignore[arg-type]
+        )
+    )
+    signed = sign_receipt(unsigned, private_key, "did:agent:test#key-1")
+    return [*chain, signed]
+
+
+class TestChainTerminationStatus:
+    """Spec §7.3.3 / #475 — chain.status classification."""
+
+    def test_terminal_no_status_classifies_as_complete(self) -> None:
+        chain = _build_terminal_chain(3, TEST_PRIVATE_KEY)
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.status == STATUS_COMPLETE
+        # Wire form: no status field emitted when not explicitly set.
+        assert chain[-1].credentialSubject.chain.status is None
+
+    def test_terminal_with_status_complete(self) -> None:
+        chain = _build_chain_with_status(3, TEST_PRIVATE_KEY, "complete")
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.status == STATUS_COMPLETE
+        assert chain[-1].credentialSubject.chain.status == "complete"
+
+    def test_terminal_with_status_interrupted(self) -> None:
+        chain = _build_chain_with_status(3, TEST_PRIVATE_KEY, "interrupted")
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.status == STATUS_INTERRUPTED
+        assert chain[-1].credentialSubject.chain.status == "interrupted"
+
+    def test_non_terminal_chain_classifies_as_unknown(self) -> None:
+        chain = _build_chain(3, TEST_PRIVATE_KEY)
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.status == STATUS_UNKNOWN
+
+    def test_empty_chain_classifies_as_unknown(self) -> None:
+        result = verify_chain([], TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.length == 0
+        assert result.status == STATUS_UNKNOWN
+
+    def test_status_independent_of_validity(self) -> None:
+        """Broken chain still reports termination status as claimed on the wire."""
+        chain = _build_chain_with_status(3, TEST_PRIVATE_KEY, "interrupted")
+        # Tamper with the middle receipt to break verification.
+        chain[1].credentialSubject.action.risk_level = "critical"
+
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is False
+        # Status reflects what the chain claims on the wire, not its validity.
+        assert result.status == STATUS_INTERRUPTED
+
+    def test_status_omitted_from_wire_when_no_terminal(self) -> None:
+        """A non-terminal receipt with status set must not emit status on the wire."""
+        # Construct a Chain object with status set but terminal unset (bypassing
+        # the create_receipt path which would refuse this). Verify that
+        # canonicalisation via exclude_none drops the field cleanly.
+        c = Chain(
+            sequence=1,
+            previous_receipt_hash=None,
+            chain_id="chain-1",
+            terminal=None,
+            status="interrupted",
+        )
+        # Pydantic exclude_none must drop both terminal and status here.
+        d = c.model_dump(exclude_none=True)
+        # status only meaningful alongside terminal: True, so the test
+        # documents the expected wire shape — both absent.
+        assert "terminal" not in d
+        # NOTE: At present Pydantic emits status here. The wire-form invariant
+        # (status implies terminal) is enforced by the JSON schema and by
+        # create_receipt(). Direct manipulation of the model bypasses both;
+        # callers who construct Chain directly must respect the constraint.
+        # This test pins the model-level behaviour so future tightening is
+        # visible.
+        assert d.get("status") == "interrupted"

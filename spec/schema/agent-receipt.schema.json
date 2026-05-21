@@ -351,6 +351,10 @@
         "terminal": {
           "enum": [true],
           "description": "When present, asserts this is the final receipt in the chain. MUST be true if present; absence means no claim. Explicit false is not a valid value — the schema restricts this field to the constant true."
+        },
+        "status": {
+          "enum": ["complete", "interrupted"],
+          "description": "Issuer-asserted reason the chain ended. Only meaningful alongside chain.terminal: true; absence on a terminal receipt is equivalent to \"complete\". The verifier-derived \"unknown\" classification (chains with no terminal at all) is never written on the wire — only \"complete\" and \"interrupted\" are valid wire values. See spec §7.3.3."
         }
       },
       "allOf": [
@@ -365,6 +369,10 @@
           "else": {
             "properties": { "previous_receipt_hash": { "$ref": "#/$defs/sha256Hash" } }
           }
+        },
+        {
+          "if": { "required": ["status"] },
+          "then": { "required": ["terminal"] }
         }
       ]
     },

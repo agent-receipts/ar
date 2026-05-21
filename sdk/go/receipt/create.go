@@ -25,6 +25,12 @@ type CreateInput struct {
 	// Terminal marks this as the final receipt in the chain.
 	// When true, sets chain.terminal: true. Never emits false.
 	Terminal bool
+
+	// TerminationStatus, when non-empty and Terminal is true, sets
+	// chain.status on the receipt. MUST be StatusComplete or StatusInterrupted
+	// (spec §7.3.3). Setting TerminationStatus without Terminal is ignored —
+	// the spec requires status to coexist with terminal.
+	TerminationStatus string
 }
 
 // Create builds an unsigned AgentReceipt from structured inputs.
@@ -70,6 +76,10 @@ func Create(input CreateInput) UnsignedAgentReceipt {
 	if input.Terminal {
 		t := true
 		subject.Chain.Terminal = &t
+		// Status is only emitted alongside terminal (spec §7.3.3).
+		if input.TerminationStatus != "" {
+			subject.Chain.Status = input.TerminationStatus
+		}
 	}
 
 	return UnsignedAgentReceipt{
