@@ -60,10 +60,23 @@ const actionTargetSchema = z
 // `enc`, ≥24 chars for the AEAD ciphertext) so malformed envelopes are
 // rejected at the SDK boundary. .passthrough() preserves unknown future
 // fields for forward-compatible verification.
+// Pattern enforces unpadded base64url alphabet (no `+`, `/`, or `=`) at
+// exactly 43 chars — the encoded length of a 32-byte X25519 public key.
+const ENC_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+// Pattern enforces unpadded base64url alphabet AND decodable length
+// (`len % 4 !== 1`, the one residue invalid for base64url without padding).
+// Length floor of 24 (= 18 bytes = AES-256-GCM 16-byte tag + 2-byte minimum
+// plaintext `{}`) is enforced separately so error messages distinguish
+// "too short" from "wrong alphabet".
+const CT_PATTERN = /^([A-Za-z0-9_-]{4})*([A-Za-z0-9_-]{2,3})?$/;
+
 const parametersDisclosureRecipientSchema = z
 	.object({
 		kid: z.string().min(1),
-		enc: z.string().length(43),
+		enc: z
+			.string()
+			.regex(ENC_PATTERN, "enc must be 43 unpadded base64url chars"),
 	})
 	.passthrough();
 
@@ -72,7 +85,10 @@ const parametersDisclosureEnvelopeSchema = z
 		v: z.literal("1"),
 		alg: z.literal("hpke-x25519-hkdf-sha256-aes-256-gcm"),
 		recipients: z.tuple([parametersDisclosureRecipientSchema]),
-		ct: z.string().min(24),
+		ct: z
+			.string()
+			.min(24)
+			.regex(CT_PATTERN, "ct must be unpadded base64url with decodable length"),
 	})
 	.passthrough();
 

@@ -212,7 +212,7 @@ describe("Action.parameters_disclosure (v0.3.0 envelope)", () => {
 			parameters_disclosure: envelopeFixture,
 			timestamp: "2026-05-21T00:00:00Z",
 		});
-		const round = JSON.parse(JSON.stringify(unsigned)) as UnsignedAgentReceipt;
+		const round: UnsignedAgentReceipt = JSON.parse(JSON.stringify(unsigned));
 		expect(round.credentialSubject.action.parameters_disclosure).toEqual(
 			envelopeFixture,
 		);
@@ -249,7 +249,7 @@ describe("Action.peer_credential (ADR-0010)", () => {
 			peer_credential: peer,
 			timestamp: "2026-05-21T00:00:00Z",
 		});
-		const round = JSON.parse(JSON.stringify(unsigned)) as UnsignedAgentReceipt;
+		const round: UnsignedAgentReceipt = JSON.parse(JSON.stringify(unsigned));
 		expect(round.credentialSubject.action.peer_credential).toEqual(peer);
 	});
 
@@ -267,7 +267,7 @@ describe("Action.peer_credential (ADR-0010)", () => {
 			peer_credential: peer,
 			timestamp: "2026-05-21T00:00:00Z",
 		});
-		const round = JSON.parse(JSON.stringify(unsigned)) as UnsignedAgentReceipt;
+		const round: UnsignedAgentReceipt = JSON.parse(JSON.stringify(unsigned));
 		expect(round.credentialSubject.action.peer_credential).toEqual(peer);
 		expect(round.credentialSubject.action.peer_credential).not.toHaveProperty(
 			"uid",
@@ -307,7 +307,7 @@ describe("Action.emitter_metadata (ADR-0010)", () => {
 			emitter_metadata: meta,
 			timestamp: "2026-05-21T00:00:00Z",
 		});
-		const round = JSON.parse(JSON.stringify(unsigned)) as UnsignedAgentReceipt;
+		const round: UnsignedAgentReceipt = JSON.parse(JSON.stringify(unsigned));
 		expect(round.credentialSubject.action.emitter_metadata).toEqual(meta);
 	});
 });
