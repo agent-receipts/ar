@@ -1,0 +1,124 @@
+{
+  "$comment": "Cross-SDK v0.3.0 test vectors: pins (a) the HPKE envelope shape of action.parameters_disclosure (ADR-0012 amendment 2026-05-18, spec PR #496) and (b) the daemon-attested action.peer_credential / action.emitter_metadata fields (ADR-0010). All three SDKs MUST verify the signatures and reproduce expectedReceiptHash byte-for-byte. Envelope bytes come from spec/test-vectors/disclosure-envelope/vectors.json vector-1 (RFC 9180 §A.1.1 ikmE encrypting to RFC 7748 §6.1 Alice).",
+  "version": "0.3.0",
+  "keys": {
+    "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZMzh2Qtdx/p40WlXhD+gKmaTDv3rLGm6TeY7TsJUKSQ=\n-----END PUBLIC KEY-----\n",
+    "privateKey": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIJqomA2cjqhLUYPhkMJyg4+A7hU8GiZtVzkN0Yz6jJPF\n-----END PRIVATE KEY-----\n"
+  },
+  "parametersDisclosureEnvelopeReceipt": {
+    "description": "Signed v0.3.0 receipt whose action.parameters_disclosure carries the HPKE asymmetric envelope (ADR-0012 amendment). Envelope bytes are vector-1 from spec/test-vectors/disclosure-envelope/vectors.json — deterministic against RFC 9180 §A.1.1.",
+    "envelopeSourceVector": "spec/test-vectors/disclosure-envelope/vectors.json#vector-1-single-recipient-small-payload",
+    "receipt": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://agentreceipts.ai/context/v1"
+      ],
+      "credentialSubject": {
+        "action": {
+          "id": "act_030e0030-0000-4030-a030-000000000001",
+          "parameters_disclosure": {
+            "alg": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+            "ct": "YGn3i4NpiZxHjeZVggTP8lTxb0ZVdLl-2HjW31qsvo28PjQ_Lt_UQgAMidEXjzwhJPHM7OM",
+            "recipients": [
+              {
+                "enc": "N_2jVnvb1ijohmjDyNfpfR0SU7bU6m1EwVD3QfG_RDE",
+                "kid": "did:key:z6LSeu9HkTHSfLLeUs2nnzUSNedgDUevfNQUQUaHL9XJ7Z5W#enc-1"
+              }
+            ],
+            "v": "1"
+          },
+          "risk_level": "high",
+          "timestamp": "2026-05-21T00:00:00Z",
+          "type": "system.command.execute"
+        },
+        "chain": {
+          "chain_id": "chain_v030_envelope_test",
+          "previous_receipt_hash": null,
+          "sequence": 1
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "principal": {
+          "id": "did:user:test"
+        }
+      },
+      "id": "urn:receipt:030e0030-0000-4030-a030-000000000001",
+      "issuanceDate": "2026-05-21T00:00:00Z",
+      "issuer": {
+        "id": "did:agent:test"
+      },
+      "proof": {
+        "created": "2026-05-21T00:00:00Z",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "uHmYlCSPDU32ks4JI9Art80RBDUK-abod2zvi-xt62nvzoEuNeSZ0aOoC0nZ4dWlWVnLI8B7Kops_3gGEYRbgCQ",
+        "type": "Ed25519Signature2020",
+        "verificationMethod": "did:agent:test#key-1"
+      },
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.3.0"
+    },
+    "expectedReceiptHash": "sha256:bf481da43bd742f19a7863df07016ca74c293af95350a05028c607e54f126225",
+    "expectedValid": true
+  },
+  "peerCredentialEmitterMetadataReceipt": {
+    "description": "Signed v0.3.0 receipt exercising the daemon-attested typed fields: action.peer_credential (linux POSIX peer metadata) and action.emitter_metadata.drop_count (synthetic events_dropped semantics per ADR-0010).",
+    "receipt": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://agentreceipts.ai/context/v1"
+      ],
+      "credentialSubject": {
+        "action": {
+          "emitter_metadata": {
+            "drop_count": 3
+          },
+          "id": "act_030e0030-0000-4030-a030-000000000002",
+          "peer_credential": {
+            "exe_path": "/usr/local/bin/some-tool",
+            "gid": 1000,
+            "pid": 12345,
+            "platform": "linux",
+            "uid": 1000
+          },
+          "risk_level": "low",
+          "timestamp": "2026-05-21T00:00:00Z",
+          "type": "system.events_dropped"
+        },
+        "chain": {
+          "chain_id": "chain_v030_daemon_test",
+          "previous_receipt_hash": null,
+          "sequence": 1
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "principal": {
+          "id": "did:user:test"
+        }
+      },
+      "id": "urn:receipt:030e0030-0000-4030-a030-000000000002",
+      "issuanceDate": "2026-05-21T00:00:00Z",
+      "issuer": {
+        "id": "did:agent:test"
+      },
+      "proof": {
+        "created": "2026-05-21T00:00:00Z",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "uVCYoQaYq_UWYel4NGRvEGWwmN2aZYOyRufm-AtZp0RBYuwyZ4_vQmplIIoqkTW9m4NQnM7xMlKEg84UUG6EMCA",
+        "type": "Ed25519Signature2020",
+        "verificationMethod": "did:agent:test#key-1"
+      },
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.3.0"
+    },
+    "expectedReceiptHash": "sha256:fa9a68dd07b63999ab27252b7da0e9fa7d004ef385ba80c3bc43ff8cc4d53420",
+    "expectedValid": true
+  }
+}
