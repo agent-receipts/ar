@@ -32,15 +32,15 @@ regulated industries.
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| PKCS#11 / CloudHSM `Signer` adapter | ADR-0018 | #TBD | planned |
+| PKCS#11 / CloudHSM `Signer` adapter | ADR-0018 | #489 | planned |
 | RFC 3161 TSA timestamp anchoring (elevated from v2) | ADR-0019 § P3 | #482 | planned |
 | Revocation list format and reference implementation (elevated from v2) | ADR-0019 § O1 | #483 | planned |
 | `CheckpointPublisher` with object-lock reference backend (elevated from v2) | ADR-0019 § O2 | #484 | planned |
 | Content-addressed payload storage (GDPR erasure) | ADR-0019 § S3 (extends) | #478 | planned |
-| Standalone verifier service (separable from SDK) | new ADR needed | #TBD | planned |
+| Standalone verifier service (separable from SDK) | new ADR needed | #490 | planned |
 | Downloadable conformance test suite | ADR-0019 § S1 (extends) | #474 | planned |
-| Multi-tenancy guidance — key management at scale | docs | #TBD | planned |
-| Regional TSA support (eIDAS, ICP-Brasil, etc.) | new ADR needed | #TBD | planned |
+| Multi-tenancy guidance — key management at scale | docs | #491 | planned |
+| Regional TSA support (eIDAS, ICP-Brasil, etc.) | new ADR needed | #492 | planned |
 
 These items have a coherent target audience (regulated-industries adopters) and
 should be sequenced together rather than dripped into v2. Moving them to
