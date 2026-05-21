@@ -8,8 +8,10 @@ When this roadmap and an ADR disagree on sequencing, this roadmap wins
 (ADRs are immutable; sequencing changes as work progresses). When they
 disagree on a design decision, the ADR wins.
 
-Each item links to a GitHub issue. Status values: `planned`, `in-progress`,
-`done`, `deferred`.
+Most items link to a GitHub issue. A few rows intentionally don't — they
+are folded into a parent issue, tracked across per-SDK issues opened lazily
+as each SDK starts the work, or explicitly not filed yet. Those rows say so
+inline. Status values: `planned`, `in-progress`, `done`, `deferred`.
 
 ---
 

@@ -53,6 +53,13 @@ This preserves the core trust model: an auditor needs only the agent's public
 key to verify the entire chain. The collector cannot fabricate or alter
 receipts.
 
+> **Note on naming.** The TypeScript SDK already exports an `Emitter` class
+> in `sdk/ts/src/emitter.ts` that forwards *unsigned* tool-call event frames
+> over a Unix socket to the agent-receipts daemon, where signing and chaining
+> happen (per ADR-0010). That class is renamed to `DaemonEmitter` as part of
+> this work; the name `Emitter` is freed up for the new interface defined
+> here. See § "Migration from the current daemon architecture" below.
+
 ### Built-in emitters (ship in the core SDK package)
 
 #### `HttpEmitter`
@@ -85,9 +92,15 @@ type HttpEmitterAuth =
 
 #### `DaemonEmitter`
 
-Sends receipts to a local daemon over a Unix socket or named pipe. Existing
-behaviour for long-lived compute deployments with a sidecar. Retained as a
-built-in for backwards compatibility.
+Sends receipts to a local daemon over a Unix socket or named pipe. Retained
+as a built-in for deployments that already run the agent-receipts daemon
+as a sidecar.
+
+`DaemonEmitter`'s relationship to the new client-side signing model is not
+trivial — see § "Migration from the current daemon architecture" below.
+Until the daemon grows a signed-receipt ingest mode, `DaemonEmitter` keeps
+the existing unsigned-frame protocol from ADR-0010 and does not yet conform
+to the `Emitter` interface defined above.
 
 #### `CompositeEmitter`
 
@@ -178,6 +191,38 @@ For ephemeral compute (Lambda) a WAL on disk is not viable. In this case:
 - Any undelivered receipts are lost; the chain will show a gap
 - This should be surfaced as `status: interrupted` on the `agent_end` receipt
   per ADR-0019 § P1
+
+### Migration from the current daemon architecture
+
+ADR-0010 placed signing and chaining in the daemon and modelled the SDK as
+a thin emitter of *unsigned* tool-call frames. ADR-0020 inverts that —
+signing and chaining are client-side, the receiver is a dumb store. The
+existing daemon path is not obsolete (sidecar deployments remain useful for
+storage, redaction, and local audit query), but its protocol no longer
+matches the new `Emitter` interface. The migration has two steps.
+
+**Step 1 — rename the existing TS class.** `sdk/ts/src/emitter.ts` currently
+exports `Emitter` (unsigned `EmitEvent` frames, daemon signs). That class is
+renamed to `DaemonEmitter` with no behaviour change. Its `emit()` method
+keeps its current signature — it does not yet take `SignedReceipt`. Existing
+callers update the import name; the wire protocol with the daemon is
+unchanged. Python and Go SDKs that grow equivalent helpers follow the same
+rename rule.
+
+**Step 2 — daemon learns to accept signed receipts.** A new frame type is
+added to the daemon socket protocol that carries an already-signed,
+already-chained receipt for storage only (no signing on the daemon side).
+Once the daemon understands this frame, `DaemonEmitter` gains an
+`emit(SignedReceipt)` overload that uses it, and at that point
+`DaemonEmitter` implements the `Emitter` interface defined in this ADR.
+Until then `DaemonEmitter` exists as a legacy adapter with a different
+input shape, and is not interchangeable with `HttpEmitter` in
+`CompositeEmitter`.
+
+Step 1 is mechanical and ships with this ADR's implementation work
+(SDK emitter layer milestone in ROADMAP.md). Step 2 is daemon-side work
+tracked separately — it does not block ADR-0020's primary goal, which is
+ephemeral-compute support via `HttpEmitter`.
 
 ### Interaction with ADR-0018 (Signer) and ADR-0019 (integrity gaps)
 

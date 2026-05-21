@@ -50,9 +50,9 @@ implementations implement `Signer` directly and never expose a `KeyPair`.
 | Provider | Behaviour | Use case |
 |---|---|---|
 | `FileKeyProvider` | Reads keypair from a file path. Does not auto-generate in production mode (see known limitations). | Dev, long-lived compute with persistent volume |
-| `EnvVarKeyProvider` | Reads `AR_SIGNING_KEY` (base58-encoded). Caller responsible for how the value entered the environment. | Lambda/Cloud Run baseline, CI |
+| `EnvVarKeyProvider` | Reads `AGENTRECEIPTS_SIGNING_KEY` (base58-encoded). Caller responsible for how the value entered the environment. | Lambda/Cloud Run baseline, CI |
 | `InMemoryKeyProvider` | Caller supplies raw `KeyPair` bytes directly. No I/O. Makes no memory safety guarantees (see known limitations). | Tests, delegation target for external-fetch adapters |
-| `GeneratingKeyProvider` | Generates a fresh keypair and delegates persistence to a backing `KeyProvider`. Throws if `AR_PRODUCTION=true`. | Dev and bootstrap only |
+| `GeneratingKeyProvider` | Generates a fresh keypair and delegates persistence to a backing `KeyProvider`. Throws if `AGENTRECEIPTS_PRODUCTION=true`. | Dev and bootstrap only |
 
 ### External adapters (user-land, separate packages)
 
@@ -112,8 +112,13 @@ idiomatic form.
 
 Key generation in production is a deliberate out-of-band operation, not
 an automatic SDK behaviour. `GeneratingKeyProvider` is explicitly prohibited
-in production environments (`AR_PRODUCTION=true`). Production deployments
-provision the keypair via their secret store and configure the SDK to fetch it.
+in production environments (`AGENTRECEIPTS_PRODUCTION=true`). Production
+deployments provision the keypair via their secret store and configure the
+SDK to fetch it.
+
+SDK environment variables use the `AGENTRECEIPTS_` prefix to match existing
+project conventions (`AGENTRECEIPTS_SOCKET`, `AGENTRECEIPTS_KEY`,
+`AGENTRECEIPTS_DB`, etc. — see `daemon/README.md`).
 
 ### Session continuity
 

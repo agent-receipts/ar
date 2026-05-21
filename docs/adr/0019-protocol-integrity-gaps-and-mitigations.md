@@ -7,7 +7,7 @@ Proposed
 ## Context
 
 A structured stress test of the Agent Receipts protocol and SDK design
-identified thirteen gaps across four categories: protocol design, SDK
+identified thirteen gaps across three categories: protocol design, SDK
 implementation, and operational concerns. This ADR documents each gap,
 the decision taken (or deferred), and the rationale.
 
@@ -126,9 +126,9 @@ enforces this. A misconfigured production deployment silently generates
 a new DID on every cold start with no error surfaced.
 
 **Decision.** `GeneratingKeyProvider` throws `ProductionKeyProviderError`
-if instantiated when `AR_PRODUCTION=true`. Emits a loud stderr warning
-in all other non-production cases. Documented explicitly in the deployment
-guide. Applies to all three SDKs.
+if instantiated when `AGENTRECEIPTS_PRODUCTION=true`. Emits a loud stderr
+warning in all other non-production cases. Documented explicitly in the
+deployment guide. Applies to all three SDKs.
 
 **Issue.** #476
 
