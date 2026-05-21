@@ -104,13 +104,18 @@ to the `Emitter` interface defined above.
 
 #### `CompositeEmitter`
 
-Forwards each receipt to multiple emitters in sequence. Useful for dual-write
-during migration (daemon + HTTP), or for writing to both a local store and a
-remote collector simultaneously.
+Forwards each receipt to multiple emitters in sequence. Useful for writing
+to two collectors simultaneously (e.g. a primary endpoint plus an offsite
+audit archive) or for dual-writing during a migration between endpoints.
 
 ```typescript
-new CompositeEmitter([daemonEmitter, httpEmitter])
+new CompositeEmitter([primaryHttpEmitter, archiveHttpEmitter])
 ```
+
+`CompositeEmitter` requires every child to implement the `Emitter` interface
+defined above. `DaemonEmitter` does not yet (see § "Migration from the
+current daemon architecture"); the daemon → HTTP dual-write pattern becomes
+available once step 2 of the migration lands.
 
 #### `BufferingEmitter`
 

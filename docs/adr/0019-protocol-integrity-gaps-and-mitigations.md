@@ -56,9 +56,10 @@ given DID is a legitimate agent. Evaluate trust registry and witnessed
 **Gap.** `issuanceDate` is self-reported. An agent or attacker with the
 signing key can backdate or forward-date receipts.
 
-**Decision.** Deferred to v2. Document as a known limitation. Evaluate
-RFC 3161 TSA per-receipt anchoring and periodic chain-head anchoring to
-an append-only public log for v2.
+**Decision.** Deferred from v1; sequenced for v1.5 (regulated-industries
+milestone — RFC 3161 TSA is a compliance requirement in financial services
+and healthcare). Documented as a known limitation in v1. See ROADMAP.md
+for authoritative milestone placement.
 
 **Issue.** #482
 
@@ -198,10 +199,13 @@ legitimate. SDK and MCP proxy to populate automatically where possible.
 an agent's private key is compromised, all historical receipts are suspect
 and there is no way to publish a revocation.
 
-**Decision.** For v1: document the limitation. Publish a signed revocation
-list format (a JSON-LD document listing compromised DIDs with compromise
-timestamps, signed by a well-known Agent Receipts registry key) for v2.
-Evaluate migration path to `did:web` for deployments requiring rotation.
+**Decision.** Document the limitation in v1. Sequenced for v1.5
+(regulated-industries milestone — revocation is a compliance gate):
+publish a signed revocation list format (a JSON-LD document listing
+compromised DIDs with compromise timestamps, signed by a well-known Agent
+Receipts registry key). Evaluate migration path to `did:web` for
+deployments requiring rotation. See ROADMAP.md for authoritative milestone
+placement.
 
 **Issue.** #483
 
@@ -216,7 +220,9 @@ Deleting entire sessions from the store is undetectable by the protocol.
 external append-only log as an operational control. This is out of scope
 for the core protocol but should be documented as a recommended deployment
 practice. An optional `CheckpointPublisher` interface in the SDK can
-facilitate this without mandating a specific backend.
+facilitate this without mandating a specific backend. Sequenced for v1.5
+(regulated-industries milestone — store-completeness evidence is a
+compliance gate). See ROADMAP.md for authoritative milestone placement.
 
 **Issue.** #484
 
@@ -263,9 +269,9 @@ classification is retained.
 | 7 | P5 — Sequence gap enforcement | Low | Before v1 |
 | 8 | S5 — Idempotency key | Low | Before v1 |
 | 9 | P2 — Unauthenticated chain origin | High | v2 |
-| 10 | P3 — Trusted timestamp binding | Medium | v2 |
-| 11 | O1 — Key revocation | High | v2 |
-| 12 | O2 — Store completeness | Medium | v2 |
+| 10 | P3 — Trusted timestamp binding | Medium | v1.5 |
+| 11 | O1 — Key revocation | High | v1.5 |
+| 12 | O2 — Store completeness | Medium | v1.5 |
 | 13 | S4 — InMemoryKeyProvider memory safety | Medium | v2 |
 
 ¹ Superseded by ADR-0020. The WAL has moved to the SDK emitter layer; see
@@ -276,6 +282,10 @@ ADR-0020 for the current v1-blocker tracking. The verifier-side
 
 - Items 1–3 are blockers for Post 3 / HN submission.
 - Items 4–8 are blockers for v1 release.
-- Items 9–13 are documented known limitations in v1, targeted for v2.
+- Items 10–12 (P3 timestamps, O1 revocation, O2 store completeness) are
+  documented known limitations in v1, sequenced for v1.5 (regulated-
+  industries milestone).
+- Items 9 (P2) and 13 (S4) are documented known limitations in v1,
+  deferred to v2.
 - Each gap has a corresponding GitHub issue. This ADR is the authoritative
   record of the decision; issues track implementation progress.

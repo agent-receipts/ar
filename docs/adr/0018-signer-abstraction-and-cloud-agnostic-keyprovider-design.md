@@ -50,7 +50,7 @@ implementations implement `Signer` directly and never expose a `KeyPair`.
 | Provider | Behaviour | Use case |
 |---|---|---|
 | `FileKeyProvider` | Reads keypair from a file path. Does not auto-generate in production mode (see known limitations). | Dev, long-lived compute with persistent volume |
-| `EnvVarKeyProvider` | Reads `AGENTRECEIPTS_SIGNING_KEY` (base58-encoded). Caller responsible for how the value entered the environment. | Lambda/Cloud Run baseline, CI |
+| `EnvVarKeyProvider` | Reads `AGENTRECEIPTS_KEY` (base58-encoded key value). Shares the env var name with the daemon (`daemon/README.md`), which interprets the value as a file path; the SDK's `EnvVarKeyProvider` interprets it as the key value directly. The deployment picks the form appropriate to its consumer. | Lambda/Cloud Run baseline, CI |
 | `InMemoryKeyProvider` | Caller supplies raw `KeyPair` bytes directly. No I/O. Makes no memory safety guarantees (see known limitations). | Tests, delegation target for external-fetch adapters |
 | `GeneratingKeyProvider` | Generates a fresh keypair and delegates persistence to a backing `KeyProvider`. Throws if `AGENTRECEIPTS_PRODUCTION=true`. | Dev and bootstrap only |
 
@@ -118,7 +118,10 @@ SDK to fetch it.
 
 SDK environment variables use the `AGENTRECEIPTS_` prefix to match existing
 project conventions (`AGENTRECEIPTS_SOCKET`, `AGENTRECEIPTS_KEY`,
-`AGENTRECEIPTS_DB`, etc. — see `daemon/README.md`).
+`AGENTRECEIPTS_DB`, etc. — see `daemon/README.md`). `AGENTRECEIPTS_KEY` is
+shared with the daemon by name; its value form depends on the consumer (file
+path for the daemon and the SDK's `FileKeyProvider`; base58-encoded key
+value for the SDK's `EnvVarKeyProvider`).
 
 ### Session continuity
 
