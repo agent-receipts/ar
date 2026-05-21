@@ -18,7 +18,7 @@ export const CREDENTIAL_TYPE = [
 	"AgentReceipt",
 ] as const;
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 // --- Risk levels ---
 

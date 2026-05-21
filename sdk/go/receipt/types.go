@@ -16,7 +16,7 @@ func Context() []string { return append([]string{}, protocolContext...) }
 // CredentialType returns a copy of the credential type array.
 func CredentialType() []string { return append([]string{}, protocolCredentialType...) }
 
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 // RiskLevel classifies the security risk of an action.
 type RiskLevel string
