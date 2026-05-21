@@ -1,6 +1,17 @@
-// generate_go_vectors reads ts_vectors.json, signs the same unsigned receipt
-// with the Go SDK using the shared keypair, and writes go_vectors.json,
-// v020_vectors.json, and v030_vectors.json.
+// generate-vectors is the build script for the pinned cross-SDK test vectors.
+// All outputs share a single Ed25519 keypair loaded from the test fixtures so
+// that signature bytes can be compared across SDKs.
+//
+// Outputs:
+//   - go_vectors.json — signs the unsigned receipt from ts_vectors.json with
+//     the Go SDK; pairs with py_vectors.json / ts_vectors.json to assert
+//     byte-identical signatures across the three SDKs at v0.2.x.
+//   - v020_vectors.json — pinned v0.2.0 / v0.2.1 fixtures (legacy flat-map
+//     parameters_disclosure shape, no envelope).
+//   - v030_vectors.json — pinned v0.3.0 fixtures exercising the new
+//     envelope-shape parameters_disclosure plus the peer_credential and
+//     emitter_metadata typed action fields. Independently constructed
+//     (NOT derived from ts_vectors.json); reuses only the shared keypair.
 //
 // Usage: go run ./cmd/generate-vectors
 package main
