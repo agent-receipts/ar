@@ -28,7 +28,7 @@ First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#
 ### Changed
 
 - **`VERSION` constant bumped from `"0.2.0"` to `"0.3.0"`** ([#515](https://github.com/agent-receipts/ar/pull/515)) — receipts emitted via `createReceipt()` now stamp the v0.3.0 schema label.
-- The Zod `agentReceiptSchema` now strictly requires the envelope shape on `parameters_disclosure`. Legacy v0.2.x flat-map receipts will fail to round-trip through `ReceiptStore.parseReceiptJson` — verifiers ingesting legacy receipts must use raw spec-schema validation.
+- The Zod `agentReceiptSchema` now strictly requires the envelope shape on `parameters_disclosure`. Legacy v0.2.x flat-map receipts will fail `agentReceiptSchema.parse()` — including every `ReceiptStore` load method (`getById`, `getChain`, `query`, `verifyStoredChain`) which validates via this schema internally. Verifiers ingesting legacy receipts must use raw spec-schema validation instead.
 
 ## [0.8.0] - 2026-05-15
 

@@ -27,7 +27,7 @@ First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#
 ### Changed
 
 - **`Version` constant bumped from `"0.2.0"` to `"0.3.0"`** ([#515](https://github.com/agent-receipts/ar/pull/515)).
-- Legacy v0.2.x flat-map `parameters_disclosure` receipts no longer round-trip through `receipt.AgentReceipt`. Verifiers ingesting legacy receipts must use `map[string]any` — pattern in `cross-sdk-tests/canonicalization_vectors_test.go::TestParametersDisclosureReceipt`.
+- Legacy v0.2.x flat-map `parameters_disclosure` receipts no longer round-trip through `receipt.AgentReceipt`. Verifiers ingesting legacy receipts must use `map[string]any` — pattern in `sdk/go/receipt/canonicalization_vectors_test.go::TestParametersDisclosureReceipt`.
 
 ### Known issues
 
