@@ -212,6 +212,7 @@ def verify_chain(
             return ChainVerification(
                 valid=False,
                 length=len(receipts),
+                status=status,
                 receipts=results,
                 broken_at=i,
                 error=(

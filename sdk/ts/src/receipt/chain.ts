@@ -241,6 +241,7 @@ export function verifyChain(
 			return {
 				valid: false,
 				length: receipts.length,
+				status,
 				receipts: results,
 				brokenAt: i,
 				responseHashNote: undefined,

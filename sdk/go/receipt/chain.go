@@ -252,6 +252,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			return ChainVerification{
 				Valid:    false,
 				Length:   len(receipts),
+				Status:   status,
 				Receipts: results,
 				BrokenAt: i,
 				Error: "chain_id mismatch at index " + strconv.Itoa(i) +
