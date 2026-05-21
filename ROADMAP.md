@@ -33,12 +33,12 @@ regulated industries.
 | Item | ADR | Issue | Status |
 |---|---|---|---|
 | PKCS#11 / CloudHSM `Signer` adapter | ADR-0018 | #TBD | planned |
-| RFC 3161 TSA timestamp anchoring (elevated from v2) | ADR-0019 § P3 | #TBD | planned |
-| Revocation list format and reference implementation (elevated from v2) | ADR-0019 § O1 | #TBD | planned |
-| `CheckpointPublisher` with object-lock reference backend (elevated from v2) | ADR-0019 § O2 | #TBD | planned |
-| Content-addressed payload storage (GDPR erasure) | ADR-0019 § S3 (extends) | #TBD | planned |
+| RFC 3161 TSA timestamp anchoring (elevated from v2) | ADR-0019 § P3 | #482 | planned |
+| Revocation list format and reference implementation (elevated from v2) | ADR-0019 § O1 | #483 | planned |
+| `CheckpointPublisher` with object-lock reference backend (elevated from v2) | ADR-0019 § O2 | #484 | planned |
+| Content-addressed payload storage (GDPR erasure) | ADR-0019 § S3 (extends) | #478 | planned |
 | Standalone verifier service (separable from SDK) | new ADR needed | #TBD | planned |
-| Downloadable conformance test suite | ADR-0019 § S1 (extends) | #TBD | planned |
+| Downloadable conformance test suite | ADR-0019 § S1 (extends) | #474 | planned |
 | Multi-tenancy guidance — key management at scale | docs | #TBD | planned |
 | Regional TSA support (eIDAS, ICP-Brasil, etc.) | new ADR needed | #TBD | planned |
 
@@ -57,10 +57,10 @@ this and undermine the protocol's credibility?"
 
 | # | Item | ADR | Issue | Status |
 |---|---|---|---|---|
-| 1 | Cross-SDK canonicalisation conformance vectors | ADR-0019 § S1 | #TBD | planned |
-| 2 | Silent chain termination — `status` field on `agent_end` | ADR-0019 § P1 | #TBD | planned |
-| 3 | `GeneratingKeyProvider` unreachable in production | ADR-0019 § S2 | #TBD | planned |
-| 4 | Sequential receipt construction enforced under parallel tool calls | ADR-0020 | #TBD | planned |
+| 1 | Cross-SDK canonicalisation conformance vectors | ADR-0019 § S1 | #474 | planned |
+| 2 | Silent chain termination — `status` field on `agent_end` | ADR-0019 § P1 | #475 | planned |
+| 3 | `GeneratingKeyProvider` unreachable in production | ADR-0019 § S2 | #476 | planned |
+| 4 | Sequential receipt construction enforced under parallel tool calls | ADR-0020 | #488 | planned |
 
 Item 4 is in this list because the OpenClaw plugin may fire concurrent tool
 invocations during the demo. If concurrent emission produces a broken chain
@@ -78,23 +78,23 @@ across workstreams they can be parallelised.
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Explicit `sessionId` binding in verifier | ADR-0019 § P4 | #TBD | planned |
-| Strict `sequenceNumber` contiguity in verifier | ADR-0019 § P5 | #TBD | planned |
-| `idempotencyKey` field for retry deduplication | ADR-0019 § S5 | #TBD | planned |
+| Explicit `sessionId` binding in verifier | ADR-0019 § P4 | #477 | planned |
+| Strict `sequenceNumber` contiguity in verifier | ADR-0019 § P5 | #479 | planned |
+| `idempotencyKey` field for retry deduplication | ADR-0019 § S5 | #480 | planned |
 
 ### SDK emitter layer
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| `HttpEmitter` with sync / fire-and-forget strategies | ADR-0020 | #TBD | planned |
-| WAL for at-least-once delivery (long-lived + ephemeral) | ADR-0020 | #TBD | planned |
+| `HttpEmitter` with sync / fire-and-forget strategies | ADR-0020 | #486 | planned |
+| WAL for at-least-once delivery (long-lived + ephemeral) | ADR-0020 | #487 | planned |
 | Verifier-side `incomplete_tool_roundtrip` classification | ADR-0019 § O3 → ADR-0020 | (folded into WAL issue) | planned |
 
 ### SDK payload handling
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Bounded `input`/`output` payload via `PayloadStrategy` | ADR-0019 § S3 | #TBD | planned |
+| Bounded `input`/`output` payload via `PayloadStrategy` | ADR-0019 § S3 | #478 | planned |
 
 ### Cross-SDK parity
 
@@ -113,8 +113,8 @@ an issue open; none are scheduled.
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Unauthenticated chain origin (witnessed `agent_start` or trust registry) | ADR-0019 § P2 | #TBD | deferred |
-| `InMemoryKeyProvider` memory safety improvements | ADR-0019 § S4 | #TBD | deferred |
+| Unauthenticated chain origin (witnessed `agent_start` or trust registry) | ADR-0019 § P2 | #481 | deferred |
+| `InMemoryKeyProvider` memory safety improvements | ADR-0019 § S4 | #485 | deferred |
 | Parallel sub-chains (forked chains + merge receipt) | ADR-0020 | not filed | deferred |
 
 The following were originally targeted for v2 but elevated to v1.5
@@ -139,6 +139,6 @@ The following were originally targeted for v2 but elevated to v1.5
 
 | ADR | Title | Status |
 |---|---|---|
-| ADR-0018 | Signer abstraction and cloud-agnostic KeyProvider design | Accepted |
+| ADR-0018 | Signer abstraction and cloud-agnostic KeyProvider design | Proposed |
 | ADR-0019 | Protocol integrity gaps and mitigations | Proposed |
 | ADR-0020 | Emitter abstraction and remote receipt delivery | Proposed |

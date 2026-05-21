@@ -146,10 +146,10 @@ attributable to a logical agent rather than to an arbitrary compute instance.
 ## Known limitations
 
 - `InMemoryKeyProvider` holds private key bytes as plain heap memory. No
-  memory safety guarantees. See issue #TBD.
+  memory safety guarantees. See issue #485.
 - `did:key` has no revocation mechanism. Key compromise requires out-of-band
-  notification and a new agent identity. See issue #TBD.
-- Timestamp binding is self-reported. See ADR-0019 and issue #TBD.
+  notification and a new agent identity. See issue #483.
+- Timestamp binding is self-reported. See ADR-0019 and issue #482.
 
 ## Related ADRs
 

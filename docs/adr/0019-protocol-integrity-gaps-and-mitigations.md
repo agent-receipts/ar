@@ -31,7 +31,7 @@ receipt. Auditors cannot distinguish a completed session from a crashed one.
 must flag chains without a terminal receipt as `status: unknown` rather
 than treating them as valid complete chains.
 
-**Issue.** #TBD
+**Issue.** #475
 
 ---
 
@@ -47,7 +47,7 @@ integrity proofs are internal only — the protocol does not assert that a
 given DID is a legitimate agent. Evaluate trust registry and witnessed
 `agent_start` options for v2.
 
-**Issue.** #TBD
+**Issue.** #481
 
 ---
 
@@ -60,7 +60,7 @@ signing key can backdate or forward-date receipts.
 RFC 3161 TSA per-receipt anchoring and periodic chain-head anchoring to
 an append-only public log for v2.
 
-**Issue.** #TBD
+**Issue.** #482
 
 ---
 
@@ -75,7 +75,7 @@ but verifiers should enforce it explicitly.
 match the session being verified. Add explicit sessionId binding check to
 the verification algorithm in the spec and all three SDK verifiers.
 
-**Issue.** #TBD
+**Issue.** #477
 
 ---
 
@@ -93,7 +93,7 @@ Document that the store is a trusted component; store-level integrity
 (checksums, append-only backend) is out of scope for the protocol but
 recommended operationally. See also O2 (store completeness).
 
-**Issue.** #TBD
+**Issue.** #479
 
 ---
 
@@ -115,7 +115,7 @@ identically. Fix Python SDK `eventType` naming as part of this work.
 Round-trip matrix: TypeScript → Python, TypeScript → Go, Python → Go,
 and all reverse directions.
 
-**Issue.** #TBD
+**Issue.** #474
 
 ---
 
@@ -130,7 +130,7 @@ if instantiated when `AR_PRODUCTION=true`. Emits a loud stderr warning
 in all other non-production cases. Documented explicitly in the deployment
 guide. Applies to all three SDKs.
 
-**Issue.** #TBD
+**Issue.** #476
 
 ---
 
@@ -152,7 +152,7 @@ Default recommendation: option 2 for production, option 1 for dev
 convenience. SDK to provide both via a `PayloadStrategy` interface.
 Decision to be finalised in a follow-up ADR.
 
-**Issue.** #TBD
+**Issue.** #478
 
 ---
 
@@ -167,7 +167,7 @@ key bytes from the source buffer after copying into the provider.
 Platform-level memory protection (mlock, secure enclave) is out of scope
 for v1 but noted as a v2 improvement.
 
-**Issue.** #TBD
+**Issue.** #485
 
 ---
 
@@ -184,7 +184,7 @@ Callers may set this to a stable identifier for the logical operation
 `idempotencyKey` values as a warning, not a failure — retries are
 legitimate. SDK and MCP proxy to populate automatically where possible.
 
-**Issue.** #TBD
+**Issue.** #480
 
 ---
 
@@ -203,7 +203,7 @@ list format (a JSON-LD document listing compromised DIDs with compromise
 timestamps, signed by a well-known Agent Receipts registry key) for v2.
 Evaluate migration path to `did:web` for deployments requiring rotation.
 
-**Issue.** #TBD
+**Issue.** #483
 
 ---
 
@@ -218,7 +218,7 @@ for the core protocol but should be documented as a recommended deployment
 practice. An optional `CheckpointPublisher` interface in the SDK can
 facilitate this without mandating a specific backend.
 
-**Issue.** #TBD
+**Issue.** #484
 
 ---
 
