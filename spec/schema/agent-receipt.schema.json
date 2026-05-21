@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentreceipts.ai/schema/v0.1/agent-receipt.schema.json",
   "title": "Agent Receipt",
-  "description": "A cryptographically signed record of a single action taken by an AI agent on behalf of a human principal. Conforms to the Agent Receipt Protocol v0.1.",
+  "description": "A cryptographically signed record of a single action taken by an AI agent on behalf of a human principal. Validates receipts conforming to the Agent Receipt Protocol v0.1 through v0.3 — the protocol `version` enum on each receipt selects the applicable version; see CHANGELOG.md for what each version adds.",
   "type": "object",
   "required": [
     "@context",
@@ -42,8 +42,8 @@
       "description": "MUST be [\"VerifiableCredential\", \"AgentReceipt\"]."
     },
     "version": {
-      "enum": ["0.1.0", "0.2.0", "0.2.1"],
-      "description": "Protocol version. MUST be \"0.1.0\", \"0.2.0\", or \"0.2.1\". Verifiers MUST accept all three."
+      "enum": ["0.1.0", "0.2.0", "0.2.1", "0.3.0"],
+      "description": "Protocol version. MUST be one of \"0.1.0\", \"0.2.0\", \"0.2.1\", or \"0.3.0\". Verifiers MUST accept all four."
     },
     "issuer": { "$ref": "#/$defs/issuer" },
     "issuanceDate": {
@@ -160,9 +160,57 @@
           "description": "SHA-256 hash of the action parameters (RFC 8785 canonical JSON)."
         },
         "parameters_disclosure": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Legacy flat-map form (v0.2.0 / v0.2.1). Operator-controlled stringified field map for human/auditor display."
+            },
+            { "$ref": "#/$defs/parametersDisclosureEnvelope" }
+          ],
+          "description": "Action parameters disclosure. Either the legacy flat-map (v0.2.0 / v0.2.1) or the HPKE asymmetric encryption envelope defined by ADR-0012 (v0.3.0+). Mode is per-emitter — a receipt MUST NOT mix shapes within this field. `parameters_hash` is the privacy-preserving default and is always authoritative; this field is additive metadata. Operators MUST NOT place plaintext secrets or PII in the legacy flat-map form."
+        },
+        "peer_credential": {
           "type": "object",
-          "additionalProperties": { "type": "string" },
-          "description": "Operator-controlled flat map of parameter field name → stringified value. Only fields the operator allowlists via the `parameterDisclosure` config (per ADR-0012) are ever included; operators MUST NOT disclose fields that may contain secrets, PII, or other sensitive payload data — `parameters_hash` is the privacy-preserving default, and this field is additive metadata for human/auditor display only. The envelope-based encrypted form (per ADR-0012 Phase B) is reserved for a future schema version."
+          "additionalProperties": false,
+          "required": ["platform", "pid"],
+          "description": "OS-attested peer process metadata captured by the daemon at the SDK↔daemon boundary. Present only on receipts emitted through a daemon (ADR-0010); absent on direct SDK emissions. Daemon-attested, not agent-claimed.",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "description": "OS platform identifier (e.g. \"darwin\", \"linux\", \"windows\")."
+            },
+            "pid": {
+              "type": "integer",
+              "description": "Peer process ID. POSIX pid_t width (32-bit signed integer)."
+            },
+            "uid": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Peer process effective UID. POSIX-only; absent on platforms where UIDs do not apply (e.g. Windows)."
+            },
+            "gid": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Peer process effective GID. POSIX-only; absent on platforms where GIDs do not apply (e.g. Windows)."
+            },
+            "exe_path": {
+              "type": "string",
+              "description": "Best-effort absolute path of the peer process executable. May be absent on systems where the daemon cannot resolve it (locked-down sandboxes, missing /proc, etc.)."
+            }
+          }
+        },
+        "emitter_metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Daemon-observed emitter-side metadata. Currently used for synthetic events_dropped receipts (ADR-0010). Daemon-attested, not agent-claimed.",
+          "properties": {
+            "drop_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Count of audit events the emitter dropped from its in-process buffer before flushing to the daemon."
+            }
+          }
         },
         "timestamp": {
           "type": "string",
@@ -409,6 +457,55 @@
           "type": "string",
           "pattern": "^u[A-Za-z0-9_-]{86}$",
           "description": "Multibase-encoded (u-prefixed base64url, no padding) Ed25519 signature over the canonical receipt (proof field excluded)."
+        }
+      }
+    },
+
+    "parametersDisclosureEnvelope": {
+      "type": "object",
+      "required": ["v", "alg", "recipients", "ct"],
+      "additionalProperties": false,
+      "description": "Canonical wire shape of credentialSubject.action.parameters_disclosure when the field carries the asymmetric encryption envelope specified by ADR-0012 (v1 envelope). This `$defs` entry is the validator-resolvable form; the sibling spec/schema/parameters-disclosure.schema.json is the documentation-of-record referenced by ADR-0012 and the test-vectors, and MUST stay in sync with this entry.",
+      "properties": {
+        "v": {
+          "const": "1",
+          "description": "Envelope schema version. v1 pins the algorithm choice in `alg`, the single-shot HPKE single-recipient shape, and the field set defined here. Any field addition, removal, encoding change, or AEAD/KEM/KDF change is a v2. The version is a string (not an integer) so that hub re-verifiers can dispatch on the exact JCS-canonical bytes without ambiguity about JSON number encoding."
+        },
+        "alg": {
+          "type": "string",
+          "enum": ["hpke-x25519-hkdf-sha256-aes-256-gcm"],
+          "description": "HPKE ciphersuite tag in human-readable form, identifying the KEM / KDF / AEAD triple. v1 pins HPKE base mode with KEM=DHKEM(X25519, HKDF-SHA256) (0x0020), KDF=HKDF-SHA256 (0x0001), AEAD=AES-256-GCM (0x0002) per RFC 9180 §7. A string tag is used rather than the numeric ciphersuite triple so verifiers can dispatch by equality without parsing IANA registry IDs; the numeric triple is recorded in this description as the canonical cross-reference for implementers. Additional ciphersuites require a new ADR-0012 amendment and a v2 envelope."
+        },
+        "recipients": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Recipient descriptors. v1 is single-recipient (minItems=maxItems=1); the array shape is forward-compatible with the Phase C multi-recipient design (see ADR-0012 Phase C). When multi-recipient lands, this constraint relaxes to minItems: 1 with no upper bound and `ct` continues to be a single shared ciphertext under a per-envelope content-encryption key wrapped to each recipient's HPKE encapsulated key. Verifiers MUST treat the array as ordered: the index of a recipient's entry is its position in any future per-recipient wrapped-key array; canonical JSON preserves array order under RFC 8785.",
+          "items": { "$ref": "#/$defs/parametersDisclosureRecipient" }
+        },
+        "ct": {
+          "type": "string",
+          "pattern": "^([A-Za-z0-9_-]{4})*([A-Za-z0-9_-]{2,3})?$",
+          "minLength": 24,
+          "description": "AEAD ciphertext including the 16-byte GCM authentication tag, encoded as unpadded base64url (RFC 4648 §5). The `pattern` enforces both the base64url alphabet (no `=` padding, no `+` or `/`) and decodable unpadded-base64url length: complete 4-char groups optionally followed by 2 or 3 trailing chars, which means `len % 4 != 1` — the one length residue that is invalid for base64url without padding. The `minLength` of 24 is the encoded size of the smallest valid v1 AEAD output: v1 plaintext is RFC 8785 canonical JSON of a parameters object (minimum `{}` = 2 bytes), so the minimum ciphertext is 2 + 16 (GCM tag) = 18 bytes → 24 unpadded base64url characters. Plaintext is the RFC 8785 canonical JSON serialisation of the parameters object. The HPKE AAD is the empty string for v1 (single-shot, no out-of-band context binding beyond the receipt envelope itself, which already commits to `parameters_disclosure` by signature). Encoding follows the spec-wide ADR-0009 convention of unpadded base64url for binary fields (see spec §4 `proofValue`); standard base64 is not accepted."
+        }
+      }
+    },
+
+    "parametersDisclosureRecipient": {
+      "type": "object",
+      "required": ["kid", "enc"],
+      "additionalProperties": false,
+      "properties": {
+        "kid": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Recipient public-key identifier. SHOULD be either an ADR-0007 `did:key` DID URL with a fragment identifying the encryption verification method (e.g. `did:key:z6Mk...#enc-1`) or the `sha256:<hex>` fingerprint convention used elsewhere in the repo (per ADR-0015 \"Fingerprint canonical form\"). The kid is an index — it lets the forensic responder pick the right private key — and is not by itself authenticated; binding to the recipient public key happens through HPKE encapsulation."
+        },
+        "enc": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "HPKE encapsulated key output (RFC 9180 §4.1, `enc`). For the DHKEM(X25519, HKDF-SHA256) KEM this is the 32-byte X25519 ephemeral public key, encoded as unpadded base64url. The `pattern` constrains the value to exactly 43 base64url-alphabet characters — the encoded length of 32 raw bytes with no padding (`ceil(32 * 4 / 3)` rounded up, minus 1 padding character that would normally complete the final 4-char block). The HPKE specification names this field `enc`; this schema uses the same name rather than an invented alternative (e.g. `wrapped_key`, `epk`, `encap`) so implementers can map directly to library APIs without translation. The original ADR-0012 sketch listed `encap` — that name is superseded here; see the ADR amendment for the rationale."
         }
       }
     }
