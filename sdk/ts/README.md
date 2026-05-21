@@ -13,7 +13,7 @@
 
 Create, sign, hash-chain, store, and verify cryptographically signed audit trails for AI agent actions.
 
-Zero runtime dependencies — uses only `node:crypto` and `node:sqlite`.
+Minimal runtime dependencies — `zod` for schema validation, `node:crypto` and `node:sqlite` for cryptography and storage; `@hpke/core` is installed as a dependency and dynamically loaded only when disclosure functions are invoked (tracked for removal in [#473](https://github.com/agent-receipts/ar/issues/473)).
 
 [Spec](https://github.com/agent-receipts/spec) &bull; [Reference Implementation](https://github.com/ojongerius/attest) &bull; [npm](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts)
 
@@ -227,7 +227,7 @@ pnpm run build         # compile to dist/
 | **Language** | TypeScript ESM, strict mode |
 | **Linting** | Biome (tabs, double quotes) |
 | **Testing** | Vitest (colocated `*.test.ts` files) |
-| **Runtime deps** | Zero — `node:crypto` and `node:sqlite` only |
+| **Runtime deps** | `zod` (schema validation) + `node:crypto` / `node:sqlite`; `@hpke/core` lazy-loaded for disclosure only |
 
 ## Ecosystem
 

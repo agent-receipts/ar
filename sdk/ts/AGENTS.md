@@ -1,6 +1,6 @@
 # AGENTS.md
 
-TypeScript SDK for the Agent Receipts protocol — create, sign, hash-chain, store, and verify cryptographically signed audit trails for AI agent actions. Zero runtime dependencies (Node.js built-ins only).
+TypeScript SDK for the Agent Receipts protocol — create, sign, hash-chain, store, and verify cryptographically signed audit trails for AI agent actions. Runtime dependencies: `zod` (schema validation), `node:crypto`, `node:sqlite`; HPKE disclosure functions additionally require `@hpke/core` (tracked for removal in #473).
 
 ## Commands
 
@@ -38,7 +38,7 @@ src/
 
 - **ESM-only** (`"type": "module"`, imports use `.js` extensions)
 - **Strict TypeScript** — `strict: true`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`
-- **Zero runtime dependencies** — only `node:crypto` and `node:sqlite`
+- **Runtime dependencies** — `zod` (schema validation), `node:crypto`, `node:sqlite`; `@hpke/core` for HPKE disclosure functions (tracked for removal in #473)
 - **Colocated tests** — `foo.ts` → `foo.test.ts` in the same directory
 - **Biome** for linting and formatting (tab indentation, double quotes)
 - **Explicit type imports** — use `import type` for type-only imports

@@ -1,0 +1,9 @@
+# Discussion: ADR-0017 — Central Receipt Hub and External Anchoring
+
+Companion to [ADR-0017](../0017-central-receipt-hub.md).
+
+Multi-node agent-receipts deployments — laptop plus EC2 nodes running OpenClaw and Hermes — currently produce N independent per-node chains with no aggregation point, and ADR-0015's commitment to external anchoring has a write contract but no concrete deployment shape. ADR-0017 proposes a single answer to both: a hub mode of the existing daemon (`agent-receipts daemon --ingest`) that receives JWS-signed JSONL batches over HTTPS, mirrors per-node chains, and periodically anchors per-node chain heads to an S3 bucket with object lock. Local chains remain the source of truth; the hub is a durable mirror and the S3 bucket is the trust root for the anchoring claim — neither replaces per-receipt signature verification under the node's DID.
+
+All sub-decisions are firm at this scope: SDKs produce JWS-signed batches; RFC 9421 is an optional operator-side layer outside SDK scope; anchor cadence is per-node, the more recent of 5min of activity or 1000 receipts; the hub registers its own DID the same way a node does and rotates via the ADR-0015 rotation chain. Operational concerns are pinned (trust-list management via signed file with mtime reload; DID resolution caching at 5min TTL with stale-while-revalidate; clock skew tolerance ±5min; backpressure via 429 + bounded outbox + `EAGAIN` to emitters + ADR-0010 `events_dropped` synthesis; cold start records `joined_at_seq`; S3 key naming `<bucket>/anchors/<url-encoded-node_did>/<seq:020d>.jcs.json`).
+
+Accepted 2026-05-21. The design is pinned; implementation is gated on three Phase A's landing first — ADR-0007 (`did:key` shipped), ADR-0015 (KeySource, Rotate, file sink), ADR-0012 (asymmetric disclosure envelope, the user-facing gate). Multi-tenant deployment and global cross-node ordering are deferred to future ADRs.
