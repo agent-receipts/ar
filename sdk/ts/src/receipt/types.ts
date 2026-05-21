@@ -177,6 +177,11 @@ export interface Chain {
 	/** When present, MUST be true. Marks this as the final receipt in the chain.
 	 *  Explicit false is not valid — use absence to express "no claim". */
 	terminal?: true;
+	/** Issuer-asserted reason the chain ended. Only meaningful alongside
+	 *  `terminal: true`; absence on a terminal receipt is equivalent to
+	 *  `"complete"`. The verifier-derived `"unknown"` classification (chains
+	 *  with no terminal) is never written on the wire. See spec §7.3.3. */
+	status?: "complete" | "interrupted";
 }
 
 // --- Credential Subject ---

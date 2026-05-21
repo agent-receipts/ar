@@ -864,6 +864,248 @@ func TestTerminalViolationBeforeComputeError(t *testing.T) {
 	}
 }
 
+// --- Chain termination status (spec §7.3.3, #475) ---
+
+// buildChainWithStatus is like buildChainWithTerminal but also sets
+// chain.status on the terminal receipt.
+func buildChainWithStatus(t *testing.T, kp KeyPair, count int, status ChainStatus) []AgentReceipt {
+	t.Helper()
+	chain := buildChain(t, kp, count-1)
+
+	var prevHash *string
+	if len(chain) > 0 {
+		h, err := HashReceipt(chain[len(chain)-1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+	unsigned := Create(CreateInput{
+		Issuer:            Issuer{ID: "did:agent:test"},
+		Principal:         Principal{ID: "did:user:test"},
+		Action:            Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:           Outcome{Status: StatusSuccess},
+		Chain:             Chain{Sequence: count, PreviousReceiptHash: prevHash, ChainID: "chain-1"},
+		Terminal:          true,
+		TerminationStatus: status,
+	})
+	signed, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(chain, signed)
+}
+
+func TestChainStatusCompleteByDefault(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChainWithTerminal(t, kp, 3)
+	result := VerifyChain(chain, kp.PublicKey)
+	if !result.Valid {
+		t.Fatalf("chain should be valid: %s", result.Error)
+	}
+	if result.Status != ChainStatusComplete {
+		t.Errorf("expected Status=%q, got %q", ChainStatusComplete, result.Status)
+	}
+	// Wire form: no status field emitted when not explicitly set.
+	if chain[len(chain)-1].CredentialSubject.Chain.Status != "" {
+		t.Errorf("terminal receipt without TerminationStatus must have empty Chain.Status on the wire, got %q", chain[len(chain)-1].CredentialSubject.Chain.Status)
+	}
+}
+
+func TestChainStatusComplete(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChainWithStatus(t, kp, 3, ChainStatusComplete)
+	result := VerifyChain(chain, kp.PublicKey)
+	if !result.Valid {
+		t.Fatalf("chain should be valid: %s", result.Error)
+	}
+	if result.Status != ChainStatusComplete {
+		t.Errorf("expected Status=%q, got %q", ChainStatusComplete, result.Status)
+	}
+	if chain[len(chain)-1].CredentialSubject.Chain.Status != ChainStatusComplete {
+		t.Errorf("wire form: expected Chain.Status=%q, got %q", ChainStatusComplete, chain[len(chain)-1].CredentialSubject.Chain.Status)
+	}
+}
+
+func TestChainStatusInterrupted(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChainWithStatus(t, kp, 3, ChainStatusInterrupted)
+	result := VerifyChain(chain, kp.PublicKey)
+	if !result.Valid {
+		t.Fatalf("chain should be valid: %s", result.Error)
+	}
+	if result.Status != ChainStatusInterrupted {
+		t.Errorf("expected Status=%q, got %q", ChainStatusInterrupted, result.Status)
+	}
+	if chain[len(chain)-1].CredentialSubject.Chain.Status != ChainStatusInterrupted {
+		t.Errorf("wire form: expected Chain.Status=%q, got %q", ChainStatusInterrupted, chain[len(chain)-1].CredentialSubject.Chain.Status)
+	}
+}
+
+func TestChainStatusUnknownNoTerminal(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3)
+	result := VerifyChain(chain, kp.PublicKey)
+	if !result.Valid {
+		t.Fatalf("chain should be valid: %s", result.Error)
+	}
+	if result.Status != ChainStatusUnknown {
+		t.Errorf("expected Status=%q, got %q", ChainStatusUnknown, result.Status)
+	}
+}
+
+func TestChainStatusUnknownEmpty(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	result := VerifyChain([]AgentReceipt{}, kp.PublicKey)
+	if !result.Valid {
+		t.Fatalf("empty chain should be valid: %s", result.Error)
+	}
+	if result.Status != ChainStatusUnknown {
+		t.Errorf("expected Status=%q, got %q", ChainStatusUnknown, result.Status)
+	}
+}
+
+// Status reflects what the chain claims on the wire, not its validity.
+func TestChainStatusIndependentOfValidity(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChainWithStatus(t, kp, 3, ChainStatusInterrupted)
+	// Tamper with the middle receipt.
+	chain[1].CredentialSubject.Action.RiskLevel = RiskCritical
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Fatal("tampered chain should be invalid")
+	}
+	if result.Status != ChainStatusInterrupted {
+		t.Errorf("expected Status=%q even on invalid chain, got %q", ChainStatusInterrupted, result.Status)
+	}
+}
+
+// MarshalJSON silently drops chain.status when terminal is unset (spec §7.3.3).
+func TestChainStatusDroppedWithoutTerminal(t *testing.T) {
+	c := Chain{
+		Sequence:            1,
+		PreviousReceiptHash: nil,
+		ChainID:             "chain-1",
+		Status:              ChainStatusInterrupted, // Set without Terminal — should be dropped on marshal.
+	}
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "status") {
+		t.Errorf("status must be dropped from JSON when terminal is unset, got: %s", data)
+	}
+}
+
+// MarshalJSON also drops chain.status when the value is not a valid wire
+// vocabulary entry — including ChainStatusUnknown, which is verifier-only.
+func TestChainStatusDroppedForInvalidWireValue(t *testing.T) {
+	terminal := true
+	cases := []ChainStatus{ChainStatusUnknown, ChainStatus("garbage"), ChainStatus("")}
+	for _, status := range cases {
+		c := Chain{
+			Sequence:            1,
+			PreviousReceiptHash: nil,
+			ChainID:             "chain-1",
+			Terminal:            &terminal,
+			Status:              status,
+		}
+		data, err := json.Marshal(c)
+		if err != nil {
+			t.Fatalf("Status=%q: %v", status, err)
+		}
+		if strings.Contains(string(data), `"status"`) {
+			t.Errorf("Status=%q must be dropped from wire form, got: %s", status, data)
+		}
+	}
+}
+
+// Create() drops TerminationStatus when it is not a valid wire vocabulary entry.
+func TestCreateDropsInvalidTerminationStatus(t *testing.T) {
+	cases := []ChainStatus{ChainStatusUnknown, ChainStatus("garbage")}
+	for _, status := range cases {
+		unsigned := Create(CreateInput{
+			Issuer:            Issuer{ID: "did:agent:test"},
+			Principal:         Principal{ID: "did:user:test"},
+			Action:            Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+			Outcome:           Outcome{Status: StatusSuccess},
+			Chain:             Chain{Sequence: 1, PreviousReceiptHash: nil, ChainID: "chain-1"},
+			Terminal:          true,
+			TerminationStatus: status,
+		})
+		if unsigned.CredentialSubject.Chain.Status != "" {
+			t.Errorf("invalid TerminationStatus=%q must be silently dropped, got Chain.Status=%q",
+				status, unsigned.CredentialSubject.Chain.Status)
+		}
+	}
+}
+
+// VerifyChain rejects schema-invalid chain.status values smuggled in via direct
+// struct mutation (or external JSON deserialisation). Mirrors the Python model
+// validator: the SDK enforces spec §7.3.3 symmetrically on both issuer and
+// verifier sides.
+func TestVerifyRejectsInvalidChainStatusValue(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChainWithStatus(t, kp, 3, ChainStatusInterrupted)
+	// Mutate the terminal receipt's chain.status to a non-wire value after signing.
+	// We re-sign to ensure the signature itself is still valid; only the status
+	// field is schema-invalid.
+	chain[len(chain)-1].CredentialSubject.Chain.Status = "garbage"
+	unsigned := UnsignedAgentReceipt{
+		Context:           chain[len(chain)-1].Context,
+		ID:                chain[len(chain)-1].ID,
+		Type:              chain[len(chain)-1].Type,
+		Version:           chain[len(chain)-1].Version,
+		Issuer:            chain[len(chain)-1].Issuer,
+		IssuanceDate:      chain[len(chain)-1].IssuanceDate,
+		CredentialSubject: chain[len(chain)-1].CredentialSubject,
+	}
+	resigned, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain[len(chain)-1] = resigned
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Fatal("verifier must reject schema-invalid chain.status")
+	}
+	if !strings.Contains(result.Error, "invalid chain.status value") {
+		t.Errorf("expected schema-invalid error message, got: %s", result.Error)
+	}
+}
+
+// VerifyChain rejects chain.status set without chain.terminal: true.
+func TestVerifyRejectsStatusWithoutTerminal(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3)
+	// Mutate the last receipt: set status without terminal, then re-sign.
+	chain[len(chain)-1].CredentialSubject.Chain.Status = ChainStatusInterrupted
+	unsigned := UnsignedAgentReceipt{
+		Context:           chain[len(chain)-1].Context,
+		ID:                chain[len(chain)-1].ID,
+		Type:              chain[len(chain)-1].Type,
+		Version:           chain[len(chain)-1].Version,
+		Issuer:            chain[len(chain)-1].Issuer,
+		IssuanceDate:      chain[len(chain)-1].IssuanceDate,
+		CredentialSubject: chain[len(chain)-1].CredentialSubject,
+	}
+	resigned, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain[len(chain)-1] = resigned
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Fatal("verifier must reject chain.status without chain.terminal: true")
+	}
+	if !strings.Contains(result.Error, "chain.status without chain.terminal") {
+		t.Errorf("expected status-without-terminal error message, got: %s", result.Error)
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || findStr(s, sub))
 }

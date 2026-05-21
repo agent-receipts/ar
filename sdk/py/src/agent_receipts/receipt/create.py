@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
 
@@ -61,6 +61,9 @@ class CreateReceiptInput(BaseModel):
     action_timestamp: str | None = None
     response_body: Any = None  # noqa: ANN401  # any JSON value, not just objects
     terminal: bool = False
+    # Issuer-asserted termination reason, applied only when terminal=True.
+    # MUST be "complete" or "interrupted" (spec §7.3.3).
+    termination_status: Literal["complete", "interrupted"] | None = None
 
 
 def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
@@ -115,6 +118,9 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         chain_data["previous_receipt_hash"] = None
     if input.terminal:
         chain_data["terminal"] = True
+        # Status only emitted alongside terminal (spec §7.3.3).
+        if input.termination_status is not None:
+            chain_data["status"] = input.termination_status
     chain_with_terminal = Chain(**chain_data)
 
     # Build credential subject

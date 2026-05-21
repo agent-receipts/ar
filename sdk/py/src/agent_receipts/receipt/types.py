@@ -7,9 +7,9 @@ fields are marked with ``None`` defaults.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 if TYPE_CHECKING:
     from agent_receipts.receipt.disclosure import DisclosureEnvelope
@@ -189,6 +189,40 @@ class Chain(BaseModel):
     previous_receipt_hash: str | None
     chain_id: str
     terminal: Literal[True] | None = None
+    # Issuer-asserted termination reason. Only meaningful alongside
+    # terminal=True; the verifier-derived "unknown" classification is never
+    # written on the wire. See spec §7.3.3.
+    status: Literal["complete", "interrupted"] | None = None
+
+    @model_validator(mode="after")
+    def _check_status_implies_terminal(self) -> Chain:
+        """Enforce spec §7.3.3 at validation time.
+
+        `chain.status` MUST coexist with `chain.terminal: True`. This guards
+        the deserialization path: a Chain parsed from external JSON with
+        `status` but no `terminal` would otherwise be accepted in-memory and
+        could be passed to `verify_chain`. The Go SDK enforces the same
+        invariant in the verifier; here we fail fast at model construction.
+        """
+        if self.status is not None and self.terminal is not True:
+            msg = "chain.status requires chain.terminal: True (spec §7.3.3)"
+            raise ValueError(msg)
+        return self
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: Any) -> dict[str, Any]:
+        """Enforce the spec §7.3.3 invariant at the serialization layer.
+
+        Defensive belt-and-suspenders: even though the validator above
+        rejects invalid models at construction, this serializer drops
+        `status` if `terminal` is unset, mirroring the Go SDK's
+        MarshalJSON behaviour. Direct mutation of a validated instance
+        cannot produce a schema-invalid wire form.
+        """
+        data: dict[str, Any] = handler(self)
+        if data.get("terminal") is not True and "status" in data:
+            del data["status"]
+        return data
 
 
 class CredentialSubject(BaseModel):

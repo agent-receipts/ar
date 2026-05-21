@@ -28,12 +28,37 @@ def _empty_receipts() -> list[ReceiptVerification]:
     return []
 
 
+# Chain termination status values (spec §7.3.3).
+STATUS_COMPLETE = "complete"
+STATUS_INTERRUPTED = "interrupted"
+STATUS_UNKNOWN = "unknown"
+
+
+def _classify_termination_status(receipts: list[AgentReceipt]) -> str:
+    """Inspect the final receipt and return the chain's termination status.
+
+    Independent of verification result — describes what the chain claims on
+    the wire, not whether it is valid. See spec §7.3.3.
+    """
+    if not receipts:
+        return STATUS_UNKNOWN
+    last = receipts[-1]
+    ch = last.credentialSubject.chain
+    if ch.terminal is not True:
+        return STATUS_UNKNOWN
+    if ch.status == STATUS_INTERRUPTED:
+        return STATUS_INTERRUPTED
+    return STATUS_COMPLETE
+
+
 @dataclass
 class ChainVerification:
     """Result of verifying an entire chain."""
 
     valid: bool
     length: int
+    # "complete" | "interrupted" | "unknown" (spec §7.3.3).
+    status: str = STATUS_UNKNOWN
     receipts: list[ReceiptVerification] = field(default_factory=_empty_receipts)
     broken_at: int = -1
     error: str = ""
@@ -80,13 +105,16 @@ def verify_chain(
             return ChainVerification(
                 valid=False,
                 length=0,
+                status=STATUS_UNKNOWN,
                 broken_at=0,
                 error=(
                     f"expected chain length does not match: "
                     f"expected {expected_length}, got 0"
                 ),
             )
-        return ChainVerification(valid=True, length=0)
+        return ChainVerification(valid=True, length=0, status=STATUS_UNKNOWN)
+
+    status = _classify_termination_status(receipts)
 
     results: list[ReceiptVerification] = []
     broken_at = -1
@@ -181,6 +209,7 @@ def verify_chain(
             return ChainVerification(
                 valid=False,
                 length=len(receipts),
+                status=status,
                 receipts=results,
                 broken_at=broken_at,
                 error=error_msg,
@@ -189,6 +218,7 @@ def verify_chain(
     cv = ChainVerification(
         valid=broken_at == -1,
         length=len(receipts),
+        status=status,
         receipts=results,
         broken_at=broken_at,
         error=loop_error,
