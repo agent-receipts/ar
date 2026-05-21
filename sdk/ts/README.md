@@ -13,7 +13,7 @@
 
 Create, sign, hash-chain, store, and verify cryptographically signed audit trails for AI agent actions.
 
-Minimal runtime dependencies — `zod` for schema validation, `node:crypto` and `node:sqlite` for cryptography and storage; HPKE disclosure functions additionally require `@hpke/core`.
+Minimal runtime dependencies — `zod` for schema validation, `node:crypto` and `node:sqlite` for cryptography and storage; `@hpke/core` is bundled and dynamically loaded only when disclosure functions are invoked.
 
 [Spec](https://github.com/agent-receipts/spec) &bull; [Reference Implementation](https://github.com/ojongerius/attest) &bull; [npm](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts)
 

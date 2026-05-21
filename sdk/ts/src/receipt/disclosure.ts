@@ -220,6 +220,9 @@ export async function decryptDisclosure(
 	if (typeof recipient?.enc !== "string") {
 		throw new Error("recipient enc must be a string");
 	}
+	if (typeof recipient.kid !== "string" || recipient.kid.length === 0) {
+		throw new Error("recipient kid must be a non-empty string");
+	}
 
 	const suite = await getSuite();
 	const privKey = await suite.kem.deserializePrivateKey(recipientPrivateKey);
