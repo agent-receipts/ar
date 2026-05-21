@@ -150,7 +150,9 @@ export function verifyChain(
 	let brokenAt = -1;
 	let previous: AgentReceipt | undefined;
 	let signatureError: string | undefined;
+	let signatureErrorAt = -1;
 	let hashComputeError: string | undefined;
+	let hashComputeErrorAt = -1;
 
 	for (let i = 0; i < receipts.length; i++) {
 		const receipt = receipts[i];
@@ -165,6 +167,7 @@ export function verifyChain(
 			if (signatureError === undefined) {
 				const reason = e instanceof Error ? e.message : String(e);
 				signatureError = `signature compute failed at index ${i}: ${reason}`;
+				signatureErrorAt = i;
 			}
 		}
 
@@ -179,6 +182,7 @@ export function verifyChain(
 				const reason = e instanceof Error ? e.message : String(e);
 				if (hashComputeError === undefined) {
 					hashComputeError = `hash compute failed at index ${i - 1}: ${reason}`;
+					hashComputeErrorAt = i;
 				}
 			}
 			hashLinkValid =
@@ -219,8 +223,13 @@ export function verifyChain(
 
 	// Sig errors take precedence over hash-compute errors; when both are present
 	// the hash-compute error is discarded (a single error field can only surface one).
-	// Compute this before the terminal check so early returns preserve it.
+	// Track the position of the chosen loop error so downstream early returns
+	// (e.g. receipt-after-terminal) can decide whether the loop error is
+	// diagnostic for the failure they encountered. Mirrors the Go SDK's
+	// loopErrAt accounting.
 	const loopError = signatureError ?? hashComputeError;
+	const loopErrorAt =
+		signatureError !== undefined ? signatureErrorAt : hashComputeErrorAt;
 
 	// Chain identifier binding check (unconditional — spec §7.3.4).
 	// All receipts in a verified chain MUST share chain.chain_id. Reject
@@ -255,15 +264,17 @@ export function verifyChain(
 		const r = receipts[i];
 		if (r && r.credentialSubject.chain.terminal === true) {
 			// A receipt exists after a terminal one — protocol violation.
-			if (brokenAt === -1) brokenAt = i + 1;
-			// When an earlier signature/hash compute error exists it takes
-			// precedence (it's strictly more diagnostic), otherwise emit the
-			// dedicated receipt-after-terminal message so callers see a clear
-			// reason for the failure. Mirrors the Go SDK's fallback in
+			const terminalViolationAt = i + 1;
+			if (brokenAt === -1) brokenAt = terminalViolationAt;
+			// Use the loop error only when it occurred at or before the
+			// terminal violation; otherwise the terminal violation is the
+			// earlier (and only relevant) failure and gets the dedicated
+			// message. Mirrors the Go SDK's position-aware fallback in
 			// VerifyChain (spec §7.3.2).
 			const error =
-				loopError ??
-				`receipt after terminal: receipt at index ${i + 1} follows a terminal receipt at index ${i}`;
+				loopError !== undefined && loopErrorAt <= terminalViolationAt
+					? loopError
+					: `receipt after terminal: receipt at index ${terminalViolationAt} follows a terminal receipt at index ${i}`;
 			return {
 				valid: false,
 				length: receipts.length,

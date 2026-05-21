@@ -577,6 +577,74 @@ describe("verifyChain", () => {
 		expect(result.error).toMatch(/index 2/); // terminal at idx 1, violator at idx 2
 	});
 
+	it("receipt after terminal wins over compute errors that occur strictly after the violation", () => {
+		// Position-aware fallback: a sig compute error at an index AFTER the
+		// terminal-violation index must NOT replace the receipt-after-terminal
+		// message. The terminal violation is the earlier and more relevant
+		// failure. Mirrors the Go SDK's loopErrAt > terminalViolationAt gate.
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+
+		// Append TWO receipts after the terminal one; we'll make the second
+		// (index 3) trigger a signature compute error.
+		const violator = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const violatorSigned = signReceipt(
+			violator,
+			privateKey,
+			"did:agent:test#key-1",
+		);
+		const violatorHash = hashReceipt(violatorSigned);
+		const later = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 4,
+				previous_receipt_hash: violatorHash,
+				chain_id: "chain_test",
+			},
+		});
+		const laterSigned = signReceipt(later, privateKey, "did:agent:test#key-1");
+		const chain = [...terminalChain, violatorSigned, laterSigned];
+		const lateTargetId = laterSigned.id;
+
+		const original = signingModule.verifyReceipt;
+		const spy = vi
+			.spyOn(signingModule, "verifyReceipt")
+			.mockImplementation((r, key) => {
+				if (r.id === lateTargetId) {
+					throw new Error("synthetic late failure");
+				}
+				return original(r, key);
+			});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			// Terminal violation is at index 2; the synthetic sig error fires
+			// at index 3 (strictly after). Per spec §7.3.2, the terminal
+			// violation message wins.
+			expect(result.error).toMatch(/receipt after terminal/);
+			expect(result.error).not.toMatch(/synthetic late failure/);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
 	it("requireTerminal passes when chain ends in terminal", () => {
 		const { publicKey, privateKey } = generateKeyPair();
 		const chain = buildTerminalChain(3, privateKey);
