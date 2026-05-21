@@ -547,6 +547,36 @@ describe("verifyChain", () => {
 		expect(result.valid).toBe(false);
 	});
 
+	it("receipt after terminal emits a descriptive error when no compute error precedes it", () => {
+		// When no signature/hash compute error occurred earlier in the chain,
+		// the receipt-after-terminal violation must still produce a clear
+		// error string (spec §7.3.2). Regression test for #507 review.
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+
+		const extra = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const extraSigned = signReceipt(extra, privateKey, "did:agent:test#key-1");
+
+		const result = verifyChain([...terminalChain, extraSigned], publicKey);
+
+		expect(result.valid).toBe(false);
+		expect(result.error).toMatch(/receipt after terminal/);
+		expect(result.error).toMatch(/index 2/); // terminal at idx 1, violator at idx 2
+	});
+
 	it("requireTerminal passes when chain ends in terminal", () => {
 		const { publicKey, privateKey } = generateKeyPair();
 		const chain = buildTerminalChain(3, privateKey);

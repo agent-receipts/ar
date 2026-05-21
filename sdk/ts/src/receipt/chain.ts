@@ -256,6 +256,14 @@ export function verifyChain(
 		if (r && r.credentialSubject.chain.terminal === true) {
 			// A receipt exists after a terminal one — protocol violation.
 			if (brokenAt === -1) brokenAt = i + 1;
+			// When an earlier signature/hash compute error exists it takes
+			// precedence (it's strictly more diagnostic), otherwise emit the
+			// dedicated receipt-after-terminal message so callers see a clear
+			// reason for the failure. Mirrors the Go SDK's fallback in
+			// VerifyChain (spec §7.3.2).
+			const error =
+				loopError ??
+				`receipt after terminal: receipt at index ${i + 1} follows a terminal receipt at index ${i}`;
 			return {
 				valid: false,
 				length: receipts.length,
@@ -263,7 +271,7 @@ export function verifyChain(
 				receipts: results,
 				brokenAt,
 				responseHashNote: undefined,
-				error: loopError,
+				error,
 			};
 		}
 	}
