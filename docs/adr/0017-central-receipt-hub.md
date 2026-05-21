@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Implementation is gated on three Phase A's landing first — see *Preconditions* below. This ADR is intentionally kept in Proposed status until those clear; the design is concrete enough to review and build against, but the hub MUST NOT be deployed until the gate is closed.
+Accepted (2026-05-21). Implementation is gated on three Phase A's landing first — see *Preconditions* below. Acceptance pins the design (transport, auth, anchor contract, trust model, per-node chains, single-tenant scope) so the SDKs and daemon can build against a stable target; the hub MUST NOT be deployed until the Preconditions gate is closed.
 
 ## Context
 
