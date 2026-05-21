@@ -111,6 +111,54 @@ func TestVerifyChainDetectsBrokenHashLink(t *testing.T) {
 	}
 }
 
+// Spec §7.3.5 / #479 — a gap in chain.sequence within a session is a hard
+// verification failure. Parity with the TS "detects a broken sequence" and
+// Python "test_broken_sequence" tests.
+func TestVerifyChainDetectsSequenceGap(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+
+	// Build a 2-receipt chain manually with sequences 1 and 3 (gap at 2),
+	// preserving valid hash linkage between them so the only invariant
+	// violated is sequence contiguity.
+	first := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 1, PreviousReceiptHash: nil, ChainID: "chain-gap"},
+	})
+	firstSigned, err := Sign(first, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstHash, err := HashReceipt(firstSigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 3, PreviousReceiptHash: &firstHash, ChainID: "chain-gap"},
+	})
+	thirdSigned, err := Sign(third, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result := VerifyChain([]AgentReceipt{firstSigned, thirdSigned}, kp.PublicKey)
+	if result.Valid {
+		t.Fatal("sequence gap (1 → 3) must be rejected")
+	}
+	if result.BrokenAt != 1 {
+		t.Errorf("expected BrokenAt=1, got %d", result.BrokenAt)
+	}
+	if len(result.Receipts) < 2 || result.Receipts[1].SequenceValid {
+		t.Errorf("expected receipts[1].SequenceValid=false, got %+v", result.Receipts)
+	}
+}
+
 func TestVerifyChainSurfacesHashError(t *testing.T) {
 	kp, _ := GenerateKeyPair()
 	chain := buildChain(t, kp, 3)
