@@ -78,14 +78,14 @@ def verify_chain(
 ) -> ChainVerification:
     """Verify a chain of signed receipts.
 
-    Checks for each receipt:
+    Checks for each receipt (in execution order):
     1. Ed25519 signature validity
     2. Hash linkage: previous_receipt_hash matches SHA-256 of prior receipt
     3. Sequence numbers are strictly incrementing
-    4. Receipt-after-terminal: if any receipt has chain.terminal == True, no
-       subsequent receipt may reference it (unconditional, spec §7.3.2)
-    5. Chain identifier binding: all receipts MUST share the same
+    4. Chain identifier binding: all receipts MUST share the same
        chain.chain_id as the first receipt (unconditional, spec §7.3.4)
+    5. Receipt-after-terminal: if any receipt has chain.terminal == True, no
+       subsequent receipt may reference it (unconditional, spec §7.3.2)
 
     Chain verification does NOT detect tail truncation by default — dropping
     the last N receipts still produces valid=True. To detect truncation:

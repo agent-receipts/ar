@@ -83,14 +83,15 @@ type ChainVerifyOptions struct {
 	ResponseBodies map[string]json.RawMessage
 }
 
-// VerifyChain verifies a chain of signed receipts. It checks:
+// VerifyChain verifies a chain of signed receipts. In execution order, it
+// checks:
 //   - Ed25519 signature validity
 //   - Hash linkage (previous_receipt_hash matches SHA-256 of prior receipt)
 //   - Sequence numbers strictly incrementing from the first receipt
-//   - Receipt-after-terminal: if any receipt has chain.terminal: true, no
-//     subsequent receipt may reference it (unconditional check, see spec §7.3.2)
 //   - Chain identifier binding: all receipts MUST share the same
 //     chain.chain_id as the first receipt (unconditional, see spec §7.3.4)
+//   - Receipt-after-terminal: if any receipt has chain.terminal: true, no
+//     subsequent receipt may reference it (unconditional check, see spec §7.3.2)
 //
 // Chain verification does NOT detect tail truncation by default — dropping the
 // last N receipts from a chain still produces Valid: true. To detect truncation:
