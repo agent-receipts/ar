@@ -127,18 +127,49 @@ class TestV020Vectors:
         assert receipts[-1].credentialSubject.chain.terminal is True
 
     def test_parameters_disclosure_receipt_verifies(self) -> None:
-        """Go-signed parameters_disclosure receipt verifies (ADR-0012 Phase A)."""
+        """Go-signed legacy v0.2.x parameters_disclosure (flat-map) receipt
+        verifies via raw-dict path.
+
+        After v0.3.0 the typed AgentReceipt model no longer accepts the legacy
+        flat-map ``parameters_disclosure`` shape, so we verify the Ed25519
+        signature inline against the canonical-JSON-without-proof rather than
+        round-tripping through Pydantic. This preserves the cross-SDK
+        signature-compatibility guarantee for historical receipts.
+        """
+        import base64
+
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
         vectors = _load_v020_vectors()
-        public_key = vectors["keys"]["publicKey"]
-        receipt = AgentReceipt(**vectors["parametersDisclosureReceipt"]["receipt"])
-        assert verify_receipt(receipt, public_key) is True
+        public_key_pem = vectors["keys"]["publicKey"]
+        receipt = dict(vectors["parametersDisclosureReceipt"]["receipt"])
+
+        proof = receipt.pop("proof")
+        proof_value = proof["proofValue"]
+        assert proof_value.startswith("u")
+        sig_b64 = proof_value[1:]
+        sig_b64 += "=" * ((4 - len(sig_b64) % 4) % 4)
+        signature = base64.urlsafe_b64decode(sig_b64)
+
+        canonical = canonicalize(receipt).encode("utf-8")
+        key = load_pem_public_key(public_key_pem.encode("ascii"))
+        assert isinstance(key, Ed25519PublicKey)
+        verified = True
+        try:
+            key.verify(signature, canonical)
+        except InvalidSignature:
+            verified = False
+        assert verified, "Go-signed v0.2.x receipt failed Ed25519 verify"
 
     def test_parameters_disclosure_receipt_hash_matches_go(self) -> None:
-        """Python hash_receipt matches the Go-computed expectedReceiptHash."""
+        """Python hash_receipt(dict) matches the Go-computed expectedReceiptHash
+        for the legacy v0.2.x flat-map shape (bypasses AgentReceipt model, which
+        only accepts the v0.3.0 envelope shape going forward)."""
         vectors = _load_v020_vectors()
         section = vectors["parametersDisclosureReceipt"]
-        receipt = AgentReceipt(**section["receipt"])
-        assert hash_receipt(receipt) == section["expectedReceiptHash"]
+        assert hash_receipt(section["receipt"]) == section["expectedReceiptHash"]
 
 
 MALFORMED_VECTORS = (
