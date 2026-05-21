@@ -28,7 +28,6 @@ const (
 	RiskCritical RiskLevel = "critical"
 )
 
-// OutcomeStatus represents the result of an action.
 // ChainStatus is the issuer-asserted termination reason carried in
 // chain.status (spec §7.3.3). Wire values are ChainStatusComplete and
 // ChainStatusInterrupted only — ChainStatusUnknown is verifier-derived
@@ -47,6 +46,7 @@ func (v ChainStatus) IsValidWireValue() bool {
 	return v == ChainStatusComplete || v == ChainStatusInterrupted
 }
 
+// OutcomeStatus represents the result of an action.
 type OutcomeStatus string
 
 const (

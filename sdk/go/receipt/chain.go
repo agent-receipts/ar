@@ -208,20 +208,21 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	}
 
 	// Pick whichever compute / schema error occurred first in the chain.
-	// When ties, sig takes precedence over hash, and both take precedence
-	// over schema (schema violations are still surfaced — just lower priority
-	// than crypto failures since they indicate intent to bypass).
+	// Candidates are checked in priority order — sig > hash > schema —
+	// so when two errors occur at the same index, the higher-priority one
+	// wins (the strict-less-than below skips equal-index later entries).
+	// This precedence reflects that crypto failures are more diagnostic
+	// than schema violations when both fire on the same receipt.
 	// Compute this before the terminal check so early returns preserve it.
 	var loopErr string
 	var loopErrAt int = -1
 	candidates := []struct {
-		msg  string
-		at   int
-		rank int // lower rank wins ties: sig=0, hash=1, schema=2
+		msg string
+		at  int
 	}{
-		{firstSigErr, firstSigErrAt, 0},
-		{firstHashComputeErr, firstHashComputeErrAt, 1},
-		{schemaErr, schemaErrAt, 2},
+		{firstSigErr, firstSigErrAt},
+		{firstHashComputeErr, firstHashComputeErrAt},
+		{schemaErr, schemaErrAt},
 	}
 	for _, c := range candidates {
 		if c.msg == "" {
