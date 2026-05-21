@@ -98,6 +98,7 @@ across workstreams they can be parallelised.
 | Item | ADR | Issue | Status |
 |---|---|---|---|
 | Bounded `input`/`output` payload via `PayloadStrategy` | ADR-0019 § S3 | #478 | planned |
+| `parameterDisclosure` Phase A — cross-SDK + OpenClaw migration (envelope already shipped in Go #468 / TS #472; Python SDK envelope, OpenClaw rename, cross-SDK tests remain) | ADR-0012 | #280 | planned |
 
 ### Cross-SDK parity
 
