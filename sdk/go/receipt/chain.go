@@ -130,9 +130,34 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	var firstSigErrAt int = -1
 	var firstHashComputeErr string
 	var firstHashComputeErrAt int = -1
+	var schemaErr string
+	var schemaErrAt int = -1
 
 	for i, r := range receipts {
 		chain := r.CredentialSubject.Chain
+
+		// Schema-level chain.status invariants (spec §7.3.3).
+		// A non-empty chain.status MUST be a valid wire value (complete or
+		// interrupted — never the verifier-only "unknown") AND MUST coexist
+		// with chain.terminal: true. Receipts deserialised from external JSON
+		// can violate either invariant; the verifier rejects them here so an
+		// attacker cannot smuggle in schema-invalid receipts that bypass the
+		// SDK's construction-time guards.
+		if chain.Status != "" {
+			terminalSet := chain.Terminal != nil && *chain.Terminal
+			switch {
+			case !chain.Status.IsValidWireValue():
+				if schemaErr == "" {
+					schemaErr = "invalid chain.status value at index " + strconv.Itoa(i) + ": " + string(chain.Status) + " is not a valid wire value (spec §7.3.3)"
+					schemaErrAt = i
+				}
+			case !terminalSet:
+				if schemaErr == "" {
+					schemaErr = "chain.status without chain.terminal: true at index " + strconv.Itoa(i) + " (spec §7.3.3)"
+					schemaErrAt = i
+				}
+			}
+		}
 
 		sigValid, sigErr := verifyReceipt(r, publicKeyPEM)
 		if sigErr != nil {
@@ -177,24 +202,34 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		if brokenAt == -1 && (!sigValid || !hashValid || !seqValid) {
 			brokenAt = i
 		}
+		if brokenAt == -1 && schemaErrAt == i {
+			brokenAt = i
+		}
 	}
 
-	// Pick whichever compute error occurred first in the chain. When both appear
-	// at the same index (same receipt), the sig error takes precedence.
+	// Pick whichever compute / schema error occurred first in the chain.
+	// When ties, sig takes precedence over hash, and both take precedence
+	// over schema (schema violations are still surfaced — just lower priority
+	// than crypto failures since they indicate intent to bypass).
 	// Compute this before the terminal check so early returns preserve it.
 	var loopErr string
 	var loopErrAt int = -1
-	switch {
-	case firstSigErr != "" && firstHashComputeErr != "":
-		if firstSigErrAt <= firstHashComputeErrAt {
-			loopErr, loopErrAt = firstSigErr, firstSigErrAt
-		} else {
-			loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
+	candidates := []struct {
+		msg  string
+		at   int
+		rank int // lower rank wins ties: sig=0, hash=1, schema=2
+	}{
+		{firstSigErr, firstSigErrAt, 0},
+		{firstHashComputeErr, firstHashComputeErrAt, 1},
+		{schemaErr, schemaErrAt, 2},
+	}
+	for _, c := range candidates {
+		if c.msg == "" {
+			continue
 		}
-	case firstSigErr != "":
-		loopErr, loopErrAt = firstSigErr, firstSigErrAt
-	case firstHashComputeErr != "":
-		loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
+		if loopErrAt == -1 || c.at < loopErrAt {
+			loopErr, loopErrAt = c.msg, c.at
+		}
 	}
 
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).

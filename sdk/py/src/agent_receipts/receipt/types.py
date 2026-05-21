@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 CONTEXT: list[str] = [
     "https://www.w3.org/ns/credentials/v2",
@@ -132,14 +132,30 @@ class Chain(BaseModel):
     # written on the wire. See spec §7.3.3.
     status: Literal["complete", "interrupted"] | None = None
 
+    @model_validator(mode="after")
+    def _check_status_implies_terminal(self) -> Chain:
+        """Enforce spec §7.3.3 at validation time.
+
+        `chain.status` MUST coexist with `chain.terminal: True`. This guards
+        the deserialization path: a Chain parsed from external JSON with
+        `status` but no `terminal` would otherwise be accepted in-memory and
+        could be passed to `verify_chain`. The Go SDK enforces the same
+        invariant in the verifier; here we fail fast at model construction.
+        """
+        if self.status is not None and self.terminal is not True:
+            msg = "chain.status requires chain.terminal: True (spec §7.3.3)"
+            raise ValueError(msg)
+        return self
+
     @model_serializer(mode="wrap")
     def _serialize(self, handler: Any) -> dict[str, Any]:
         """Enforce the spec §7.3.3 invariant at the serialization layer.
 
-        `chain.status` is only meaningful alongside `chain.terminal: true`.
-        Drop status whenever terminal is unset, mirroring the Go SDK's
-        MarshalJSON behaviour. This makes the wire-form invariant impossible
-        to violate via direct model construction.
+        Defensive belt-and-suspenders: even though the validator above
+        rejects invalid models at construction, this serializer drops
+        `status` if `terminal` is unset, mirroring the Go SDK's
+        MarshalJSON behaviour. Direct mutation of a validated instance
+        cannot produce a schema-invalid wire form.
         """
         data: dict[str, Any] = handler(self)
         if data.get("terminal") is not True and "status" in data:

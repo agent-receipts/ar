@@ -1,6 +1,10 @@
 """Tests for chain verification."""
 
+from typing import Literal
 from unittest.mock import patch
+
+import pytest
+from pydantic import ValidationError
 
 from agent_receipts.receipt.chain import (
     STATUS_COMPLETE,
@@ -770,7 +774,11 @@ class TestAdr0008ChainBehaviours:
         assert result.response_hash_note != ""
 
 
-def _build_chain_with_status(count: int, private_key: str, status: str | None) -> list:
+def _build_chain_with_status(
+    count: int,
+    private_key: str,
+    status: Literal["complete", "interrupted"] | None,
+) -> list:
     """Build a chain of `count` receipts; last receipt is terminal with status."""
     chain = _build_chain(count - 1, private_key)
     prev_hash = hash_receipt(chain[-1]) if chain else None
@@ -786,7 +794,7 @@ def _build_chain_with_status(count: int, private_key: str, status: str | None) -
                 chain_id="chain_test",
             ),
             terminal=True,
-            termination_status=status,  # type: ignore[arg-type]
+            termination_status=status,
         )
     )
     signed = sign_receipt(unsigned, private_key, "did:agent:test#key-1")
@@ -841,21 +849,34 @@ class TestChainTerminationStatus:
         # Status reflects what the chain claims on the wire, not its validity.
         assert result.status == STATUS_INTERRUPTED
 
-    def test_status_dropped_at_serialization_when_no_terminal(self) -> None:
-        """Chain.model_serializer must drop status when terminal is unset.
+    def test_status_without_terminal_rejected_at_validation(self) -> None:
+        """Chain validator must reject status set without terminal=True.
 
-        Matches the Go SDK's MarshalJSON behaviour: the wire-form invariant
-        (status implies terminal, spec §7.3.3) is enforced at the
-        serialization layer so direct model construction cannot produce a
-        schema-invalid wire form.
+        Mirrors the Go SDK's verifier check on deserialized receipts:
+        the "status implies terminal" invariant (spec §7.3.3) is enforced
+        at model-construction time so a Chain parsed from external JSON
+        cannot smuggle in a schema-invalid combination.
         """
+        with pytest.raises(ValidationError, match="chain.terminal"):
+            Chain(
+                sequence=1,
+                previous_receipt_hash=None,
+                chain_id="chain-1",
+                terminal=None,
+                status="interrupted",
+            )
+
+    def test_serializer_drops_status_when_terminal_mutated_to_none(self) -> None:
+        """Serializer is a belt-and-suspenders backup against post-validation mutation."""  # noqa: E501
         c = Chain(
             sequence=1,
             previous_receipt_hash=None,
             chain_id="chain-1",
-            terminal=None,
+            terminal=True,
             status="interrupted",
         )
+        # Mutate after construction (bypasses validator).
+        c.terminal = None
         d = c.model_dump(exclude_none=True)
         assert "terminal" not in d
         assert "status" not in d

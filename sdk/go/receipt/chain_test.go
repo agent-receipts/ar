@@ -1041,6 +1041,71 @@ func TestCreateDropsInvalidTerminationStatus(t *testing.T) {
 	}
 }
 
+// VerifyChain rejects schema-invalid chain.status values smuggled in via direct
+// struct mutation (or external JSON deserialisation). Mirrors the Python model
+// validator: the SDK enforces spec §7.3.3 symmetrically on both issuer and
+// verifier sides.
+func TestVerifyRejectsInvalidChainStatusValue(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChainWithStatus(t, kp, 3, ChainStatusInterrupted)
+	// Mutate the terminal receipt's chain.status to a non-wire value after signing.
+	// We re-sign to ensure the signature itself is still valid; only the status
+	// field is schema-invalid.
+	chain[len(chain)-1].CredentialSubject.Chain.Status = "garbage"
+	unsigned := UnsignedAgentReceipt{
+		Context:           chain[len(chain)-1].Context,
+		ID:                chain[len(chain)-1].ID,
+		Type:              chain[len(chain)-1].Type,
+		Version:           chain[len(chain)-1].Version,
+		Issuer:            chain[len(chain)-1].Issuer,
+		IssuanceDate:      chain[len(chain)-1].IssuanceDate,
+		CredentialSubject: chain[len(chain)-1].CredentialSubject,
+	}
+	resigned, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain[len(chain)-1] = resigned
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Fatal("verifier must reject schema-invalid chain.status")
+	}
+	if !strings.Contains(result.Error, "invalid chain.status value") {
+		t.Errorf("expected schema-invalid error message, got: %s", result.Error)
+	}
+}
+
+// VerifyChain rejects chain.status set without chain.terminal: true.
+func TestVerifyRejectsStatusWithoutTerminal(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3)
+	// Mutate the last receipt: set status without terminal, then re-sign.
+	chain[len(chain)-1].CredentialSubject.Chain.Status = ChainStatusInterrupted
+	unsigned := UnsignedAgentReceipt{
+		Context:           chain[len(chain)-1].Context,
+		ID:                chain[len(chain)-1].ID,
+		Type:              chain[len(chain)-1].Type,
+		Version:           chain[len(chain)-1].Version,
+		Issuer:            chain[len(chain)-1].Issuer,
+		IssuanceDate:      chain[len(chain)-1].IssuanceDate,
+		CredentialSubject: chain[len(chain)-1].CredentialSubject,
+	}
+	resigned, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain[len(chain)-1] = resigned
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Fatal("verifier must reject chain.status without chain.terminal: true")
+	}
+	if !strings.Contains(result.Error, "chain.status without chain.terminal") {
+		t.Errorf("expected status-without-terminal error message, got: %s", result.Error)
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || findStr(s, sub))
 }
