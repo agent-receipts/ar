@@ -112,20 +112,33 @@ describe("createReceipt", () => {
 		expect(action.parameters_hash).toBe("sha256:abc123");
 	});
 
-	it("passes through parameters_disclosure", () => {
+	it("passes through parameters_disclosure (HPKE envelope)", () => {
+		// v0.3.0 envelope shape per ADR-0012 amendment. Field values are taken
+		// from spec/test-vectors/disclosure-envelope/vectors.json vector-1 so
+		// the test asserts a structurally valid envelope without re-running HPKE.
+		const envelope = {
+			v: "1",
+			alg: "hpke-x25519-hkdf-sha256-aes-256-gcm",
+			recipients: [
+				{
+					kid: "did:key:z6LSeu9HkTHSfLLeUs2nnzUSNedgDUevfNQUQUaHL9XJ7Z5W#enc-1",
+					enc: "N_2jVnvb1ijohmjDyNfpfR0SU7bU6m1EwVD3QfG_RDE",
+				},
+			],
+			ct: "YGn3i4NpiZxHjeZVggTP8lTxb0ZVdLl-2HjW31qsvo28PjQ_Lt_UQgAMidEXjzwhJPHM7OM",
+		} as const;
 		const input = makeInput({
 			action: {
 				type: "filesystem.file.create",
 				risk_level: "medium",
-				parameters_disclosure: { path: "/tmp/test.txt", mode: "write" },
+				parameters_disclosure: envelope,
 			},
 		});
 		const receipt = createReceipt(input);
 
-		expect(receipt.credentialSubject.action.parameters_disclosure).toEqual({
-			path: "/tmp/test.txt",
-			mode: "write",
-		});
+		expect(receipt.credentialSubject.action.parameters_disclosure).toEqual(
+			envelope,
+		);
 	});
 
 	it("includes intent when provided", () => {

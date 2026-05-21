@@ -109,6 +109,28 @@ function loadV020Vectors(): V020Vectors {
 	return JSON.parse(readFileSync(path, "utf-8"));
 }
 
+interface V030VectorEntry {
+	description: string;
+	receipt: AgentReceipt;
+	expectedReceiptHash: string;
+	expectedValid: boolean;
+}
+
+interface V030Vectors {
+	version: string;
+	keys: { publicKey: string; privateKey: string };
+	parametersDisclosureEnvelopeReceipt: V030VectorEntry;
+	peerCredentialEmitterMetadataReceipt: V030VectorEntry;
+}
+
+function loadV030Vectors(): V030Vectors {
+	const path = resolve(
+		currentDir,
+		"../../../../cross-sdk-tests/v030_vectors.json",
+	);
+	return JSON.parse(readFileSync(path, "utf-8"));
+}
+
 describe("cross-language: Go SDK", () => {
 	describe("canonicalization matches Go", () => {
 		it("simple object", () => {
@@ -304,5 +326,46 @@ describe("cross-language: malformed corpus", () => {
 			.filter(({ receipts }) => safeVerifyChain(receipts, v.keys.publicKey))
 			.map(({ name }) => name);
 		expect(accepted).toEqual([]);
+	});
+});
+
+// Cross-SDK byte-identical reproduction of the v0.3.0 vectors pinned in
+// cross-sdk-tests/v030_vectors.json (PR #499). The TS SDK MUST hash these
+// receipts to the same SHA-256 digests as the Go and Python SDKs; divergence
+// indicates a wire-format bug (most likely JCS canonicalisation or
+// ADR-0009 Rule 2 absent-vs-null normalisation on the new optional fields).
+describe("cross-language: v0.3.0 vectors", () => {
+	it("parameters_disclosure envelope receipt hash matches pin", () => {
+		const v = loadV030Vectors();
+		expect(hashReceipt(v.parametersDisclosureEnvelopeReceipt.receipt)).toBe(
+			v.parametersDisclosureEnvelopeReceipt.expectedReceiptHash,
+		);
+	});
+
+	it("parameters_disclosure envelope receipt verifies with shared key", () => {
+		const v = loadV030Vectors();
+		expect(
+			verifyReceipt(
+				v.parametersDisclosureEnvelopeReceipt.receipt,
+				v.keys.publicKey,
+			),
+		).toBe(true);
+	});
+
+	it("peer_credential + emitter_metadata receipt hash matches pin", () => {
+		const v = loadV030Vectors();
+		expect(hashReceipt(v.peerCredentialEmitterMetadataReceipt.receipt)).toBe(
+			v.peerCredentialEmitterMetadataReceipt.expectedReceiptHash,
+		);
+	});
+
+	it("peer_credential + emitter_metadata receipt verifies with shared key", () => {
+		const v = loadV030Vectors();
+		expect(
+			verifyReceipt(
+				v.peerCredentialEmitterMetadataReceipt.receipt,
+				v.keys.publicKey,
+			),
+		).toBe(true);
 	});
 });

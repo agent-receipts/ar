@@ -36,6 +36,7 @@ export type ActionReceipt = _AgentReceipt;
  */
 export type UnsignedActionReceipt = _UnsignedAgentReceipt;
 export {
+	type Action,
 	type ActionTarget,
 	type AgentReceipt,
 	type Authorization,
@@ -43,11 +44,13 @@ export {
 	CONTEXT,
 	CREDENTIAL_TYPE,
 	type CredentialSubject,
+	type EmitterMetadata,
 	type Intent,
 	type Issuer,
 	type Operator,
 	type Outcome,
 	type OutcomeStatus,
+	type PeerCredential,
 	type Principal,
 	type Proof,
 	type RiskLevel,
