@@ -83,7 +83,7 @@ The node signs each batch with a JWS (JSON Web Signature, [RFC 7515](https://www
 
 | Claim | Purpose |
 |---|---|
-| `iat` / `exp` | Replay window. Both are **JWT NumericDate** (integer seconds since Unix epoch, per [RFC 7519 §2](https://www.rfc-editor.org/rfc/rfc7519#section-2)). Default `exp = iat + 300` (5 minutes). Hub validation: `iat <= hub_now + skew` AND `exp >= hub_now - skew` where `skew` is the configured tolerance (default 300s). |
+| `iat` / `exp` | Replay window. Both are **JWT NumericDate** (integer seconds since Unix epoch, per [RFC 7519 §2](https://www.rfc-editor.org/rfc/rfc7519#section-2)). Default `exp = iat + 300` (5 minutes). Hub validation, all four checks together: (1) `iat <= hub_now + skew`, (2) `exp >= hub_now - skew`, (3) `exp >= iat` (well-formedness), (4) `exp - iat <= max_window` where `max_window` is a configured cap (default 300s) that bounds how far ahead a client can push `exp`. Without check (4) a client could set `exp = iat + 10·years` and pass the first two checks indefinitely; check (3) rejects inverted windows. `skew` is the configured clock-tolerance (default 300s) and is separate from `max_window`. |
 | `body_sha256` | `sha256:<hex>` of raw JSONL body. Binds JWS to specific bytes |
 | `batch_id` | UUID v4 per batch. Log-tracing aid only — not load-bearing for correctness (see *Replay protection* below) |
 | `batch_count` | Sanity check vs. parsed body |
@@ -137,7 +137,7 @@ Both markers are signed as part of the trust-list document. Auditors see in the 
 - **`did:web`**: cache with a default TTL of **5 minutes** and **stale-while-revalidate**. Background refresh on access; serves stale during refresh if the DID host is briefly slow.
 - **Cache miss + DID host unreachable**: reject the batch with 503; the shipper retries (node has local persistence; no integrity loss).
 - **Stale refresh failure**: keep serving the stale entry for a bounded grace window (default 1 hour) while logging loudly. Beyond grace, evict and treat as cache miss on next access.
-- **Signature verification failure**: force-refresh the cache for this `kid` and retry verification once before rejecting (see §4 verification order step 3). Catches "key just rotated, our cache is stale" cleanly.
+- **Signature verification failure**: force-refresh the cache for this `kid` and retry verification once before rejecting (see §4 verification order step 4). Catches "key just rotated, our cache is stale" cleanly.
 
 The tradeoff: aggressive caching means a compromised-then-rotated key keeps working at the hub for up-to-TTL. The 5min TTL aligned with the JWS `exp` window is the sweet spot between availability and rotation-latency exposure.
 
@@ -212,6 +212,8 @@ Cost grounding (so the knob is concrete): S3 PUT with object lock is approximate
 **Hub-side failure mode.** Hub-emitted checkpoints use ADR-0015's `queue` mode by default — staged in a local outbox if the sink is unreachable, flushed when it returns. Operators with stricter compliance posture configure `block` (hub stops ingesting if anchoring is unavailable); `drop` is also available per ADR-0015's menu for checkpoint events but means the truncation-detection window grows without bound during sink outages. Defaults align with ADR-0015 §"Checkpoint events".
 
 **Cold start.** A fresh hub joining a node mid-history records its join point. The hub's first anchored checkpoint for a node carries `joined_at_seq: <first_seq_observed>`. This is a hub-specific extension field appended to the hub checkpoint tuple `(issuer.id, node_did, seq, tip_hash, public_key_fingerprint)`; it appears only in hub-emitted checkpoints and its absence means the hub was present from the node's genesis. Verifiers reading the anchor stream know: anchored-tail-integrity applies from `joined_at_seq` onward; for receipts before that point only the node's local chain provides integrity. This composes with §1's invariant — we do not pretend the hub knows about pre-join history; we record the seam and let verifiers reason about it.
+
+**Hub-internal events anchor as the hub's own node.** The hub also maintains a local chain for hub-internal events (`trust_list_updated`, hub-side `events_dropped` synthesised under sink outage, future hub-emitted event types). That chain is anchored using the same `node_checkpoint` event type with `node_did` set to the hub's DID URL — i.e. for hub-internal anchoring, `issuer.id == node_did == hub-DID`. From the S3 layer's perspective the hub is just another node enumerated under `anchors/<url-encoded-hub-DID>/<seq:020d>.jcs.json`; from the cadence and failure-mode perspective the same rules (`5min/1000 receipts`, `queue` default, `joined_at_seq` on first emission) apply unchanged. No second anchor event type is introduced for hub-internal events.
 
 ### 8. Scope: single-tenant for v1
 
@@ -349,14 +351,14 @@ The hub's authorisation decision is "is this `kid`'s base DID (fragment stripped
 
 - Trust list is **signed** by the hub's own daemon key. An attacker with filesystem-write access to the trust list cannot add a DID; they would need the hub's signing key.
 - Trust list reload **validates the signature** before swapping in. A failed signature check keeps the previous good list in effect and logs loudly.
-- Trust-list **changes are recorded in-chain**: a `trust_list_updated` receipt is appended to the hub's local chain (signed by the hub key) on every trust-list reload that passes signature validation. It is captured by the next scheduled `node_checkpoint` anchor — no separate S3 write path. This keeps trust-list history visible to any auditor who walks the hub's chain and covered by the same anchor cadence as all other hub events.
+- Trust-list **changes are recorded in-chain**: a `trust_list_updated` receipt is appended to the hub's local chain (signed by the hub key) on every trust-list reload that passes signature validation. The hub's local chain is itself anchored as the hub's own node — `node_checkpoint` with `node_did = hub-DID` (see §7 *Hub-internal events anchor as the hub's own node*) — so trust-list history is covered by the same anchor cadence as per-node events, with no separate S3 write path.
 
 ### DID resolution is an external dependency
 
 A compromise of a node's `did:web` document (HTTPS-hosted DID document) allows an attacker to substitute a different public key. The hub will accept JWS-signed batches under the attacker's key once cache TTL expires and refreshes. Mitigations:
 
 - Operator should pin DID-host TLS certificates where feasible.
-- The signature-failure-triggered cache invalidation (§4 verification order step 3) gives a small additional window of "use stale cache when the new key looks compromised", at the cost of an extra resolution attempt per attacker-signed batch.
+- The signature-failure-triggered cache invalidation (§4 verification order step 4) gives a small additional window of "use stale cache when the new key looks compromised", at the cost of an extra resolution attempt per attacker-signed batch.
 - Receipts are individually signed *under the same key being substituted*, so this attack is not unique to the hub — it is a general ADR-0007 / DID-method threat. The hub does not amplify it but does inherit it.
 
 ### Hub compromise blast radius (with envelope disclosure)
