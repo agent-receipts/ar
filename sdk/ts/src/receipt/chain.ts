@@ -102,11 +102,13 @@ export interface ChainVerifyOptions {
 /**
  * Verify a chain of signed receipts.
  *
- * Checks for each receipt:
+ * Checks for each receipt (in execution order):
  * 1. Ed25519 signature validity
  * 2. Hash linkage: previous_receipt_hash matches SHA-256 of prior receipt
  * 3. Sequence numbers are strictly incrementing
- * 4. Receipt-after-terminal: if any receipt has chain.terminal: true, no
+ * 4. Chain identifier binding: all receipts MUST share the same
+ *    chain.chain_id as the first receipt (unconditional, spec §7.3.4)
+ * 5. Receipt-after-terminal: if any receipt has chain.terminal: true, no
  *    subsequent receipt may reference it (unconditional, spec §7.3.2)
  *
  * Chain verification does NOT detect tail truncation by default — dropping the
@@ -148,7 +150,9 @@ export function verifyChain(
 	let brokenAt = -1;
 	let previous: AgentReceipt | undefined;
 	let signatureError: string | undefined;
+	let signatureErrorAt = -1;
 	let hashComputeError: string | undefined;
+	let hashComputeErrorAt = -1;
 
 	for (let i = 0; i < receipts.length; i++) {
 		const receipt = receipts[i];
@@ -163,6 +167,7 @@ export function verifyChain(
 			if (signatureError === undefined) {
 				const reason = e instanceof Error ? e.message : String(e);
 				signatureError = `signature compute failed at index ${i}: ${reason}`;
+				signatureErrorAt = i;
 			}
 		}
 
@@ -177,6 +182,10 @@ export function verifyChain(
 				const reason = e instanceof Error ? e.message : String(e);
 				if (hashComputeError === undefined) {
 					hashComputeError = `hash compute failed at index ${i - 1}: ${reason}`;
+					// Store the index of the receipt whose hash computation
+					// failed, not the iteration index. Matches the error
+					// message and keeps precedence comparisons consistent.
+					hashComputeErrorAt = i - 1;
 				}
 			}
 			hashLinkValid =
@@ -215,17 +224,73 @@ export function verifyChain(
 		previous = receipt;
 	}
 
-	// Sig errors take precedence over hash-compute errors; when both are present
-	// the hash-compute error is discarded (a single error field can only surface one).
-	// Compute this before the terminal check so early returns preserve it.
-	const loopError = signatureError ?? hashComputeError;
+	// Pick whichever compute error occurred first in the chain. When both
+	// fire at the same index (e.g. a single receipt that fails both sig and
+	// hash), sig wins the tie (it is the more direct cryptographic
+	// statement). Mirrors the Go SDK's loopErr / loopErrAt selection so
+	// cross-SDK error strings agree on which failure to surface.
+	let loopError: string | undefined;
+	let loopErrorAt = -1;
+	if (signatureError !== undefined && hashComputeError !== undefined) {
+		if (signatureErrorAt <= hashComputeErrorAt) {
+			loopError = signatureError;
+			loopErrorAt = signatureErrorAt;
+		} else {
+			loopError = hashComputeError;
+			loopErrorAt = hashComputeErrorAt;
+		}
+	} else if (signatureError !== undefined) {
+		loopError = signatureError;
+		loopErrorAt = signatureErrorAt;
+	} else if (hashComputeError !== undefined) {
+		loopError = hashComputeError;
+		loopErrorAt = hashComputeErrorAt;
+	}
+
+	// Chain identifier binding check (unconditional — spec §7.3.4).
+	// All receipts in a verified chain MUST share chain.chain_id. Reject
+	// cross-chain splices: an attacker with a valid hash linkage might
+	// otherwise mix receipts from two distinct chains under one verification
+	// call. Runs independently of hash linkage so that a forged link still
+	// fails here.
+	const expectedChainId = receipts[0]?.credentialSubject.chain.chain_id;
+	for (let i = 1; i < receipts.length; i++) {
+		const r = receipts[i];
+		if (!r) continue;
+		const observedChainId = r.credentialSubject.chain.chain_id;
+		if (observedChainId !== expectedChainId) {
+			// brokenAt aligns with the error message — set unconditionally to the
+			// mismatch index so callers reading brokenAt and the error see the
+			// same offending receipt. (Any earlier per-receipt failure already
+			// surfaces in the per-receipt results array.)
+			return {
+				valid: false,
+				length: receipts.length,
+				status,
+				receipts: results,
+				brokenAt: i,
+				responseHashNote: undefined,
+				error: `chain_id mismatch at index ${i}: expected "${expectedChainId}", got "${observedChainId}"`,
+			};
+		}
+	}
 
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
 	for (let i = 0; i < receipts.length - 1; i++) {
 		const r = receipts[i];
 		if (r && r.credentialSubject.chain.terminal === true) {
 			// A receipt exists after a terminal one — protocol violation.
-			if (brokenAt === -1) brokenAt = i + 1;
+			const terminalViolationAt = i + 1;
+			if (brokenAt === -1) brokenAt = terminalViolationAt;
+			// Use the loop error only when it occurred at or before the
+			// terminal violation; otherwise the terminal violation is the
+			// earlier (and only relevant) failure and gets the dedicated
+			// message. Mirrors the Go SDK's position-aware fallback in
+			// VerifyChain (spec §7.3.2).
+			const error =
+				loopError !== undefined && loopErrorAt <= terminalViolationAt
+					? loopError
+					: `receipt after terminal: receipt at index ${terminalViolationAt} follows a terminal receipt at index ${i}`;
 			return {
 				valid: false,
 				length: receipts.length,
@@ -233,7 +298,7 @@ export function verifyChain(
 				receipts: results,
 				brokenAt,
 				responseHashNote: undefined,
-				error: loopError,
+				error,
 			};
 		}
 	}

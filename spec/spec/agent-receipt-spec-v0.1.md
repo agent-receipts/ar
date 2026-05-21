@@ -277,7 +277,7 @@ All five `proof` fields are required even in the minimal form.
 | `delegation.delegator` | Yes* | Identifies the delegating agent. *Required when `delegation` is present. |
 | `delegation.delegator.id` | Yes* | DID or URI of the delegating agent (the parent chain's issuer). *Required when `delegation` is present. |
 | `chain` | Yes | Hash-chain linkage fields. |
-| `chain.chain_id` | Yes | Opaque identifier grouping receipts into a logical chain (e.g. per session). |
+| `chain.chain_id` | Yes | Opaque identifier grouping receipts into a logical chain (e.g. per session). All receipts within a single chain MUST share the same value; verifiers MUST reject input that mixes receipts from different chains. See §7.3.4. |
 | `chain.sequence` | Yes | Monotonically increasing integer position within the chain. Starts at `1`. |
 | `chain.previous_receipt_hash` | Yes | `sha256:` prefixed hash of the previous receipt's canonical form. MUST be `null` for the first receipt in a chain (`sequence: 1`). The field MUST always be present; `null` is not the same as omitting it. |
 | `chain.terminal` | No | When present, MUST be `true`. Asserts that no further receipts will be appended to this chain. Explicit `false` is schema-invalid; absence is the only valid way to express "no claim". Verifiers that observe any receipt following a terminal receipt in the verified input sequence MUST fail with a "receipt after terminal" error regardless of caller parameters. See §7.3.2. |
@@ -485,6 +485,12 @@ A chain ends in one of three states; the verifier's `ChainVerification` result M
 The verifier classifies in this exact order: presence of `chain.terminal: true` and the value of `chain.status` on the final receipt determine `"complete"` or `"interrupted"`; absence of any terminal receipt yields `"unknown"`. The classification is independent of `RequireTerminal` — `RequireTerminal` controls whether `unknown` is a verification failure, but the classification is reported regardless.
 
 Issuers MUST NOT write `chain.status: "unknown"` to the wire; it is a verifier-derived value. Implementations encountering `"unknown"` in a receipt's `chain.status` field MUST reject the receipt as schema-invalid.
+
+#### 7.3.4 Chain identifier binding (automatic)
+
+All receipts within a chain MUST share the same `chain.chain_id` (per §7.5, a chain is the authoritative log of a single issuer; the `chain_id` is the opaque identifier that groups its receipts). Verifiers MUST reject input in which any receipt R(i) has a `chain.chain_id` different from that of R(0), failing immediately with a clear "chain_id mismatch" error that identifies the offending index and both `chain_id` values. This check is unconditional — no caller parameter can suppress it, and it runs independently of `previous_receipt_hash` linkage so that an attacker who splices in a forged hash link cannot mix receipts from two distinct chains under a single verification call. Verifiers MUST NOT attempt to "stitch" or partition cross-chain input; the only correct response is rejection.
+
+This check parallels §7.3.2: both enforce single-chain integrity invariants that no caller parameter can disable. Verifying receipts from multiple chains requires multiple calls to the chain verifier, one per chain.
 
 ### 7.4 Reversal receipts
 

@@ -547,6 +547,104 @@ describe("verifyChain", () => {
 		expect(result.valid).toBe(false);
 	});
 
+	it("receipt after terminal emits a descriptive error when no compute error precedes it", () => {
+		// When no signature/hash compute error occurred earlier in the chain,
+		// the receipt-after-terminal violation must still produce a clear
+		// error string (spec §7.3.2). Regression test for #507 review.
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+
+		const extra = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const extraSigned = signReceipt(extra, privateKey, "did:agent:test#key-1");
+
+		const result = verifyChain([...terminalChain, extraSigned], publicKey);
+
+		expect(result.valid).toBe(false);
+		expect(result.error).toMatch(/receipt after terminal/);
+		expect(result.error).toMatch(/index 2/); // terminal at idx 1, violator at idx 2
+	});
+
+	it("receipt after terminal wins over compute errors that occur strictly after the violation", () => {
+		// Position-aware fallback: a sig compute error at an index AFTER the
+		// terminal-violation index must NOT replace the receipt-after-terminal
+		// message. The terminal violation is the earlier and more relevant
+		// failure. Mirrors the Go SDK's loopErrAt > terminalViolationAt gate.
+		const { publicKey, privateKey } = generateKeyPair();
+		const terminalChain = buildTerminalChain(2, privateKey);
+		const terminalReceipt = terminalChain.at(-1);
+		const terminalHash =
+			terminalReceipt != null ? hashReceipt(terminalReceipt) : "";
+
+		// Append TWO receipts after the terminal one; we'll make the second
+		// (index 3) trigger a signature compute error.
+		const violator = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 3,
+				previous_receipt_hash: terminalHash,
+				chain_id: "chain_test",
+			},
+		});
+		const violatorSigned = signReceipt(
+			violator,
+			privateKey,
+			"did:agent:test#key-1",
+		);
+		const violatorHash = hashReceipt(violatorSigned);
+		const later = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: 4,
+				previous_receipt_hash: violatorHash,
+				chain_id: "chain_test",
+			},
+		});
+		const laterSigned = signReceipt(later, privateKey, "did:agent:test#key-1");
+		const chain = [...terminalChain, violatorSigned, laterSigned];
+		const lateTargetId = laterSigned.id;
+
+		const original = signingModule.verifyReceipt;
+		const spy = vi
+			.spyOn(signingModule, "verifyReceipt")
+			.mockImplementation((r, key) => {
+				if (r.id === lateTargetId) {
+					throw new Error("synthetic late failure");
+				}
+				return original(r, key);
+			});
+
+		try {
+			const result = verifyChain(chain, publicKey);
+			expect(result.valid).toBe(false);
+			// Terminal violation is at index 2; the synthetic sig error fires
+			// at index 3 (strictly after). Per spec §7.3.2, the terminal
+			// violation message wins.
+			expect(result.error).toMatch(/receipt after terminal/);
+			expect(result.error).not.toMatch(/synthetic late failure/);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
 	it("requireTerminal passes when chain ends in terminal", () => {
 		const { publicKey, privateKey } = generateKeyPair();
 		const chain = buildTerminalChain(3, privateKey);
@@ -855,5 +953,90 @@ describe("verifyChain", () => {
 		expect(result.valid).toBe(true);
 		expect(chain.at(-1)?.credentialSubject.chain.status).toBeUndefined();
 		expect(result.status).toBe("complete");
+	});
+
+	// --- Chain identifier binding (spec §7.3.4, #477) ---
+
+	// Build a chain whose receipts each carry chain_id. Mirrors buildChain()
+	// but lets the test choose the chain_id (so we can stitch two together).
+	function buildChainWithId(
+		count: number,
+		privateKey: string,
+		chainId: string,
+		startSequence = 1,
+		startPreviousHash: string | null = null,
+	) {
+		const receipts = [];
+		let previousHash: string | null = startPreviousHash;
+		for (let i = 0; i < count; i++) {
+			const seq = startSequence + i;
+			const unsigned = makeUnsigned(seq, previousHash, chainId);
+			const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+			receipts.push(signed);
+			previousHash = hashReceipt(signed);
+		}
+		return receipts;
+	}
+
+	it("chain_id binding: single-chain input passes (baseline)", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChainWithId(3, privateKey, "chain-A");
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.length).toBe(3);
+		expect(result.brokenAt).toBe(-1);
+	});
+
+	it("chain_id binding: rejects cross-chain splice with forged hash linkage", () => {
+		// Build chain B such that its first receipt's previous_receipt_hash
+		// points at chain A's last receipt — i.e. an attacker has forged a
+		// valid-looking hash link between two distinct chains. The verifier
+		// MUST still reject because chain_id differs.
+		const { publicKey, privateKey } = generateKeyPair();
+		const chainA = buildChainWithId(2, privateKey, "chain-A");
+		const lastA = chainA[chainA.length - 1];
+		if (!lastA) throw new Error("test setup: empty chainA");
+		const spliceHash = hashReceipt(lastA);
+		const chainB = buildChainWithId(2, privateKey, "chain-B", 3, spliceHash);
+
+		const result = verifyChain([...chainA, ...chainB], publicKey);
+
+		expect(result.valid).toBe(false);
+		expect(result.brokenAt).toBe(2);
+		expect(result.error).toMatch(/chain_id mismatch at index 2/);
+		expect(result.error).toMatch(/"chain-A"/);
+		expect(result.error).toMatch(/"chain-B"/);
+	});
+
+	it("chain_id binding: single mismatched receipt in the middle is rejected", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChainWithId(3, privateKey, "chain-A");
+		// Re-sign the middle receipt with a different chain_id so signatures
+		// still verify; the verifier must reject solely on chain_id.
+		const middle = chain[1];
+		if (!middle) throw new Error("test setup");
+		middle.credentialSubject.chain.chain_id = "chain-other";
+		const resigned = signReceipt(
+			{
+				"@context": middle["@context"],
+				id: middle.id,
+				type: middle.type,
+				version: middle.version,
+				issuer: middle.issuer,
+				issuanceDate: middle.issuanceDate,
+				credentialSubject: middle.credentialSubject,
+			},
+			privateKey,
+			"did:agent:test#key-1",
+		);
+		chain[1] = resigned;
+
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(false);
+		expect(result.error).toMatch(/chain_id mismatch at index 1/);
+		expect(result.error).toMatch(/"chain-A"/);
+		expect(result.error).toMatch(/"chain-other"/);
 	});
 });

@@ -28,6 +28,7 @@ from agent_receipts.receipt.types import (
     Issuer,
     Outcome,
     Principal,
+    UnsignedAgentReceipt,
 )
 from tests.conftest import TEST_PRIVATE_KEY, TEST_PUBLIC_KEY, make_unsigned
 
@@ -893,3 +894,87 @@ class TestChainTerminationStatus:
         d = c.model_dump(exclude_none=True)
         assert d.get("terminal") is True
         assert d.get("status") == "interrupted"
+
+
+def _build_chain_with_id(
+    count: int,
+    private_key: str,
+    chain_id: str,
+    start_sequence: int = 1,
+    start_previous_hash: str | None = None,
+) -> list:
+    """Build a signed chain of `count` receipts under a given chain_id.
+
+    Lets tests construct cross-chain splices by starting from an arbitrary
+    sequence number and previous_receipt_hash.
+    """
+    chain = []
+    previous_hash = start_previous_hash
+    for i in range(count):
+        seq = start_sequence + i
+        unsigned = make_unsigned(seq, previous_hash, chain_id=chain_id)
+        signed = sign_receipt(unsigned, private_key, "did:agent:test#key-1")
+        chain.append(signed)
+        previous_hash = hash_receipt(signed)
+    return chain
+
+
+class TestChainIDBinding:
+    """Spec §7.3.4 / #477 — chain.chain_id binding check."""
+
+    def test_single_chain_passes(self) -> None:
+        chain = _build_chain_with_id(3, TEST_PRIVATE_KEY, "chain-A")
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.length == 3
+        assert result.broken_at == -1
+
+    def test_cross_chain_splice_with_forged_hash_link_rejected(self) -> None:
+        """Even when an attacker forges a valid-looking hash link between two
+        chains, the verifier MUST reject because chain_id differs.
+        """
+        chain_a = _build_chain_with_id(2, TEST_PRIVATE_KEY, "chain-A")
+        splice_hash = hash_receipt(chain_a[-1])
+        chain_b = _build_chain_with_id(
+            2,
+            TEST_PRIVATE_KEY,
+            "chain-B",
+            start_sequence=3,
+            start_previous_hash=splice_hash,
+        )
+
+        result = verify_chain(chain_a + chain_b, TEST_PUBLIC_KEY)
+        assert result.valid is False
+        assert result.broken_at == 2  # first mismatched index
+        assert "chain_id mismatch at index 2" in result.error
+        assert '"chain-A"' in result.error
+        assert '"chain-B"' in result.error
+
+    def test_single_mismatched_receipt_in_middle_rejected(self) -> None:
+        """A single off-chain receipt spliced into the middle (with a valid
+        signature for its own chain_id) is rejected solely on chain_id.
+        """
+        chain = _build_chain_with_id(3, TEST_PRIVATE_KEY, "chain-A")
+        # Re-sign the middle receipt with chain_id="chain-other" so its
+        # signature still validates against TEST_PUBLIC_KEY.
+        middle = chain[1]
+        middle.credentialSubject.chain.chain_id = "chain-other"
+        unsigned = UnsignedAgentReceipt(
+            **{
+                "@context": middle.context,
+                "id": middle.id,
+                "type": middle.type,
+                "version": middle.version,
+                "issuer": middle.issuer,
+                "issuanceDate": middle.issuanceDate,
+                "credentialSubject": middle.credentialSubject,
+            }
+        )
+        resigned = sign_receipt(unsigned, TEST_PRIVATE_KEY, "did:agent:test#key-1")
+        chain[1] = resigned
+
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is False
+        assert "chain_id mismatch at index 1" in result.error
+        assert '"chain-A"' in result.error
+        assert '"chain-other"' in result.error

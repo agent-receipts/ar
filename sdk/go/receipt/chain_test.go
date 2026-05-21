@@ -1106,6 +1106,113 @@ func TestVerifyRejectsStatusWithoutTerminal(t *testing.T) {
 	}
 }
 
+// --- Chain identifier binding (spec §7.3.4, #477) ---
+
+// buildChainWithID is like buildChain but lets the test choose chain_id and
+// the starting sequence/previous hash. Used to construct cross-chain splices.
+func buildChainWithID(t *testing.T, kp KeyPair, count int, chainID string, startSeq int, startPrevHash *string) []AgentReceipt {
+	t.Helper()
+	chain := make([]AgentReceipt, 0, count)
+	prevHash := startPrevHash
+	for i := 0; i < count; i++ {
+		seq := startSeq + i
+		unsigned := Create(CreateInput{
+			Issuer:    Issuer{ID: "did:agent:test"},
+			Principal: Principal{ID: "did:user:test"},
+			Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+			Outcome:   Outcome{Status: StatusSuccess},
+			Chain:     Chain{Sequence: seq, PreviousReceiptHash: prevHash, ChainID: chainID},
+		})
+		signed, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		chain = append(chain, signed)
+		h, err := HashReceipt(signed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+	return chain
+}
+
+func TestChainIDBindingSingleChainPasses(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChainWithID(t, kp, 3, "chain-A", 1, nil)
+	result := VerifyChain(chain, kp.PublicKey)
+	if !result.Valid {
+		t.Fatalf("single-chain input should be valid: %s", result.Error)
+	}
+	if result.BrokenAt != -1 {
+		t.Errorf("expected BrokenAt=-1, got %d", result.BrokenAt)
+	}
+}
+
+// Even when an attacker forges a valid-looking hash link between two chains,
+// the verifier MUST reject because chain_id differs (spec §7.3.4).
+func TestChainIDBindingRejectsCrossChainSplice(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chainA := buildChainWithID(t, kp, 2, "chain-A", 1, nil)
+	lastA := chainA[len(chainA)-1]
+	spliceHash, err := HashReceipt(lastA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainB := buildChainWithID(t, kp, 2, "chain-B", 3, &spliceHash)
+	input := append([]AgentReceipt{}, chainA...)
+	input = append(input, chainB...)
+
+	result := VerifyChain(input, kp.PublicKey)
+	if result.Valid {
+		t.Fatal("cross-chain splice must be rejected")
+	}
+	if result.BrokenAt != 2 {
+		t.Errorf("expected BrokenAt=2 (first mismatched index), got %d", result.BrokenAt)
+	}
+	if !strings.Contains(result.Error, "chain_id mismatch at index 2") {
+		t.Errorf("expected error to identify mismatch index, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, `"chain-A"`) || !strings.Contains(result.Error, `"chain-B"`) {
+		t.Errorf("expected error to include both chain_ids, got: %s", result.Error)
+	}
+}
+
+// A single off-chain receipt spliced into the middle (with signatures still
+// valid for its own chain_id) must be rejected solely on chain_id.
+func TestChainIDBindingRejectsSingleMismatchedReceipt(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChainWithID(t, kp, 3, "chain-A", 1, nil)
+	// Re-sign the middle receipt with chain_id="chain-other" so its signature
+	// is still valid against kp.PublicKey but the chain_id differs.
+	middle := chain[1]
+	middle.CredentialSubject.Chain.ChainID = "chain-other"
+	resigned, err := Sign(UnsignedAgentReceipt{
+		Context:           middle.Context,
+		ID:                middle.ID,
+		Type:              middle.Type,
+		Version:           middle.Version,
+		Issuer:            middle.Issuer,
+		IssuanceDate:      middle.IssuanceDate,
+		CredentialSubject: middle.CredentialSubject,
+	}, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain[1] = resigned
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.Valid {
+		t.Fatal("mismatched chain_id must be rejected")
+	}
+	if !strings.Contains(result.Error, "chain_id mismatch at index 1") {
+		t.Errorf("expected error to identify mismatch index, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, `"chain-A"`) || !strings.Contains(result.Error, `"chain-other"`) {
+		t.Errorf("expected error to include both chain_ids, got: %s", result.Error)
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || findStr(s, sub))
 }

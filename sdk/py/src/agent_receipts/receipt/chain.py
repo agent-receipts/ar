@@ -78,11 +78,13 @@ def verify_chain(
 ) -> ChainVerification:
     """Verify a chain of signed receipts.
 
-    Checks for each receipt:
+    Checks for each receipt (in execution order):
     1. Ed25519 signature validity
     2. Hash linkage: previous_receipt_hash matches SHA-256 of prior receipt
     3. Sequence numbers are strictly incrementing
-    4. Receipt-after-terminal: if any receipt has chain.terminal == True, no
+    4. Chain identifier binding: all receipts MUST share the same
+       chain.chain_id as the first receipt (unconditional, spec §7.3.4)
+    5. Receipt-after-terminal: if any receipt has chain.terminal == True, no
        subsequent receipt may reference it (unconditional, spec §7.3.2)
 
     Chain verification does NOT detect tail truncation by default — dropping
@@ -190,6 +192,34 @@ def verify_chain(
     elif hash_compute_error is not None:
         loop_error = hash_compute_error
         loop_error_at = hash_compute_error_at
+
+    # Chain identifier binding check (unconditional — spec §7.3.4).
+    # All receipts in a verified chain MUST share chain.chain_id. Reject
+    # cross-chain splices: an attacker with a valid hash linkage might
+    # otherwise mix receipts from two distinct chains under one verification
+    # call. Runs independently of hash linkage so a forged link still fails
+    # here.
+    expected_chain_id = receipts[0].credentialSubject.chain.chain_id
+    for i in range(1, len(receipts)):
+        observed = receipts[i].credentialSubject.chain.chain_id
+        if observed != expected_chain_id:
+            # broken_at aligns with the error message — set unconditionally to
+            # the mismatch index so callers reading broken_at and error see the
+            # same offending receipt. (Any earlier per-receipt failure already
+            # surfaces in the per-receipt receipts list.)
+            quoted_expected = f'"{expected_chain_id}"'
+            quoted_observed = f'"{observed}"'
+            return ChainVerification(
+                valid=False,
+                length=len(receipts),
+                status=status,
+                receipts=results,
+                broken_at=i,
+                error=(
+                    f"chain_id mismatch at index {i}: "
+                    f"expected {quoted_expected}, got {quoted_observed}"
+                ),
+            )
 
     # Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
     for i, receipt in enumerate(receipts[:-1]):

@@ -83,10 +83,13 @@ type ChainVerifyOptions struct {
 	ResponseBodies map[string]json.RawMessage
 }
 
-// VerifyChain verifies a chain of signed receipts. It checks:
+// VerifyChain verifies a chain of signed receipts. In execution order, it
+// checks:
 //   - Ed25519 signature validity
 //   - Hash linkage (previous_receipt_hash matches SHA-256 of prior receipt)
 //   - Sequence numbers strictly incrementing from the first receipt
+//   - Chain identifier binding: all receipts MUST share the same
+//     chain.chain_id as the first receipt (unconditional, see spec §7.3.4)
 //   - Receipt-after-terminal: if any receipt has chain.terminal: true, no
 //     subsequent receipt may reference it (unconditional check, see spec §7.3.2)
 //
@@ -230,6 +233,32 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		}
 		if loopErrAt == -1 || c.at < loopErrAt {
 			loopErr, loopErrAt = c.msg, c.at
+		}
+	}
+
+	// Chain identifier binding check (unconditional — spec §7.3.4).
+	// All receipts in a verified chain MUST share chain.chain_id. Reject
+	// cross-chain splices: an attacker with a valid hash linkage might
+	// otherwise mix receipts from two distinct chains under one verification
+	// call. Runs independently of hash linkage so a forged link still fails
+	// here.
+	expectedChainID := receipts[0].CredentialSubject.Chain.ChainID
+	for i := 1; i < len(receipts); i++ {
+		observed := receipts[i].CredentialSubject.Chain.ChainID
+		if observed != expectedChainID {
+			// BrokenAt aligns with the error message — set unconditionally to
+			// the mismatch index so callers reading BrokenAt and Error see the
+			// same offending receipt. (Any earlier per-receipt failure already
+			// surfaces in the per-receipt Receipts slice.)
+			return ChainVerification{
+				Valid:    false,
+				Length:   len(receipts),
+				Status:   status,
+				Receipts: results,
+				BrokenAt: i,
+				Error: "chain_id mismatch at index " + strconv.Itoa(i) +
+					`: expected "` + expectedChainID + `", got "` + observed + `"`,
+			}
 		}
 	}
 
