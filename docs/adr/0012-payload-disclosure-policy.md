@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-05-12), amended 2026-05-18 (see *Amendments*). Implementation is partial — see *Implementation status* below.
+Accepted (2026-05-12), amended 2026-05-18 (see *Amendments*). **Phase A is complete as of 2026-05-21**: the HPKE envelope is implemented end-to-end across the Go, TypeScript, and Python SDKs, pinned in the spec at v0.3.0, and exercised by cross-SDK byte-identical test vectors. See *Implementation status* and *Phase A landed* below.
 
 ## Context
 
@@ -102,25 +102,35 @@ This ADR's *architecture* is decided now (because the receipt format is permanen
 
 Phase A receipts are forward-compatible with Phase B and C — no re-encryption, no migration.
 
-### Implementation status (as of 2026-05-12)
+### Implementation status (as of 2026-05-21)
 
-What has landed:
+#### Phase A landed
 
-- The field has been renamed across SDKs from `parameters_preview` to `parameters_disclosure` (TS SDK ≥0.6.0; Go and Python SDKs carry the renamed field).
-- The config knob is named `parameterDisclosure` and the existing OpenClaw value space (`false | true | "high" | string[]`) is honoured at the config layer.
-- The daemon already populates `parameters_disclosure` with daemon-attested metadata on every receipt: OS-attested peer credentials (`peer.platform`, `peer.pid`, `peer.uid`, `peer.gid`, `peer.exe_path`) on normal receipts and `emitter.drop_count` on `events_dropped` receipts (`daemon/internal/pipeline/build.go`). These are not plaintext tool payloads — they are operator-allowlisted additive metadata that the daemon vouches for, stashed in the existing field until ADR-0010's dedicated `peer` field lands (Phase 2).
-- The daemon ships a `--parameter-disclosure` opt-in flag (PRs #427, #429); when enabled, the receipt pipeline *additionally* writes redacted plaintext tool input/output to `parameters_disclosure["input"]` and `parameters_disclosure["output"]` on the same map. **This is the legacy plaintext-in-body shape, not the envelope this ADR commits to** — it ships behind an explicit operator opt-in so plaintext payload disclosure cannot be enabled silently. The peer/drop-count metadata above is unaffected by this flag.
-- The hash-only default for **tool input/output payloads** holds: no channel writes the plaintext input/output keys unless the operator opts in.
+Phase A is complete as of 2026-05-21. The HPKE envelope is implemented end-to-end across all three SDKs and pinned across the spec and the cross-SDK test harness:
 
-What has **not** landed and is required before disclosure is enabled in any non-experimental channel:
+- **HPKE primitives.** All three SDKs encrypt, decrypt, and round-trip the v1 envelope under the pinned ciphersuite (`hpke-x25519-hkdf-sha256-aes-256-gcm`):
+  - Go SDK: PR [#468](https://github.com/agent-receipts/ar/pull/468).
+  - TypeScript SDK: PR [#472](https://github.com/agent-receipts/ar/pull/472), hand-rolled from `node:crypto` (no `@hpke/core` dependency).
+  - Python SDK: PR [#494](https://github.com/agent-receipts/ar/pull/494).
+- **Forensic key-pair lifecycle.** Each SDK ships `GenerateForensicKeyPair` (or its language-idiomatic equivalent); on-disk layout next to the signing key and CLI export/import are tracked alongside the daemon's envelope-side wiring under #280.
+- **Spec at v0.3.0.** [`spec/schema/agent-receipt.schema.json`](../../spec/schema/agent-receipt.schema.json) inlines the envelope `$defs` (and the new `peer_credential` / `emitter_metadata` typed action fields) so the main receipt schema validates v0.3.0 receipts directly. PR [#496](https://github.com/agent-receipts/ar/pull/496).
+- **Cross-SDK byte-identical test vectors.** [`cross-sdk-tests/v030_vectors.json`](../../cross-sdk-tests/v030_vectors.json) pins both the envelope-shape receipt and the daemon-attested-fields receipt; every SDK must reproduce the pinned `expectedReceiptHash` byte-for-byte. PR [#499](https://github.com/agent-receipts/ar/pull/499).
+- **Typed daemon-attested fields land.** `action.peer_credential` and `action.emitter_metadata` replace the Phase-1 stash inside `parameters_disclosure` ([`daemon/internal/pipeline/build.go`](../../daemon/internal/pipeline/build.go)); the daemon-attested metadata now rides on dedicated typed fields, not on the envelope channel. Across the SDKs: Go in PR-C, TypeScript in PR-D, Python in PR-E (tracked under #280).
 
-- The asymmetric envelope (`v`, `alg`, `recipients`, `nonce`, `ct`). No SDK currently produces or consumes the structured envelope shape committed to in this ADR.
-- The forensic key-pair lifecycle (auto-generation, on-disk layout next to the signing key, CLI for export/import).
-- Cross-SDK canonical-JSON equivalence tests for the envelope.
+The renamed config knob (`parameterDisclosure`) and the OpenClaw value space (`false | true | "high" | string[]`) continue to be honoured at the config layer; the disclosure pipeline now wires through the v1 envelope rather than the legacy flat-map shape.
 
-Until those land, the `--parameter-disclosure` daemon flag is the only sanctioned way to populate the `input` / `output` keys, and it does so with **redacted plaintext** as an explicit interim step — not the envelope this ADR specifies. Callers other than the daemon's opt-in pipeline **MUST NOT** write plaintext tool arguments into `parameters_disclosure`; the field is otherwise a forward-compatible placeholder for the envelope (with the daemon-attested `peer.*` and `emitter.drop_count` metadata noted above as the only other sanctioned entries). The "plaintext-in-body" mode of the legacy TS `parameters_preview` (as an SDK-public surface) is explicitly removed as a supported behaviour (see *Consequences → existing TS field is repurposed*).
+#### Pre-Phase-A behaviour now deprecated
 
-This gap is tracked as the remainder of **Phase A**. Phase B and Phase C are unchanged and remain sequenced behind daemon work (ADR-0010) and enterprise pull respectively.
+- The legacy flat-map shape of `action.parameters_disclosure` (Phase-1 daemon-attested keys like `peer.platform`, `emitter.drop_count`, and the redacted-plaintext `input`/`output` written under `--parameter-disclosure`) is **removed from the SDK type space** as of v0.3.0. SDK `Action.ParametersDisclosure` now only accepts the v1 envelope. Daemon-attested metadata lives on the dedicated `action.peer_credential` and `action.emitter_metadata` typed fields. The schema's oneOf still accepts the legacy shape for backwards compatibility on receipts already at rest; SDKs cannot round-trip such receipts through the typed `AgentReceipt` going forward.
+- The daemon's `--parameter-disclosure` flag is preserved as a documented no-op pending envelope-mode disclosure in #280 — the legacy plaintext-in-body shape is no longer representable on the wire.
+
+#### Remaining (deferred to Phase B / #280)
+
+- Daemon-side encrypt-then-attach an envelope for tool input/output (replaces the no-op `--parameter-disclosure` flag).
+- Forensic-key CLI (export, import, rotate).
+- Operator-facing key-management documentation.
+
+Phase B and Phase C are unchanged and remain sequenced behind daemon work (ADR-0010) and enterprise pull respectively.
 
 ## Consequences
 
@@ -215,6 +225,6 @@ This gap is tracked as the remainder of **Phase A**. Phase B and Phase C are unc
 - SDK implementations of envelope encryption (Go / TS / Py). Tracked under #280.
 - Daemon rewire of `--parameter-disclosure` from redacted-plaintext to envelope. Tracked under #280.
 - Forensic-key CLI (export, import, rotate). Tracked under #280.
-- Reference of `parameters-disclosure.schema.json` from `agent-receipt.schema.json`. Lands with the SDK work, not the spec.
+- ~~Reference of `parameters-disclosure.schema.json` from `agent-receipt.schema.json`. Lands with the SDK work, not the spec.~~ **Done** in spec PR [#496](https://github.com/agent-receipts/ar/pull/496): `agent-receipt.schema.json` inlines the envelope `$defs` directly, so a validator does not need to dereference the sibling schema. The sibling schema stays as the documentation-of-record per the *Locked in* note above.
 - `kid` registry mechanism. v1 accepts either a `did:key` DID URL with a fragment or the `sha256:<hex>` fingerprint form; a normative registry is deferred.
 - Algorithm agility in `alg`. v1 pins exactly one ciphersuite. Additional ciphersuites require a new ADR-0012 amendment and a v2 envelope.

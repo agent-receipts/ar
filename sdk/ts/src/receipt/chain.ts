@@ -3,6 +3,22 @@ import { verifyReceipt } from "./signing.js";
 import type { AgentReceipt } from "./types.js";
 
 /**
+ * Classify chain termination based purely on what the receipts claim on the
+ * wire (independent of verification result). See spec §7.3.3.
+ */
+function classifyTerminationStatus(
+	receipts: AgentReceipt[],
+): ChainTerminationStatus {
+	const last = receipts[receipts.length - 1];
+	if (!last || last.credentialSubject.chain.terminal !== true) {
+		return "unknown";
+	}
+	return last.credentialSubject.chain.status === "interrupted"
+		? "interrupted"
+		: "complete";
+}
+
+/**
  * Result of verifying a single receipt in a chain.
  */
 export interface ReceiptVerification {
@@ -19,6 +35,20 @@ export interface ReceiptVerification {
 }
 
 /**
+ * Termination status of a chain (verifier-derived).
+ *
+ * - `"complete"` — final receipt has `chain.terminal: true` and either
+ *   `chain.status: "complete"` or no `chain.status`.
+ * - `"interrupted"` — final receipt has `chain.terminal: true` and
+ *   `chain.status: "interrupted"`.
+ * - `"unknown"` — chain has no terminal receipt. Cannot distinguish a
+ *   crashed issuer from a truncated tail without external witness.
+ *
+ * See spec §7.3.3.
+ */
+export type ChainTerminationStatus = "complete" | "interrupted" | "unknown";
+
+/**
  * Result of verifying an entire chain.
  */
 export interface ChainVerification {
@@ -26,6 +56,9 @@ export interface ChainVerification {
 	valid: boolean;
 	/** Number of receipts verified. */
 	length: number;
+	/** Verifier-derived termination status. Reported regardless of validity —
+	 *  describes what the chain claims about its own termination. */
+	status: ChainTerminationStatus;
 	/** Per-receipt verification results. */
 	receipts: ReceiptVerification[];
 	/** Index of the first broken receipt, or -1 if chain is valid. */
@@ -96,13 +129,22 @@ export function verifyChain(
 			return {
 				valid: false,
 				length: 0,
+				status: "unknown",
 				receipts: [],
 				brokenAt: 0,
 				responseHashNote: undefined,
 			};
 		}
-		return { valid: true, length: 0, receipts: [], brokenAt: -1 };
+		return {
+			valid: true,
+			length: 0,
+			status: "unknown",
+			receipts: [],
+			brokenAt: -1,
+		};
 	}
+
+	const status = classifyTerminationStatus(receipts);
 
 	const results: ReceiptVerification[] = [];
 	let brokenAt = -1;
@@ -192,13 +234,15 @@ export function verifyChain(
 		if (!r) continue;
 		const observedChainId = r.credentialSubject.chain.chain_id;
 		if (observedChainId !== expectedChainId) {
-			const mismatchAt = i;
-			if (brokenAt === -1 || mismatchAt < brokenAt) brokenAt = mismatchAt;
+			// brokenAt aligns with the error message — set unconditionally to the
+			// mismatch index so callers reading brokenAt and the error see the
+			// same offending receipt. (Any earlier per-receipt failure already
+			// surfaces in the per-receipt results array.)
 			return {
 				valid: false,
 				length: receipts.length,
 				receipts: results,
-				brokenAt,
+				brokenAt: i,
 				responseHashNote: undefined,
 				error: `chain_id mismatch at index ${i}: expected "${expectedChainId}", got "${observedChainId}"`,
 			};
@@ -214,6 +258,7 @@ export function verifyChain(
 			return {
 				valid: false,
 				length: receipts.length,
+				status,
 				receipts: results,
 				brokenAt,
 				responseHashNote: undefined,
@@ -225,6 +270,7 @@ export function verifyChain(
 	const cv: ChainVerification = {
 		valid: brokenAt === -1,
 		length: receipts.length,
+		status,
 		receipts: results,
 		brokenAt,
 	};

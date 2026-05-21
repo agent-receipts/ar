@@ -758,6 +758,105 @@ describe("verifyChain", () => {
 		expect(result.responseHashNote).toBeTruthy();
 	});
 
+	// --- Chain termination status (spec §7.3.3, #475) ---
+
+	function buildTerminalChainWithStatus(
+		count: number,
+		privateKey: string,
+		terminationStatus?: "complete" | "interrupted",
+	) {
+		const chain = buildChain(count - 1, privateKey);
+		const lastReceipt = chain.at(-1);
+		const prevHash = lastReceipt != null ? hashReceipt(lastReceipt) : null;
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status: "success" },
+			chain: {
+				sequence: count,
+				previous_receipt_hash: prevHash,
+				chain_id: "chain_test",
+			},
+			terminal: true,
+			terminationStatus,
+		});
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+		return [...chain, signed];
+	}
+
+	it("chain.status: terminal with no explicit status classifies as complete", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildTerminalChainWithStatus(3, privateKey);
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.status).toBe("complete");
+	});
+
+	it("chain.status: terminal with status=complete classifies as complete", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildTerminalChainWithStatus(3, privateKey, "complete");
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.status).toBe("complete");
+		expect(chain.at(-1)?.credentialSubject.chain.status).toBe("complete");
+	});
+
+	it("chain.status: terminal with status=interrupted classifies as interrupted", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildTerminalChainWithStatus(3, privateKey, "interrupted");
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.status).toBe("interrupted");
+		expect(chain.at(-1)?.credentialSubject.chain.status).toBe("interrupted");
+	});
+
+	it("chain.status: non-terminal chain classifies as unknown", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChain(3, privateKey); // no terminal receipt
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.status).toBe("unknown");
+	});
+
+	it("chain.status: empty chain classifies as unknown", () => {
+		const { publicKey } = generateKeyPair();
+		const result = verifyChain([], publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.length).toBe(0);
+		expect(result.status).toBe("unknown");
+	});
+
+	it("chain.status: classification is independent of validity (broken chain still reports status)", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildTerminalChainWithStatus(3, privateKey, "interrupted");
+		// Tamper with the middle receipt to break verification.
+		const middle = chain[1];
+		if (middle) middle.credentialSubject.action.risk_level = "critical";
+
+		const result = verifyChain(chain, publicKey);
+		expect(result.valid).toBe(false);
+		// Status reflects what the chain claims on the wire, not its validity.
+		expect(result.status).toBe("interrupted");
+	});
+
+	it("chain.status: backwards compat — existing chains without status field still classify as complete when terminal", () => {
+		// Pre-#475 receipts have terminal but no status; existing buildTerminalChain
+		// (used elsewhere in this file) produces exactly that shape.
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildTerminalChain(3, privateKey);
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(chain.at(-1)?.credentialSubject.chain.status).toBeUndefined();
+		expect(result.status).toBe("complete");
+	});
+
 	// --- Chain identifier binding (spec §7.3.4, #477) ---
 
 	// Build a chain whose receipts each carry chain_id. Mirrors buildChain()

@@ -27,12 +27,31 @@ type ReceiptVerification struct {
 type ChainVerification struct {
 	Valid    bool                  `json:"valid"`
 	Length   int                   `json:"length"`
+	Status   ChainStatus           `json:"status"` // "complete" | "interrupted" | "unknown" (spec §7.3.3).
 	Receipts []ReceiptVerification `json:"receipts"`
 	BrokenAt int                   `json:"broken_at"`       // -1 if chain is valid.
 	Error    string                `json:"error,omitempty"` // Non-empty if verification failed due to a key/proof error.
 	// ResponseHashNote is non-empty when one or more receipts carry response_hash
 	// but no response body was supplied for recomputation.
 	ResponseHashNote string `json:"response_hash_note,omitempty"`
+}
+
+// classifyTerminationStatus inspects the wire form of the final receipt and
+// returns the chain's termination status (spec §7.3.3). Independent of
+// verification result — describes what the chain claims, not whether it's valid.
+func classifyTerminationStatus(receipts []AgentReceipt) ChainStatus {
+	if len(receipts) == 0 {
+		return ChainStatusUnknown
+	}
+	last := receipts[len(receipts)-1]
+	ch := last.CredentialSubject.Chain
+	if ch.Terminal == nil || !*ch.Terminal {
+		return ChainStatusUnknown
+	}
+	if ch.Status == ChainStatusInterrupted {
+		return ChainStatusInterrupted
+	}
+	return ChainStatusComplete
 }
 
 // ChainVerifyOptions holds optional parameters for VerifyChain.
@@ -97,12 +116,15 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			return ChainVerification{
 				Valid:    false,
 				Length:   0,
+				Status:   ChainStatusUnknown,
 				BrokenAt: 0,
 				Error:    "expected chain length does not match: expected " + strconv.Itoa(*opt.ExpectedLength) + ", got 0",
 			}
 		}
-		return ChainVerification{Valid: true, Length: 0, BrokenAt: -1}
+		return ChainVerification{Valid: true, Length: 0, Status: ChainStatusUnknown, BrokenAt: -1}
 	}
+
+	status := classifyTerminationStatus(receipts)
 
 	results := make([]ReceiptVerification, 0, len(receipts))
 	brokenAt := -1
@@ -110,9 +132,34 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	var firstSigErrAt int = -1
 	var firstHashComputeErr string
 	var firstHashComputeErrAt int = -1
+	var schemaErr string
+	var schemaErrAt int = -1
 
 	for i, r := range receipts {
 		chain := r.CredentialSubject.Chain
+
+		// Schema-level chain.status invariants (spec §7.3.3).
+		// A non-empty chain.status MUST be a valid wire value (complete or
+		// interrupted — never the verifier-only "unknown") AND MUST coexist
+		// with chain.terminal: true. Receipts deserialised from external JSON
+		// can violate either invariant; the verifier rejects them here so an
+		// attacker cannot smuggle in schema-invalid receipts that bypass the
+		// SDK's construction-time guards.
+		if chain.Status != "" {
+			terminalSet := chain.Terminal != nil && *chain.Terminal
+			switch {
+			case !chain.Status.IsValidWireValue():
+				if schemaErr == "" {
+					schemaErr = "invalid chain.status value at index " + strconv.Itoa(i) + ": " + string(chain.Status) + " is not a valid wire value (spec §7.3.3)"
+					schemaErrAt = i
+				}
+			case !terminalSet:
+				if schemaErr == "" {
+					schemaErr = "chain.status without chain.terminal: true at index " + strconv.Itoa(i) + " (spec §7.3.3)"
+					schemaErrAt = i
+				}
+			}
+		}
 
 		sigValid, sigErr := verifyReceipt(r, publicKeyPEM)
 		if sigErr != nil {
@@ -157,24 +204,35 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		if brokenAt == -1 && (!sigValid || !hashValid || !seqValid) {
 			brokenAt = i
 		}
+		if brokenAt == -1 && schemaErrAt == i {
+			brokenAt = i
+		}
 	}
 
-	// Pick whichever compute error occurred first in the chain. When both appear
-	// at the same index (same receipt), the sig error takes precedence.
+	// Pick whichever compute / schema error occurred first in the chain.
+	// Candidates are checked in priority order — sig > hash > schema —
+	// so when two errors occur at the same index, the higher-priority one
+	// wins (the strict-less-than below skips equal-index later entries).
+	// This precedence reflects that crypto failures are more diagnostic
+	// than schema violations when both fire on the same receipt.
 	// Compute this before the terminal check so early returns preserve it.
 	var loopErr string
 	var loopErrAt int = -1
-	switch {
-	case firstSigErr != "" && firstHashComputeErr != "":
-		if firstSigErrAt <= firstHashComputeErrAt {
-			loopErr, loopErrAt = firstSigErr, firstSigErrAt
-		} else {
-			loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
+	candidates := []struct {
+		msg string
+		at  int
+	}{
+		{firstSigErr, firstSigErrAt},
+		{firstHashComputeErr, firstHashComputeErrAt},
+		{schemaErr, schemaErrAt},
+	}
+	for _, c := range candidates {
+		if c.msg == "" {
+			continue
 		}
-	case firstSigErr != "":
-		loopErr, loopErrAt = firstSigErr, firstSigErrAt
-	case firstHashComputeErr != "":
-		loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
+		if loopErrAt == -1 || c.at < loopErrAt {
+			loopErr, loopErrAt = c.msg, c.at
+		}
 	}
 
 	// Chain identifier binding check (unconditional — spec §7.3.4).
@@ -187,14 +245,15 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	for i := 1; i < len(receipts); i++ {
 		observed := receipts[i].CredentialSubject.Chain.ChainID
 		if observed != expectedChainID {
-			if brokenAt == -1 || i < brokenAt {
-				brokenAt = i
-			}
+			// BrokenAt aligns with the error message — set unconditionally to
+			// the mismatch index so callers reading BrokenAt and Error see the
+			// same offending receipt. (Any earlier per-receipt failure already
+			// surfaces in the per-receipt Receipts slice.)
 			return ChainVerification{
 				Valid:    false,
 				Length:   len(receipts),
 				Receipts: results,
-				BrokenAt: brokenAt,
+				BrokenAt: i,
 				Error: "chain_id mismatch at index " + strconv.Itoa(i) +
 					`: expected "` + expectedChainID + `", got "` + observed + `"`,
 			}
@@ -221,6 +280,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 				return ChainVerification{
 					Valid:    false,
 					Length:   len(receipts),
+					Status:   status,
 					Receipts: results,
 					BrokenAt: brokenAt,
 					Error:    errMsg,
@@ -232,6 +292,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	cv := ChainVerification{
 		Valid:    brokenAt == -1,
 		Length:   len(receipts),
+		Status:   status,
 		Receipts: results,
 		BrokenAt: brokenAt,
 		Error:    loopErr,

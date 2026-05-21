@@ -25,6 +25,15 @@ type CreateInput struct {
 	// Terminal marks this as the final receipt in the chain.
 	// When true, sets chain.terminal: true. Never emits false.
 	Terminal bool
+
+	// TerminationStatus, when valid and Terminal is true, sets chain.status
+	// on the receipt. MUST be ChainStatusComplete or ChainStatusInterrupted
+	// (spec §7.3.3). Other values — including ChainStatusUnknown, which is
+	// verifier-derived — are silently dropped at construction so callers
+	// cannot accidentally produce schema-invalid receipts. Setting
+	// TerminationStatus without Terminal is also silently dropped; the spec
+	// requires status to coexist with terminal.
+	TerminationStatus ChainStatus
 }
 
 // Create builds an unsigned AgentReceipt from structured inputs.
@@ -70,6 +79,13 @@ func Create(input CreateInput) UnsignedAgentReceipt {
 	if input.Terminal {
 		t := true
 		subject.Chain.Terminal = &t
+		// Status is only emitted alongside terminal AND only when the value
+		// is a valid wire-form ChainStatus (spec §7.3.3). Invalid values
+		// (including ChainStatusUnknown) are silently dropped here so this
+		// entry point cannot produce a schema-invalid receipt.
+		if input.TerminationStatus.IsValidWireValue() {
+			subject.Chain.Status = input.TerminationStatus
+		}
 	}
 
 	return UnsignedAgentReceipt{

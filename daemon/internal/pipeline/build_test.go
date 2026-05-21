@@ -110,19 +110,25 @@ func TestProcess_BuildsSignedReceipt(t *testing.T) {
 	if r.CredentialSubject.Action.ToolName != "list_repos" {
 		t.Errorf("action.tool_name = %q", r.CredentialSubject.Action.ToolName)
 	}
-	pd := r.CredentialSubject.Action.ParametersDisclosure
-	if pd["peer.platform"] != "linux" || pd["peer.pid"] != "4242" || pd["peer.uid"] != "1000" {
-		t.Errorf("peer attestation not recorded: %#v", pd)
+	pc := r.CredentialSubject.Action.PeerCredential
+	if pc == nil {
+		t.Fatal("PeerCredential nil; daemon must record OS-attested peer cred on every live receipt")
 	}
-	if pd["peer.exe_path"] != "/usr/bin/mcp-proxy" {
-		t.Errorf("peer.exe_path = %q", pd["peer.exe_path"])
+	if pc.Platform != "linux" || pc.PID != 4242 || pc.UID != 1000 {
+		t.Errorf("peer attestation not recorded: %#v", pc)
 	}
-	// session_id, channel, ts_emit must NOT be in parameters_disclosure —
-	// they live on issuer.session_id / action.type / (dropped) respectively.
-	for _, k := range []string{"session_id", "channel", "ts_emit", "ts_recv", "error"} {
-		if _, ok := pd[k]; ok {
-			t.Errorf("parameters_disclosure unexpectedly contains %q (emitter content must not be mirrored here)", k)
-		}
+	if pc.ExePath != "/usr/bin/mcp-proxy" {
+		t.Errorf("peer_credential.exe_path = %q", pc.ExePath)
+	}
+	// Live receipts MUST NOT carry the synthetic emitter_metadata block —
+	// drop_count belongs to events_dropped synthetic receipts only.
+	if r.CredentialSubject.Action.EmitterMetadata != nil {
+		t.Errorf("live receipt should not carry emitter_metadata; got %#v", r.CredentialSubject.Action.EmitterMetadata)
+	}
+	// parameters_disclosure stays nil until the daemon ships envelope-mode
+	// disclosure (issue #280); the old plaintext-in-body shape is gone.
+	if r.CredentialSubject.Action.ParametersDisclosure != nil {
+		t.Errorf("ParametersDisclosure must be nil on plain live receipts; got %#v", r.CredentialSubject.Action.ParametersDisclosure)
 	}
 	if r.Issuer.SessionID != "sess-123" {
 		t.Errorf("issuer.session_id = %q, want sess-123", r.Issuer.SessionID)
@@ -769,8 +775,12 @@ func TestProcess_DropCountInsertsEventsDroppedReceipt(t *testing.T) {
 	if got := synthetic.CredentialSubject.Outcome.Status; got != "success" {
 		t.Errorf("synthetic outcome.status = %q, want success", got)
 	}
-	if got := synthetic.CredentialSubject.Action.ParametersDisclosure["emitter.drop_count"]; got != "3" {
-		t.Errorf("synthetic emitter.drop_count disclosure = %q, want 3", got)
+	em := synthetic.CredentialSubject.Action.EmitterMetadata
+	if em == nil {
+		t.Fatal("synthetic events_dropped receipt missing emitter_metadata")
+	}
+	if em.DropCount != 3 {
+		t.Errorf("synthetic emitter_metadata.drop_count = %d, want 3", em.DropCount)
 	}
 	if got := synthetic.Issuer.SessionID; got != "sess-drop" {
 		t.Errorf("synthetic session_id = %q, want sess-drop", got)
@@ -807,7 +817,7 @@ func TestProcess_DropCountInsertsEventsDroppedReceipt(t *testing.T) {
 
 // TestProcess_DropCountPreservesPeerAttestationOnSynthetic verifies that the
 // peer cred from the emitter connection is recorded in the synthetic receipt's
-// parameters_disclosure, matching the live receipt's attribution source.
+// peer_credential, matching the live receipt's attribution source.
 func TestProcess_DropCountPreservesPeerAttestationOnSynthetic(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)
@@ -824,15 +834,18 @@ func TestProcess_DropCountPreservesPeerAttestationOnSynthetic(t *testing.T) {
 	if len(receipts) < 1 {
 		t.Fatal("no receipts")
 	}
-	pd := receipts[0].CredentialSubject.Action.ParametersDisclosure
-	if pd["peer.platform"] != "linux" {
-		t.Errorf("peer.platform = %q, want linux", pd["peer.platform"])
+	pc := receipts[0].CredentialSubject.Action.PeerCredential
+	if pc == nil {
+		t.Fatal("synthetic receipt missing peer_credential")
 	}
-	if pd["peer.pid"] != "99" {
-		t.Errorf("peer.pid = %q, want 99", pd["peer.pid"])
+	if pc.Platform != "linux" {
+		t.Errorf("peer_credential.platform = %q, want linux", pc.Platform)
 	}
-	if pd["peer.exe_path"] != "/usr/bin/emitter" {
-		t.Errorf("peer.exe_path = %q", pd["peer.exe_path"])
+	if pc.PID != 99 {
+		t.Errorf("peer_credential.pid = %d, want 99", pc.PID)
+	}
+	if pc.ExePath != "/usr/bin/emitter" {
+		t.Errorf("peer_credential.exe_path = %q", pc.ExePath)
 	}
 }
 
@@ -876,94 +889,65 @@ func TestProcess_DropCountChainContinues(t *testing.T) {
 	}
 }
 
-// TestProcess_ParameterDisclosureEnabled verifies that when ParameterDisclosure
-// is true, plaintext input and output are recorded in parameters_disclosure under
-// the "input" and "output" keys. The hash fields must still be present because
-// hashing runs before the disclosure block.
-func TestProcess_ParameterDisclosureEnabled(t *testing.T) {
-	ks := newTestKeySource(t)
-	st := newTestStore(t)
-	state := chain.New("chain-1")
-	p := New(state, ks, st, "did:agent-receipts-daemon:test")
-	p.ParameterDisclosure = true
+// TestProcess_ParameterDisclosureFlagIsNoOp verifies that the legacy
+// --parameter-disclosure opt-in is a no-op as of the v0.3.0 envelope migration
+// (ADR-0012 amendment 2026-05-18). The receipt type only accepts the HPKE
+// envelope shape now, so plaintext-in-body input/output has nowhere to go.
+// The flag stays in place so operators do not see a sudden config error, but
+// it must not produce a parameters_disclosure value in either direction.
+// Encrypted disclosure is tracked in #280.
+func TestProcess_ParameterDisclosureFlagIsNoOp(t *testing.T) {
+	cases := []struct {
+		name    string
+		enabled bool
+	}{
+		{"enabled", true},
+		{"disabled", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ks := newTestKeySource(t)
+			st := newTestStore(t)
+			state := chain.New("chain-1")
+			p := New(state, ks, st, "did:agent-receipts-daemon:test")
+			p.ParameterDisclosure = tc.enabled
 
-	inputJSON := json.RawMessage(`{"path":"/tmp/file","mode":"r"}`)
-	outputJSON := json.RawMessage(`{"bytes":42}`)
-	body, err := json.Marshal(EmitterFrame{
-		Version:   "1",
-		TsEmit:    "2026-05-03T00:00:00Z",
-		SessionID: "s",
-		Channel:   "sdk",
-		Tool:      EmitterTool{Name: "fs.read"},
-		Input:     inputJSON,
-		Output:    outputJSON,
-		Decision:  "allowed",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := p.Process(socket.Frame{Payload: body}); err != nil {
-		t.Fatalf("Process: %v", err)
-	}
-	receipts, err := st.GetChain("chain-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := receipts[0]
-	pd := r.CredentialSubject.Action.ParametersDisclosure
+			inputJSON := json.RawMessage(`{"path":"/tmp/file","mode":"r"}`)
+			outputJSON := json.RawMessage(`{"bytes":42}`)
+			body, err := json.Marshal(EmitterFrame{
+				Version:   "1",
+				TsEmit:    "2026-05-03T00:00:00Z",
+				SessionID: "s",
+				Channel:   "sdk",
+				Tool:      EmitterTool{Name: "fs.read"},
+				Input:     inputJSON,
+				Output:    outputJSON,
+				Decision:  "allowed",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.Process(socket.Frame{Payload: body}); err != nil {
+				t.Fatalf("Process: %v", err)
+			}
+			receipts, err := st.GetChain("chain-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := receipts[0]
 
-	if got := pd["input"]; got != string(inputJSON) {
-		t.Errorf("parameters_disclosure[input] = %q, want %q", got, string(inputJSON))
-	}
-	if got := pd["output"]; got != string(outputJSON) {
-		t.Errorf("parameters_disclosure[output] = %q, want %q", got, string(outputJSON))
-	}
-	// Hashes must still be present — disclosure doesn't replace hashing.
-	if r.CredentialSubject.Action.ParametersHash == "" {
-		t.Error("parameters_hash must be present when input is set, even with disclosure enabled")
-	}
-	if r.CredentialSubject.Outcome.ResponseHash == "" {
-		t.Error("response_hash must be present when output is set, even with disclosure enabled")
-	}
-}
-
-// TestProcess_ParameterDisclosureDisabled verifies that when ParameterDisclosure
-// is false (the default), the "input" and "output" keys are absent from
-// parameters_disclosure even when the frame carries non-null input and output.
-func TestProcess_ParameterDisclosureDisabled(t *testing.T) {
-	ks := newTestKeySource(t)
-	st := newTestStore(t)
-	state := chain.New("chain-1")
-	p := New(state, ks, st, "did:agent-receipts-daemon:test")
-	// ParameterDisclosure defaults to false; no assignment needed.
-
-	body, err := json.Marshal(EmitterFrame{
-		Version:   "1",
-		TsEmit:    "2026-05-03T00:00:00Z",
-		SessionID: "s",
-		Channel:   "sdk",
-		Tool:      EmitterTool{Name: "fs.read"},
-		Input:     json.RawMessage(`{"path":"/tmp/file","mode":"r"}`),
-		Output:    json.RawMessage(`{"bytes":42}`),
-		Decision:  "allowed",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := p.Process(socket.Frame{Payload: body}); err != nil {
-		t.Fatalf("Process: %v", err)
-	}
-	receipts, err := st.GetChain("chain-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pd := receipts[0].CredentialSubject.Action.ParametersDisclosure
-
-	if _, ok := pd["input"]; ok {
-		t.Errorf("parameters_disclosure must not contain \"input\" when ParameterDisclosure is false, got %q", pd["input"])
-	}
-	if _, ok := pd["output"]; ok {
-		t.Errorf("parameters_disclosure must not contain \"output\" when ParameterDisclosure is false, got %q", pd["output"])
+			if r.CredentialSubject.Action.ParametersDisclosure != nil {
+				t.Errorf("ParametersDisclosure must be nil regardless of flag (envelope wiring pending #280); got %#v", r.CredentialSubject.Action.ParametersDisclosure)
+			}
+			// Hashes are unaffected by the flag — they always commit to the raw
+			// emitter payload.
+			if r.CredentialSubject.Action.ParametersHash == "" {
+				t.Error("parameters_hash must be present when input is set")
+			}
+			if r.CredentialSubject.Outcome.ResponseHash == "" {
+				t.Error("response_hash must be present when output is set")
+			}
+		})
 	}
 }
 

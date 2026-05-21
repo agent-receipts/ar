@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
 
@@ -16,12 +16,17 @@ from agent_receipts.receipt.types import (
     Authorization,
     Chain,
     CredentialSubject,
+    EmitterMetadata,
     Intent,
     Issuer,
     Outcome,
+    PeerCredential,
     Principal,
     UnsignedAgentReceipt,
 )
+
+if TYPE_CHECKING:
+    from agent_receipts.receipt.disclosure import DisclosureEnvelope
 
 
 def _utc_now_iso() -> str:
@@ -37,7 +42,9 @@ class ActionInput(BaseModel):
     risk_level: str
     target: Any = None  # noqa: ANN401
     parameters_hash: str | None = None
-    parameters_disclosure: dict[str, str] | None = None
+    parameters_disclosure: DisclosureEnvelope | None = None
+    peer_credential: PeerCredential | None = None
+    emitter_metadata: EmitterMetadata | None = None
     trusted_timestamp: str | None = None
 
 
@@ -54,6 +61,9 @@ class CreateReceiptInput(BaseModel):
     action_timestamp: str | None = None
     response_body: Any = None  # noqa: ANN401  # any JSON value, not just objects
     terminal: bool = False
+    # Issuer-asserted termination reason, applied only when terminal=True.
+    # MUST be "complete" or "interrupted" (spec §7.3.3).
+    termination_status: Literal["complete", "interrupted"] | None = None
 
 
 def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
@@ -78,6 +88,10 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         action_data["parameters_hash"] = input.action.parameters_hash
     if input.action.parameters_disclosure is not None:
         action_data["parameters_disclosure"] = input.action.parameters_disclosure
+    if input.action.peer_credential is not None:
+        action_data["peer_credential"] = input.action.peer_credential
+    if input.action.emitter_metadata is not None:
+        action_data["emitter_metadata"] = input.action.emitter_metadata
     if input.action.trusted_timestamp is not None:
         action_data["trusted_timestamp"] = input.action.trusted_timestamp
 
@@ -104,6 +118,9 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         chain_data["previous_receipt_hash"] = None
     if input.terminal:
         chain_data["terminal"] = True
+        # Status only emitted alongside terminal (spec §7.3.3).
+        if input.termination_status is not None:
+            chain_data["status"] = input.termination_status
     chain_with_terminal = Chain(**chain_data)
 
     # Build credential subject
@@ -128,3 +145,12 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         "credentialSubject": CredentialSubject(**cs_data),
     }
     return UnsignedAgentReceipt.model_validate(receipt_data)
+
+
+# Resolve the forward reference to DisclosureEnvelope on ActionInput. Same
+# late-import + rebuild pattern as types.Action (see types.py for rationale).
+from agent_receipts.receipt.disclosure import (  # noqa: E402
+    DisclosureEnvelope as _DisclosureEnvelope,
+)
+
+ActionInput.model_rebuild(_types_namespace={"DisclosureEnvelope": _DisclosureEnvelope})

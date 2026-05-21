@@ -1,8 +1,17 @@
 """Tests for chain verification."""
 
+from typing import Literal
 from unittest.mock import patch
 
-from agent_receipts.receipt.chain import verify_chain
+import pytest
+from pydantic import ValidationError
+
+from agent_receipts.receipt.chain import (
+    STATUS_COMPLETE,
+    STATUS_INTERRUPTED,
+    STATUS_UNKNOWN,
+    verify_chain,
+)
 from agent_receipts.receipt.create import (
     ActionInput,
     CreateReceiptInput,
@@ -764,6 +773,127 @@ class TestAdr0008ChainBehaviours:
         )
         assert result.valid
         assert result.response_hash_note != ""
+
+
+def _build_chain_with_status(
+    count: int,
+    private_key: str,
+    status: Literal["complete", "interrupted"] | None,
+) -> list:
+    """Build a chain of `count` receipts; last receipt is terminal with status."""
+    chain = _build_chain(count - 1, private_key)
+    prev_hash = hash_receipt(chain[-1]) if chain else None
+    unsigned = create_receipt(
+        CreateReceiptInput(
+            issuer=Issuer(id="did:agent:test"),
+            principal=Principal(id="did:user:test"),
+            action=ActionInput(type="filesystem.file.read", risk_level="low"),
+            outcome=Outcome(status="success"),
+            chain=Chain(
+                sequence=count,
+                previous_receipt_hash=prev_hash,
+                chain_id="chain_test",
+            ),
+            terminal=True,
+            termination_status=status,
+        )
+    )
+    signed = sign_receipt(unsigned, private_key, "did:agent:test#key-1")
+    return [*chain, signed]
+
+
+class TestChainTerminationStatus:
+    """Spec §7.3.3 / #475 — chain.status classification."""
+
+    def test_terminal_no_status_classifies_as_complete(self) -> None:
+        chain = _build_terminal_chain(3, TEST_PRIVATE_KEY)
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.status == STATUS_COMPLETE
+        # Wire form: no status field emitted when not explicitly set.
+        assert chain[-1].credentialSubject.chain.status is None
+
+    def test_terminal_with_status_complete(self) -> None:
+        chain = _build_chain_with_status(3, TEST_PRIVATE_KEY, "complete")
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.status == STATUS_COMPLETE
+        assert chain[-1].credentialSubject.chain.status == "complete"
+
+    def test_terminal_with_status_interrupted(self) -> None:
+        chain = _build_chain_with_status(3, TEST_PRIVATE_KEY, "interrupted")
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.status == STATUS_INTERRUPTED
+        assert chain[-1].credentialSubject.chain.status == "interrupted"
+
+    def test_non_terminal_chain_classifies_as_unknown(self) -> None:
+        chain = _build_chain(3, TEST_PRIVATE_KEY)
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.status == STATUS_UNKNOWN
+
+    def test_empty_chain_classifies_as_unknown(self) -> None:
+        result = verify_chain([], TEST_PUBLIC_KEY)
+        assert result.valid is True
+        assert result.length == 0
+        assert result.status == STATUS_UNKNOWN
+
+    def test_status_independent_of_validity(self) -> None:
+        """Broken chain still reports termination status as claimed on the wire."""
+        chain = _build_chain_with_status(3, TEST_PRIVATE_KEY, "interrupted")
+        # Tamper with the middle receipt to break verification.
+        chain[1].credentialSubject.action.risk_level = "critical"
+
+        result = verify_chain(chain, TEST_PUBLIC_KEY)
+        assert result.valid is False
+        # Status reflects what the chain claims on the wire, not its validity.
+        assert result.status == STATUS_INTERRUPTED
+
+    def test_status_without_terminal_rejected_at_validation(self) -> None:
+        """Chain validator must reject status set without terminal=True.
+
+        Mirrors the Go SDK's verifier check on deserialized receipts:
+        the "status implies terminal" invariant (spec §7.3.3) is enforced
+        at model-construction time so a Chain parsed from external JSON
+        cannot smuggle in a schema-invalid combination.
+        """
+        with pytest.raises(ValidationError, match="chain.terminal"):
+            Chain(
+                sequence=1,
+                previous_receipt_hash=None,
+                chain_id="chain-1",
+                terminal=None,
+                status="interrupted",
+            )
+
+    def test_serializer_drops_status_when_terminal_mutated_to_none(self) -> None:
+        """Serializer is a belt-and-suspenders backup against post-validation mutation."""  # noqa: E501
+        c = Chain(
+            sequence=1,
+            previous_receipt_hash=None,
+            chain_id="chain-1",
+            terminal=True,
+            status="interrupted",
+        )
+        # Mutate after construction (bypasses validator).
+        c.terminal = None
+        d = c.model_dump(exclude_none=True)
+        assert "terminal" not in d
+        assert "status" not in d
+
+    def test_status_preserved_when_terminal_is_true(self) -> None:
+        """The serializer only drops status when terminal is unset."""
+        c = Chain(
+            sequence=1,
+            previous_receipt_hash=None,
+            chain_id="chain-1",
+            terminal=True,
+            status="interrupted",
+        )
+        d = c.model_dump(exclude_none=True)
+        assert d.get("terminal") is True
+        assert d.get("status") == "interrupted"
 
 
 def _build_chain_with_id(

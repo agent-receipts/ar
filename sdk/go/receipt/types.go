@@ -28,6 +28,24 @@ const (
 	RiskCritical RiskLevel = "critical"
 )
 
+// ChainStatus is the issuer-asserted termination reason carried in
+// chain.status (spec §7.3.3). Wire values are ChainStatusComplete and
+// ChainStatusInterrupted only — ChainStatusUnknown is verifier-derived
+// and MUST NOT be emitted by issuers.
+type ChainStatus string
+
+const (
+	ChainStatusComplete    ChainStatus = "complete"
+	ChainStatusInterrupted ChainStatus = "interrupted"
+	ChainStatusUnknown     ChainStatus = "unknown"
+)
+
+// IsValidWireValue reports whether v is one of the two values an issuer may
+// write to chain.status. Verifier-only "unknown" returns false.
+func (v ChainStatus) IsValidWireValue() bool {
+	return v == ChainStatusComplete || v == ChainStatusInterrupted
+}
+
 // OutcomeStatus represents the result of an action.
 type OutcomeStatus string
 
@@ -65,17 +83,44 @@ type ActionTarget struct {
 	Resource string `json:"resource,omitempty"`
 }
 
+// PeerCredential is OS-attested peer process metadata captured by the daemon
+// at the SDK↔daemon boundary (ADR-0010). Present only on receipts emitted
+// through a daemon; absent on direct-SDK emissions. The values are daemon-
+// attested, not agent-claimed, and are signature-protected by the surrounding
+// receipt.
+//
+// Field widths follow POSIX: PID is int32 (signed pid_t, -1 is a valid
+// sentinel); UID/GID are uint32 (unsigned uid_t/gid_t). UID, GID, and ExePath
+// are POSIX-only or best-effort and use omitempty so non-POSIX daemons can
+// omit them.
+type PeerCredential struct {
+	Platform string `json:"platform"`
+	PID      int32  `json:"pid"`
+	UID      uint32 `json:"uid,omitempty"`
+	GID      uint32 `json:"gid,omitempty"`
+	ExePath  string `json:"exe_path,omitempty"`
+}
+
+// EmitterMetadata holds daemon-observed emitter-side metadata (ADR-0010).
+// Currently records the drop counter on synthetic events_dropped receipts.
+// Daemon-attested, not agent-claimed.
+type EmitterMetadata struct {
+	DropCount int64 `json:"drop_count,omitempty"`
+}
+
 // Action describes what the agent did.
 type Action struct {
-	ID                   string            `json:"id"`
-	Type                 string            `json:"type"`
-	ToolName             string            `json:"tool_name,omitempty"`
-	RiskLevel            RiskLevel         `json:"risk_level"`
-	Target               *ActionTarget     `json:"target,omitempty"`
-	ParametersHash       string            `json:"parameters_hash,omitempty"`
-	ParametersDisclosure map[string]string `json:"parameters_disclosure,omitempty"`
-	Timestamp            string            `json:"timestamp"`
-	TrustedTimestamp     string            `json:"trusted_timestamp,omitempty"`
+	ID                   string              `json:"id"`
+	Type                 string              `json:"type"`
+	ToolName             string              `json:"tool_name,omitempty"`
+	RiskLevel            RiskLevel           `json:"risk_level"`
+	Target               *ActionTarget       `json:"target,omitempty"`
+	ParametersHash       string              `json:"parameters_hash,omitempty"`
+	ParametersDisclosure *DisclosureEnvelope `json:"parameters_disclosure,omitempty"`
+	PeerCredential       *PeerCredential     `json:"peer_credential,omitempty"`
+	EmitterMetadata      *EmitterMetadata    `json:"emitter_metadata,omitempty"`
+	Timestamp            string              `json:"timestamp"`
+	TrustedTimestamp     string              `json:"trusted_timestamp,omitempty"`
 }
 
 // Intent captures conversation context behind the action.
@@ -122,15 +167,34 @@ type Chain struct {
 	// Terminal when it is non-nil but false so external callers who set
 	// Terminal: &falseVal still produce a valid JSON document.
 	Terminal *bool `json:"terminal,omitempty"`
+	// Status, when non-empty, asserts the reason the chain ended. MUST be
+	// ChainStatusComplete or ChainStatusInterrupted; ChainStatusUnknown is
+	// verifier-derived and MUST NOT be set by issuers. Only meaningful
+	// alongside Terminal: true. MarshalJSON silently drops Status when
+	// Terminal is unset or false, and also drops any value that is not a
+	// valid wire value. See spec §7.3.3.
+	Status ChainStatus `json:"status,omitempty"`
 }
 
-// MarshalJSON serializes Chain, silently omitting Terminal when it is set
-// to false (spec §4.3.2 forbids `terminal: false` on the wire).
+// MarshalJSON serializes Chain, enforcing the wire-form invariants:
+//   - Terminal is dropped when it is non-nil but false (spec §4.3.2 forbids
+//     terminal: false on the wire).
+//   - Status is dropped when Terminal is unset (spec §7.3.3 requires status
+//     to coexist with terminal).
+//   - Status is dropped when it is not a valid wire value (i.e. anything
+//     other than ChainStatusComplete or ChainStatusInterrupted — including
+//     ChainStatusUnknown, which is verifier-derived only).
 func (c Chain) MarshalJSON() ([]byte, error) {
 	type chainAlias Chain
 	a := chainAlias(c)
 	if a.Terminal != nil && !*a.Terminal {
 		a.Terminal = nil
+	}
+	if a.Terminal == nil {
+		a.Status = ""
+	}
+	if a.Status != "" && !a.Status.IsValidWireValue() {
+		a.Status = ""
 	}
 	return json.Marshal(a)
 }

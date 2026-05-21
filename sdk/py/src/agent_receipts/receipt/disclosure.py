@@ -23,13 +23,20 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
     X25519PublicKey,
 )
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+# Pydantic v2 requires `typing_extensions.TypedDict` on Python < 3.12 when
+# the TypedDict is referenced from a Pydantic model field (see
+# Action.parameters_disclosure in types.py). typing_extensions.TypedDict is
+# the same API on 3.12+ — using it unconditionally keeps the SDK working
+# across all supported Python versions.
+from typing_extensions import TypedDict
 
 from agent_receipts.receipt.hash import canonicalize
 

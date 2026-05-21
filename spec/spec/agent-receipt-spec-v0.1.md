@@ -281,6 +281,7 @@ All five `proof` fields are required even in the minimal form.
 | `chain.sequence` | Yes | Monotonically increasing integer position within the chain. Starts at `1`. |
 | `chain.previous_receipt_hash` | Yes | `sha256:` prefixed hash of the previous receipt's canonical form. MUST be `null` for the first receipt in a chain (`sequence: 1`). The field MUST always be present; `null` is not the same as omitting it. |
 | `chain.terminal` | No | When present, MUST be `true`. Asserts that no further receipts will be appended to this chain. Explicit `false` is schema-invalid; absence is the only valid way to express "no claim". Verifiers that observe any receipt following a terminal receipt in the verified input sequence MUST fail with a "receipt after terminal" error regardless of caller parameters. See §7.3.2. |
+| `chain.status` | No | When present, MUST be one of `"complete"` or `"interrupted"`. Issuer-asserted reason the chain ended. `"complete"` means the issuer ran to normal end-of-session; `"interrupted"` means a best-effort terminal receipt was emitted on signal or known abort path. Only meaningful alongside `chain.terminal: true` — a non-terminal receipt with `chain.status` is schema-invalid. Absence on a terminal receipt is equivalent to `"complete"` for backwards compatibility. The verifier-derived classification `"unknown"` (chains with no terminal at all) is never written on the wire. See §7.3.3. |
 
 #### 4.3.2.1 Intent field guidance (non-normative)
 
@@ -459,7 +460,7 @@ Three mitigations are available:
 
 1. **Out-of-band witness (`ExpectedLength` / `ExpectedFinalHash`).** Callers who maintain an external record of chain state (audit log, transparency log, signed checkpoint) MAY supply `ExpectedLength` and/or `ExpectedFinalHash` to `VerifyChain`. Verification fails when the observed chain does not match. When unsupplied, the verifier preserves current behaviour — `Valid: true` for a tail-truncated chain is intentional and documented.
 
-2. **In-band terminal marker (`chain.terminal` + `RequireTerminal`).** When the final receipt in a chain bears `chain.terminal: true`, no receipt referencing it via `previous_receipt_hash` is permitted — this check runs unconditionally (§7.3.2). Callers MAY additionally supply `RequireTerminal`; verification then fails if the final observed receipt is not explicitly terminal. If the terminal receipt itself was dropped, `RequireTerminal` fires, but `chain.terminal` alone cannot detect this case.
+2. **In-band terminal marker (`chain.terminal` + `chain.status` + `RequireTerminal`).** When the final receipt in a chain bears `chain.terminal: true`, no receipt referencing it via `previous_receipt_hash` is permitted — this check runs unconditionally (§7.3.2). The terminal receipt MAY also carry `chain.status` (§7.3.3) to distinguish normal `"complete"` termination from best-effort `"interrupted"` termination on signal. Callers MAY additionally supply `RequireTerminal`; verification then fails if the final observed receipt is not explicitly terminal. If the terminal receipt itself was dropped, `RequireTerminal` fires, but `chain.terminal` alone cannot detect this case — the verifier classifies the chain's termination status as `"unknown"` (§7.3.3) regardless of `RequireTerminal`.
 
 3. **Floor.** Tail truncation of an open (non-terminal) chain without any external witness **cannot** be detected by any mechanism defined in this specification. Operators whose compliance requirements demand detection of such truncation MUST maintain an out-of-band chain record and supply `ExpectedFinalHash`.
 
@@ -469,13 +470,27 @@ If any receipt R(i) in the verified input has `chain.terminal: true`, and a subs
 
 If any step fails, the chain is broken at that point. Receipts before the break may still be individually valid; receipts after are suspect.
 
+> **Note:** This algorithm assumes a linear chain where each receipt has exactly one predecessor. It does not cover concurrent or branching topologies (e.g., fan-out tool calls producing multiple receipts with the same predecessor). See §9.8.
+
+#### 7.3.3 Chain termination status
+
+A chain ends in one of three states; the verifier's `ChainVerification` result MUST surface which:
+
+1. **`"complete"`** — the chain has a final receipt with `chain.terminal: true` and either `chain.status: "complete"` or no `chain.status` field. The issuer reached normal end-of-session and emitted a terminator deliberately.
+
+2. **`"interrupted"`** — the chain has a final receipt with `chain.terminal: true` and `chain.status: "interrupted"`. The issuer (or the signing process on its behalf at shutdown — typically the daemon, since signing is daemon-side per ADR-0010) emitted a best-effort terminator before crashing or being killed. The chain is closed but the closure was not part of normal operation. Auditors SHOULD treat the chain as complete for integrity purposes but flag the imperfect termination for operational review.
+
+3. **`"unknown"`** — the chain has no terminal receipt. The verifier cannot distinguish a chain whose issuer crashed mid-session (no terminator written) from a chain whose terminator was truncated off the end (which `ExpectedLength` / `ExpectedFinalHash` per §7.3.1 may detect). This classification is the verifier's signal that completeness cannot be determined from the chain alone.
+
+The verifier classifies in this exact order: presence of `chain.terminal: true` and the value of `chain.status` on the final receipt determine `"complete"` or `"interrupted"`; absence of any terminal receipt yields `"unknown"`. The classification is independent of `RequireTerminal` — `RequireTerminal` controls whether `unknown` is a verification failure, but the classification is reported regardless.
+
+Issuers MUST NOT write `chain.status: "unknown"` to the wire; it is a verifier-derived value. Implementations encountering `"unknown"` in a receipt's `chain.status` field MUST reject the receipt as schema-invalid.
+
 #### 7.3.4 Chain identifier binding (automatic)
 
 All receipts within a chain MUST share the same `chain.chain_id` (per §7.5, a chain is the authoritative log of a single issuer; the `chain_id` is the opaque identifier that groups its receipts). Verifiers MUST reject input in which any receipt R(i) has a `chain.chain_id` different from that of R(0), failing immediately with a clear "chain_id mismatch" error that identifies the offending index and both `chain_id` values. This check is unconditional — no caller parameter can suppress it, and it runs independently of `previous_receipt_hash` linkage so that an attacker who splices in a forged hash link cannot mix receipts from two distinct chains under a single verification call. Verifiers MUST NOT attempt to "stitch" or partition cross-chain input; the only correct response is rejection.
 
 This check parallels §7.3.2: both enforce single-chain integrity invariants that no caller parameter can disable. Verifying receipts from multiple chains requires multiple calls to the chain verifier, one per chain.
-
-> **Note:** This algorithm assumes a linear chain where each receipt has exactly one predecessor. It does not cover concurrent or branching topologies (e.g., fan-out tool calls producing multiple receipts with the same predecessor). See §9.8.
 
 ### 7.4 Reversal receipts
 
