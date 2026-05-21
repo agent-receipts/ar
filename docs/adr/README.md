@@ -30,7 +30,10 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0014](0014-codex-hook-channel.md) | codex_hook Emission Channel | Proposed (substrate shipped, Codex reader pending) |
 | [ADR-0015](0015-key-rotation-byok-anchoring.md) | Key Rotation, BYOK Abstraction, and External Anchoring | Accepted (Phase A in progress) |
 | [ADR-0016](0016-mcp-proxy-audit-encryption.md) | Audit Store Encryption at Rest (mcp-proxy) | Accepted |
-| [ADR-0017](0017-central-receipt-hub.md) | Central Receipt Hub and External Anchoring | Proposed |
+| [ADR-0017](0017-central-receipt-hub.md) | Central Receipt Hub and External Anchoring | Accepted |
+| [ADR-0018](0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md) | Signer Abstraction and Cloud-Agnostic KeyProvider Design | Proposed |
+| [ADR-0019](0019-protocol-integrity-gaps-and-mitigations.md) | Protocol Integrity Gaps and Mitigations | Proposed |
+| [ADR-0020](0020-emitter-abstraction-and-remote-receipt-delivery.md) | Emitter Abstraction and Remote Receipt Delivery | Proposed |
 
 ## References
 
