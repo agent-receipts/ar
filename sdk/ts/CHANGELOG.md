@@ -9,6 +9,27 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.9.0-alpha.1] - 2026-05-22
+
+First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#280](https://github.com/agent-receipts/ar/issues/280).
+
+### Breaking Changes
+
+- **`Action.parameters_disclosure` shape changed** to the HPKE asymmetric encryption envelope. Was `Record<string, string>` (legacy flat-map), now `DisclosureEnvelope | undefined`. Downstream code that constructed the legacy flat-map will not type-check. See [#503](https://github.com/agent-receipts/ar/pull/503).
+
+### Added
+
+- **`encryptDisclosure` / `decryptDisclosure` / `generateForensicKeyPair`** ([#472](https://github.com/agent-receipts/ar/pull/472)) — RFC 9180 HPKE base-mode helpers (DHKEM(X25519) + HKDF-SHA256 + AES-256-GCM) for the v1 disclosure envelope. Currently uses `@hpke/core`; full removal tracked in [#473](https://github.com/agent-receipts/ar/issues/473).
+- **`Action.peer_credential`** — typed OS-attested peer process metadata (`platform`, `pid`, optional `uid`/`gid`/`exe_path`). Populated by the daemon at the SDK↔daemon boundary.
+- **`Action.emitter_metadata`** — daemon-observed emitter-side metadata, currently `drop_count` for synthetic `events_dropped` receipts.
+- **Stricter zod validation** on `parameters_disclosure` envelope — `enc` must be exactly 43 unpadded base64url chars; `ct` must match the unpadded base64url alphabet AND have decodable length (`len % 4 !== 1`).
+- **Cross-SDK live-emit invariant test** ([#515](https://github.com/agent-receipts/ar/pull/515)).
+
+### Changed
+
+- **`VERSION` constant bumped from `"0.2.0"` to `"0.3.0"`** ([#515](https://github.com/agent-receipts/ar/pull/515)) — receipts emitted via `createReceipt()` now stamp the v0.3.0 schema label.
+- The Zod `agentReceiptSchema` now strictly requires the envelope shape on `parameters_disclosure`. Legacy v0.2.x flat-map receipts will fail `agentReceiptSchema.parse()` — including every `ReceiptStore` load method (`getById`, `getChain`, `query`, `verifyStoredChain`) which validates via this schema internally. Verifiers ingesting legacy receipts must use raw spec-schema validation instead.
+
 ## [0.8.0] - 2026-05-15
 
 ### Changed

@@ -9,6 +9,27 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.9.0a1] - 2026-05-22
+
+First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#280](https://github.com/agent-receipts/ar/issues/280).
+
+### Breaking Changes
+
+- **`Action.parameters_disclosure` shape changed** to the HPKE asymmetric encryption envelope. Was `dict[str, str] | None`, now `DisclosureEnvelope | None`. Downstream code that constructed the legacy flat-map will fail Pydantic validation. See [#505](https://github.com/agent-receipts/ar/pull/505).
+
+### Added
+
+- **`encrypt_disclosure` / `decrypt_disclosure` / `generate_forensic_key_pair`** ([#494](https://github.com/agent-receipts/ar/pull/494)) — RFC 9180 HPKE base-mode helpers (DHKEM(X25519) + HKDF-SHA256 + AES-256-GCM) for the v1 disclosure envelope. Hand-rolled on `pyca/cryptography` (no new top-level deps).
+- **`Action.peer_credential`** — typed OS-attested peer process metadata (`platform`, `pid`, optional `uid`/`gid`/`exe_path`).
+- **`Action.emitter_metadata`** — daemon-observed emitter-side metadata, currently `drop_count`.
+- **Cross-SDK live-emit invariant test** ([#515](https://github.com/agent-receipts/ar/pull/515)).
+- **`typing_extensions.TypedDict` migration** ([#505](https://github.com/agent-receipts/ar/pull/505)) — Pydantic v2 cannot introspect stdlib `typing.TypedDict` on Python < 3.12.
+
+### Changed
+
+- **`VERSION` constant is `"0.3.0"`** — receipts emitted via `create_receipt()` now stamp the v0.3.0 schema label.
+- The typed `AgentReceipt` model only accepts the envelope shape on `parameters_disclosure`. Legacy v0.2.x flat-map receipts will fail `AgentReceipt(**raw_json)` — verifiers ingesting legacy receipts must use `hash_receipt(raw_dict)` and inline signature verification.
+
 ## [0.8.0] - 2026-05-15
 
 ### Changed

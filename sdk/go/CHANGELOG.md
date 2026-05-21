@@ -9,6 +9,30 @@ This file starts at 0.6.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.11.0-alpha.1] - 2026-05-22
+
+First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#280](https://github.com/agent-receipts/ar/issues/280).
+
+### Breaking Changes
+
+- **`Action.ParametersDisclosure` type changed** from `map[string]string` to `*DisclosureEnvelope` ([#506](https://github.com/agent-receipts/ar/pull/506)). Per ADR-0012 / spec v0.3.0 ([#496](https://github.com/agent-receipts/ar/pull/496)), the field now carries the HPKE asymmetric encryption envelope. Downstream code that wrote the legacy flat-map shape will not compile.
+
+### Added
+
+- **`EncryptDisclosure` / `DecryptDisclosure` / `GenerateForensicKeyPair`** ([#468](https://github.com/agent-receipts/ar/pull/468)) — RFC 9180 HPKE base-mode helpers (DHKEM(X25519) + HKDF-SHA256 + AES-256-GCM) via `cloudflare/circl`.
+- **`Action.PeerCredential` struct** — typed OS-attested peer process metadata. Field widths match POSIX (`int32` for PID, `uint32` for UID/GID).
+- **`Action.EmitterMetadata` struct** — daemon-observed emitter-side metadata, currently `DropCount`.
+- **Cross-SDK live-emit invariant test** ([#515](https://github.com/agent-receipts/ar/pull/515)).
+
+### Changed
+
+- **`Version` constant bumped from `"0.2.0"` to `"0.3.0"`** ([#515](https://github.com/agent-receipts/ar/pull/515)).
+- Legacy v0.2.x flat-map `parameters_disclosure` receipts no longer round-trip through `receipt.AgentReceipt`. Verifiers ingesting legacy receipts must use `map[string]any` — pattern in `sdk/go/receipt/canonicalization_vectors_test.go::TestParametersDisclosureReceipt`.
+
+### Known issues
+
+- `PeerCredential.UID` and `PeerCredential.GID` are `uint32` with `omitempty`, silently dropping UID=0 / GID=0 (root). Tracked in [#511](https://github.com/agent-receipts/ar/issues/511).
+
 ## [0.10.0] - 2026-05-19
 
 ### Added
