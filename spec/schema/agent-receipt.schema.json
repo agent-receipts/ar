@@ -42,8 +42,8 @@
       "description": "MUST be [\"VerifiableCredential\", \"AgentReceipt\"]."
     },
     "version": {
-      "enum": ["0.1.0", "0.2.0", "0.2.1"],
-      "description": "Protocol version. MUST be \"0.1.0\", \"0.2.0\", or \"0.2.1\". Verifiers MUST accept all three."
+      "enum": ["0.1.0", "0.2.0", "0.2.1", "0.3.0"],
+      "description": "Protocol version. MUST be one of \"0.1.0\", \"0.2.0\", \"0.2.1\", or \"0.3.0\". Verifiers MUST accept all four."
     },
     "issuer": { "$ref": "#/$defs/issuer" },
     "issuanceDate": {
@@ -160,9 +160,57 @@
           "description": "SHA-256 hash of the action parameters (RFC 8785 canonical JSON)."
         },
         "parameters_disclosure": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Legacy flat-map form (v0.2.0 / v0.2.1). Operator-controlled stringified field map for human/auditor display."
+            },
+            { "$ref": "https://agentreceipts.ai/schema/v0.1/parameters-disclosure.schema.json" }
+          ],
+          "description": "Action parameters disclosure. Either the legacy flat-map (v0.2.0 / v0.2.1) or the HPKE asymmetric encryption envelope defined by ADR-0012 (v0.3.0+). Mode is per-emitter — a receipt MUST NOT mix shapes within this field. `parameters_hash` is the privacy-preserving default and is always authoritative; this field is additive metadata. Operators MUST NOT place plaintext secrets or PII in the legacy flat-map form."
+        },
+        "peer_credential": {
           "type": "object",
-          "additionalProperties": { "type": "string" },
-          "description": "Operator-controlled flat map of parameter field name → stringified value. Only fields the operator allowlists via the `parameterDisclosure` config (per ADR-0012) are ever included; operators MUST NOT disclose fields that may contain secrets, PII, or other sensitive payload data — `parameters_hash` is the privacy-preserving default, and this field is additive metadata for human/auditor display only. The envelope-based encrypted form (per ADR-0012 Phase B) is reserved for a future schema version."
+          "additionalProperties": false,
+          "required": ["platform", "pid"],
+          "description": "OS-attested peer process metadata captured by the daemon at the SDK↔daemon boundary. Present only on receipts emitted through a daemon (ADR-0010); absent on direct SDK emissions. Daemon-attested, not agent-claimed.",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "description": "OS platform identifier (e.g. \"darwin\", \"linux\", \"windows\")."
+            },
+            "pid": {
+              "type": "integer",
+              "description": "Peer process ID. POSIX pid_t width (32-bit signed integer)."
+            },
+            "uid": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Peer process effective UID. POSIX-only; absent on platforms where UIDs do not apply (e.g. Windows)."
+            },
+            "gid": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Peer process effective GID. POSIX-only; absent on platforms where GIDs do not apply (e.g. Windows)."
+            },
+            "exe_path": {
+              "type": "string",
+              "description": "Best-effort absolute path of the peer process executable. May be absent on systems where the daemon cannot resolve it (locked-down sandboxes, missing /proc, etc.)."
+            }
+          }
+        },
+        "emitter_metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Daemon-observed emitter-side metadata. Currently used for synthetic events_dropped receipts (ADR-0010). Daemon-attested, not agent-claimed.",
+          "properties": {
+            "drop_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Count of audit events the emitter dropped from its in-process buffer before flushing to the daemon."
+            }
+          }
         },
         "timestamp": {
           "type": "string",
