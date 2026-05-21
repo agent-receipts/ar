@@ -1,6 +1,6 @@
 """Agent Receipt schema types.
 
-These types model the Attest Agent Receipt as a W3C Verifiable Credential.
+These types model the Agent Receipt as a W3C Verifiable Credential.
 Both the full and minimal receipt variants share the same type — optional
 fields are marked with ``None`` defaults.
 """
