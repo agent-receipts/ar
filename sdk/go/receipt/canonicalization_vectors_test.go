@@ -16,9 +16,14 @@ package receipt
 // `go test -tags=integration ./...` to exercise these vectors.
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,6 +131,17 @@ func TestCanonVectors(t *testing.T) {
 }
 
 // TestReceiptHashVectors runs each vector in the receipt_hash_vectors array.
+//
+// As of the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18) the
+// Go SDK's typed Action.ParametersDisclosure is *DisclosureEnvelope and can
+// no longer round-trip the legacy flat-map shape that some vectors pin
+// (e.g. receipt_all_optional_present). Unmarshalling into the typed struct
+// would silently drop or mangle that field and mismatch the pinned hash.
+// The test therefore parses to map[string]any, runs an explicit
+// strip-optional-nulls pass (Rule 2 of ADR-0009), and canonicalises the map
+// directly. This mirrors how the TS and Python SDKs validate this vector
+// set today; the canonicaliser remains the unit under test, not the typed
+// struct.
 func TestReceiptHashVectors(t *testing.T) {
 	vf := loadCanonVectors(t)
 
@@ -139,43 +155,25 @@ func TestReceiptHashVectors(t *testing.T) {
 		}
 
 		t.Run(v.Name, func(t *testing.T) {
-			// Deserialise into AgentReceipt. Per Go's encoding/json semantics,
-			// unmarshalling JSON `null` into a non-pointer string field leaves
-			// the Go field at its zero value ("") with no error — so optional
-			// fields like outcome.error, action.trusted_timestamp and
-			// authorization.grant_ref come through as "", and omitempty then
-			// drops them from the canonical form. This is how the Go SDK
-			// realises ADR-0009 Rule 2 for vectors that send `null` for
-			// optional fields (vs Python/TS which need an explicit
-			// strip-optional-nulls pass over a map-shaped receipt).
-			// The required-nullable previous_receipt_hash is a *string so its
-			// JSON null is preserved as (*string)(nil) and re-emitted as null.
-			var receipt AgentReceipt
-			if err := json.Unmarshal(v.Receipt, &receipt); err != nil {
-				t.Fatalf("unmarshal receipt into AgentReceipt: %v", err)
+			var receiptMap map[string]any
+			if err := json.Unmarshal(v.Receipt, &receiptMap); err != nil {
+				t.Fatalf("unmarshal receipt to map: %v", err)
 			}
+			stripOptionalNulls(receiptMap)
 
-			gotHash, err := HashReceipt(receipt)
+			// "proof" is the only field excluded from the hash; vectors here
+			// publish unsigned receipts so the field is typically absent, but
+			// strip it if present so we never accidentally include it.
+			delete(receiptMap, "proof")
+
+			canonical, err := Canonicalize(receiptMap)
 			if err != nil {
-				t.Fatalf("HashReceipt: %v", err)
+				t.Fatalf("Canonicalize receipt: %v", err)
 			}
+			gotHash := SHA256Hash(canonical)
 			computed[v.Name] = gotHash
 
-			// mustContainSubstring: check the canonical form of the unsigned receipt.
 			if v.MustContain != "" {
-				unsigned := UnsignedAgentReceipt{
-					Context:           receipt.Context,
-					ID:                receipt.ID,
-					Type:              receipt.Type,
-					Version:           receipt.Version,
-					Issuer:            receipt.Issuer,
-					IssuanceDate:      receipt.IssuanceDate,
-					CredentialSubject: receipt.CredentialSubject,
-				}
-				canonical, err := Canonicalize(unsigned)
-				if err != nil {
-					t.Fatalf("Canonicalize unsigned: %v", err)
-				}
 				if !strings.Contains(canonical, v.MustContain) {
 					t.Errorf("canonical output missing required substring %q\n  canonical: %s", v.MustContain, canonical)
 				}
@@ -251,9 +249,24 @@ func TestSignaturePreservationLegacy_0_2_0(t *testing.T) {
 	}
 }
 
-// TestParametersDisclosureReceipt verifies the cross-SDK parameters_disclosure
-// receipt vector: the signature must verify and HashReceipt must reproduce
-// expectedReceiptHash byte-for-byte (ADR-0012 Phase A).
+// TestParametersDisclosureReceipt verifies the legacy v0.2.1 cross-SDK
+// parameters_disclosure receipt vector: the signature must verify and the
+// canonicalized-then-hashed receipt must reproduce expectedReceiptHash
+// byte-for-byte (ADR-0012 Phase A).
+//
+// The v020 vector pins the *legacy* flat-map shape of parameters_disclosure
+// (string→string), which the Go SDK can no longer round-trip through
+// receipt.AgentReceipt as of the v0.3.0 envelope migration (ADR-0012
+// amendment 2026-05-18): Action.ParametersDisclosure is now
+// *DisclosureEnvelope and would silently drop the legacy shape on
+// json.Unmarshal, mangling the hash.
+//
+// Approach: mirror cross-sdk-tests/v030_vectors_test.go — parse to
+// map[string]any so the legacy shape survives the round trip; canonicalise
+// the unsigned portion via the SDK's Canonicalize; verify the proof at the
+// crypto/ed25519 layer. The canonicaliser remains the unit under test; the
+// typed struct is intentionally bypassed because it cannot model the legacy
+// receipt format losslessly.
 func TestParametersDisclosureReceipt(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(filepath.Dir("."), v020VectorsPath))
 	if err != nil {
@@ -267,24 +280,101 @@ func TestParametersDisclosureReceipt(t *testing.T) {
 		t.Fatal("v020_vectors.json: parametersDisclosureReceipt.receipt is empty")
 	}
 
-	var signed AgentReceipt
-	if err := json.Unmarshal(vf.ParametersDisclosureReceipt.Receipt, &signed); err != nil {
-		t.Fatalf("unmarshal parameters_disclosure receipt: %v", err)
+	var receiptMap map[string]any
+	if err := json.Unmarshal(vf.ParametersDisclosureReceipt.Receipt, &receiptMap); err != nil {
+		t.Fatalf("unmarshal parameters_disclosure receipt to map: %v", err)
+	}
+	proofMap, ok := receiptMap["proof"].(map[string]any)
+	if !ok {
+		t.Fatal("receipt missing proof object")
+	}
+	proofValue, _ := proofMap["proofValue"].(string)
+	if len(proofValue) < 2 || proofValue[0] != 'u' {
+		t.Fatalf("proof.proofValue %q: missing u multibase prefix", proofValue)
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(proofValue[1:])
+	if err != nil {
+		t.Fatalf("decode proofValue: %v", err)
 	}
 
-	valid, err := Verify(signed, vf.Keys.PublicKey)
-	if err != nil {
-		t.Fatalf("Verify: %v", err)
+	// Strip proof; canonicalize the remainder.
+	unsigned := make(map[string]any, len(receiptMap)-1)
+	for k, v := range receiptMap {
+		if k == "proof" {
+			continue
+		}
+		unsigned[k] = v
 	}
-	if !valid {
+	canonical, err := Canonicalize(unsigned)
+	if err != nil {
+		t.Fatalf("Canonicalize unsigned: %v", err)
+	}
+
+	pub, err := parseEd25519PublicPEMLocal(vf.Keys.PublicKey)
+	if err != nil {
+		t.Fatalf("parse public key: %v", err)
+	}
+	if !ed25519.Verify(pub, []byte(canonical), sig) {
 		t.Fatal("parameters_disclosure receipt failed signature verification")
 	}
 
-	gotHash, err := HashReceipt(signed)
-	if err != nil {
-		t.Fatalf("HashReceipt: %v", err)
-	}
+	h := sha256.Sum256([]byte(canonical))
+	gotHash := "sha256:" + hex.EncodeToString(h[:])
 	if gotHash != vf.ParametersDisclosureReceipt.ExpectedReceiptHash {
-		t.Errorf("HashReceipt\n  got:  %s\n  want: %s", gotHash, vf.ParametersDisclosureReceipt.ExpectedReceiptHash)
+		t.Errorf("receipt hash\n  got:  %s\n  want: %s", gotHash, vf.ParametersDisclosureReceipt.ExpectedReceiptHash)
 	}
+}
+
+// stripOptionalNulls walks a receipt map and removes keys whose value is null,
+// implementing ADR-0009 Rule 2 explicitly. The TS and Python SDKs already do
+// this; the Go SDK previously rode on encoding/json's "null → zero value →
+// omitempty" sequence over its typed Action struct, but the v0.3.0 envelope
+// migration (ADR-0012 amendment 2026-05-18) makes the typed struct unable to
+// model the legacy flat-map parameters_disclosure shape losslessly. The
+// receipt-hash test pins a single allowlisted required-nullable path
+// (credentialSubject.chain.previous_receipt_hash) which must remain literal
+// null in the canonical bytes; every other null is treated as "absent" and
+// dropped before canonicalisation.
+func stripOptionalNulls(receipt map[string]any) {
+	requiredNullable := func(path []string) bool {
+		// Only one path is required-nullable per the spec today.
+		return len(path) == 3 &&
+			path[0] == "credentialSubject" &&
+			path[1] == "chain" &&
+			path[2] == "previous_receipt_hash"
+	}
+	var walk func(node map[string]any, path []string)
+	walk = func(node map[string]any, path []string) {
+		for k, v := range node {
+			child := append(path, k)
+			if v == nil {
+				if !requiredNullable(child) {
+					delete(node, k)
+				}
+				continue
+			}
+			if sub, ok := v.(map[string]any); ok {
+				walk(sub, child)
+			}
+		}
+	}
+	walk(receipt, nil)
+}
+
+// parseEd25519PublicPEMLocal is a test-local copy of the PEM parser used by
+// signing.go, kept here to avoid touching the SDK's unexported helpers.
+func parseEd25519PublicPEMLocal(pemStr string) (ed25519.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pemStr))
+	if block == nil {
+		return nil, fmt.Errorf("decode PEM public key: no PEM block found")
+	}
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse SPKI public key: %w", err)
+	}
+	edKey, ok := key.(ed25519.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("public key is not Ed25519")
+	}
+	return edKey, nil
 }

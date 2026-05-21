@@ -65,17 +65,44 @@ type ActionTarget struct {
 	Resource string `json:"resource,omitempty"`
 }
 
+// PeerCredential is OS-attested peer process metadata captured by the daemon
+// at the SDK↔daemon boundary (ADR-0010). Present only on receipts emitted
+// through a daemon; absent on direct-SDK emissions. The values are daemon-
+// attested, not agent-claimed, and are signature-protected by the surrounding
+// receipt.
+//
+// Field widths follow POSIX: PID is int32 (signed pid_t, -1 is a valid
+// sentinel); UID/GID are uint32 (unsigned uid_t/gid_t). UID, GID, and ExePath
+// are POSIX-only or best-effort and use omitempty so non-POSIX daemons can
+// omit them.
+type PeerCredential struct {
+	Platform string `json:"platform"`
+	PID      int32  `json:"pid"`
+	UID      uint32 `json:"uid,omitempty"`
+	GID      uint32 `json:"gid,omitempty"`
+	ExePath  string `json:"exe_path,omitempty"`
+}
+
+// EmitterMetadata holds daemon-observed emitter-side metadata (ADR-0010).
+// Currently records the drop counter on synthetic events_dropped receipts.
+// Daemon-attested, not agent-claimed.
+type EmitterMetadata struct {
+	DropCount int64 `json:"drop_count,omitempty"`
+}
+
 // Action describes what the agent did.
 type Action struct {
-	ID                   string            `json:"id"`
-	Type                 string            `json:"type"`
-	ToolName             string            `json:"tool_name,omitempty"`
-	RiskLevel            RiskLevel         `json:"risk_level"`
-	Target               *ActionTarget     `json:"target,omitempty"`
-	ParametersHash       string            `json:"parameters_hash,omitempty"`
-	ParametersDisclosure map[string]string `json:"parameters_disclosure,omitempty"`
-	Timestamp            string            `json:"timestamp"`
-	TrustedTimestamp     string            `json:"trusted_timestamp,omitempty"`
+	ID                   string              `json:"id"`
+	Type                 string              `json:"type"`
+	ToolName             string              `json:"tool_name,omitempty"`
+	RiskLevel            RiskLevel           `json:"risk_level"`
+	Target               *ActionTarget       `json:"target,omitempty"`
+	ParametersHash       string              `json:"parameters_hash,omitempty"`
+	ParametersDisclosure *DisclosureEnvelope `json:"parameters_disclosure,omitempty"`
+	PeerCredential       *PeerCredential     `json:"peer_credential,omitempty"`
+	EmitterMetadata      *EmitterMetadata    `json:"emitter_metadata,omitempty"`
+	Timestamp            string              `json:"timestamp"`
+	TrustedTimestamp     string              `json:"trusted_timestamp,omitempty"`
 }
 
 // Intent captures conversation context behind the action.
