@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AgentReceipt } from "./types.js";
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
 	if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
 	// Prototype-based check so an object with a user-controlled "constructor"
 	// key (valid JSON) isn't misclassified as non-plain.

@@ -11,7 +11,7 @@ import {
 	DhkemX25519HkdfSha256,
 	HkdfSha256,
 } from "@hpke/core";
-import { canonicalize } from "./hash.js";
+import { canonicalize, isPlainObject } from "./hash.js";
 
 const V1_ALG = "hpke-x25519-hkdf-sha256-aes-256-gcm" as const;
 
@@ -58,6 +58,11 @@ function toBase64Url(buf: ArrayBuffer | Uint8Array): string {
 }
 
 function fromBase64Url(s: string): Uint8Array {
+	if (!/^[A-Za-z0-9_-]+$/.test(s)) {
+		throw new Error(
+			"invalid base64url: must use only unpadded base64url characters [A-Za-z0-9_-]",
+		);
+	}
 	return Buffer.from(s, "base64url");
 }
 
@@ -207,8 +212,8 @@ export async function decryptDisclosure(
 	const plaintext = await receiver.open(ct, new Uint8Array(0)); // AAD = ""
 
 	const result: unknown = JSON.parse(new TextDecoder().decode(plaintext));
-	if (result === null || typeof result !== "object" || Array.isArray(result)) {
+	if (!isPlainObject(result)) {
 		throw new Error("decrypted plaintext is not a JSON object");
 	}
-	return result as Record<string, unknown>;
+	return result;
 }

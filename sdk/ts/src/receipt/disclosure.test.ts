@@ -169,6 +169,29 @@ describe("decryptDisclosure", () => {
 		await expect(decryptDisclosure(env, bobPriv)).rejects.toThrow();
 	});
 
+	it("rejects padded or standard-base64 characters in enc", async () => {
+		const alicePub = fromHex(ALICE_PUB_HEX);
+		const alicePriv = fromHex(ALICE_PRIV_HEX);
+		const env = await encryptDisclosure({ k: "v" }, alicePub, "kid");
+		// Splice in a padded enc (= character)
+		const badEnc = `${env.recipients[0].enc.slice(0, 42)}=`;
+		const badEnvPadded = {
+			...env,
+			recipients: [{ kid: "kid", enc: badEnc }],
+		} as unknown as DisclosureEnvelope;
+		await expect(decryptDisclosure(badEnvPadded, alicePriv)).rejects.toThrow(
+			"invalid base64url",
+		);
+		// Splice in a standard-base64 character (+)
+		const badEnvPlus = {
+			...env,
+			recipients: [{ kid: "kid", enc: `${"A".repeat(42)}+` }],
+		} as unknown as DisclosureEnvelope;
+		await expect(decryptDisclosure(badEnvPlus, alicePriv)).rejects.toThrow(
+			"invalid base64url",
+		);
+	});
+
 	it("JSON round-trips cleanly", async () => {
 		const alicePub = fromHex(ALICE_PUB_HEX);
 		const alicePriv = fromHex(ALICE_PRIV_HEX);

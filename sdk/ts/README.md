@@ -13,7 +13,7 @@
 
 Create, sign, hash-chain, store, and verify cryptographically signed audit trails for AI agent actions.
 
-Zero runtime dependencies — uses only `node:crypto` and `node:sqlite`.
+Minimal runtime dependencies — core receipt operations use only `node:crypto` and `node:sqlite`; HPKE disclosure functions additionally require `@hpke/core`.
 
 [Spec](https://github.com/agent-receipts/spec) &bull; [Reference Implementation](https://github.com/ojongerius/attest) &bull; [npm](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts)
 
