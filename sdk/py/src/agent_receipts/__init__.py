@@ -8,6 +8,14 @@ from agent_receipts.receipt.chain import (
     verify_chain,
 )
 from agent_receipts.receipt.create import CreateReceiptInput, create_receipt
+from agent_receipts.receipt.disclosure import (
+    DisclosureEnvelope,
+    DisclosureRecipient,
+    ForensicKeyPair,
+    decrypt_disclosure,
+    encrypt_disclosure,
+    generate_forensic_key_pair,
+)
 from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
 from agent_receipts.receipt.signing import (
     KeyPair,
@@ -69,6 +77,9 @@ classifyToolCall = classify_tool_call
 getActionType = get_action_type
 resolveActionType = resolve_action_type
 loadTaxonomyConfig = load_taxonomy_config
+generateForensicKeyPair = generate_forensic_key_pair
+encryptDisclosure = encrypt_disclosure
+decryptDisclosure = decrypt_disclosure
 
 # RECEIPT_VERSION is the receipt schema version (from types), not the package version
 from agent_receipts.receipt.types import VERSION as RECEIPT_VERSION  # noqa: E402
@@ -102,6 +113,16 @@ __all__ = [
     "CreateReceiptInput",
     "create_receipt",
     "createReceipt",
+    # Disclosure (HPKE envelope, ADR-0012)
+    "DisclosureEnvelope",
+    "DisclosureRecipient",
+    "ForensicKeyPair",
+    "decrypt_disclosure",
+    "decryptDisclosure",
+    "encrypt_disclosure",
+    "encryptDisclosure",
+    "generate_forensic_key_pair",
+    "generateForensicKeyPair",
     # Emitter (ADR-0010 daemon client)
     "Emitter",
     "default_socket_path",
