@@ -1,12 +1,28 @@
-// generate_go_vectors reads ts_vectors.json, signs the same unsigned receipt
-// with the Go SDK using the shared keypair, and writes go_vectors.json and
-// v020_vectors.json.
+// generate-vectors is the build script for the pinned cross-SDK test vectors.
+// All outputs share a single Ed25519 keypair loaded from the test fixtures so
+// that signature bytes can be compared across SDKs.
+//
+// Outputs:
+//   - go_vectors.json — signs the unsigned receipt from ts_vectors.json with
+//     the Go SDK; pairs with py_vectors.json / ts_vectors.json to assert
+//     byte-identical signatures across the three SDKs at v0.2.x.
+//   - v020_vectors.json — pinned v0.2.0 / v0.2.1 fixtures (legacy flat-map
+//     parameters_disclosure shape, no envelope).
+//   - v030_vectors.json — pinned v0.3.0 fixtures exercising the new
+//     envelope-shape parameters_disclosure plus the peer_credential and
+//     emitter_metadata typed action fields. Independently constructed
+//     (NOT derived from ts_vectors.json); reuses only the shared keypair.
 //
 // Usage: go run ./cmd/generate-vectors
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 
@@ -173,6 +189,13 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("wrote v020_vectors.json")
+
+	// --- v0.3.0 vectors ---
+	if err := generateV030Vectors(tsVectors.Keys); err != nil {
+		fmt.Fprintf(os.Stderr, "generate v030 vectors: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("wrote v030_vectors.json")
 }
 
 // generateV020Vectors builds and writes v020_vectors.json using the shared keypair
@@ -259,14 +282,13 @@ func generateV020Vectors(keys keysSection) error {
 
 	// Single-receipt parameters_disclosure vector (ADR-0012 Phase A, schema 0.2.1).
 	// Built standalone (not part of the legacy 0.2.0 chain), signed with the same
-	// shared key, deterministic via fixed timestamps and UUID overrides.
-	pdReceipt, pdHash, err := generateParametersDisclosureReceipt(keys)
+	// shared key, deterministic via fixed timestamps and UUID overrides. Built
+	// as map[string]any because the Go SDK can no longer construct the legacy
+	// flat-map parameters_disclosure shape through its typed API after the
+	// v0.3.0 envelope migration.
+	pdReceiptJSON, pdHash, err := generateParametersDisclosureReceipt(keys)
 	if err != nil {
 		return fmt.Errorf("generate parameters_disclosure receipt: %w", err)
-	}
-	pdReceiptJSON, err := json.Marshal(pdReceipt)
-	if err != nil {
-		return fmt.Errorf("marshal parameters_disclosure receipt: %w", err)
 	}
 
 	v020 := v020Vectors{
@@ -284,7 +306,7 @@ func generateV020Vectors(keys keysSection) error {
 		},
 		ParametersDisclosureReceipt: parametersDisclosureReceiptSection{
 			Description:         "Single 0.2.1 signed receipt with action.parameters_disclosure populated. All three SDKs MUST verify the signature and reproduce expectedReceiptHash byte-for-byte (ADR-0012 Phase A; ADR-0009 canonicalisation).",
-			Receipt:             json.RawMessage(pdReceiptJSON),
+			Receipt:             pdReceiptJSON,
 			ExpectedReceiptHash: pdHash,
 			ExpectedValid:       true,
 		},
@@ -298,52 +320,302 @@ func generateV020Vectors(keys keysSection) error {
 }
 
 // generateParametersDisclosureReceipt builds a deterministic single-receipt
-// vector (schema 0.2.1) with action.parameters_disclosure populated, signs it
-// with the shared private key, and returns the signed receipt and its hash.
+// vector (schema 0.2.1) with action.parameters_disclosure populated as the
+// *legacy flat-map* shape, signs it with the shared private key, and returns
+// the signed receipt JSON and its hash.
 //
-// The receipt deliberately uses a fresh chain (chain_pd_test, sequence 1) so it
-// cannot be confused with the legacy 0.2.0 terminalChain — that chain stays
-// frozen as the signature-preservation oracle.
-func generateParametersDisclosureReceipt(keys keysSection) (receipt.AgentReceipt, string, error) {
+// The Go SDK's typed Action.ParametersDisclosure dropped support for the
+// legacy flat-map shape during the v0.3.0 envelope migration (ADR-0012
+// amendment 2026-05-18); this generator therefore builds the receipt as a
+// map[string]any and signs it directly via crypto/ed25519, mirroring how
+// generateV030Vectors handles the new envelope shape. The v020 fixture stays
+// pinned for cross-SDK signature-preservation coverage even though the Go
+// SDK can no longer construct it through its typed API.
+//
+// The receipt deliberately uses a fresh chain (chain_pd_test, sequence 1) so
+// it cannot be confused with the legacy 0.2.0 terminalChain — that chain
+// stays frozen as the signature-preservation oracle.
+func generateParametersDisclosureReceipt(keys keysSection) (json.RawMessage, string, error) {
 	const fixedTimestamp = "2026-04-22T00:00:00Z"
 
-	r := receipt.Create(receipt.CreateInput{
-		Issuer:    receipt.Issuer{ID: "did:agent:test"},
-		Principal: receipt.Principal{ID: "did:user:test"},
-		Action: receipt.Action{
-			Type:      "filesystem.file.read",
-			RiskLevel: receipt.RiskLow,
-			ParametersDisclosure: map[string]string{
-				"command": "echo build",
-				"user":    "ci",
+	unsigned := map[string]any{
+		"@context":     []any{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"},
+		"id":           "urn:receipt:v021-pd-1",
+		"type":         []any{"VerifiableCredential", "AgentReceipt"},
+		"version":      "0.2.1",
+		"issuer":       map[string]any{"id": "did:agent:test"},
+		"issuanceDate": fixedTimestamp,
+		"credentialSubject": map[string]any{
+			"principal": map[string]any{"id": "did:user:test"},
+			"action": map[string]any{
+				"id":         "act_v021_pd_1",
+				"type":       "filesystem.file.read",
+				"risk_level": "low",
+				"parameters_disclosure": map[string]any{
+					"command": "echo build",
+					"user":    "ci",
+				},
+				"timestamp": fixedTimestamp,
+			},
+			"outcome": map[string]any{"status": "success"},
+			"chain": map[string]any{
+				"sequence":              1,
+				"previous_receipt_hash": nil,
+				"chain_id":              "chain_pd_test",
 			},
 		},
-		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
-		Chain:   receipt.Chain{Sequence: 1, PreviousReceiptHash: nil, ChainID: "chain_pd_test"},
-	})
-	r.Version = "0.2.1"
-	r.ID = "urn:receipt:v021-pd-1"
-	r.IssuanceDate = fixedTimestamp
-	r.CredentialSubject.Action.ID = "act_v021_pd_1"
-	r.CredentialSubject.Action.Timestamp = fixedTimestamp
-
-	signed, err := receipt.Sign(r, keys.PrivateKey, "did:agent:test#key-1")
-	if err != nil {
-		return receipt.AgentReceipt{}, "", fmt.Errorf("sign: %w", err)
-	}
-	signed.Proof.Created = fixedTimestamp
-
-	valid, err := receipt.Verify(signed, keys.PublicKey)
-	if err != nil {
-		return receipt.AgentReceipt{}, "", fmt.Errorf("verify: %w", err)
-	}
-	if !valid {
-		return receipt.AgentReceipt{}, "", fmt.Errorf("generated parameters_disclosure receipt failed verification")
 	}
 
-	hash, err := receipt.HashReceipt(signed)
+	signed, hash, err := signAndHashMap(unsigned, keys, fixedTimestamp)
 	if err != nil {
-		return receipt.AgentReceipt{}, "", fmt.Errorf("hash: %w", err)
+		return nil, "", err
 	}
 	return signed, hash, nil
+}
+
+// --- v0.3.0 vector generation ---
+//
+// The v0.3.0 receipt shape introduces three new typed fields on action:
+//   - parameters_disclosure as the HPKE envelope (spec/schema parametersDisclosureEnvelope)
+//   - peer_credential (OS-attested daemon ↔ SDK boundary metadata)
+//   - emitter_metadata (drop_count for synthetic events_dropped receipts)
+//
+// The Go SDK Action struct still types parameters_disclosure as
+// map[string]string (changing that is PR-C's scope, not PR-B). To keep PR-B's
+// diff scoped to vectors only, the v030 receipts are built as map[string]any
+// trees, signed directly with ed25519 (replicating the SDK's PEM-parse +
+// sign-the-JCS-bytes flow), and hashed via the SDK's Canonicalize + SHA256.
+//
+// The envelope bytes come from spec/test-vectors/disclosure-envelope/vectors.json
+// vector-1, which the Go SDK already pins byte-for-byte in
+// sdk/go/receipt/disclosure_test.go:TestDeterministicVector1 — so cross-SDK
+// reproduction of the same envelope (RFC 9180 §A.1.1 ikmE → Alice public key)
+// is verified there, and these vectors just embed the result.
+
+// v030Vectors is the top-level structure of v030_vectors.json.
+//
+// Mirrors the legacy v020_vectors.json layout (top-level metadata + named
+// receipt sections) so the cross-SDK harness can be wired in the same pattern
+// across Go, TS, and Py.
+type v030Vectors struct {
+	Comment        string                       `json:"$comment"`
+	Version        string                       `json:"version"`
+	Keys           keysSection                  `json:"keys"`
+	Envelope       envelopeReceiptSection       `json:"parametersDisclosureEnvelopeReceipt"`
+	DaemonAttested daemonAttestedReceiptSection `json:"peerCredentialEmitterMetadataReceipt"`
+}
+
+type envelopeReceiptSection struct {
+	Description          string          `json:"description"`
+	EnvelopeSourceVector string          `json:"envelopeSourceVector"`
+	Receipt              json.RawMessage `json:"receipt"`
+	ExpectedReceiptHash  string          `json:"expectedReceiptHash"`
+	ExpectedValid        bool            `json:"expectedValid"`
+}
+
+type daemonAttestedReceiptSection struct {
+	Description         string          `json:"description"`
+	Receipt             json.RawMessage `json:"receipt"`
+	ExpectedReceiptHash string          `json:"expectedReceiptHash"`
+	ExpectedValid       bool            `json:"expectedValid"`
+}
+
+// Pinned envelope from spec/test-vectors/disclosure-envelope/vectors.json
+// (vector-1, RFC 9180 §A.1.1 ikmE encrypting to RFC 7748 §6.1 Alice). The Go
+// SDK reproduces this byte-for-byte in
+// sdk/go/receipt/disclosure_test.go:TestDeterministicVector1; TS and Py do the
+// same in their HPKE tests. Embedding the result here lets the receipt-level
+// vector remain deterministic without rerunning HPKE at generation time.
+var vector1Envelope = map[string]any{
+	"v":   "1",
+	"alg": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+	"recipients": []any{
+		map[string]any{
+			"kid": "did:key:z6LSeu9HkTHSfLLeUs2nnzUSNedgDUevfNQUQUaHL9XJ7Z5W#enc-1",
+			"enc": "N_2jVnvb1ijohmjDyNfpfR0SU7bU6m1EwVD3QfG_RDE",
+		},
+	},
+	"ct": "YGn3i4NpiZxHjeZVggTP8lTxb0ZVdLl-2HjW31qsvo28PjQ_Lt_UQgAMidEXjzwhJPHM7OM",
+}
+
+func generateV030Vectors(keys keysSection) error {
+	const fixedTimestamp = "2026-05-21T00:00:00Z"
+
+	// --- envelope-shape receipt ---
+	envelopeUnsigned := map[string]any{
+		"@context":     []any{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"},
+		"id":           "urn:receipt:030e0030-0000-4030-a030-000000000001",
+		"type":         []any{"VerifiableCredential", "AgentReceipt"},
+		"version":      "0.3.0",
+		"issuer":       map[string]any{"id": "did:agent:test"},
+		"issuanceDate": fixedTimestamp,
+		"credentialSubject": map[string]any{
+			"principal": map[string]any{"id": "did:user:test"},
+			"action": map[string]any{
+				"id":                    "act_030e0030-0000-4030-a030-000000000001",
+				"type":                  "system.command.execute",
+				"risk_level":            "high",
+				"parameters_disclosure": vector1Envelope,
+				"timestamp":             fixedTimestamp,
+			},
+			"outcome": map[string]any{"status": "success"},
+			"chain": map[string]any{
+				"sequence":              1,
+				"previous_receipt_hash": nil,
+				"chain_id":              "chain_v030_envelope_test",
+			},
+		},
+	}
+	envelopeSigned, envelopeHash, err := signAndHashMap(envelopeUnsigned, keys, fixedTimestamp)
+	if err != nil {
+		return fmt.Errorf("envelope receipt: %w", err)
+	}
+
+	// --- peer_credential + emitter_metadata receipt ---
+	// Synthetic events_dropped style: daemon-attested peer metadata plus
+	// drop_count emitter metadata. Uses POSIX-style values (linux peer) so
+	// uid/gid are present; Windows daemons would omit those.
+	daemonUnsigned := map[string]any{
+		"@context":     []any{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"},
+		"id":           "urn:receipt:030e0030-0000-4030-a030-000000000002",
+		"type":         []any{"VerifiableCredential", "AgentReceipt"},
+		"version":      "0.3.0",
+		"issuer":       map[string]any{"id": "did:agent:test"},
+		"issuanceDate": fixedTimestamp,
+		"credentialSubject": map[string]any{
+			"principal": map[string]any{"id": "did:user:test"},
+			"action": map[string]any{
+				"id":         "act_030e0030-0000-4030-a030-000000000002",
+				"type":       "system.events_dropped",
+				"risk_level": "low",
+				"peer_credential": map[string]any{
+					"platform": "linux",
+					"pid":      12345,
+					"uid":      1000,
+					"gid":      1000,
+					"exe_path": "/usr/local/bin/some-tool",
+				},
+				"emitter_metadata": map[string]any{
+					"drop_count": 3,
+				},
+				"timestamp": fixedTimestamp,
+			},
+			"outcome": map[string]any{"status": "success"},
+			"chain": map[string]any{
+				"sequence":              1,
+				"previous_receipt_hash": nil,
+				"chain_id":              "chain_v030_daemon_test",
+			},
+		},
+	}
+	daemonSigned, daemonHash, err := signAndHashMap(daemonUnsigned, keys, fixedTimestamp)
+	if err != nil {
+		return fmt.Errorf("daemon-attested receipt: %w", err)
+	}
+
+	out := v030Vectors{
+		Comment: "Cross-SDK v0.3.0 test vectors: pins (a) the HPKE envelope shape of action.parameters_disclosure (ADR-0012 amendment 2026-05-18, spec PR #496) and (b) the daemon-attested action.peer_credential / action.emitter_metadata fields (ADR-0010). All three SDKs MUST verify the signatures and reproduce expectedReceiptHash byte-for-byte. Envelope bytes come from spec/test-vectors/disclosure-envelope/vectors.json vector-1 (RFC 9180 §A.1.1 ikmE encrypting to RFC 7748 §6.1 Alice).",
+		Version: "0.3.0",
+		Keys:    keys,
+		Envelope: envelopeReceiptSection{
+			Description:          "Signed v0.3.0 receipt whose action.parameters_disclosure carries the HPKE asymmetric envelope (ADR-0012 amendment). Envelope bytes are vector-1 from spec/test-vectors/disclosure-envelope/vectors.json — deterministic against RFC 9180 §A.1.1.",
+			EnvelopeSourceVector: "spec/test-vectors/disclosure-envelope/vectors.json#vector-1-single-recipient-small-payload",
+			Receipt:              envelopeSigned,
+			ExpectedReceiptHash:  envelopeHash,
+			ExpectedValid:        true,
+		},
+		DaemonAttested: daemonAttestedReceiptSection{
+			Description:         "Signed v0.3.0 receipt exercising the daemon-attested typed fields: action.peer_credential (linux POSIX peer metadata) and action.emitter_metadata.drop_count (synthetic events_dropped semantics per ADR-0010).",
+			Receipt:             daemonSigned,
+			ExpectedReceiptHash: daemonHash,
+			ExpectedValid:       true,
+		},
+	}
+
+	outBytes, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal v030 vectors: %w", err)
+	}
+	return os.WriteFile("v030_vectors.json", append(outBytes, '\n'), 0644)
+}
+
+// signAndHashMap signs an unsigned-receipt JSON map with the Ed25519 PEM
+// private key from keys, attaches the resulting proof, and returns the signed
+// receipt JSON (sorted by JCS at canonicalization time, not at marshal time)
+// alongside its receipt hash.
+//
+// Receipt JSON is built via Go's encoding/json default marshalling (struct or
+// map). Verifiers MUST canonicalize before hashing/verifying.
+func signAndHashMap(unsigned map[string]any, keys keysSection, fixedTimestamp string) (json.RawMessage, string, error) {
+	canonical, err := receipt.Canonicalize(unsigned)
+	if err != nil {
+		return nil, "", fmt.Errorf("canonicalize unsigned: %w", err)
+	}
+	hash := receipt.SHA256Hash(canonical)
+
+	priv, err := parseEd25519PrivatePEM(keys.PrivateKey)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse private key: %w", err)
+	}
+	sig := ed25519.Sign(priv, []byte(canonical))
+	proofValue := "u" + base64.RawURLEncoding.EncodeToString(sig)
+
+	signed := make(map[string]any, len(unsigned)+1)
+	for k, v := range unsigned {
+		signed[k] = v
+	}
+	signed["proof"] = map[string]any{
+		"type":               "Ed25519Signature2020",
+		"created":            fixedTimestamp,
+		"verificationMethod": "did:agent:test#key-1",
+		"proofPurpose":       "assertionMethod",
+		"proofValue":         proofValue,
+	}
+
+	// Sanity-check: verify the signature we just produced against the public key.
+	pub, err := parseEd25519PublicPEM(keys.PublicKey)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse public key: %w", err)
+	}
+	if !ed25519.Verify(pub, []byte(canonical), sig) {
+		return nil, "", errors.New("self-verify failed after signing v030 receipt")
+	}
+
+	raw, err := json.Marshal(signed)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshal signed: %w", err)
+	}
+	return json.RawMessage(raw), hash, nil
+}
+
+func parseEd25519PrivatePEM(pemStr string) (ed25519.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(pemStr))
+	if block == nil {
+		return nil, errors.New("decode PEM private key: no PEM block found")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse PKCS8 private key: %w", err)
+	}
+	edKey, ok := key.(ed25519.PrivateKey)
+	if !ok {
+		return nil, errors.New("private key is not Ed25519")
+	}
+	return edKey, nil
+}
+
+func parseEd25519PublicPEM(pemStr string) (ed25519.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pemStr))
+	if block == nil {
+		return nil, errors.New("decode PEM public key: no PEM block found")
+	}
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse SPKI public key: %w", err)
+	}
+	edKey, ok := key.(ed25519.PublicKey)
+	if !ok {
+		return nil, errors.New("public key is not Ed25519")
+	}
+	return edKey, nil
 }

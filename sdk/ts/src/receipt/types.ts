@@ -1,10 +1,12 @@
 /**
  * Agent Receipt schema types.
  *
- * These types model the Attest Agent Receipt as a W3C Verifiable Credential.
+ * These types model the Agent Receipt as a W3C Verifiable Credential.
  * Both the full and minimal receipt variants share the same type — optional
  * fields are marked with `?`.
  */
+
+import type { DisclosureEnvelope } from "./disclosure.js";
 
 export const CONTEXT = [
 	"https://www.w3.org/ns/credentials/v2",
@@ -56,6 +58,40 @@ export interface ActionTarget {
 	resource?: string;
 }
 
+/**
+ * OS-attested peer process metadata captured by the daemon at the SDK↔daemon
+ * boundary. Present only on receipts emitted through a daemon (ADR-0010);
+ * absent on direct SDK emissions. Daemon-attested, not agent-claimed.
+ *
+ * `pid` is a JS `number` because TS/JSON has no fixed-width integer type; the
+ * spec describes it as POSIX `pid_t` (32-bit signed). `uid` and `gid` are
+ * POSIX-only and absent on platforms where they do not apply (e.g. Windows).
+ * `exe_path` is best-effort and may be absent in locked-down sandboxes or
+ * when /proc is unavailable.
+ */
+export interface PeerCredential {
+	/** OS platform identifier (e.g. "darwin", "linux", "windows"). */
+	platform: string;
+	/** Peer process ID. POSIX pid_t width (32-bit signed integer). */
+	pid: number;
+	/** Peer process effective UID. POSIX-only; omit on Windows. */
+	uid?: number;
+	/** Peer process effective GID. POSIX-only; omit on Windows. */
+	gid?: number;
+	/** Best-effort absolute path of the peer process executable. */
+	exe_path?: string;
+}
+
+/**
+ * Daemon-observed emitter-side metadata. Currently used for synthetic
+ * events_dropped receipts (ADR-0010). Daemon-attested, not agent-claimed.
+ */
+export interface EmitterMetadata {
+	/** Count of audit events the emitter dropped from its in-process buffer
+	 *  before flushing to the daemon. */
+	drop_count?: number;
+}
+
 export interface Action {
 	id: string;
 	type: string;
@@ -64,21 +100,33 @@ export interface Action {
 	target?: ActionTarget;
 	parameters_hash?: string;
 	/**
-	 * Operator-controlled, additive disclosure of parameter values for audit display.
-	 * SAFETY: callers MUST restrict keys to an explicit operator-managed allowlist.
-	 * Never populate from raw arguments — receipts are signed and durable, and any
-	 * value placed here is permanent. The SDK does not auto-populate or validate
-	 * this field; enforcement lives outside the SDK. Taxonomy-level allowlist
-	 * support is tracked in
-	 * {@link https://github.com/agent-receipts/ar/issues/258 | #258}.
-	 * `parameters_hash` remains the cryptographic commitment to the full payload.
+	 * HPKE asymmetric encryption envelope of the action parameters
+	 * (ADR-0012 amendment 2026-05-18; spec v0.3.0).
 	 *
-	 * Renamed from `parameters_preview` in 0.6.0 per
-	 * {@link https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md | ADR-0012}
-	 * — "preview" misdescribed a permanent, signed field. No deprecation alias
-	 * is provided; pre-1.0 callers must update field names.
+	 * The signed receipt commits to the ciphertext; only the holder of the
+	 * forensic X25519 private key can recover the plaintext. Build with
+	 * {@link encryptDisclosure} from `./disclosure.js`.
+	 *
+	 * `parameters_hash` remains the cryptographic commitment to the full
+	 * payload and is always authoritative; this field is additive metadata.
+	 *
+	 * Pre-1.0 the spec's `oneOf` still admits the legacy flat-map shape
+	 * (v0.2.0 / v0.2.1) for verifier compatibility, but the TS SDK only
+	 * emits the envelope shape going forward. Verifiers that need to ingest
+	 * legacy receipts must use schema validation rather than this type.
 	 */
-	parameters_disclosure?: Record<string, string>;
+	parameters_disclosure?: DisclosureEnvelope;
+	/**
+	 * OS-attested peer process metadata captured by the daemon (ADR-0010).
+	 * Absent on direct SDK emissions; only present when a daemon attests
+	 * the SDK↔daemon boundary.
+	 */
+	peer_credential?: PeerCredential;
+	/**
+	 * Daemon-observed emitter-side metadata (ADR-0010). Currently carries
+	 * `drop_count` for synthetic events_dropped receipts.
+	 */
+	emitter_metadata?: EmitterMetadata;
 	timestamp: string;
 	trusted_timestamp?: string;
 }

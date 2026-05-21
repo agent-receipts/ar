@@ -24,7 +24,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -306,54 +305,57 @@ func TestPeerCredCaptured(t *testing.T) {
 	})
 
 	receipts := waitForReceiptCount(t, cfg.DBPath, cfg.ChainID, 1, 5*time.Second)
-	pd := receipts[0].CredentialSubject.Action.ParametersDisclosure
-
-	wantPID := strconv.Itoa(os.Getpid())
-	if pd["peer.pid"] != wantPID {
-		t.Errorf("peer.pid = %q, want %q (OS-attested pid of test process)", pd["peer.pid"], wantPID)
-	}
-	wantUID := strconv.Itoa(os.Getuid())
-	if pd["peer.uid"] != wantUID {
-		t.Errorf("peer.uid = %q, want %q", pd["peer.uid"], wantUID)
+	pc := receipts[0].CredentialSubject.Action.PeerCredential
+	if pc == nil {
+		t.Fatal("PeerCredential nil; daemon must record OS-attested peer cred")
 	}
 
-	switch pd["peer.platform"] {
+	wantPID := int32(os.Getpid())
+	if pc.PID != wantPID {
+		t.Errorf("peer_credential.pid = %d, want %d (OS-attested pid of test process)", pc.PID, wantPID)
+	}
+	wantUID := uint32(os.Getuid())
+	if pc.UID != wantUID {
+		t.Errorf("peer_credential.uid = %d, want %d", pc.UID, wantUID)
+	}
+
+	switch pc.Platform {
 	case "linux":
-		if pd["peer.exe_path"] == "" {
-			t.Error("Linux daemon should populate peer.exe_path from /proc/<pid>/exe")
+		if pc.ExePath == "" {
+			t.Error("Linux daemon should populate peer_credential.exe_path from /proc/<pid>/exe")
 		}
 	case "darwin":
-		if pd["peer.exe_path"] == "" {
+		if pc.ExePath == "" {
 			// SYS_PROC_INFO may be restricted in sandboxed CI environments; the
 			// daemon degrades gracefully (pid/uid/gid still recorded). Log only.
-			t.Log("darwin: peer.exe_path empty; SYS_PROC_INFO may be restricted in this environment")
+			t.Log("darwin: peer_credential.exe_path empty; SYS_PROC_INFO may be restricted in this environment")
 		}
 	default:
-		t.Errorf("unexpected peer.platform = %q", pd["peer.platform"])
+		t.Errorf("unexpected peer_credential.platform = %q", pc.Platform)
 	}
 
-	// peer.exe_path is non-empty alone is too weak: a regression that records
-	// the wrong process's path (the daemon's own binary instead of the
+	// peer_credential.exe_path non-empty is too weak alone: a regression that
+	// records the wrong process's path (the daemon's own binary instead of the
 	// connecting client's) still produces a valid absolute path. The test
-	// process is the daemon's connecting peer here, so peer.exe_path must
-	// refer to the same file as os.Executable. os.SameFile comparison rather
-	// than string equality tolerates path canonicalisation (e.g. macOS's
-	// /var → /private/var symlink) and any /proc-style resolution difference.
-	if got := pd["peer.exe_path"]; got != "" {
+	// process is the daemon's connecting peer here, so exe_path must refer to
+	// the same file as os.Executable. os.SameFile tolerates path
+	// canonicalisation (e.g. macOS's /var → /private/var symlink) and any
+	// /proc-style resolution difference.
+	if got := pc.ExePath; got != "" {
 		want, err := os.Executable()
 		if err != nil {
 			t.Fatalf("os.Executable: %v", err)
 		}
 		gotInfo, err := os.Stat(got)
 		if err != nil {
-			t.Fatalf("os.Stat(peer.exe_path %q): %v", got, err)
+			t.Fatalf("os.Stat(peer_credential.exe_path %q): %v", got, err)
 		}
 		wantInfo, err := os.Stat(want)
 		if err != nil {
 			t.Fatalf("os.Stat(os.Executable %q): %v", want, err)
 		}
 		if !os.SameFile(gotInfo, wantInfo) {
-			t.Errorf("peer.exe_path = %q is not the same file as os.Executable = %q (the test process is the daemon's connecting peer)", got, want)
+			t.Errorf("peer_credential.exe_path = %q is not the same file as os.Executable = %q (the test process is the daemon's connecting peer)", got, want)
 		}
 	}
 }
@@ -383,36 +385,39 @@ func TestPeerCredFromSubprocess(t *testing.T) {
 	}
 
 	receipts := waitForReceiptCount(t, cfg.DBPath, cfg.ChainID, 1, 5*time.Second)
-	pd := receipts[0].CredentialSubject.Action.ParametersDisclosure
+	pc := receipts[0].CredentialSubject.Action.PeerCredential
+	if pc == nil {
+		t.Fatal("PeerCredential nil; daemon must record OS-attested peer cred for subprocess connection")
+	}
 
-	// peer.pid must NOT be the test process's pid: the daemon must have
-	// captured the subprocess's pid via the connected-socket primitive
+	// peer_credential.pid must NOT be the test process's pid: the daemon must
+	// have captured the subprocess's pid via the connected-socket primitive
 	// (SO_PEERCRED on Linux, LOCAL_PEEREPID on macOS).
-	if pd["peer.pid"] == strconv.Itoa(os.Getpid()) {
-		t.Errorf("peer.pid = %q (= os.Getpid()); daemon recorded the listener's own pid instead of the connecting subprocess's", pd["peer.pid"])
+	if pc.PID == int32(os.Getpid()) {
+		t.Errorf("peer_credential.pid = %d (= os.Getpid()); daemon recorded the listener's own pid instead of the connecting subprocess's", pc.PID)
 	}
-	if pd["peer.pid"] == "" {
-		t.Errorf("peer.pid empty — peer-cred capture failed for subprocess connection")
+	if pc.PID == 0 {
+		t.Errorf("peer_credential.pid is 0 — peer-cred capture failed for subprocess connection")
 	}
 
-	// peer.exe_path: subprocess is the same binary, so SameFile against
-	// os.Executable() still holds. This catches the regression where the
-	// daemon records a hardcoded or constant path.
-	if got := pd["peer.exe_path"]; got != "" {
+	// peer_credential.exe_path: subprocess is the same binary, so SameFile
+	// against os.Executable() still holds. Catches a regression that records a
+	// hardcoded or constant path.
+	if got := pc.ExePath; got != "" {
 		want, err := os.Executable()
 		if err != nil {
 			t.Fatalf("os.Executable: %v", err)
 		}
 		gotInfo, err := os.Stat(got)
 		if err != nil {
-			t.Fatalf("os.Stat(peer.exe_path %q): %v", got, err)
+			t.Fatalf("os.Stat(peer_credential.exe_path %q): %v", got, err)
 		}
 		wantInfo, err := os.Stat(want)
 		if err != nil {
 			t.Fatalf("os.Stat(os.Executable %q): %v", want, err)
 		}
 		if !os.SameFile(gotInfo, wantInfo) {
-			t.Errorf("peer.exe_path = %q is not the same file as os.Executable = %q (subprocess is the same binary as parent)", got, want)
+			t.Errorf("peer_credential.exe_path = %q is not the same file as os.Executable = %q (subprocess is the same binary as parent)", got, want)
 		}
 	}
 }

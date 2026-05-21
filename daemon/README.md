@@ -169,14 +169,15 @@ The following are deliberate Phase 1 choices, all callable out for follow-up:
   retrieval works identically on stream sockets, so the trust model is
   unchanged. A follow-up issue should amend ADR-0010 to record the per-OS
   socket type.
-- **Peer attestation placement.** ADR-0010 calls for a top-level `peer`
-  field on each receipt. Adding that requires a spec change (out of scope
-  per AGENTS.md). Phase 1 stashes peer attestation in
-  `action.parameters_disclosure` under keys `peer.platform`, `peer.pid`,
-  `peer.uid`, `peer.gid`, `peer.exe_path`. The values are still
-  signature-protected. The emitter-refactor phase will introduce the
-  proper spec field.
-- **macOS `peer.exe_path`.** Linux populates this from `/proc/<pid>/exe`;
+- **Peer attestation placement.** ADR-0010 called for a top-level peer
+  field; spec v0.3.0 (PR #496) added a dedicated `action.peer_credential`
+  object on the receipt. The daemon writes that typed field directly
+  (`platform`, `pid`, `uid`, `gid`, `exe_path`) and the synthetic
+  events_dropped receipt's drop counter rides on the sibling
+  `action.emitter_metadata.drop_count` field. The values are still
+  signature-protected. The Phase-1 flat-map shape (`peer.platform`,
+  `peer.pid`, etc. inside `parameters_disclosure`) has been retired.
+- **macOS `peer_credential.exe_path`.** Linux populates this from `/proc/<pid>/exe`;
   macOS uses the `SYS_PROC_INFO(PROC_PIDPATHINFO)` syscall directly
   (the call libproc's `proc_pidpath()` wraps), so the daemon stays
   CGO-free. Failure is non-fatal — `exe_path` is left empty and pid /

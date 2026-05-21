@@ -6,11 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-21
+
 ### Changed
 - **BREAKING:** W3C VC type renamed from `AIActionReceipt` to `AgentReceipt`
 - **BREAKING:** Schema file renamed from `action-receipt.schema.json` to `agent-receipt.schema.json`
 - **BREAKING:** Spec document renamed from `action-receipt-spec-v0.1.md` to `agent-receipt-spec-v0.1.md`
 - All example receipts updated to use `AgentReceipt` credential type
+- `parameters_disclosure` widened from `{ map[string]string }` (legacy flat-map) to `{ oneOf: [legacy flat-map, HPKE asymmetric encryption envelope] }`. The envelope shape is defined by the sibling `parameters-disclosure.schema.json` introduced alongside ADR-0012 Phase A; SDK implementations: Go SDK #468, TS SDK #472, Python SDK #494. Receipts MUST NOT mix shapes within a single `parameters_disclosure` field; mode is per-emitter.
+- `version` field now accepts `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, or `"0.3.0"`. Verifiers MUST accept all four.
+
+### Added
+- `credentialSubject.action.peer_credential` — OS-attested peer process metadata captured by the daemon at the SDK↔daemon boundary (`platform`, `pid`, optional `uid`/`gid`/`exe_path`). Present only on receipts emitted through a daemon; daemon-attested, not agent-claimed. Replaces the `peer.*` keys that previously rode on `parameters_disclosure` in the daemon's legacy flat-map writes (ADR-0010).
+- `credentialSubject.action.emitter_metadata` — Daemon-observed emitter-side metadata, currently a single `drop_count` field on synthetic events_dropped receipts. Replaces the `emitter.drop_count` key that previously rode on `parameters_disclosure`.
+
+### Migration
+
+**Issuers:** Daemon-mode emitters MUST move `peer.*` writes to `peer_credential` and `emitter.drop_count` writes to `emitter_metadata` when emitting 0.3.0 receipts. Direct-SDK emitters that use the envelope shape MUST set `version` to `"0.3.0"`.
+
+**Verifiers:** No action required for 0.2.0 / 0.2.1 receipts (they validate unchanged against this schema). 0.3.0 receipts MAY carry either the legacy flat-map (continuing the 0.2.1 behaviour) or the envelope shape; verifiers handling both MUST dispatch on the JSON shape of `parameters_disclosure`.
 
 ## [0.2.1] - 2026-04-22
 

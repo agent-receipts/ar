@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"strconv"
 	"sync"
 	"time"
 
@@ -92,18 +91,20 @@ type Pipeline struct {
 	TraceLog io.Writer              // Optional trace log for testing; nil = silent
 	ErrorLog func(string, ...any)   // Optional error logger; nil = silent
 
-	// ParameterDisclosure, when true, includes plaintext tool input and output
-	// in the parameters_disclosure receipt field. Disabled by default.
-	// WARNING: stores unredacted payloads — see issue #280 for the encrypted
-	// design that supersedes this flag.
+	// ParameterDisclosure is the historical opt-in for plaintext tool
+	// input/output in the legacy string-map shape of parameters_disclosure.
+	// As of the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18) that
+	// shape is no longer representable — the receipt type only accepts an
+	// HPKE-encrypted *DisclosureEnvelope. Until the daemon learns to encrypt
+	// and attach an envelope itself (tracked under #280), this field is a
+	// no-op preserved so the CLI/env knob does not vanish silently on operators.
 	ParameterDisclosure bool
 
 	// Redactor is applied to text fields before they are persisted in the
-	// receipt body: outcome.error is redacted; parameters_disclosure
-	// input/output strings are also redacted when ParameterDisclosure is
-	// enabled. Input and output are never stored as raw text otherwise — only
-	// their SHA-256 hashes go into parameters_hash / response_hash, so those
-	// hashes are always over the original emitter payload. Nil = no redaction.
+	// receipt body. Today that means outcome.error only; input and output are
+	// never stored as raw text — only their SHA-256 hashes go into
+	// parameters_hash / response_hash, so those hashes are always over the
+	// original emitter payload. Nil = no redaction.
 	Redactor *Redactor
 
 	// traceMu serialises writes to TraceLog. Process is invoked concurrently
@@ -418,35 +419,17 @@ func (p *Pipeline) buildAndSign(
 		actionType = f.Channel + "." + f.Tool.Server + "." + f.Tool.Name
 	}
 
-	// Phase 1 stashes the OS-attested peer cred in Action.ParametersDisclosure
-	// as a placeholder. ADR-0010 calls for a dedicated `peer` field on the
-	// receipt; adding that requires a spec change (out of scope per AGENTS.md
-	// "Never modify the protocol spec without explicit human approval"), so
-	// peer.* keys ride on the existing field until Phase 2.
-	//
-	// NOTE: parameters_disclosure is operator-allowlisted additive metadata in
-	// the spec. Until a top-level peer field exists, this map MUST stay
-	// minimal: only OS-attested fields the daemon vouches for. Emitter-
-	// supplied content (channel, session_id, ts_emit, error) lives elsewhere
-	// on the receipt — channel is folded into action.type, session_id into
-	// issuer.session_id, error into outcome.error. The emitter-asserted
-	// ts_emit is dropped (it is untrusted self-report and would not add audit
-	// value); the daemon's authoritative receive-time is the `now` value
-	// already stamped into action.timestamp, issuanceDate, and proof.created.
-	//
-	// Exception: when the operator explicitly enables ParameterDisclosure, the
-	// emitter-controlled input/output bytes are intentionally added below.
-	// That opt-in is for full-fidelity audit trails where the operator has
-	// already accepted the trade-off. PII exposure and the absence of a
-	// redaction mechanism are tracked in issue #423 — operators should not
-	// enable this option until that is resolved.
-	disclosure := map[string]string{
-		"peer.platform": peer.Platform,
-		"peer.pid":      strconv.FormatInt(int64(peer.PID), 10),
-		// uid_t / gid_t are unsigned 32-bit; format as unsigned to avoid wrap.
-		"peer.uid":      strconv.FormatUint(uint64(peer.UID), 10),
-		"peer.gid":      strconv.FormatUint(uint64(peer.GID), 10),
-		"peer.exe_path": peer.ExePath,
+	// OS-attested peer credentials populate action.peer_credential — the
+	// dedicated typed field landed by spec v0.3.0 (ADR-0010 + PR #496). The
+	// daemon vouches for these values via signature; they are present only on
+	// receipts emitted through the daemon and absent on direct-SDK emissions
+	// (where the SDK has no privileged channel to attest peer identity).
+	peerCred := &receipt.PeerCredential{
+		Platform: peer.Platform,
+		PID:      peer.PID,
+		UID:      peer.UID,
+		GID:      peer.GID,
+		ExePath:  peer.ExePath,
 	}
 
 	// Risk derives from the taxonomy. Daemon-constructed action types like
@@ -458,11 +441,11 @@ func (p *Pipeline) buildAndSign(
 	risk := taxonomy.ResolveActionType(actionType).RiskLevel
 
 	action := receipt.Action{
-		Type:                 actionType,
-		ToolName:             f.Tool.Name,
-		RiskLevel:            risk,
-		Timestamp:            now,
-		ParametersDisclosure: disclosure,
+		Type:           actionType,
+		ToolName:       f.Tool.Name,
+		RiskLevel:      risk,
+		Timestamp:      now,
+		PeerCredential: peerCred,
 	}
 	if hasJSONPayload(f.Input) {
 		hash, err := canonicalSHA256(f.Input)
@@ -472,26 +455,13 @@ func (p *Pipeline) buildAndSign(
 		action.ParametersHash = hash
 	}
 
-	// Populate plaintext disclosure after hashing so the hash always covers the
-	// raw bytes, not any string conversion. Only runs when explicitly opted in.
-	// Redaction is applied to the stored text so secrets are sanitised even
-	// when the operator enables disclosure mode.
-	if p.ParameterDisclosure {
-		if hasJSONPayload(f.Input) {
-			inp := string(f.Input)
-			if p.Redactor != nil {
-				inp = p.Redactor.Redact(inp)
-			}
-			disclosure["input"] = inp
-		}
-		if hasJSONPayload(f.Output) {
-			out := string(f.Output)
-			if p.Redactor != nil {
-				out = p.Redactor.Redact(out)
-			}
-			disclosure["output"] = out
-		}
-	}
+	// NOTE: the legacy "--parameter-disclosure" flag (`p.ParameterDisclosure`)
+	// is currently a no-op. It used to write plaintext input/output into a
+	// string-map shape of action.parameters_disclosure; that shape was removed
+	// by the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18). The
+	// field is now *DisclosureEnvelope and only accepts the HPKE-encrypted
+	// envelope. Daemon-side encrypt-then-attach is tracked in #280. The
+	// outcome.error redaction path below is independent of the flag.
 
 	// Redaction MUST happen AFTER hashing. The hash commits to the raw
 	// canonical bytes; redaction only sanitises the human-readable string
@@ -583,13 +553,15 @@ func (p *Pipeline) buildAndSignDropReceipt(
 			ToolName:  "events_dropped",
 			RiskLevel: receipt.RiskLow,
 			Timestamp: now,
-			ParametersDisclosure: map[string]string{
-				"emitter.drop_count": strconv.FormatInt(dropCount, 10),
-				"peer.platform":      peer.Platform,
-				"peer.pid":           strconv.FormatInt(int64(peer.PID), 10),
-				"peer.uid":           strconv.FormatUint(uint64(peer.UID), 10),
-				"peer.gid":           strconv.FormatUint(uint64(peer.GID), 10),
-				"peer.exe_path":      peer.ExePath,
+			PeerCredential: &receipt.PeerCredential{
+				Platform: peer.Platform,
+				PID:      peer.PID,
+				UID:      peer.UID,
+				GID:      peer.GID,
+				ExePath:  peer.ExePath,
+			},
+			EmitterMetadata: &receipt.EmitterMetadata{
+				DropCount: dropCount,
 			},
 		},
 		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},

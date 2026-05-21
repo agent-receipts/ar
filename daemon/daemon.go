@@ -61,10 +61,11 @@ type Config struct {
 	// what frames were received, receipts signed, etc.
 	TraceLog io.Writer
 
-	// ParameterDisclosure controls whether plaintext tool input and output are
-	// included in the parameters_disclosure receipt field. Disabled by default.
-	// WARNING: stores unredacted payloads — see issue #280 for the encrypted
-	// design that supersedes this flag.
+	// ParameterDisclosure is the historical opt-in for plaintext tool
+	// input/output in the legacy string-map shape of parameters_disclosure.
+	// As of the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18) that
+	// shape is no longer representable; this flag is a documented no-op
+	// pending the daemon-side HPKE envelope wiring tracked in #280.
 	ParameterDisclosure bool
 
 	// RedactPatternsPath is an optional path to a YAML file of additional
@@ -332,10 +333,10 @@ func Run(ctx context.Context, cfg Config) error {
 	cfg.Logger.Printf("loaded chain %s, next seq=%d", cfg.ChainID, state.NextSeq())
 
 	if cfg.ParameterDisclosure {
-		cfg.Logger.Printf("WARNING: --parameter-disclosure is enabled.")
-		cfg.Logger.Printf("WARNING: Plaintext tool input and output will be stored in receipts.")
-		cfg.Logger.Printf("WARNING: This is a temporary opt-in pending encrypted disclosure (issue #280).")
-		cfg.Logger.Printf("WARNING: Ensure receipts.db is protected and does not contain secrets you cannot afford to expose.")
+		cfg.Logger.Printf("NOTICE: --parameter-disclosure is enabled but currently a no-op.")
+		cfg.Logger.Printf("NOTICE: The legacy plaintext-in-body shape was removed by the v0.3.0")
+		cfg.Logger.Printf("NOTICE: envelope migration (ADR-0012 amendment 2026-05-18). Encrypted")
+		cfg.Logger.Printf("NOTICE: disclosure pending — tracked in #280.")
 	}
 
 	pp := pipeline.New(state, ks, st, cfg.IssuerID)

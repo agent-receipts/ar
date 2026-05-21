@@ -137,8 +137,12 @@ func TestDropCounterEndToEnd(t *testing.T) {
 	if got := synthetic.CredentialSubject.Action.Type; got != "agent_receipts.events_dropped" {
 		t.Errorf("synthetic action.type = %q, want agent_receipts.events_dropped", got)
 	}
-	if got := synthetic.CredentialSubject.Action.ParametersDisclosure["emitter.drop_count"]; got != "3" {
-		t.Errorf("synthetic drop_count = %q, want 3", got)
+	meta := synthetic.CredentialSubject.Action.EmitterMetadata
+	if meta == nil {
+		t.Fatal("synthetic events_dropped receipt missing emitter_metadata")
+	}
+	if meta.DropCount != 3 {
+		t.Errorf("synthetic emitter_metadata.drop_count = %d, want 3", meta.DropCount)
 	}
 	if got := synthetic.Issuer.SessionID; got != "drop-e2e-session" {
 		t.Errorf("synthetic session_id = %q, want drop-e2e-session", got)

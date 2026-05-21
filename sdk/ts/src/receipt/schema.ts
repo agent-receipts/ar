@@ -55,6 +55,65 @@ const actionTargetSchema = z
 	})
 	.passthrough();
 
+// Envelope shape per spec v0.3.0 / ADR-0012 amendment. Length checks on
+// recipient.enc and ct mirror the spec's regex bounds (43 chars for X25519
+// `enc`, ≥24 chars for the AEAD ciphertext) so malformed envelopes are
+// rejected at the SDK boundary. .passthrough() preserves unknown future
+// fields for forward-compatible verification.
+// Pattern enforces unpadded base64url alphabet (no `+`, `/`, or `=`) at
+// exactly 43 chars — the encoded length of a 32-byte X25519 public key.
+const ENC_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+// Pattern enforces unpadded base64url alphabet AND decodable length
+// (`len % 4 !== 1`, the one residue invalid for base64url without padding).
+// Length floor of 24 (= 18 bytes = AES-256-GCM 16-byte tag + 2-byte minimum
+// plaintext `{}`) is enforced separately so error messages distinguish
+// "too short" from "wrong alphabet".
+const CT_PATTERN = /^([A-Za-z0-9_-]{4})*([A-Za-z0-9_-]{2,3})?$/;
+
+const parametersDisclosureRecipientSchema = z
+	.object({
+		kid: z.string().min(1),
+		enc: z
+			.string()
+			.regex(ENC_PATTERN, "enc must be 43 unpadded base64url chars"),
+	})
+	.passthrough();
+
+const parametersDisclosureEnvelopeSchema = z
+	.object({
+		v: z.literal("1"),
+		alg: z.literal("hpke-x25519-hkdf-sha256-aes-256-gcm"),
+		recipients: z.tuple([parametersDisclosureRecipientSchema]),
+		ct: z
+			.string()
+			.min(24)
+			.regex(CT_PATTERN, "ct must be unpadded base64url with decodable length"),
+	})
+	.passthrough();
+
+const peerCredentialSchema = z
+	.object({
+		platform: z.string(),
+		pid: z.number().int(),
+		uid: z.number().int().min(0).optional(),
+		gid: z.number().int().min(0).optional(),
+		exe_path: z.string().optional(),
+	})
+	.passthrough();
+
+const emitterMetadataSchema = z
+	.object({
+		drop_count: z.number().int().min(0).optional(),
+	})
+	.passthrough();
+
+// parameters_disclosure is the v0.3.0 envelope (ADR-0012 amendment). The TS
+// SDK only emits and ingests this shape; the legacy v0.2.x flat-map is not
+// accepted by the load-time schema. The spec's `oneOf` still admits the
+// legacy form for cross-version interop, but verifiers that need to ingest
+// legacy receipts must use raw spec-schema validation rather than this Zod
+// schema, per the SDK type contract (Action.parameters_disclosure).
 const actionSchema = z
 	.object({
 		id: z.string(),
@@ -63,7 +122,9 @@ const actionSchema = z
 		risk_level: riskLevelSchema,
 		target: actionTargetSchema.optional(),
 		parameters_hash: z.string().optional(),
-		parameters_disclosure: z.record(z.string(), z.string()).optional(),
+		parameters_disclosure: parametersDisclosureEnvelopeSchema.optional(),
+		peer_credential: peerCredentialSchema.optional(),
+		emitter_metadata: emitterMetadataSchema.optional(),
 		timestamp: z.string(),
 		trusted_timestamp: z.string().optional(),
 	})
