@@ -1,4 +1,29 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(sdk/py/scripts/test.sh)",
+      "Bash(sdk/py/scripts/test.sh *)",
+      "Bash(sdk/py/scripts/lint.sh)",
+      "Bash(sdk/py/scripts/lint.sh *)",
+      "Bash(sdk/py/scripts/sync.sh)",
+      "Bash(sdk/py/scripts/sync.sh *)",
+      "Bash(./scripts/test.sh)",
+      "Bash(./scripts/test.sh *)",
+      "Bash(./scripts/lint.sh)",
+      "Bash(./scripts/lint.sh *)",
+      "Bash(./scripts/sync.sh)",
+      "Bash(./scripts/sync.sh *)",
+      "Bash(uv run pytest)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff check)",
+      "Bash(uv run ruff check *)",
+      "Bash(uv run ruff format *)",
+      "Bash(uv run pyright)",
+      "Bash(uv run pyright *)",
+      "Bash(uv sync)",
+      "Bash(uv sync *)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {
