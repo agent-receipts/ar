@@ -59,6 +59,8 @@ def verify_chain(
     3. Sequence numbers are strictly incrementing
     4. Receipt-after-terminal: if any receipt has chain.terminal == True, no
        subsequent receipt may reference it (unconditional, spec §7.3.2)
+    5. Chain identifier binding: all receipts MUST share the same
+       chain.chain_id as the first receipt (unconditional, spec §7.3.4)
 
     Chain verification does NOT detect tail truncation by default — dropping
     the last N receipts still produces valid=True. To detect truncation:
@@ -162,6 +164,31 @@ def verify_chain(
     elif hash_compute_error is not None:
         loop_error = hash_compute_error
         loop_error_at = hash_compute_error_at
+
+    # Chain identifier binding check (unconditional — spec §7.3.4).
+    # All receipts in a verified chain MUST share chain.chain_id. Reject
+    # cross-chain splices: an attacker with a valid hash linkage might
+    # otherwise mix receipts from two distinct chains under one verification
+    # call. Runs independently of hash linkage so a forged link still fails
+    # here.
+    expected_chain_id = receipts[0].credentialSubject.chain.chain_id
+    for i in range(1, len(receipts)):
+        observed = receipts[i].credentialSubject.chain.chain_id
+        if observed != expected_chain_id:
+            if broken_at == -1 or i < broken_at:
+                broken_at = i
+            quoted_expected = f'"{expected_chain_id}"'
+            quoted_observed = f'"{observed}"'
+            return ChainVerification(
+                valid=False,
+                length=len(receipts),
+                receipts=results,
+                broken_at=broken_at,
+                error=(
+                    f"chain_id mismatch at index {i}: "
+                    f"expected {quoted_expected}, got {quoted_observed}"
+                ),
+            )
 
     # Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
     for i, receipt in enumerate(receipts[:-1]):

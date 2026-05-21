@@ -70,6 +70,8 @@ type ChainVerifyOptions struct {
 //   - Sequence numbers strictly incrementing from the first receipt
 //   - Receipt-after-terminal: if any receipt has chain.terminal: true, no
 //     subsequent receipt may reference it (unconditional check, see spec §7.3.2)
+//   - Chain identifier binding: all receipts MUST share the same
+//     chain.chain_id as the first receipt (unconditional, see spec §7.3.4)
 //
 // Chain verification does NOT detect tail truncation by default — dropping the
 // last N receipts from a chain still produces Valid: true. To detect truncation:
@@ -173,6 +175,30 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		loopErr, loopErrAt = firstSigErr, firstSigErrAt
 	case firstHashComputeErr != "":
 		loopErr, loopErrAt = firstHashComputeErr, firstHashComputeErrAt
+	}
+
+	// Chain identifier binding check (unconditional — spec §7.3.4).
+	// All receipts in a verified chain MUST share chain.chain_id. Reject
+	// cross-chain splices: an attacker with a valid hash linkage might
+	// otherwise mix receipts from two distinct chains under one verification
+	// call. Runs independently of hash linkage so a forged link still fails
+	// here.
+	expectedChainID := receipts[0].CredentialSubject.Chain.ChainID
+	for i := 1; i < len(receipts); i++ {
+		observed := receipts[i].CredentialSubject.Chain.ChainID
+		if observed != expectedChainID {
+			if brokenAt == -1 || i < brokenAt {
+				brokenAt = i
+			}
+			return ChainVerification{
+				Valid:    false,
+				Length:   len(receipts),
+				Receipts: results,
+				BrokenAt: brokenAt,
+				Error: "chain_id mismatch at index " + strconv.Itoa(i) +
+					`: expected "` + expectedChainID + `", got "` + observed + `"`,
+			}
+		}
 	}
 
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).

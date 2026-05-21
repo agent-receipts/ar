@@ -757,4 +757,89 @@ describe("verifyChain", () => {
 		expect(result.valid).toBe(true);
 		expect(result.responseHashNote).toBeTruthy();
 	});
+
+	// --- Chain identifier binding (spec §7.3.4, #477) ---
+
+	// Build a chain whose receipts each carry chain_id. Mirrors buildChain()
+	// but lets the test choose the chain_id (so we can stitch two together).
+	function buildChainWithId(
+		count: number,
+		privateKey: string,
+		chainId: string,
+		startSequence = 1,
+		startPreviousHash: string | null = null,
+	) {
+		const receipts = [];
+		let previousHash: string | null = startPreviousHash;
+		for (let i = 0; i < count; i++) {
+			const seq = startSequence + i;
+			const unsigned = makeUnsigned(seq, previousHash, chainId);
+			const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+			receipts.push(signed);
+			previousHash = hashReceipt(signed);
+		}
+		return receipts;
+	}
+
+	it("chain_id binding: single-chain input passes (baseline)", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChainWithId(3, privateKey, "chain-A");
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.length).toBe(3);
+		expect(result.brokenAt).toBe(-1);
+	});
+
+	it("chain_id binding: rejects cross-chain splice with forged hash linkage", () => {
+		// Build chain B such that its first receipt's previous_receipt_hash
+		// points at chain A's last receipt — i.e. an attacker has forged a
+		// valid-looking hash link between two distinct chains. The verifier
+		// MUST still reject because chain_id differs.
+		const { publicKey, privateKey } = generateKeyPair();
+		const chainA = buildChainWithId(2, privateKey, "chain-A");
+		const lastA = chainA[chainA.length - 1];
+		if (!lastA) throw new Error("test setup: empty chainA");
+		const spliceHash = hashReceipt(lastA);
+		const chainB = buildChainWithId(2, privateKey, "chain-B", 3, spliceHash);
+
+		const result = verifyChain([...chainA, ...chainB], publicKey);
+
+		expect(result.valid).toBe(false);
+		expect(result.brokenAt).toBe(2);
+		expect(result.error).toMatch(/chain_id mismatch at index 2/);
+		expect(result.error).toMatch(/"chain-A"/);
+		expect(result.error).toMatch(/"chain-B"/);
+	});
+
+	it("chain_id binding: single mismatched receipt in the middle is rejected", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = buildChainWithId(3, privateKey, "chain-A");
+		// Re-sign the middle receipt with a different chain_id so signatures
+		// still verify; the verifier must reject solely on chain_id.
+		const middle = chain[1];
+		if (!middle) throw new Error("test setup");
+		middle.credentialSubject.chain.chain_id = "chain-other";
+		const resigned = signReceipt(
+			{
+				"@context": middle["@context"],
+				id: middle.id,
+				type: middle.type,
+				version: middle.version,
+				issuer: middle.issuer,
+				issuanceDate: middle.issuanceDate,
+				credentialSubject: middle.credentialSubject,
+			},
+			privateKey,
+			"did:agent:test#key-1",
+		);
+		chain[1] = resigned;
+
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(false);
+		expect(result.error).toMatch(/chain_id mismatch at index 1/);
+		expect(result.error).toMatch(/"chain-A"/);
+		expect(result.error).toMatch(/"chain-other"/);
+	});
 });

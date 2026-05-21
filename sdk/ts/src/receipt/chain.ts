@@ -75,6 +75,8 @@ export interface ChainVerifyOptions {
  * 3. Sequence numbers are strictly incrementing
  * 4. Receipt-after-terminal: if any receipt has chain.terminal: true, no
  *    subsequent receipt may reference it (unconditional, spec §7.3.2)
+ * 5. Chain identifier binding: all receipts MUST share the same
+ *    chain.chain_id as the first receipt (unconditional, spec §7.3.4)
  *
  * Chain verification does NOT detect tail truncation by default — dropping the
  * last N receipts from a chain still produces valid: true. To detect truncation:
@@ -177,6 +179,31 @@ export function verifyChain(
 	// the hash-compute error is discarded (a single error field can only surface one).
 	// Compute this before the terminal check so early returns preserve it.
 	const loopError = signatureError ?? hashComputeError;
+
+	// Chain identifier binding check (unconditional — spec §7.3.4).
+	// All receipts in a verified chain MUST share chain.chain_id. Reject
+	// cross-chain splices: an attacker with a valid hash linkage might
+	// otherwise mix receipts from two distinct chains under one verification
+	// call. Runs independently of hash linkage so that a forged link still
+	// fails here.
+	const expectedChainId = receipts[0]?.credentialSubject.chain.chain_id;
+	for (let i = 1; i < receipts.length; i++) {
+		const r = receipts[i];
+		if (!r) continue;
+		const observedChainId = r.credentialSubject.chain.chain_id;
+		if (observedChainId !== expectedChainId) {
+			const mismatchAt = i;
+			if (brokenAt === -1 || mismatchAt < brokenAt) brokenAt = mismatchAt;
+			return {
+				valid: false,
+				length: receipts.length,
+				receipts: results,
+				brokenAt,
+				responseHashNote: undefined,
+				error: `chain_id mismatch at index ${i}: expected "${expectedChainId}", got "${observedChainId}"`,
+			};
+		}
+	}
 
 	// Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
 	for (let i = 0; i < receipts.length - 1; i++) {
