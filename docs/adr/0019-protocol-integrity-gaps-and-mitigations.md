@@ -109,16 +109,15 @@ may diverge subtly across language SDKs on edge cases: UTF-16 code unit
 ordering of non-ASCII keys, ES6 `Number.toString()` semantics, Unicode
 normalisation of string values. ADR-0002 § Unicode edge cases catalogues
 two latent bugs of this class (Python's UTF-16-LE byte sort #86, Go's
-`sort.Strings()` #82). The Python SDK also has residual Attest Protocol
-naming (e.g. `eventType: "attest"`) that diverges from the canonical
-vocabulary committed in ADR-0009. Mixed-language chains may silently fail
-to verify.
+`sort.Strings()` #82). The Python SDK previously diverged on
+canonical-vocabulary naming (a pre-rename `eventType: "attest"` symbol);
+that specific symbol is fixed, but the divergence class it illustrated
+remains live. Mixed-language chains may silently fail to verify.
 
 **Decision.** Mandatory before v1 release. Produce a cross-SDK conformance
 test suite: fixed receipt JSON-LD documents (W3C VC envelope per ADR-0003)
 with known canonical RFC 8785 byte forms and known SHA-256 hash values.
-All three SDKs must produce and verify identically. Fix Python SDK
-`eventType` naming as part of this work. Round-trip matrix:
+All three SDKs must produce and verify identically. Round-trip matrix:
 TypeScript → Python, TypeScript → Go, Python → Go, and all reverse
 directions.
 

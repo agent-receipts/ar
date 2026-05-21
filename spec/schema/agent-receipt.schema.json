@@ -24,7 +24,7 @@
       ],
       "minItems": 2,
       "items": { "type": "string" },
-      "description": "JSON-LD context. First two entries MUST be the W3C VC v2 and Attest context URIs in order. Additional context URIs MAY follow."
+      "description": "JSON-LD context. First two entries MUST be the W3C VC v2 and Agent Receipts context URIs in order. Additional context URIs MAY follow."
     },
     "id": {
       "type": "string",

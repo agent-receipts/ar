@@ -214,7 +214,7 @@ All five `proof` fields are required even in the minimal form.
 
 | Field | Required | Description |
 |---|---|---|
-| `@context` | Yes | JSON-LD context. MUST include the W3C VC v2 and Attest context URIs in the order shown. |
+| `@context` | Yes | JSON-LD context. MUST include the W3C VC v2 and Agent Receipts context URIs in the order shown. |
 | `id` | Yes | Globally unique receipt identifier. MUST be a `urn:receipt:<uuid>`. |
 | `type` | Yes | MUST be `["VerifiableCredential", "AgentReceipt"]`. |
 | `version` | Yes | Spec version this receipt conforms to. MUST be `"0.1.0"` for this version. |

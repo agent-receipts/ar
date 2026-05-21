@@ -17,7 +17,7 @@ class TestConstants:
     def test_context_starts_with_w3c(self) -> None:
         assert CONTEXT[0] == "https://www.w3.org/ns/credentials/v2"
 
-    def test_context_includes_attest(self) -> None:
+    def test_context_includes_agent_receipts_uri(self) -> None:
         assert CONTEXT[1] == "https://agentreceipts.ai/context/v1"
 
     def test_credential_type_has_two_entries(self) -> None:
