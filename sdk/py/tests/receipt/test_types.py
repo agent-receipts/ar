@@ -6,6 +6,8 @@ from agent_receipts.receipt.types import (
     CREDENTIAL_TYPE,
     VERSION,
     AgentReceipt,
+    EmitterMetadata,
+    PeerCredential,
 )
 from tests.conftest import make_receipt, make_unsigned
 
@@ -30,7 +32,7 @@ class TestConstants:
         assert "AgentReceipt" in CREDENTIAL_TYPE
 
     def test_version(self) -> None:
-        assert VERSION == "0.2.0"
+        assert VERSION == "0.3.0"
 
 
 class TestAgentReceipt:
@@ -63,8 +65,23 @@ class TestUnsignedAgentReceipt:
         assert unsigned.credentialSubject.chain.previous_receipt_hash is None
 
 
+def _sample_envelope() -> dict:
+    """A valid v1 HPKE envelope shape suitable for round-trip / hashing tests.
+
+    The cryptographic bytes are placeholders that satisfy the schema's length /
+    alphabet constraints; tests here exercise shape only, not encryption.
+    """
+    return {
+        "v": "1",
+        "alg": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+        "recipients": [{"kid": "did:key:test#enc-1", "enc": "A" * 43}],
+        "ct": "B" * 24,
+    }
+
+
 class TestParametersDisclosure:
-    """Round-trip tests for the optional Action.parameters_disclosure field."""
+    """Round-trip tests for the optional Action.parameters_disclosure field
+    (v0.3.0+ HPKE envelope shape; legacy flat-map is no longer SDK-supported)."""
 
     def test_default_is_none(self) -> None:
         receipt = make_receipt()
@@ -72,23 +89,15 @@ class TestParametersDisclosure:
 
     def test_round_trip_serialise_deserialise(self) -> None:
         receipt = make_receipt()
-        receipt.credentialSubject.action.parameters_disclosure = {
-            "path": "/tmp/foo.txt",
-            "mode": "r",
-        }
+        envelope = _sample_envelope()
+        receipt.credentialSubject.action.parameters_disclosure = envelope
 
         dumped = receipt.model_dump(by_alias=True)
         action_dict = dumped["credentialSubject"]["action"]
-        assert action_dict["parameters_disclosure"] == {
-            "path": "/tmp/foo.txt",
-            "mode": "r",
-        }
+        assert action_dict["parameters_disclosure"] == envelope
 
         restored = AgentReceipt.model_validate(dumped)
-        assert restored.credentialSubject.action.parameters_disclosure == {
-            "path": "/tmp/foo.txt",
-            "mode": "r",
-        }
+        assert restored.credentialSubject.action.parameters_disclosure == envelope
 
     def test_included_in_canonical_hash_when_present(self) -> None:
         """Setting parameters_disclosure must change the canonical hash."""
@@ -96,9 +105,9 @@ class TestParametersDisclosure:
         baseline_hash = hash_receipt(baseline)
 
         with_disclosure = make_receipt()
-        with_disclosure.credentialSubject.action.parameters_disclosure = {
-            "path": "/tmp/foo.txt",
-        }
+        with_disclosure.credentialSubject.action.parameters_disclosure = (
+            _sample_envelope()
+        )
         disclosure_hash = hash_receipt(with_disclosure)
 
         assert baseline_hash != disclosure_hash
@@ -113,10 +122,83 @@ class TestParametersDisclosure:
 
         assert hash_receipt(with_null) == hash_receipt(omitted)
 
-    def test_canonical_hash_is_deterministic(self) -> None:
-        """Different insertion order produces identical canonical hash."""
-        r1 = make_receipt()
-        r1.credentialSubject.action.parameters_disclosure = {"a": "1", "b": "2"}
-        r2 = make_receipt()
-        r2.credentialSubject.action.parameters_disclosure = {"b": "2", "a": "1"}
-        assert hash_receipt(r1) == hash_receipt(r2)
+
+class TestPeerCredential:
+    """Round-trip tests for the optional Action.peer_credential field (v0.3.0+)."""
+
+    def test_default_is_none(self) -> None:
+        receipt = make_receipt()
+        assert receipt.credentialSubject.action.peer_credential is None
+
+    def test_round_trip_full(self) -> None:
+        """Full POSIX peer credential round-trips through serialize/deserialize."""
+        receipt = make_receipt()
+        receipt.credentialSubject.action.peer_credential = PeerCredential(
+            platform="linux",
+            pid=12345,
+            uid=1000,
+            gid=1000,
+            exe_path="/usr/local/bin/some-tool",
+        )
+
+        dumped = receipt.model_dump(by_alias=True)
+        restored = AgentReceipt.model_validate(dumped)
+        pc = restored.credentialSubject.action.peer_credential
+        assert pc is not None
+        assert pc.platform == "linux"
+        assert pc.pid == 12345
+        assert pc.uid == 1000
+        assert pc.gid == 1000
+        assert pc.exe_path == "/usr/local/bin/some-tool"
+
+    def test_round_trip_minimal_windows_style(self) -> None:
+        """Windows-style peer credential omits uid/gid; round-trip clean."""
+        receipt = make_receipt()
+        receipt.credentialSubject.action.peer_credential = PeerCredential(
+            platform="windows",
+            pid=4242,
+        )
+
+        dumped = receipt.model_dump(by_alias=True, exclude_none=True)
+        action_dict = dumped["credentialSubject"]["action"]
+        assert "uid" not in action_dict["peer_credential"]
+        assert "gid" not in action_dict["peer_credential"]
+        assert "exe_path" not in action_dict["peer_credential"]
+
+    def test_changes_canonical_hash(self) -> None:
+        """Setting peer_credential must change the canonical hash."""
+        baseline = make_receipt()
+        with_pc = make_receipt()
+        with_pc.credentialSubject.action.peer_credential = PeerCredential(
+            platform="linux",
+            pid=1,
+        )
+        assert hash_receipt(baseline) != hash_receipt(with_pc)
+
+
+class TestEmitterMetadata:
+    """Round-trip tests for the optional Action.emitter_metadata field (v0.3.0+)."""
+
+    def test_default_is_none(self) -> None:
+        receipt = make_receipt()
+        assert receipt.credentialSubject.action.emitter_metadata is None
+
+    def test_round_trip_drop_count(self) -> None:
+        receipt = make_receipt()
+        receipt.credentialSubject.action.emitter_metadata = EmitterMetadata(
+            drop_count=7,
+        )
+
+        dumped = receipt.model_dump(by_alias=True)
+        restored = AgentReceipt.model_validate(dumped)
+        em = restored.credentialSubject.action.emitter_metadata
+        assert em is not None
+        assert em.drop_count == 7
+
+    def test_changes_canonical_hash(self) -> None:
+        baseline = make_receipt()
+        with_em = make_receipt()
+        with_em.credentialSubject.action.emitter_metadata = EmitterMetadata(
+            drop_count=3,
+        )
+        assert hash_receipt(baseline) != hash_receipt(with_em)
