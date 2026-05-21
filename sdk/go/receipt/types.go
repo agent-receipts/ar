@@ -29,6 +29,24 @@ const (
 )
 
 // OutcomeStatus represents the result of an action.
+// ChainStatus is the issuer-asserted termination reason carried in
+// chain.status (spec §7.3.3). Wire values are ChainStatusComplete and
+// ChainStatusInterrupted only — ChainStatusUnknown is verifier-derived
+// and MUST NOT be emitted by issuers.
+type ChainStatus string
+
+const (
+	ChainStatusComplete    ChainStatus = "complete"
+	ChainStatusInterrupted ChainStatus = "interrupted"
+	ChainStatusUnknown     ChainStatus = "unknown"
+)
+
+// IsValidWireValue reports whether v is one of the two values an issuer may
+// write to chain.status. Verifier-only "unknown" returns false.
+func (v ChainStatus) IsValidWireValue() bool {
+	return v == ChainStatusComplete || v == ChainStatusInterrupted
+}
+
 type OutcomeStatus string
 
 const (
@@ -123,16 +141,22 @@ type Chain struct {
 	// Terminal: &falseVal still produce a valid JSON document.
 	Terminal *bool `json:"terminal,omitempty"`
 	// Status, when non-empty, asserts the reason the chain ended. MUST be
-	// "complete" or "interrupted"; the verifier-derived "unknown" classification
-	// is never written on the wire. Only meaningful alongside Terminal: true.
-	// MarshalJSON silently drops Status when Terminal is unset or false.
-	// See spec §7.3.3.
-	Status string `json:"status,omitempty"`
+	// ChainStatusComplete or ChainStatusInterrupted; ChainStatusUnknown is
+	// verifier-derived and MUST NOT be set by issuers. Only meaningful
+	// alongside Terminal: true. MarshalJSON silently drops Status when
+	// Terminal is unset or false, and also drops any value that is not a
+	// valid wire value. See spec §7.3.3.
+	Status ChainStatus `json:"status,omitempty"`
 }
 
-// MarshalJSON serializes Chain, silently omitting Terminal when it is set
-// to false (spec §4.3.2 forbids `terminal: false` on the wire) and Status
-// when Terminal is unset (spec §7.3.3 requires status to coexist with terminal).
+// MarshalJSON serializes Chain, enforcing the wire-form invariants:
+//   - Terminal is dropped when it is non-nil but false (spec §4.3.2 forbids
+//     terminal: false on the wire).
+//   - Status is dropped when Terminal is unset (spec §7.3.3 requires status
+//     to coexist with terminal).
+//   - Status is dropped when it is not a valid wire value (i.e. anything
+//     other than ChainStatusComplete or ChainStatusInterrupted — including
+//     ChainStatusUnknown, which is verifier-derived only).
 func (c Chain) MarshalJSON() ([]byte, error) {
 	type chainAlias Chain
 	a := chainAlias(c)
@@ -140,6 +164,9 @@ func (c Chain) MarshalJSON() ([]byte, error) {
 		a.Terminal = nil
 	}
 	if a.Terminal == nil {
+		a.Status = ""
+	}
+	if a.Status != "" && !a.Status.IsValidWireValue() {
 		a.Status = ""
 	}
 	return json.Marshal(a)

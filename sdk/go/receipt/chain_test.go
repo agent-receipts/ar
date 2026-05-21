@@ -868,7 +868,7 @@ func TestTerminalViolationBeforeComputeError(t *testing.T) {
 
 // buildChainWithStatus is like buildChainWithTerminal but also sets
 // chain.status on the terminal receipt.
-func buildChainWithStatus(t *testing.T, kp KeyPair, count int, status string) []AgentReceipt {
+func buildChainWithStatus(t *testing.T, kp KeyPair, count int, status ChainStatus) []AgentReceipt {
 	t.Helper()
 	chain := buildChain(t, kp, count-1)
 
@@ -903,8 +903,8 @@ func TestChainStatusCompleteByDefault(t *testing.T) {
 	if !result.Valid {
 		t.Fatalf("chain should be valid: %s", result.Error)
 	}
-	if result.Status != StatusComplete {
-		t.Errorf("expected Status=%q, got %q", StatusComplete, result.Status)
+	if result.Status != ChainStatusComplete {
+		t.Errorf("expected Status=%q, got %q", ChainStatusComplete, result.Status)
 	}
 	// Wire form: no status field emitted when not explicitly set.
 	if chain[len(chain)-1].CredentialSubject.Chain.Status != "" {
@@ -914,31 +914,31 @@ func TestChainStatusCompleteByDefault(t *testing.T) {
 
 func TestChainStatusComplete(t *testing.T) {
 	kp, _ := GenerateKeyPair()
-	chain := buildChainWithStatus(t, kp, 3, StatusComplete)
+	chain := buildChainWithStatus(t, kp, 3, ChainStatusComplete)
 	result := VerifyChain(chain, kp.PublicKey)
 	if !result.Valid {
 		t.Fatalf("chain should be valid: %s", result.Error)
 	}
-	if result.Status != StatusComplete {
-		t.Errorf("expected Status=%q, got %q", StatusComplete, result.Status)
+	if result.Status != ChainStatusComplete {
+		t.Errorf("expected Status=%q, got %q", ChainStatusComplete, result.Status)
 	}
-	if chain[len(chain)-1].CredentialSubject.Chain.Status != StatusComplete {
-		t.Errorf("wire form: expected Chain.Status=%q, got %q", StatusComplete, chain[len(chain)-1].CredentialSubject.Chain.Status)
+	if chain[len(chain)-1].CredentialSubject.Chain.Status != ChainStatusComplete {
+		t.Errorf("wire form: expected Chain.Status=%q, got %q", ChainStatusComplete, chain[len(chain)-1].CredentialSubject.Chain.Status)
 	}
 }
 
 func TestChainStatusInterrupted(t *testing.T) {
 	kp, _ := GenerateKeyPair()
-	chain := buildChainWithStatus(t, kp, 3, StatusInterrupted)
+	chain := buildChainWithStatus(t, kp, 3, ChainStatusInterrupted)
 	result := VerifyChain(chain, kp.PublicKey)
 	if !result.Valid {
 		t.Fatalf("chain should be valid: %s", result.Error)
 	}
-	if result.Status != StatusInterrupted {
-		t.Errorf("expected Status=%q, got %q", StatusInterrupted, result.Status)
+	if result.Status != ChainStatusInterrupted {
+		t.Errorf("expected Status=%q, got %q", ChainStatusInterrupted, result.Status)
 	}
-	if chain[len(chain)-1].CredentialSubject.Chain.Status != StatusInterrupted {
-		t.Errorf("wire form: expected Chain.Status=%q, got %q", StatusInterrupted, chain[len(chain)-1].CredentialSubject.Chain.Status)
+	if chain[len(chain)-1].CredentialSubject.Chain.Status != ChainStatusInterrupted {
+		t.Errorf("wire form: expected Chain.Status=%q, got %q", ChainStatusInterrupted, chain[len(chain)-1].CredentialSubject.Chain.Status)
 	}
 }
 
@@ -949,8 +949,8 @@ func TestChainStatusUnknownNoTerminal(t *testing.T) {
 	if !result.Valid {
 		t.Fatalf("chain should be valid: %s", result.Error)
 	}
-	if result.Status != StatusUnknown {
-		t.Errorf("expected Status=%q, got %q", StatusUnknown, result.Status)
+	if result.Status != ChainStatusUnknown {
+		t.Errorf("expected Status=%q, got %q", ChainStatusUnknown, result.Status)
 	}
 }
 
@@ -960,15 +960,15 @@ func TestChainStatusUnknownEmpty(t *testing.T) {
 	if !result.Valid {
 		t.Fatalf("empty chain should be valid: %s", result.Error)
 	}
-	if result.Status != StatusUnknown {
-		t.Errorf("expected Status=%q, got %q", StatusUnknown, result.Status)
+	if result.Status != ChainStatusUnknown {
+		t.Errorf("expected Status=%q, got %q", ChainStatusUnknown, result.Status)
 	}
 }
 
 // Status reflects what the chain claims on the wire, not its validity.
 func TestChainStatusIndependentOfValidity(t *testing.T) {
 	kp, _ := GenerateKeyPair()
-	chain := buildChainWithStatus(t, kp, 3, StatusInterrupted)
+	chain := buildChainWithStatus(t, kp, 3, ChainStatusInterrupted)
 	// Tamper with the middle receipt.
 	chain[1].CredentialSubject.Action.RiskLevel = RiskCritical
 
@@ -976,8 +976,8 @@ func TestChainStatusIndependentOfValidity(t *testing.T) {
 	if result.Valid {
 		t.Fatal("tampered chain should be invalid")
 	}
-	if result.Status != StatusInterrupted {
-		t.Errorf("expected Status=%q even on invalid chain, got %q", StatusInterrupted, result.Status)
+	if result.Status != ChainStatusInterrupted {
+		t.Errorf("expected Status=%q even on invalid chain, got %q", ChainStatusInterrupted, result.Status)
 	}
 }
 
@@ -987,7 +987,7 @@ func TestChainStatusDroppedWithoutTerminal(t *testing.T) {
 		Sequence:            1,
 		PreviousReceiptHash: nil,
 		ChainID:             "chain-1",
-		Status:              StatusInterrupted, // Set without Terminal — should be dropped on marshal.
+		Status:              ChainStatusInterrupted, // Set without Terminal — should be dropped on marshal.
 	}
 	data, err := json.Marshal(c)
 	if err != nil {
@@ -995,6 +995,49 @@ func TestChainStatusDroppedWithoutTerminal(t *testing.T) {
 	}
 	if strings.Contains(string(data), "status") {
 		t.Errorf("status must be dropped from JSON when terminal is unset, got: %s", data)
+	}
+}
+
+// MarshalJSON also drops chain.status when the value is not a valid wire
+// vocabulary entry — including ChainStatusUnknown, which is verifier-only.
+func TestChainStatusDroppedForInvalidWireValue(t *testing.T) {
+	terminal := true
+	cases := []ChainStatus{ChainStatusUnknown, ChainStatus("garbage"), ChainStatus("")}
+	for _, status := range cases {
+		c := Chain{
+			Sequence:            1,
+			PreviousReceiptHash: nil,
+			ChainID:             "chain-1",
+			Terminal:            &terminal,
+			Status:              status,
+		}
+		data, err := json.Marshal(c)
+		if err != nil {
+			t.Fatalf("Status=%q: %v", status, err)
+		}
+		if strings.Contains(string(data), `"status"`) {
+			t.Errorf("Status=%q must be dropped from wire form, got: %s", status, data)
+		}
+	}
+}
+
+// Create() drops TerminationStatus when it is not a valid wire vocabulary entry.
+func TestCreateDropsInvalidTerminationStatus(t *testing.T) {
+	cases := []ChainStatus{ChainStatusUnknown, ChainStatus("garbage")}
+	for _, status := range cases {
+		unsigned := Create(CreateInput{
+			Issuer:            Issuer{ID: "did:agent:test"},
+			Principal:         Principal{ID: "did:user:test"},
+			Action:            Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+			Outcome:           Outcome{Status: StatusSuccess},
+			Chain:             Chain{Sequence: 1, PreviousReceiptHash: nil, ChainID: "chain-1"},
+			Terminal:          true,
+			TerminationStatus: status,
+		})
+		if unsigned.CredentialSubject.Chain.Status != "" {
+			t.Errorf("invalid TerminationStatus=%q must be silently dropped, got Chain.Status=%q",
+				status, unsigned.CredentialSubject.Chain.Status)
+		}
 	}
 }
 

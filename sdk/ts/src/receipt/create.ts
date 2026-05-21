@@ -35,9 +35,13 @@ export interface CreateReceiptInput {
 	/** When true, sets chain.terminal: true on the receipt. Never emits false. */
 	terminal?: true;
 	/** Issuer-asserted termination reason. Only meaningful alongside
-	 *  `terminal: true`; passing `status` without `terminal: true` is a
-	 *  programming error and is ignored at construction (the verifier will
-	 *  reject the receipt as schema-invalid per spec §7.3.3). */
+	 *  `terminal: true`. When `terminationStatus` is supplied but `terminal`
+	 *  is not, `createReceipt` silently omits `chain.status` from the
+	 *  resulting receipt — the output is schema-valid but the supplied value
+	 *  is discarded. Receipts produced by `createReceipt` always satisfy the
+	 *  "status implies terminal" invariant (spec §7.3.3); a Chain object
+	 *  constructed directly with `status` but no `terminal` would be
+	 *  schema-invalid but cannot be produced through this entry point. */
 	terminationStatus?: "complete" | "interrupted";
 }
 

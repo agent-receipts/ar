@@ -27,7 +27,7 @@ type ReceiptVerification struct {
 type ChainVerification struct {
 	Valid    bool                  `json:"valid"`
 	Length   int                   `json:"length"`
-	Status   string                `json:"status"` // "complete" | "interrupted" | "unknown" (spec §7.3.3).
+	Status   ChainStatus           `json:"status"` // "complete" | "interrupted" | "unknown" (spec §7.3.3).
 	Receipts []ReceiptVerification `json:"receipts"`
 	BrokenAt int                   `json:"broken_at"`       // -1 if chain is valid.
 	Error    string                `json:"error,omitempty"` // Non-empty if verification failed due to a key/proof error.
@@ -36,29 +36,22 @@ type ChainVerification struct {
 	ResponseHashNote string `json:"response_hash_note,omitempty"`
 }
 
-// Chain termination status values (spec §7.3.3).
-const (
-	StatusComplete    = "complete"
-	StatusInterrupted = "interrupted"
-	StatusUnknown     = "unknown"
-)
-
 // classifyTerminationStatus inspects the wire form of the final receipt and
 // returns the chain's termination status (spec §7.3.3). Independent of
 // verification result — describes what the chain claims, not whether it's valid.
-func classifyTerminationStatus(receipts []AgentReceipt) string {
+func classifyTerminationStatus(receipts []AgentReceipt) ChainStatus {
 	if len(receipts) == 0 {
-		return StatusUnknown
+		return ChainStatusUnknown
 	}
 	last := receipts[len(receipts)-1]
 	ch := last.CredentialSubject.Chain
 	if ch.Terminal == nil || !*ch.Terminal {
-		return StatusUnknown
+		return ChainStatusUnknown
 	}
-	if ch.Status == StatusInterrupted {
-		return StatusInterrupted
+	if ch.Status == ChainStatusInterrupted {
+		return ChainStatusInterrupted
 	}
-	return StatusComplete
+	return ChainStatusComplete
 }
 
 // ChainVerifyOptions holds optional parameters for VerifyChain.
@@ -121,12 +114,12 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			return ChainVerification{
 				Valid:    false,
 				Length:   0,
-				Status:   StatusUnknown,
+				Status:   ChainStatusUnknown,
 				BrokenAt: 0,
 				Error:    "expected chain length does not match: expected " + strconv.Itoa(*opt.ExpectedLength) + ", got 0",
 			}
 		}
-		return ChainVerification{Valid: true, Length: 0, Status: StatusUnknown, BrokenAt: -1}
+		return ChainVerification{Valid: true, Length: 0, Status: ChainStatusUnknown, BrokenAt: -1}
 	}
 
 	status := classifyTerminationStatus(receipts)

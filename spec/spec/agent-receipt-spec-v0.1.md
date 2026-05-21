@@ -478,7 +478,7 @@ A chain ends in one of three states; the verifier's `ChainVerification` result M
 
 1. **`"complete"`** — the chain has a final receipt with `chain.terminal: true` and either `chain.status: "complete"` or no `chain.status` field. The issuer reached normal end-of-session and emitted a terminator deliberately.
 
-2. **`"interrupted"`** — the chain has a final receipt with `chain.terminal: true` and `chain.status: "interrupted"`. The issuer (or a process acting on its behalf, such as the MCP proxy on SIGTERM) emitted a best-effort terminator before crashing or being killed. The chain is closed but the closure was not part of normal operation. Auditors SHOULD treat the chain as complete for integrity purposes but flag the imperfect termination for operational review.
+2. **`"interrupted"`** — the chain has a final receipt with `chain.terminal: true` and `chain.status: "interrupted"`. The issuer (or the signing process on its behalf at shutdown — typically the daemon, since signing is daemon-side per ADR-0010) emitted a best-effort terminator before crashing or being killed. The chain is closed but the closure was not part of normal operation. Auditors SHOULD treat the chain as complete for integrity purposes but flag the imperfect termination for operational review.
 
 3. **`"unknown"`** — the chain has no terminal receipt. The verifier cannot distinguish a chain whose issuer crashed mid-session (no terminator written) from a chain whose terminator was truncated off the end (which `ExpectedLength` / `ExpectedFinalHash` per §7.3.1 may detect). This classification is the verifier's signal that completeness cannot be determined from the chain alone.
 

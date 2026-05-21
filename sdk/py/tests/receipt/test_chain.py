@@ -841,11 +841,14 @@ class TestChainTerminationStatus:
         # Status reflects what the chain claims on the wire, not its validity.
         assert result.status == STATUS_INTERRUPTED
 
-    def test_status_omitted_from_wire_when_no_terminal(self) -> None:
-        """A non-terminal receipt with status set must not emit status on the wire."""
-        # Construct a Chain object with status set but terminal unset (bypassing
-        # the create_receipt path which would refuse this). Verify that
-        # canonicalisation via exclude_none drops the field cleanly.
+    def test_status_dropped_at_serialization_when_no_terminal(self) -> None:
+        """Chain.model_serializer must drop status when terminal is unset.
+
+        Matches the Go SDK's MarshalJSON behaviour: the wire-form invariant
+        (status implies terminal, spec §7.3.3) is enforced at the
+        serialization layer so direct model construction cannot produce a
+        schema-invalid wire form.
+        """
         c = Chain(
             sequence=1,
             previous_receipt_hash=None,
@@ -853,15 +856,19 @@ class TestChainTerminationStatus:
             terminal=None,
             status="interrupted",
         )
-        # Pydantic exclude_none must drop both terminal and status here.
         d = c.model_dump(exclude_none=True)
-        # status only meaningful alongside terminal: True, so the test
-        # documents the expected wire shape — both absent.
         assert "terminal" not in d
-        # NOTE: At present Pydantic emits status here. The wire-form invariant
-        # (status implies terminal) is enforced by the JSON schema and by
-        # create_receipt(). Direct manipulation of the model bypasses both;
-        # callers who construct Chain directly must respect the constraint.
-        # This test pins the model-level behaviour so future tightening is
-        # visible.
+        assert "status" not in d
+
+    def test_status_preserved_when_terminal_is_true(self) -> None:
+        """The serializer only drops status when terminal is unset."""
+        c = Chain(
+            sequence=1,
+            previous_receipt_hash=None,
+            chain_id="chain-1",
+            terminal=True,
+            status="interrupted",
+        )
+        d = c.model_dump(exclude_none=True)
+        assert d.get("terminal") is True
         assert d.get("status") == "interrupted"

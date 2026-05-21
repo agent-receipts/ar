@@ -7,9 +7,9 @@ fields are marked with ``None`` defaults.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 CONTEXT: list[str] = [
     "https://www.w3.org/ns/credentials/v2",
@@ -131,6 +131,20 @@ class Chain(BaseModel):
     # terminal=True; the verifier-derived "unknown" classification is never
     # written on the wire. See spec §7.3.3.
     status: Literal["complete", "interrupted"] | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: Any) -> dict[str, Any]:
+        """Enforce the spec §7.3.3 invariant at the serialization layer.
+
+        `chain.status` is only meaningful alongside `chain.terminal: true`.
+        Drop status whenever terminal is unset, mirroring the Go SDK's
+        MarshalJSON behaviour. This makes the wire-form invariant impossible
+        to violate via direct model construction.
+        """
+        data: dict[str, Any] = handler(self)
+        if data.get("terminal") is not True and "status" in data:
+            del data["status"]
+        return data
 
 
 class CredentialSubject(BaseModel):
