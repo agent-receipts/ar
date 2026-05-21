@@ -492,6 +492,20 @@ All receipts within a chain MUST share the same `chain.chain_id` (per §7.5, a c
 
 This check parallels §7.3.2: both enforce single-chain integrity invariants that no caller parameter can disable. Verifying receipts from multiple chains requires multiple calls to the chain verifier, one per chain.
 
+#### 7.3.5 Sequence number contiguity and store trust
+
+Verification step 3 (above) mandates strict contiguity: each receipt's `chain.sequence` MUST equal its predecessor's + 1. Any gap (e.g. receipts at sequence 1, 3, 5 missing sequence 2 and 4) is a hard verification failure, not a warning. Verifiers MUST mark the chain invalid and identify the offending index. This applies even when signatures and hash linkage on the surviving receipts are otherwise valid — a partial chain with gaps cannot be silently accepted.
+
+**Store trust model.** Chain verification proves the integrity of the receipts the verifier is *given*; it cannot, on its own, prove that the verifier was given every receipt the issuer wrote. If an attacker can both delete receipts from the store AND re-sign every downstream receipt with an updated `previous_receipt_hash` (which requires the agent's signing key), they can erase mid-chain history undetectably from chain verification alone. The receipt store is therefore a trusted component for completeness claims.
+
+Operators who require detection of store-level tampering SHOULD layer at least one of the following on top of chain verification:
+
+- **Append-only storage backend** — object-lock S3, immutable WORM volumes, or an equivalent that prevents in-place mutation and rejects deletes.
+- **External chain-state witnesses** — `ExpectedLength` and/or `ExpectedFinalHash` (per §7.3.1) supplied from an out-of-band record the attacker cannot also rewrite (separate audit log, transparency log, signed checkpoint).
+- **Periodic chain-head anchoring** — publish chain-head hashes to an append-only public log at regular intervals; gaps relative to the anchored state are evidence of store-level rewriting.
+
+These are operational controls outside the protocol; the verifier cannot synthesize them and the spec does not mandate any specific backend. They are listed here so that compliance reviewers can match the protocol's verification contract to their operational threat model.
+
 ### 7.4 Reversal receipts
 
 Receipts are immutable once issued. To record that an action was reversed, issue a new receipt appended to the same chain with:
