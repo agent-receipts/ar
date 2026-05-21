@@ -16,7 +16,7 @@ The canonical home is `agentreceipts.ai`. The reference monorepo is `github.com/
 
 These terms have specific meanings in this project. Use them consistently. Do **not** introduce synonyms.
 
-- **Receipt** — A single signed record of one agent action (a tool call, a model call, a decision point).
+- **Receipt** — A single signed attestation of one agent action (a tool call, a model call, a decision point).
   Always Ed25519-signed. Always a W3C Verifiable Credential. Never called a "log", "event", "trace", or "record".
 - **Receipt chain** — An ordered sequence of receipts where each one's hash references the previous.
   Tamper-evident; not tamper-proof. Never called a "ledger" or "log".
@@ -31,12 +31,15 @@ These terms have specific meanings in this project. Use them consistently. Do **
 ## Surface map
 
 - `/spec` — the wire-format normative reference. **Source of truth.** Changes here cascade.
-- `/sdk/ts` — TypeScript SDK (primary reference implementation).
+- `/sdk/ts` — TypeScript SDK.
 - `/sdk/py` — Python SDK.
 - `/sdk/go` — Go SDK.
 - `/mcp-proxy` — MCP proxy that wraps tool calls and emits receipts. Pure dogfood.
-- `/openclaw` — OpenClaw plugin. Same idea, different host.
 - `/docs/adr` — Architecture Decision Records. See ADR index there.
+
+Related external repos (not in this tree):
+
+- `agent-receipts/openclaw` — OpenClaw plugin. Same idea, different host.
 
 ## Invariants (do not violate without an ADR)
 
@@ -49,7 +52,7 @@ These terms have specific meanings in this project. Use them consistently. Do **
 ## Tone & conventions
 
 - Code comments explain *why*, not *what*. The protocol's surface is small; the rationale is the hard part.
-- Errors thrown by SDKs use the same error taxonomy across languages (see `/spec/errors.md` — TODO if missing).
+- Errors thrown by SDKs should converge on a shared taxonomy across languages. A formal verification error taxonomy is not yet defined; see spec v0.1 §9 item 11 ("Verification error taxonomy") for the open question.
 - Examples in docs always use realistic agent scenarios, never `foo`/`bar`.
 
 ## Known sharp edges
