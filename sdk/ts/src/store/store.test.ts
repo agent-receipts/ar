@@ -295,7 +295,7 @@ describe("ReceiptStore", () => {
 					"https://agentreceipts.ai/context/v1",
 				],
 				type: ["VerifiableCredential", "AgentReceipt"],
-				version: "0.2.0",
+				version: "0.3.0",
 				issuer: { id: "did:issuer" },
 				issuanceDate: "2024-01-01T00:00:00Z",
 				credentialSubject: {
