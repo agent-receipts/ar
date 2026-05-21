@@ -104,12 +104,7 @@ export async function encryptDisclosure(
 	recipientPublicKey: Uint8Array,
 	kid: string,
 ): Promise<DisclosureEnvelope> {
-	if (
-		params === null ||
-		params === undefined ||
-		typeof params !== "object" ||
-		Array.isArray(params)
-	) {
+	if (!isPlainObject(params)) {
 		throw new Error("params must be a plain object");
 	}
 	if (recipientPublicKey.byteLength !== 32) {
@@ -210,10 +205,15 @@ export async function decryptDisclosure(
 		);
 	}
 
+	const recipient = env.recipients[0];
+	if (typeof recipient?.enc !== "string") {
+		throw new Error("recipient enc must be a string");
+	}
+
 	const suite = await getSuite();
 	const privKey = await suite.kem.deserializePrivateKey(recipientPrivateKey);
 
-	const enc = fromBase64Url(env.recipients[0].enc);
+	const enc = fromBase64Url(recipient.enc);
 	if (enc.byteLength !== 32) {
 		throw new Error(
 			`invalid enc: expected 32 bytes (X25519 encapsulated key), got ${enc.byteLength}`,
