@@ -192,6 +192,33 @@ describe("decryptDisclosure", () => {
 		);
 	});
 
+	it("rejects enc with invalid base64url length (len % 4 === 1)", async () => {
+		const alicePub = fromHex(ALICE_PUB_HEX);
+		const alicePriv = fromHex(ALICE_PRIV_HEX);
+		const env = await encryptDisclosure({ k: "v" }, alicePub, "kid");
+		// 41 chars: 41 % 4 === 1 — never valid in base64
+		const badEnv = {
+			...env,
+			recipients: [{ kid: "kid", enc: "A".repeat(41) }],
+		} as unknown as DisclosureEnvelope;
+		await expect(decryptDisclosure(badEnv, alicePriv)).rejects.toThrow(
+			"invalid base64url",
+		);
+	});
+
+	it("rejects ct shorter than 24 characters", async () => {
+		const alicePub = fromHex(ALICE_PUB_HEX);
+		const alicePriv = fromHex(ALICE_PRIV_HEX);
+		const env = await encryptDisclosure({ k: "v" }, alicePub, "kid");
+		const badEnv = {
+			...env,
+			ct: "A".repeat(23),
+		} as unknown as DisclosureEnvelope;
+		await expect(decryptDisclosure(badEnv, alicePriv)).rejects.toThrow(
+			"ct is too short",
+		);
+	});
+
 	it("JSON round-trips cleanly", async () => {
 		const alicePub = fromHex(ALICE_PUB_HEX);
 		const alicePriv = fromHex(ALICE_PRIV_HEX);
