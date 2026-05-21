@@ -500,7 +500,7 @@ Verification step 3 (above) mandates strict contiguity: each receipt's `chain.se
 
 Operators who require detection of store-level tampering SHOULD layer at least one of the following on top of chain verification:
 
-- **Append-only storage backend** — object-lock S3, immutable WORM volumes, or an equivalent that prevents in-place mutation and rejects deletes.
+- **Append-only storage backend** — S3 Object Lock, immutable WORM volumes, or an equivalent that prevents in-place mutation and rejects deletes.
 - **External chain-state witnesses** — `ExpectedLength` and/or `ExpectedFinalHash` (per §7.3.1) supplied from an out-of-band record the attacker cannot also rewrite (separate audit log, transparency log, signed checkpoint).
 - **Periodic chain-head anchoring** — publish chain-head hashes to an append-only public log at regular intervals; gaps relative to the anchored state are evidence of store-level rewriting.
 
