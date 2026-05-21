@@ -182,7 +182,10 @@ export function verifyChain(
 				const reason = e instanceof Error ? e.message : String(e);
 				if (hashComputeError === undefined) {
 					hashComputeError = `hash compute failed at index ${i - 1}: ${reason}`;
-					hashComputeErrorAt = i;
+					// Store the index of the receipt whose hash computation
+					// failed, not the iteration index. Matches the error
+					// message and keeps precedence comparisons consistent.
+					hashComputeErrorAt = i - 1;
 				}
 			}
 			hashLinkValid =
@@ -221,15 +224,28 @@ export function verifyChain(
 		previous = receipt;
 	}
 
-	// Sig errors take precedence over hash-compute errors; when both are present
-	// the hash-compute error is discarded (a single error field can only surface one).
-	// Track the position of the chosen loop error so downstream early returns
-	// (e.g. receipt-after-terminal) can decide whether the loop error is
-	// diagnostic for the failure they encountered. Mirrors the Go SDK's
-	// loopErrAt accounting.
-	const loopError = signatureError ?? hashComputeError;
-	const loopErrorAt =
-		signatureError !== undefined ? signatureErrorAt : hashComputeErrorAt;
+	// Pick whichever compute error occurred first in the chain. When both
+	// fire at the same index (e.g. a single receipt that fails both sig and
+	// hash), sig wins the tie (it is the more direct cryptographic
+	// statement). Mirrors the Go SDK's loopErr / loopErrAt selection so
+	// cross-SDK error strings agree on which failure to surface.
+	let loopError: string | undefined;
+	let loopErrorAt = -1;
+	if (signatureError !== undefined && hashComputeError !== undefined) {
+		if (signatureErrorAt <= hashComputeErrorAt) {
+			loopError = signatureError;
+			loopErrorAt = signatureErrorAt;
+		} else {
+			loopError = hashComputeError;
+			loopErrorAt = hashComputeErrorAt;
+		}
+	} else if (signatureError !== undefined) {
+		loopError = signatureError;
+		loopErrorAt = signatureErrorAt;
+	} else if (hashComputeError !== undefined) {
+		loopError = hashComputeError;
+		loopErrorAt = hashComputeErrorAt;
+	}
 
 	// Chain identifier binding check (unconditional — spec §7.3.4).
 	// All receipts in a verified chain MUST share chain.chain_id. Reject
