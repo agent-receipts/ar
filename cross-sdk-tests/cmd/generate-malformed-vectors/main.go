@@ -25,10 +25,10 @@ import (
 const fixedTimestamp = "2026-04-22T00:00:00Z"
 
 type malformedVectors struct {
-	Description string         `json:"description"`
-	Keys        keysSection    `json:"keys"`
-	Receipts    []receiptCase  `json:"receipts"`
-	Chains      []chainCase    `json:"chains"`
+	Description string        `json:"description"`
+	Keys        keysSection   `json:"keys"`
+	Receipts    []receiptCase `json:"receipts"`
+	Chains      []chainCase   `json:"chains"`
 }
 
 type keysSection struct {
