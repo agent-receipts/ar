@@ -64,10 +64,17 @@ this and undermine the protocol's credibility?"
 | 2 | Silent chain termination — `status` field on `agent_end` | ADR-0019 § P1 | #475 | planned |
 | 3 | `GeneratingKeyProvider` unreachable in production | ADR-0019 § S2 | #476 | planned |
 | 4 | Sequential receipt construction enforced under parallel tool calls | ADR-0020 | #488 | planned |
+| 5 | Document tail-truncation gap in chain verification (spec + SDK doc strings + pinning tests) | spec | #171 | planned |
 
 Item 4 is in this list because the OpenClaw plugin may fire concurrent tool
 invocations during the demo. If concurrent emission produces a broken chain
 live on HN, that is the failure mode that gets quoted in the top comment.
+
+Item 5 is in this list because verifier-only chain-integrity claims are
+exactly the kind of property a sharp HN commenter dissects. `VerifyChain`
+currently returns `Valid: true` on a truncated tail. The fix is small
+(spec section + doc strings + pinning tests) but the discovery cost is
+high — better to document the property up front than to be told.
 
 ---
 
@@ -98,6 +105,7 @@ across workstreams they can be parallelised.
 | Item | ADR | Issue | Status |
 |---|---|---|---|
 | Bounded `input`/`output` payload via `PayloadStrategy` | ADR-0019 § S3 | #478 | planned |
+| `parameterDisclosure` Phase A — cross-SDK + OpenClaw migration (envelope already shipped in Go #468 / TS #472; Python SDK envelope, OpenClaw rename, cross-SDK tests remain) | ADR-0012 | #280 | planned |
 
 ### Cross-SDK parity
 
