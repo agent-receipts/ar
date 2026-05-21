@@ -104,17 +104,23 @@ recommended operationally. See also O2 (store completeness).
 
 #### S1: Cross-SDK canonicalisation conformance vectors missing
 
-**Gap.** URDNA2015 implementations differ subtly across languages. The
-Python SDK also has residual Attest Protocol naming (e.g. `eventType:
-"attest"`) that diverges from the canonical vocabulary. Mixed-language
-chains may silently fail to verify.
+**Gap.** RFC 8785 / JCS implementations (per ADR-0002 and ADR-0009)
+may diverge subtly across language SDKs on edge cases: UTF-16 code unit
+ordering of non-ASCII keys, ES6 `Number.toString()` semantics, Unicode
+normalisation of string values. ADR-0002 § Unicode edge cases catalogues
+two latent bugs of this class (Python's UTF-16-LE byte sort #86, Go's
+`sort.Strings()` #82). The Python SDK also has residual Attest Protocol
+naming (e.g. `eventType: "attest"`) that diverges from the canonical
+vocabulary committed in ADR-0009. Mixed-language chains may silently fail
+to verify.
 
 **Decision.** Mandatory before v1 release. Produce a cross-SDK conformance
-test suite: fixed receipt JSON-LD documents with known canonical forms and
-known SHA-256 hash values. All three SDKs must produce and verify
-identically. Fix Python SDK `eventType` naming as part of this work.
-Round-trip matrix: TypeScript → Python, TypeScript → Go, Python → Go,
-and all reverse directions.
+test suite: fixed receipt JSON-LD documents (W3C VC envelope per ADR-0003)
+with known canonical RFC 8785 byte forms and known SHA-256 hash values.
+All three SDKs must produce and verify identically. Fix Python SDK
+`eventType` naming as part of this work. Round-trip matrix:
+TypeScript → Python, TypeScript → Go, Python → Go, and all reverse
+directions.
 
 **Issue.** #474
 

@@ -39,9 +39,15 @@ A new `Emitter` interface is added to the core SDK package (`@agnt-rcpt/sdk-ts` 
 
 ```typescript
 interface Emitter {
-  emit(receipt: SignedReceipt): Promise<void>
+  emit(receipt: AgentReceipt): Promise<void>
 }
 ```
+
+`AgentReceipt` is the existing signed-receipt type defined in the core SDK
+(`sdk/ts/src/receipt/types.ts` and equivalents in Go and Python) — the
+W3C VC envelope with a required `proof` field. The unsigned variant is
+`UnsignedAgentReceipt = Omit<AgentReceipt, "proof">`. Emitters receive
+already-signed receipts; signing is upstream.
 
 Receipt construction, signing, and chaining remain client-side in all cases.
 The `Emitter` is responsible only for delivery. The collector is a dumb store —
@@ -150,7 +156,7 @@ The collector exposes a single endpoint:
 POST /receipts
 Content-Type: application/ld+json
 
-{ ...signedReceipt }
+{ ...agentReceipt }
 
 → 201 Created   (receipt accepted and persisted)
 → 409 Conflict  (receipt id already exists — idempotent re-delivery acceptable)
@@ -209,7 +215,7 @@ matches the new `Emitter` interface. The migration has two steps.
 **Step 1 — rename the existing TS class.** `sdk/ts/src/emitter.ts` currently
 exports `Emitter` (unsigned `EmitEvent` frames, daemon signs). That class is
 renamed to `DaemonEmitter` with no behaviour change. Its `emit()` method
-keeps its current signature — it does not yet take `SignedReceipt`. Existing
+keeps its current signature — it does not yet take `AgentReceipt`. Existing
 callers update the import name; the wire protocol with the daemon is
 unchanged. Python and Go SDKs that grow equivalent helpers follow the same
 rename rule.
@@ -218,7 +224,7 @@ rename rule.
 added to the daemon socket protocol that carries an already-signed,
 already-chained receipt for storage only (no signing on the daemon side).
 Once the daemon understands this frame, `DaemonEmitter` gains an
-`emit(SignedReceipt)` overload that uses it, and at that point
+`emit(AgentReceipt)` overload that uses it, and at that point
 `DaemonEmitter` implements the `Emitter` interface defined in this ADR.
 Until then `DaemonEmitter` exists as a legacy adapter with a different
 input shape, and is not interchangeable with `HttpEmitter` in
@@ -239,8 +245,8 @@ event occurs
   → SDK constructs receipt payload
   → Signer signs (local bytes, KMS, TPM — per ADR-0018)
   → previousReceiptHash computed from prior signed receipt
-  → SignedReceipt complete
-  → Emitter.emit(signedReceipt)
+  → AgentReceipt complete
+  → Emitter.emit(agentReceipt)
     → HttpEmitter POSTs to collector  (or DaemonEmitter sends to sidecar)
 ```
 

@@ -5,8 +5,9 @@ in-flight, and what's deferred. ADRs record decisions; this roadmap records
 sequencing.
 
 When this roadmap and an ADR disagree on sequencing, this roadmap wins
-(ADRs are immutable; sequencing changes as work progresses). When they
-disagree on a design decision, the ADR wins.
+(ADRs record decisions and may be amended via dated amendments — see
+ADR-0010, ADR-0012, ADR-0015; this roadmap is the sequencing source of
+truth). When they disagree on a design decision, the ADR wins.
 
 Most items link to a GitHub issue. A few rows intentionally don't — they
 are folded into a parent issue, tracked across per-SDK issues opened lazily
@@ -110,8 +111,9 @@ across workstreams they can be parallelised.
 
 ## v2 — deferred
 
-Items remaining for v2 after the regulated-industries elevation. Each has
-an issue open; none are scheduled.
+Items remaining for v2 after the regulated-industries elevation. Most have
+an issue open; parallel sub-chains is intentionally unfiled until the v1
+emitter work clarifies whether the feature is needed. None are scheduled.
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|

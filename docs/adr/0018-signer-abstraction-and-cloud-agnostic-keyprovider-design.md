@@ -24,8 +24,8 @@ dependencies into the core package, which is unacceptable.
 // @agnt-rcpt/sdk-ts (core)
 
 export interface KeyPair {
-  publicKey: Uint8Array   // 32 bytes, Ed25519
-  privateKey: Uint8Array  // 32 bytes, Ed25519
+  publicKey: string   // SPKI-encoded PEM (Ed25519) — matches existing SDKs and daemon
+  privateKey: string  // PKCS8-encoded PEM (Ed25519) — matches existing SDKs and daemon
 }
 
 // For environments where key bytes are accessible locally
@@ -36,9 +36,17 @@ export interface KeyProvider {
 // For environments where the private key is never extractable
 export interface Signer {
   sign(message: Uint8Array): Promise<Uint8Array>
-  getPublicKey(): Promise<Uint8Array>
+  getPublicKey(): Promise<Uint8Array>  // 32 raw bytes per RFC 8032 §5.1.5
 }
 ```
+
+`KeyPair` carries PKCS8/PEM strings to match the form already used across
+the TypeScript, Go, and Python SDKs and the daemon's on-disk key
+(`daemon/cmd/agent-receipts-daemon/main.go`). `Signer.getPublicKey()`
+returns the raw 32-byte public key — the canonical on-chain encoding
+defined in ADR-0015 — because remote signers (KMS / HSM / TPM) typically
+expose the public key but never the private. See § "Key material
+encoding" below.
 
 `AgentReceiptsClient` accepts a `Signer`. `KeyProvider` is a convenience
 abstraction; all built-in `KeyProvider` implementations wrap themselves
@@ -50,7 +58,7 @@ implementations implement `Signer` directly and never expose a `KeyPair`.
 | Provider | Behaviour | Use case |
 |---|---|---|
 | `FileKeyProvider` | Reads keypair from a file path. Does not auto-generate in production mode (see known limitations). | Dev, long-lived compute with persistent volume |
-| `EnvVarKeyProvider` | Reads `AGENTRECEIPTS_KEY` (base58-encoded key value). Shares the env var name with the daemon (`daemon/README.md`), which interprets the value as a file path; the SDK's `EnvVarKeyProvider` interprets it as the key value directly. The deployment picks the form appropriate to its consumer. | Lambda/Cloud Run baseline, CI |
+| `EnvVarKeyProvider` | Reads `AGENTRECEIPTS_KEY` as a multibase `u`-prefixed base64url-encoded 32-byte Ed25519 seed (RFC 8032 §5.1.5), matching ADR-0001 / ADR-0015 on-chain encoding. Unwraps to PKCS8/PEM internally before handing to the rest of the SDK. The same env var name is used by the daemon, which interprets the value as a file path; the deployment picks the form appropriate to its consumer (path for daemon and SDK `FileKeyProvider`; multibase seed for SDK `EnvVarKeyProvider`). | Lambda/Cloud Run baseline, CI |
 | `InMemoryKeyProvider` | Caller supplies raw `KeyPair` bytes directly. No I/O. Makes no memory safety guarantees (see known limitations). | Tests, delegation target for external-fetch adapters |
 | `GeneratingKeyProvider` | Generates a fresh keypair and delegates persistence to a backing `KeyProvider`. Throws if `AGENTRECEIPTS_PRODUCTION=true`. | Dev and bootstrap only |
 
@@ -119,9 +127,26 @@ SDK to fetch it.
 SDK environment variables use the `AGENTRECEIPTS_` prefix to match existing
 project conventions (`AGENTRECEIPTS_SOCKET`, `AGENTRECEIPTS_KEY`,
 `AGENTRECEIPTS_DB`, etc. — see `daemon/README.md`). `AGENTRECEIPTS_KEY` is
-shared with the daemon by name; its value form depends on the consumer (file
-path for the daemon and the SDK's `FileKeyProvider`; base58-encoded key
-value for the SDK's `EnvVarKeyProvider`).
+shared with the daemon by name; its value form depends on the consumer:
+file path for the daemon and the SDK's `FileKeyProvider`; multibase
+`u`-prefixed base64url of the 32-byte Ed25519 seed for the SDK's
+`EnvVarKeyProvider` (per ADR-0001 / ADR-0015 on-chain encoding).
+
+### Key material encoding
+
+The SDK works with two forms for Ed25519 key material:
+
+| Form | Where | Why |
+|---|---|---|
+| PKCS8/PEM string | `KeyPair.publicKey` / `KeyPair.privateKey`, `FileKeyProvider`, daemon on-disk storage | Self-describing (PKCS8 carries the algorithm identifier — supports the future PQC algorithm-agility implied by ADR-0015). Operator-familiar (works with `openssl`, standard tooling). Matches the existing TS/Go/Python SDKs and the daemon |
+| Raw bytes + multibase `u`-base64url | On-chain (signatures per ADR-0001, public keys per ADR-0015), `EnvVarKeyProvider` env-var value | Compact (~43 chars for a 32-byte Ed25519 seed — practical for env-var injection in ephemeral compute). Matches the on-chain encoding |
+
+`EnvVarKeyProvider` is the only built-in provider that consumes the raw
+form; it decodes the multibase seed and reconstructs the PKCS8/PEM `KeyPair`
+before handing off to the rest of the SDK. `KMSSigner`, `TPMSigner`, and
+other `Signer` implementations expose neither form — they never reveal
+private key material; only `Signer.getPublicKey()` is observable
+externally, and it returns the canonical raw 32-byte form.
 
 ### Session continuity
 
