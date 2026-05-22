@@ -19,10 +19,15 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_receipts.store.store import ReceiptQuery
 from agent_receipts.store.verify import verify_stored_chain
+
+if TYPE_CHECKING:
+    from agent_receipts.receipt.chain import ChainVerification
+    from agent_receipts.receipt.types import AgentReceipt
+    from agent_receipts.store.store import StoreStats
 
 from agent_receipts_hermes._version import VERSION
 from agent_receipts_hermes.config import (
@@ -165,7 +170,7 @@ def _truncate(value: str, width: int) -> str:
     return value[: max(0, width - 1)] + "…"
 
 
-def _format_table(receipts: list[Any], stats: Any) -> str:
+def _format_table(receipts: list[AgentReceipt], stats: StoreStats) -> str:
     lines: list[str] = [
         f"Total receipts: {stats.total}  |  Chains: {stats.chains}",
     ]
@@ -193,7 +198,8 @@ def _format_table(receipts: list[Any], stats: Any) -> str:
     lines.append("-" * len(header))
     for r in receipts:
         sub = r.credentialSubject
-        target = sub.action.target.resource if sub.action.target else "-"
+        target_obj = sub.action.target
+        target = (target_obj.resource or "-") if target_obj else "-"
         lines.append(
             f"{sub.chain.sequence:>5}  "
             f"{_truncate(sub.action.type, 30):<30}  "
@@ -302,7 +308,7 @@ def _run_verify(args: _Args) -> int:
         return 1
 
 
-def _print_verify(args: _Args, chain_id: str, verification: Any) -> None:
+def _print_verify(args: _Args, chain_id: str, verification: ChainVerification) -> None:
     if args.as_json:
         payload = {
             "chain_id": chain_id,
@@ -389,11 +395,11 @@ def _run_export(args: _Args) -> int:
     return 0
 
 
-def _receipt_to_jsonable(receipt: Any) -> dict[str, Any]:
+def _receipt_to_jsonable(receipt: AgentReceipt) -> dict[str, Any]:
     return receipt.model_dump(by_alias=True, exclude_none=True)
 
 
-def _wrap_presentation(receipts: list[Any]) -> dict[str, Any]:
+def _wrap_presentation(receipts: list[AgentReceipt]) -> dict[str, Any]:
     return {
         "@context": ["https://www.w3.org/ns/credentials/v2"],
         "type": "VerifiablePresentation",

@@ -92,6 +92,46 @@ def test_disabled_config_skips_hook_registration(
     assert ctx.tools == []
 
 
+def test_adversarial_repr_never_reaches_wire(
+    tmp_socket: FakeSocketServer,
+) -> None:
+    """A malicious ``__repr__`` MUST NOT appear in the on-wire frame.
+
+    This complements the unit test in test_hooks.py: that one asserts
+    on the in-memory ``FakeEmitter`` capture, this one inspects the raw
+    bytes the real ``agent_receipts.emitter.Emitter`` actually wrote to
+    the socket. A regression that bypassed ``_safe_json`` (e.g. by
+    forwarding the args dict to ``Emitter.emit`` unchanged) would slip
+    past the unit test but fail this one.
+    """
+
+    class Unjsonable:
+        def __repr__(self) -> str:
+            return '{"forged_field": "MALICIOUS"}'
+
+    ctx = FakeCtx({"socketPath": tmp_socket.path})
+    register(ctx)
+    ctx.hooks["pre_tool_call"](
+        tool_name="read_file",
+        args={"obj": Unjsonable()},
+        tool_call_id="tc-1",
+    )
+    _wait_for_frames(tmp_socket, expected=1)
+
+    body = tmp_socket.frames[0]
+    decoded_text = body.decode("utf-8")
+    assert "forged_field" not in decoded_text
+    assert "MALICIOUS" not in decoded_text
+
+    # The frame should still be well-formed JSON without an `input` field
+    # (or with an empty input). The agent's other observable state — tool
+    # name, decision — must still arrive so the daemon records the call.
+    decoded = json.loads(decoded_text)
+    assert decoded["tool"]["name"] == "read_file"
+    assert decoded["decision"] == "pending"
+    assert "input" not in decoded
+
+
 def test_emitter_drops_silently_when_socket_unreachable(
     tmp_path: object,
 ) -> None:
@@ -122,22 +162,25 @@ def test_frame_layout_matches_daemon_wire_protocol(
     _wait_for_frames(tmp_socket, expected=1)
 
     body = tmp_socket.frames[0]
+    header = tmp_socket.headers[0]
     decoded = json.loads(body.decode("utf-8"))
+
     # Each frame must round-trip the canonical fields the daemon needs.
     assert "v" in decoded
     assert "ts_emit" in decoded
     assert "session_id" in decoded
     assert decoded["tool"]["name"] == "read_file"
-    # The body must be valid UTF-8 JSON of bounded size — both are
-    # checked implicitly by FakeSocketServer's parser, but assert them
-    # here too so a regression in either yields a clear test failure
-    # rather than a generic "frame didn't arrive" timeout.
-    assert 0 < len(body) <= 1 << 20, "body exceeds the daemon's 1 MiB frame cap"
-    # The 4-byte big-endian length prefix that preceded ``body`` on the
-    # wire decodes to len(body) by construction — the server only appends
-    # to ``frames`` after reading exactly that many bytes — so the test
-    # of interest is that the prefix decodes correctly through ``struct``,
-    # not that ``body`` equals itself.
-    rebuilt_prefix = struct.pack(">I", len(body))
-    (rebuilt_length,) = struct.unpack(">I", rebuilt_prefix)
-    assert rebuilt_length == len(body)
+
+    # Body must be valid UTF-8 JSON of bounded size — the daemon caps
+    # frames at 1 MiB (sdk/py emitter.MAX_FRAME_SIZE).
+    assert 0 < len(body) <= 1 << 20
+
+    # The 4-byte header was captured separately from the body by the
+    # fake server (before recv'ing the body), so this comparison is a
+    # real check that the emitter emitted the prefix it claimed to —
+    # not the previous tautology of `pack(len(body)) == pack(len(body))`.
+    assert len(header) == 4
+    (advertised_length,) = struct.unpack(">I", header)
+    assert advertised_length == len(body), (
+        f"length prefix {advertised_length} disagrees with body length {len(body)}"
+    )

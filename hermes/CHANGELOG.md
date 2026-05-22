@@ -7,6 +7,41 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security (round 3)
+
+- ``test_unserialisable_args_drop_field_not_frame`` strengthened with
+  explicit "forged content not anywhere in frame" assertions, and a new
+  ``test_adversarial_repr_never_reaches_wire`` integration test inspects
+  the raw bytes the real ``Emitter`` writes to the socket — catching any
+  regression that bypasses ``_safe_json`` directly.
+
+### Fixed (round 3)
+
+- ``HookState.pending`` is now guarded by a ``threading.Lock`` so
+  concurrent ``pre``/``post`` invocations (e.g. parallel subagents)
+  cannot trip ``_evict_stale`` mid-iteration with
+  ``RuntimeError: dictionary changed size during iteration``.
+- ``test_frame_layout_matches_daemon_wire_protocol`` now asserts the
+  4-byte length prefix captured separately from the body, replacing the
+  previous ``struct.pack(...) == struct.pack(...)`` tautology that
+  survived any bug in the production code.
+- ``_parse_limit`` rejects ``bool`` — without this guard ``limit=True``
+  silently became ``limit=1`` because ``isinstance(True, int)`` is True.
+- ``read_public_key`` distinguishes ``EACCES`` from missing-file so
+  operators get a pointed hint when the daemon's key is owned by
+  another user rather than a misleading "daemon not running" message.
+
+### Changed (round 3)
+
+- ``summarise_receipt``, ``_format_table``, ``_print_verify``,
+  ``_receipt_to_jsonable``, and ``_wrap_presentation`` tightened from
+  ``Any`` to ``AgentReceipt`` / ``ChainVerification`` / ``StoreStats``
+  so pyright-strict catches callers passing the wrong model.
+- ``_load_default_taxonomy_or_empty`` wraps the bundled-taxonomy load
+  in a try/except + warning fallback to empty lists. Without this guard
+  a malformed bundled ``taxonomy.json`` would raise at module import
+  time and brick the entire package.
+
 ### Security
 
 - `_safe_json` no longer falls back to ``repr()`` for unknown objects —

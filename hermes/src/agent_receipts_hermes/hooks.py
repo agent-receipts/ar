@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -70,6 +71,12 @@ class HookState:
 
     Avoids module-global mutable state so multiple hermes runtimes loading
     the plugin in the same process do not stomp on each other.
+
+    ``pending`` is guarded by ``pending_lock`` because hermes may dispatch
+    pre/post hook callbacks from worker threads (e.g. when subagents run
+    in parallel). The lock is held only for the short read-modify-write
+    on the dict — never across the emitter call, which is already
+    thread-safe and may block briefly on socket I/O.
     """
 
     channel: str = "hermes"
@@ -81,6 +88,7 @@ class HookState:
     )
     emitter: EmitterLike | None = None
     pending: dict[str, _PendingCall] = field(default_factory=dict[str, _PendingCall])
+    pending_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 def _call_key(task_id: str, session_id: str, tool_call_id: str) -> str:
@@ -164,15 +172,20 @@ def pre_tool_call(
     if not tool_name:
         return
 
-    _evict_stale(state.pending)
     key = _call_key(task_id, session_id, tool_call_id)
-    state.pending[key] = _PendingCall(
-        tool_name=tool_name,
-        args=args,
-        started_at=time.monotonic(),
-        task_id=task_id,
-        session_id=session_id,
-    )
+    # Take the lock for the whole read-modify-write on ``pending`` so a
+    # concurrent pre/post on another thread cannot trip ``_evict_stale``
+    # iterating the dict mid-mutation. The lock is released before the
+    # emitter call so socket I/O never blocks other hooks.
+    with state.pending_lock:
+        _evict_stale(state.pending)
+        state.pending[key] = _PendingCall(
+            tool_name=tool_name,
+            args=args,
+            started_at=time.monotonic(),
+            task_id=task_id,
+            session_id=session_id,
+        )
 
     _emit(
         state,
@@ -206,7 +219,8 @@ def post_tool_call(
         return None
 
     key = _call_key(task_id, session_id, tool_call_id)
-    stashed = state.pending.pop(key, None)
+    with state.pending_lock:
+        stashed = state.pending.pop(key, None)
 
     effective_args = args if args is not None else (stashed.args if stashed else None)
     classification = classify(tool_name, state.mappings, state.patterns)

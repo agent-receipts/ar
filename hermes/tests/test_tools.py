@@ -24,7 +24,9 @@ from agent_receipts.receipt.types import (
 )
 
 from agent_receipts_hermes.tools import (
+    DEFAULT_QUERY_LIMIT,
     ToolDeps,
+    _parse_limit,
     build_tools,
     query_receipts,
     verify_chain_tool,
@@ -199,3 +201,21 @@ class TestBuildTools:
         query = next(t for t in specs if t.name == "ar_query_receipts")
         result = query.execute({})
         assert "error" in result  # DB doesn't exist
+
+
+class TestParseLimit:
+    def test_int_passes_through(self) -> None:
+        assert _parse_limit(5) == 5
+
+    def test_negative_falls_back_to_default(self) -> None:
+        assert _parse_limit(-1) == DEFAULT_QUERY_LIMIT
+
+    def test_bool_rejected_not_coerced_to_int(self) -> None:
+        # ``isinstance(True, int)`` is True in Python — without the explicit
+        # bool guard, ``limit=True`` would silently become ``limit=1``.
+        assert _parse_limit(True) == DEFAULT_QUERY_LIMIT
+        assert _parse_limit(False) == DEFAULT_QUERY_LIMIT
+
+    def test_non_numeric_falls_back(self) -> None:
+        assert _parse_limit("ten") == DEFAULT_QUERY_LIMIT
+        assert _parse_limit(None) == DEFAULT_QUERY_LIMIT

@@ -57,7 +57,10 @@ class ToolDeps:
 
 
 def _parse_limit(value: Any) -> int:
-    if not isinstance(value, (int, float)):
+    # ``isinstance(True, int)`` is ``True`` in Python — guard against bool
+    # explicitly so a caller passing ``limit=True`` does not silently get
+    # ``limit=1`` (and ``limit=False`` does not become ``limit=0``).
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return DEFAULT_QUERY_LIMIT
     as_int = int(value)
     if as_int < 0:

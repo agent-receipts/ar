@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 
 from agent_receipts_hermes.hooks import (
@@ -74,7 +75,15 @@ class TestPreToolCall:
         # Frame still emitted but the unserialisable field is dropped,
         # and the malicious __repr__ does NOT appear in the wire payload.
         assert len(fake_emitter.frames) == 1
-        assert fake_emitter.frames[0].input is None
+        frame = fake_emitter.frames[0]
+        assert frame.input is None
+        # Defence in depth: explicitly assert the forged payload is
+        # nowhere in the recorded frame. Catches a regression that
+        # smuggled repr() output into a new field (e.g. "input_repr")
+        # or that emitted the string "None" instead of dropping.
+        for field_value in (frame.input, frame.output, frame.error):
+            assert "forged_field" not in (field_value or "")
+            assert "MALICIOUS" not in (field_value or "")
 
     def test_bytes_args_decode_when_utf8(self, fake_emitter: FakeEmitter) -> None:
         # bytes are a common, well-defined case — decode for inclusion
@@ -184,3 +193,52 @@ class TestPendingEviction:
             )
         pre_tool_call(state, tool_name="read_file", args={"path": "/y"})
         assert len(state.pending) <= PENDING_MAX_SIZE + 1
+
+
+class TestThreadSafety:
+    def test_concurrent_pre_post_does_not_raise(
+        self, fake_emitter: FakeEmitter
+    ) -> None:
+        """Multiple threads driving pre/post must not race the pending dict.
+
+        Without the lock, ``_evict_stale`` iterating ``pending.items()``
+        while another thread does ``pending[key] = ...`` or ``pending.pop()``
+        would raise ``RuntimeError: dictionary changed size during iteration``.
+        """
+        state = HookState(emitter=fake_emitter)
+        errors: list[BaseException] = []
+        start_barrier = threading.Barrier(8)
+
+        def worker(worker_id: int) -> None:
+            try:
+                start_barrier.wait(timeout=2.0)
+                for i in range(200):
+                    tool_call_id = f"w{worker_id}-c{i}"
+                    pre_tool_call(
+                        state,
+                        tool_name="read_file",
+                        args={"path": f"/x/{worker_id}/{i}"},
+                        tool_call_id=tool_call_id,
+                    )
+                    post_tool_call(
+                        state,
+                        tool_name="read_file",
+                        args={"path": f"/x/{worker_id}/{i}"},
+                        result={"ok": True},
+                        tool_call_id=tool_call_id,
+                    )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=worker, args=(i,), daemon=True) for i in range(8)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10.0)
+            assert not t.is_alive(), "worker thread hung"
+
+        assert not errors, f"races raised: {errors[:3]}"
+        # Every (pre, post) pair should have cleaned up its own entry.
+        assert state.pending == {}

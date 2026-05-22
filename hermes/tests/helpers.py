@@ -75,11 +75,17 @@ class FakeSocketServer:
     wire path end-to-end. Frames arrive as a 4-byte big-endian length
     prefix followed by a UTF-8 JSON body; we mirror the daemon's parsing
     so a malformed frame fails the test instead of hanging.
+
+    Both the captured 4-byte header and the body are exposed so tests can
+    assert on the wire-format independently — checking the prefix decodes
+    to ``len(body)`` is meaningful only if the prefix came off the wire,
+    not if both sides of the assertion are computed from ``body``.
     """
 
     def __init__(self, path: str) -> None:
         self.path = path
         self.frames: list[bytes] = []
+        self.headers: list[bytes] = []
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._sock.bind(path)
         self._sock.listen(8)
@@ -109,6 +115,7 @@ class FakeSocketServer:
                 body = _recv_exact(conn, length)
                 if body is None:
                     return
+                self.headers.append(header)
                 self.frames.append(body)
         finally:
             conn.close()

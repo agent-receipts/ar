@@ -14,6 +14,7 @@ two implementations stay observationally consistent.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -24,6 +25,8 @@ from agent_receipts.taxonomy.actions import (
     get_action_type,
     resolve_action_type,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -171,7 +174,32 @@ def _parse_patterns(raw: object) -> list[TaxonomyPattern]:
     return result
 
 
-_DEFAULTS = _load_default_taxonomy()
+def _load_default_taxonomy_or_empty() -> tuple[
+    list[TaxonomyMapping], list[TaxonomyPattern]
+]:
+    """Load the bundled taxonomy, falling back to empty lists on corruption.
+
+    Without this guard a malformed ``taxonomy.json`` (e.g. a future release
+    that references an action_type the installed SDK doesn't know) would
+    raise from ``_load_default_taxonomy`` at module import time, which
+    propagates out of ``import agent_receipts_hermes`` and bricks the
+    plugin entirely — hermes can't even call ``register()`` to surface a
+    useful error. Failing open here means every tool falls through to
+    ``unknown``, but the audit trail itself keeps flowing.
+    """
+    try:
+        return _load_default_taxonomy()
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            "agent-receipts: bundled taxonomy failed to load: %s — every "
+            "tool will classify as 'unknown' until a valid taxonomy is "
+            "supplied via the taxonomyPath config option.",
+            exc,
+        )
+        return [], []
+
+
+_DEFAULTS = _load_default_taxonomy_or_empty()
 DEFAULT_MAPPINGS: list[TaxonomyMapping] = _DEFAULTS[0]
 DEFAULT_PATTERNS: list[TaxonomyPattern] = _DEFAULTS[1]
 
