@@ -19,9 +19,28 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"runtime/debug"
 
 	"github.com/agent-receipts/ar/sdk/go/emitter"
 )
+
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z".
+// Falls back to the module version from Go's build info (set automatically
+// for binaries installed with `go install`), then to "dev". Mirrors the
+// resolveVersion pattern in mcp-proxy/cmd/mcp-proxy/main.go and
+// daemon/cmd/agent-receipts-daemon/main.go so operators see a useful string
+// from `--version` in any install scenario.
+var version string
+
+func resolveVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
 
 // reader maps a raw stdin payload and an env-lookup function to an
 // emitter.Event. The sessionID return value is the host-supplied session
@@ -58,7 +77,13 @@ func detect(stdin []byte, env func(string) string) string {
 
 func main() {
 	formatFlag := flag.String("format", "", "Force a specific input format (e.g. claude-code). Auto-detected when unset.")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("agent-receipts-hook %s\n", resolveVersion())
+		return
+	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
