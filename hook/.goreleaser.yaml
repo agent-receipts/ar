@@ -26,7 +26,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w
+      - -s -w -X main.version=v{{.Version}}
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -78,7 +78,7 @@ brews:
     install: |
       bin.install "agent-receipts-hook"
     test: |
-      system "#{bin}/agent-receipts-hook"
+      system "#{bin}/agent-receipts-hook", "--version"
     # `brew outdated` and `brew livecheck` use this to detect new releases.
     # The `ar` repo ships multiple taggable components, so we can't use
     # `:github_latest` (which returns repo-wide latest). `:github_releases`
