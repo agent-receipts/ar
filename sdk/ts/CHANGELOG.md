@@ -9,6 +9,12 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [Unreleased]
+
+### Added
+
+- **Forensic disclosure API re-exported from package root** ([#526](https://github.com/agent-receipts/ar/issues/526)) — `encryptDisclosure`, `decryptDisclosure`, `generateForensicKeyPair`, `DisclosureEnvelope`, `DisclosureRecipient`, and `ForensicKeyPair` are now importable from `@agnt-rcpt/sdk-ts` directly, not just from `@agnt-rcpt/sdk-ts/receipt`. Brings the headline v0.3.0 forensic-disclosure API in line with the other top-level re-exports (`createReceipt`, `signReceipt`, `verifyReceipt`, etc.).
+
 ## [0.9.0-alpha.1] - 2026-05-22
 
 First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#280](https://github.com/agent-receipts/ar/issues/280).

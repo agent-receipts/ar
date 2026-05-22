@@ -13,6 +13,14 @@ export {
 	verifyChain,
 } from "./receipt/chain.js";
 export { type CreateReceiptInput, createReceipt } from "./receipt/create.js";
+export {
+	type DisclosureEnvelope,
+	type DisclosureRecipient,
+	decryptDisclosure,
+	encryptDisclosure,
+	type ForensicKeyPair,
+	generateForensicKeyPair,
+} from "./receipt/disclosure.js";
 export { canonicalize, hashReceipt, sha256 } from "./receipt/hash.js";
 export {
 	generateKeyPair,
