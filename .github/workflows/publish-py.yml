@@ -2,7 +2,11 @@ name: Publish SDK (Python) to PyPI
 
 on:
   release:
-    types: [published]
+    # `prereleased` covers alpha/beta tags (e.g. sdk-py-v0.9.0a1); `published`
+    # covers stable releases. GitHub fires only one of the two per release
+    # creation depending on the prerelease flag, so we need both listed to
+    # publish every release shape we tag.
+    types: [published, prereleased]
 
 permissions:
   contents: read
