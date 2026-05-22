@@ -2,7 +2,11 @@ name: Publish SDK (TypeScript) to npm
 
 on:
   release:
-    types: [published]
+    # `prereleased` covers alpha/beta tags (e.g. sdk-ts-v0.9.0-alpha.1);
+    # `published` covers stable releases. GitHub fires only one of the two
+    # per release creation depending on the prerelease flag, so we need
+    # both listed to publish every release shape we tag.
+    types: [published, prereleased]
   workflow_dispatch:
 
 permissions:

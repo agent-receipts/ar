@@ -2,7 +2,13 @@ name: Publish Go Modules
 
 on:
   release:
-    types: [published]
+    # `prereleased` covers alpha/beta tags (e.g. sdk/go/v0.11.0-alpha.1);
+    # `published` covers stable releases. Note: Go modules don't strictly
+    # need this workflow to be installable — the Go proxy auto-indexes on
+    # tag push. The workflow runs post-tag validation (rejects local
+    # replace directives, verifies module path) which we want for both
+    # stable and prerelease tags.
+    types: [published, prereleased]
 
 permissions:
   contents: read
