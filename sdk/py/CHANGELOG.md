@@ -9,6 +9,10 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.9.0a3] - 2026-05-22
+
+Re-cut as a diagnostic test of [#518](https://github.com/agent-receipts/ar/pull/518); no source changes vs `0.9.0a2`. Verifies whether the `prereleased` event-type fix is sufficient to fire `publish-py.yml`, or whether the deeper `GITHUB_TOKEN` workflow-suppression issue tracked in [#521](https://github.com/agent-receipts/ar/issues/521) still blocks publication.
+
 ## [0.9.0a2] - 2026-05-22
 
 Re-cut of the v0.3.0 pre-release after fixing the `publish-py.yml`
