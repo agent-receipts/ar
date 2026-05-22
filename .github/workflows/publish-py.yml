@@ -23,7 +23,12 @@ defaults:
 
 jobs:
   publish:
-    if: startsWith(github.ref_name, 'sdk-py-v') || github.event_name == 'workflow_dispatch'
+    # Tag-triggered releases: any sdk-py-v* tag. Manual dispatch: only from
+    # `main` — dispatch from a feature branch could publish unreviewed code
+    # to PyPI under whatever pyproject.toml version that branch has.
+    if: |
+      startsWith(github.ref_name, 'sdk-py-v') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
 
     steps:

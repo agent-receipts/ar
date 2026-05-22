@@ -19,7 +19,12 @@ defaults:
 
 jobs:
   publish:
-    if: startsWith(github.ref_name, 'sdk-ts-v') || github.event_name == 'workflow_dispatch'
+    # Tag-triggered releases: any sdk-ts-v* tag. Manual dispatch: only from
+    # `main` — dispatch from a feature branch could publish unreviewed code
+    # to npm under whatever package.json version that branch has.
+    if: |
+      startsWith(github.ref_name, 'sdk-ts-v') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
 
     steps:
