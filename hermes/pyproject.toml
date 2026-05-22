@@ -1,0 +1,80 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-receipts-hermes"
+version = "0.1.0"
+description = "Agent Receipts plugin for hermes-agent — cryptographically signed audit trails for every tool call."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "Otto Jongerius" }]
+keywords = ["ai", "agent", "audit", "receipts", "hermes", "verifiable-credentials"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = [
+    "agent-receipts>=0.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/agent-receipts/ar/tree/main/hermes"
+Repository = "https://github.com/agent-receipts/ar"
+Issues = "https://github.com/agent-receipts/ar/issues"
+Spec = "https://github.com/agent-receipts/ar/tree/main/spec"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.9",
+    "pyright>=1.1",
+]
+
+[project.scripts]
+agent-receipts-hermes = "agent_receipts_hermes.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_receipts_hermes"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/agent_receipts_hermes/plugin.yaml" = "agent_receipts_hermes/plugin.yaml"
+"src/agent_receipts_hermes/taxonomy.json" = "agent_receipts_hermes/taxonomy.json"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "TCH", # type-checking imports
+]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest evaluates annotations on fixtures at runtime, so the type-checking
+# import lints (TC001..TC003) flag imports we genuinely need eagerly.
+"tests/*" = ["TC001", "TC002", "TC003"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+include = ["src"]
+venvPath = "."
+venv = ".venv"
