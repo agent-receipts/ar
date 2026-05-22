@@ -7,6 +7,11 @@ on:
     # creation depending on the prerelease flag, so we need both listed to
     # publish every release shape we tag.
     types: [published, prereleased]
+  # Manual escape hatch for cases where the release event does not propagate
+  # (e.g. release-sdk-py.yml created the GitHub Release via GITHUB_TOKEN,
+  # which suppresses downstream workflow triggers — see #521). Dispatching
+  # from `main` publishes whatever version pyproject.toml currently has.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,7 +23,12 @@ defaults:
 
 jobs:
   publish:
-    if: startsWith(github.ref_name, 'sdk-py-v')
+    # Tag-triggered releases: any sdk-py-v* tag. Manual dispatch: only from
+    # `main` — dispatch from a feature branch could publish unreviewed code
+    # to PyPI under whatever pyproject.toml version that branch has.
+    if: |
+      startsWith(github.ref_name, 'sdk-py-v') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
 
     steps:
