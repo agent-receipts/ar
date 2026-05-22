@@ -93,6 +93,12 @@ across workstreams they can be parallelised.
 | WAL for at-least-once delivery (long-lived + ephemeral) | ADR-0020 | #487 | planned |
 | Verifier-side `incomplete_tool_roundtrip` classification | ADR-0019 § O3 → ADR-0020 | (folded into WAL issue) | planned |
 
+### Collector (receiver)
+
+| Item | ADR | Issue | Status |
+|---|---|---|---|
+| Reference collector service implementing `POST /receipts` contract | ADR-0020 | #533 | planned |
+
 ### SDK payload handling
 
 | Item | ADR | Issue | Status |
@@ -144,6 +150,6 @@ The following were originally targeted for v2 but elevated to v1.5
 
 | ADR | Title | Status |
 |---|---|---|
-| ADR-0018 | Signer abstraction and cloud-agnostic KeyProvider design | Proposed |
+| ADR-0018 | Signer abstraction and cloud-agnostic KeyProvider design | Accepted |
 | ADR-0019 | Protocol integrity gaps and mitigations | Proposed |
-| ADR-0020 | Emitter abstraction and remote receipt delivery | Proposed |
+| ADR-0020 | Emitter abstraction and remote receipt delivery | Accepted |

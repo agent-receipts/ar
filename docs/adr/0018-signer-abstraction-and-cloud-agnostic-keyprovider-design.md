@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — supersedes a prior keypair management design (keypair management ADR not yet filed in this repository)
+Accepted — supersedes a prior keypair management design (keypair management ADR not yet filed in this repository)
 
 ## Context
 
