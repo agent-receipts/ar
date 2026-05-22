@@ -9,6 +9,10 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.9.0a2] - 2026-05-22
+
+Re-cut of the v0.3.0 pre-release after fixing the publish-py.yml event-type filter ([#518](https://github.com/agent-receipts/ar/pull/518)). No source changes vs `0.9.0a1`; `0.9.0a1` was tagged but never reached PyPI because the publish workflow only listened on `release.types: [published]` and prereleases fire `prereleased`. Skip `0.9.0a1` — install `agent-receipts==0.9.0a2`.
+
 ## [0.9.0a1] - 2026-05-22
 
 First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#280](https://github.com/agent-receipts/ar/issues/280).
