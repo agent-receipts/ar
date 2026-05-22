@@ -91,8 +91,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
         "gid": 20,
         "exe_path": "/Applications/Claude.app/Contents/MacOS/Claude"
       },
-      "timestamp": "2026-03-31T14:30:00Z",
-      "trusted_timestamp": null
+      "timestamp": "2026-03-31T14:30:00Z"
     },
 
     "intent": {
@@ -104,10 +103,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 
     "outcome": {
       "status": "success",
-      "error": null,
       "reversible": false,
-      "reversal_method": null,
-      "reversal_window_seconds": null,
       "state_change": {
         "before_hash": "sha256:d604f3e5a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3a9",
         "after_hash": "sha256:e7a504f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4ba"
@@ -117,8 +113,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
     "authorization": {
       "scopes": ["filesystem:write"],
       "granted_at": "2026-03-31T14:00:00Z",
-      "expires_at": "2026-03-31T15:00:00Z",
-      "grant_ref": null
+      "expires_at": "2026-03-31T15:00:00Z"
     },
 
     "chain": {
@@ -186,7 +181,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `peer_credential` | No | OS-attested peer process metadata captured by the daemon at the SDK↔daemon boundary (`platform`, `pid`, optional `uid`/`gid`/`exe_path`). Present only on receipts emitted through a daemon (ADR-0010); absent on direct SDK emissions. Daemon-attested, not agent-claimed. |
 | `emitter_metadata` | No | Daemon-observed emitter-side metadata. Currently a single `drop_count` field on synthetic events_dropped receipts (ADR-0010). Daemon-attested, not agent-claimed. |
 | `timestamp` | Yes | ISO 8601 datetime when the action was executed. |
-| `trusted_timestamp` | No | Base64-encoded RFC 3161 TimeStampToken, or `null`. |
+| `trusted_timestamp` | No | Base64-encoded RFC 3161 TimeStampToken. Absent (not `null`) when not present — see [Optional-field rule](#optional-field-rule). |
 
 ### `intent`
 
@@ -202,10 +197,10 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | Field | Required | Description |
 |---|---|---|
 | `status` | Yes | `success`, `failure`, or `pending`. |
-| `error` | No | Error message if `status` is `failure`. |
+| `error` | No | Error message when `status` is `failure`. Absent (not `null`) otherwise — see [Optional-field rule](#optional-field-rule). |
 | `reversible` | No | `true` if the action can be undone. |
-| `reversal_method` | No | Machine-readable reversal method (e.g. `gmail:undo_send`). |
-| `reversal_window_seconds` | No | Seconds within which reversal is possible. |
+| `reversal_method` | No | Machine-readable reversal method (e.g. `gmail:undo_send`). Absent (not `null`) when not applicable. |
+| `reversal_window_seconds` | No | Seconds within which reversal is possible. Absent (not `null`) when not applicable. |
 | `reversal_of` | No | `urn:receipt:<uuid>` of the original receipt this receipt reverses. Present only on reversal receipts. |
 | `response_hash` | No | `sha256:` prefixed hash of the tool's response (RFC 8785 canonical JSON). |
 | `state_change.before_hash` | Conditional | `sha256:` hash of state before. Required when `state_change` is present. |
@@ -218,7 +213,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `scopes` | Conditional | Authorization scopes. Required when `authorization` is present. |
 | `granted_at` | Conditional | When authorization was granted. Required when `authorization` is present. |
 | `expires_at` | No | When authorization expires. |
-| `grant_ref` | No | Reference to authorization grant (e.g. Grantex token). |
+| `grant_ref` | No | Reference to authorization grant (e.g. Grantex token). Absent (not `null`) when not applicable — see [Optional-field rule](#optional-field-rule). |
 
 ### `delegation`
 
@@ -249,6 +244,15 @@ Present when this chain was spawned by delegation from another agent. All fields
 | `verificationMethod` | Yes | DID URL of the signing key. The `did:agent:` method used in examples is an illustrative placeholder — DID resolution is not specified in the current protocol (see ADR-0007). |
 | `proofPurpose` | Yes | Must be `"assertionMethod"`. |
 | `proofValue` | Yes | Multibase-encoded (`u`-prefixed base64url, no padding) Ed25519 signature. |
+
+## Optional-field rule
+
+Spec §7.1.1 (tightened in v0.2.1) draws a hard line between required-nullable and optional fields:
+
+- **Required-nullable fields** MUST be emitted with their value, including the explicit JSON `null` literal when the value is null. The only such field is `chain.previous_receipt_hash` — `null` for the first receipt in a chain, a hash string for all subsequent receipts.
+- **Optional fields** MUST NOT be emitted when their value is null or absent. `"error": null`, `"trusted_timestamp": null`, `"grant_ref": null`, `"reversal_method": null`, and `"reversal_window_seconds": null` are all schema-invalid — omit the field entirely instead. An SDK that receives `null` on an optional field MUST normalise it to absent before canonicalising.
+
+This rule keeps all three SDKs producing byte-identical RFC 8785 canonical output for the same logical receipt, regardless of whether an optional field was set to `null` or omitted by the caller.
 
 ## JSON Schema
 
