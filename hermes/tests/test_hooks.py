@@ -60,19 +60,29 @@ class TestPreToolCall:
         # Pending is still tracked so a follow-up post_tool_call can correlate.
         assert len(state.pending) == 1
 
-    def test_unserialisable_args_do_not_drop_frame(
+    def test_unserialisable_args_drop_field_not_frame(
         self, fake_emitter: FakeEmitter
     ) -> None:
         class Unjsonable:
-            pass
+            def __repr__(self) -> str:
+                # An attacker-controllable __repr__ MUST NOT influence
+                # the signed audit trail — see _safe_json's docstring.
+                return '{"forged_field": "MALICIOUS"}'
 
         state = HookState(emitter=fake_emitter)
         pre_tool_call(state, tool_name="read_file", args={"obj": Unjsonable()})
-        # Frame still emitted; the JSON encoder's default falls back to a
-        # ``repr()`` of the offending value rather than dropping the frame.
+        # Frame still emitted but the unserialisable field is dropped,
+        # and the malicious __repr__ does NOT appear in the wire payload.
         assert len(fake_emitter.frames) == 1
+        assert fake_emitter.frames[0].input is None
+
+    def test_bytes_args_decode_when_utf8(self, fake_emitter: FakeEmitter) -> None:
+        # bytes are a common, well-defined case — decode for inclusion
+        # rather than dropping the whole field.
+        state = HookState(emitter=fake_emitter)
+        pre_tool_call(state, tool_name="read_file", args={"blob": b"hello"})
         assert fake_emitter.frames[0].input is not None
-        assert "Unjsonable" in fake_emitter.frames[0].input
+        assert json.loads(fake_emitter.frames[0].input) == {"blob": "hello"}
 
 
 class TestPostToolCall:

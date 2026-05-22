@@ -114,8 +114,14 @@ def _evict_stale(pending: dict[str, _PendingCall]) -> None:
 def _safe_json(value: Any) -> str | None:
     """Best-effort JSON serialisation; ``None`` if the value isn't representable.
 
-    Cycles, ``bytes`` payloads, and BigInt-like values would otherwise crash
-    ``json.dumps``. We refuse to drop the whole frame for one bad arg.
+    The audit trail is signed by the daemon, so anything we emit becomes a
+    cryptographic claim about what the agent saw. We DO NOT fall back to
+    ``repr()`` for unknown objects — an attacker-controllable ``__repr__``
+    could otherwise inject misleading content into a trusted receipt.
+    Instead we strictly serialise; ``bytes`` payloads are decoded as UTF-8
+    (or noted as a length-only stub for non-UTF-8 binary), and any other
+    unsupported type causes the whole field to be dropped. The frame
+    itself still goes through, just without the offending payload.
     """
     if value is None:
         return None
@@ -132,7 +138,12 @@ def _json_default(value: Any) -> Any:
             return value.decode("utf-8")
         except UnicodeDecodeError:
             return {"__bytes__": len(value)}
-    return repr(value)
+    # Refuse arbitrary objects; raising TypeError tells json.dumps to fail,
+    # which _safe_json then converts into a dropped field. Crucially we do
+    # NOT call repr(value) here — see _safe_json's docstring.
+    raise TypeError(
+        f"agent-receipts: non-serialisable value of type {type(value).__name__!r}"
+    )
 
 
 def pre_tool_call(

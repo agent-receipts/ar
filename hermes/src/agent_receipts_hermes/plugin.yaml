@@ -11,6 +11,8 @@ requires_env: []
 hooks:
   - pre_tool_call
   - post_tool_call
-tools:
-  - ar_query_receipts
-  - ar_verify_chain
+# Agent-callable tools (ar_query_receipts, ar_verify_chain) are
+# registered at runtime via ctx — see register() in __init__.py —
+# rather than declared here. Hermes' manifest-driven tool format is
+# not documented in the public repo, so we avoid double-registration
+# by keeping the manifest hooks-only (matches plugins/observability/langfuse).

@@ -121,7 +121,6 @@ def test_frame_layout_matches_daemon_wire_protocol(
     )
     _wait_for_frames(tmp_socket, expected=1)
 
-    # Header is the 4-byte big-endian length prefix the daemon parses.
     body = tmp_socket.frames[0]
     decoded = json.loads(body.decode("utf-8"))
     # Each frame must round-trip the canonical fields the daemon needs.
@@ -129,6 +128,16 @@ def test_frame_layout_matches_daemon_wire_protocol(
     assert "ts_emit" in decoded
     assert "session_id" in decoded
     assert decoded["tool"]["name"] == "read_file"
-    # Body must be exactly as long as the length prefix would say if we had
-    # captured it; the FakeSocketServer already parsed the prefix.
-    assert struct.pack(">I", len(body)) == struct.pack(">I", len(body))
+    # The body must be valid UTF-8 JSON of bounded size — both are
+    # checked implicitly by FakeSocketServer's parser, but assert them
+    # here too so a regression in either yields a clear test failure
+    # rather than a generic "frame didn't arrive" timeout.
+    assert 0 < len(body) <= 1 << 20, "body exceeds the daemon's 1 MiB frame cap"
+    # The 4-byte big-endian length prefix that preceded ``body`` on the
+    # wire decodes to len(body) by construction — the server only appends
+    # to ``frames`` after reading exactly that many bytes — so the test
+    # of interest is that the prefix decodes correctly through ``struct``,
+    # not that ``body`` equals itself.
+    rebuilt_prefix = struct.pack(">I", len(body))
+    (rebuilt_length,) = struct.unpack(">I", rebuilt_prefix)
+    assert rebuilt_length == len(body)

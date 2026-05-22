@@ -119,13 +119,13 @@ def _parse_mappings(raw: object) -> list[TaxonomyMapping]:
                 )
             disclosure_list = cast("list[Any]", disclosure)
             checked: list[str] = []
-            for field in disclosure_list:
-                if not isinstance(field, str) or not field:
+            for field_name in disclosure_list:
+                if not isinstance(field_name, str) or not field_name:
                     raise ValueError(
                         f'Invalid disclosure_fields for "{tool_name}": entries'
                         " must be non-empty strings"
                     )
-                checked.append(field)
+                checked.append(field_name)
             fields = tuple(checked)
 
         result.append(

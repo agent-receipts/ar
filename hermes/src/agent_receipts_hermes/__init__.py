@@ -28,19 +28,11 @@ from agent_receipts_hermes._version import VERSION
 from agent_receipts_hermes.classify import (
     DEFAULT_MAPPINGS,
     DEFAULT_PATTERNS,
-    ClassificationResult,
     TaxonomyMapping,
     TaxonomyPattern,
-    classify,
     load_custom_taxonomy,
 )
-from agent_receipts_hermes.config import (
-    PluginConfig,
-    default_daemon_db_path,
-    default_daemon_public_key_path,
-    default_socket_path,
-    resolve_config,
-)
+from agent_receipts_hermes.config import resolve_config
 from agent_receipts_hermes.hooks import (
     HookState,
     post_tool_call,
@@ -54,26 +46,11 @@ from agent_receipts_hermes.tools import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = [
-    "VERSION",
-    "ClassificationResult",
-    "HookState",
-    "PluginConfig",
-    "TaxonomyMapping",
-    "TaxonomyPattern",
-    "ToolDeps",
-    "ToolSpec",
-    "build_tools",
-    "classify",
-    "default_daemon_db_path",
-    "default_daemon_public_key_path",
-    "default_socket_path",
-    "load_custom_taxonomy",
-    "post_tool_call",
-    "pre_tool_call",
-    "register",
-    "resolve_config",
-]
+# Keep the public surface minimal. Everything else stays importable from its
+# submodule (``agent_receipts_hermes.hooks``, ``…tools``, ``…classify``, …)
+# for testing and advanced use without inviting downstream coupling to
+# implementation details.
+__all__ = ["VERSION", "register"]
 
 
 def _attempt_register_tool(ctx: Any, tool: ToolSpec) -> bool:
@@ -118,21 +95,33 @@ def _attempt_register_tool(ctx: Any, tool: ToolSpec) -> bool:
     for method_name, args, kwargs in candidates:
         method = getattr(ctx, method_name, None)
         if not callable(method):
+            logger.debug(
+                "agent-receipts: ctx has no callable %s; trying next shape",
+                method_name,
+            )
             continue
         try:
             method(*args, **kwargs)
             return True
-        except TypeError:
-            continue
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "agent-receipts: ctx.%s raised registering %s: %s",
+        except (TypeError, AttributeError) as exc:
+            # Signature mismatch or missing attr — try the next candidate
+            # shape. Log at DEBUG so operators can diagnose why a real
+            # hermes API isn't being matched without spamming WARNING.
+            logger.debug(
+                "agent-receipts: ctx.%s(%s) rejected with %s; trying next shape",
                 method_name,
-                tool.name,
+                _summarise_call(args, kwargs),
                 exc,
             )
-            return False
+            continue
     return False
+
+
+def _summarise_call(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    """Render call shape for DEBUG logs without leaking tool callables."""
+    arg_types = [type(a).__name__ for a in args]
+    kw_keys = sorted(kwargs.keys())
+    return f"args=[{', '.join(arg_types)}], kwargs={kw_keys}"
 
 
 def register(ctx: Any) -> HookState:

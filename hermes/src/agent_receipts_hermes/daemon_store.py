@@ -12,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agent_receipts.store.store import ReceiptStore
 
@@ -58,3 +58,28 @@ def read_public_key(path: str) -> str:
     except OSError as exc:
         msg = f"Cannot read daemon public key at {path}: {exc}"
         raise DaemonUnavailable(msg) from exc
+
+
+def summarise_receipt(receipt: Any) -> dict[str, Any]:
+    """Flatten an :class:`agent_receipts.AgentReceipt` into a wire-friendly dict.
+
+    Shared by the agent-facing ``ar_query_receipts`` tool and the
+    Receipt Explorer CLI so the two surfaces always return the same shape.
+    """
+    sub = receipt.credentialSubject
+    target = sub.action.target.resource if sub.action.target else None
+    return {
+        "id": receipt.id,
+        "chain_id": sub.chain.chain_id,
+        "action": sub.action.type,
+        "risk": sub.action.risk_level,
+        "target": target,
+        "status": sub.outcome.status,
+        "sequence": sub.chain.sequence,
+        "timestamp": sub.action.timestamp,
+    }
+
+
+def broken_at_or_none(broken_at: int) -> int | None:
+    """Normalise the SDK's ``-1`` sentinel into ``None`` for JSON payloads."""
+    return broken_at if broken_at >= 0 else None

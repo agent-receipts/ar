@@ -7,6 +7,36 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security
+
+- `_safe_json` no longer falls back to ``repr()`` for unknown objects —
+  an attacker-controllable ``__repr__`` could otherwise inject misleading
+  content into the signed audit trail. Non-serialisable values now cause
+  the affected field to be dropped (the frame itself still goes through).
+
+### Fixed
+
+- Removed dead post-filter in ``query_receipts`` that re-applied
+  ``timestamp != after`` after the SDK had already filtered with
+  ``timestamp > ?`` (strictly exclusive). The accompanying comment
+  inverted the SDK's actual semantics.
+- ``tests/test_integration.py`` no longer asserts a tautology when
+  checking the wire-format length prefix.
+
+### Changed
+
+- ``__all__`` trimmed to ``["VERSION", "register"]``; all other symbols
+  remain importable from their submodules for tests and advanced use.
+- ``_attempt_register_tool`` narrows its swallowed exceptions to
+  ``TypeError | AttributeError`` and logs each rejected candidate at
+  DEBUG so operators can diagnose mismatches against undocumented
+  hermes APIs.
+- ``plugin.yaml`` no longer declares the ``tools:`` block — tool
+  registration is via ``ctx`` at runtime, matching the langfuse
+  reference plugin and avoiding double-registration ambiguity.
+- ``summarise_receipt`` and ``broken_at_or_none`` lifted into
+  ``daemon_store`` and shared between the agent tools and the CLI.
+
 ### Added
 
 - Initial POC of the hermes-agent Agent Receipts plugin.

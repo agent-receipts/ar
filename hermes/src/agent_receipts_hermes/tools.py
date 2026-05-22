@@ -15,8 +15,10 @@ from agent_receipts.store.verify import verify_stored_chain
 
 from agent_receipts_hermes.daemon_store import (
     DaemonUnavailable,
+    broken_at_or_none,
     open_daemon_store,
     read_public_key,
+    summarise_receipt,
 )
 
 if TYPE_CHECKING:
@@ -63,21 +65,6 @@ def _parse_limit(value: Any) -> int:
     return as_int
 
 
-def _summarise_receipt(receipt: Any) -> dict[str, Any]:
-    sub = receipt.credentialSubject
-    target = sub.action.target.resource if sub.action.target else None
-    return {
-        "id": receipt.id,
-        "chain_id": sub.chain.chain_id,
-        "action": sub.action.type,
-        "risk": sub.action.risk_level,
-        "target": target,
-        "status": sub.outcome.status,
-        "sequence": sub.chain.sequence,
-        "timestamp": sub.action.timestamp,
-    }
-
-
 def query_receipts(deps: ToolDeps, params: dict[str, Any]) -> dict[str, Any]:
     """Execute the ``ar_query_receipts`` tool.
 
@@ -99,6 +86,8 @@ def query_receipts(deps: ToolDeps, params: dict[str, Any]) -> dict[str, Any]:
 
     try:
         with open_daemon_store(deps.daemon_db_path) as store:
+            # ReceiptQuery's ``after`` clause is ``timestamp > ?`` — already
+            # strictly exclusive (sdk/py store.store.py). No post-filter needed.
             results = store.query(
                 ReceiptQuery(
                     action_type=action_type,
@@ -110,12 +99,6 @@ def query_receipts(deps: ToolDeps, params: dict[str, Any]) -> dict[str, Any]:
                     newest_first=True,
                 )
             )
-            # SDK ReceiptQuery treats ``after`` as inclusive; the
-            # openclaw plugin documents it as exclusive. Match that.
-            if after is not None:
-                results = [
-                    r for r in results if r.credentialSubject.action.timestamp != after
-                ]
             stats = store.stats()
     except DaemonUnavailable as exc:
         return {
@@ -134,7 +117,7 @@ def query_receipts(deps: ToolDeps, params: dict[str, Any]) -> dict[str, Any]:
         "by_risk": stats.by_risk,
         "by_status": stats.by_status,
         "by_action": stats.by_action,
-        "results": [_summarise_receipt(r) for r in results],
+        "results": [summarise_receipt(r) for r in results],
     }
 
 
@@ -193,7 +176,7 @@ def verify_chain_tool(deps: ToolDeps, params: dict[str, Any]) -> dict[str, Any]:
         "chain_id": chain_id,
         "valid": verification.valid,
         "length": verification.length,
-        "broken_at": verification.broken_at if verification.broken_at >= 0 else None,
+        "broken_at": broken_at_or_none(verification.broken_at),
         "status": verification.status,
         "receipts": [
             {

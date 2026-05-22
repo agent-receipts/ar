@@ -31,8 +31,10 @@ from agent_receipts_hermes.config import (
 )
 from agent_receipts_hermes.daemon_store import (
     DaemonUnavailable,
+    broken_at_or_none,
     open_daemon_store,
     read_public_key,
+    summarise_receipt,
 )
 
 _VALID_RISK_LEVELS = ("low", "medium", "high", "critical")
@@ -163,21 +165,6 @@ def _truncate(value: str, width: int) -> str:
     return value[: max(0, width - 1)] + "…"
 
 
-def _summarise_receipt(receipt: Any) -> dict[str, Any]:
-    sub = receipt.credentialSubject
-    target = sub.action.target.resource if sub.action.target else None
-    return {
-        "id": receipt.id,
-        "chain_id": sub.chain.chain_id,
-        "action": sub.action.type,
-        "risk": sub.action.risk_level,
-        "target": target,
-        "status": sub.outcome.status,
-        "sequence": sub.chain.sequence,
-        "timestamp": sub.action.timestamp,
-    }
-
-
 def _format_table(receipts: list[Any], stats: Any) -> str:
     lines: list[str] = [
         f"Total receipts: {stats.total}  |  Chains: {stats.chains}",
@@ -247,7 +234,7 @@ def _run_receipts(args: _Args) -> int:
                 "by_status": stats.by_status,
                 "by_action": stats.by_action,
             },
-            "receipts": [_summarise_receipt(r) for r in results],
+            "receipts": [summarise_receipt(r) for r in results],
         }
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     else:
@@ -297,7 +284,7 @@ def _run_verify(args: _Args) -> int:
                         "chain_id": cid,
                         "valid": v.valid,
                         "length": v.length,
-                        "broken_at": v.broken_at if v.broken_at >= 0 else None,
+                        "broken_at": broken_at_or_none(v.broken_at),
                     }
                 )
 
@@ -321,9 +308,7 @@ def _print_verify(args: _Args, chain_id: str, verification: Any) -> None:
             "chain_id": chain_id,
             "valid": verification.valid,
             "length": verification.length,
-            "broken_at": (
-                verification.broken_at if verification.broken_at >= 0 else None
-            ),
+            "broken_at": broken_at_or_none(verification.broken_at),
             "status": verification.status,
             "receipts": [
                 {
