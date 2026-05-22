@@ -9,6 +9,10 @@ This file starts at 0.6.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [0.11.0] - 2026-05-22
+
+First stable release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#280](https://github.com/agent-receipts/ar/issues/280). Graduates `0.11.0-alpha.1` after the end-to-end alpha pass in [#519](https://github.com/agent-receipts/ar/issues/519). No source changes since `0.11.0-alpha.1`; see that entry below for the full v0.3.0 surface.
+
 ## [0.11.0-alpha.1] - 2026-05-22
 
 First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#280](https://github.com/agent-receipts/ar/issues/280).
