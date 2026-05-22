@@ -92,12 +92,20 @@ across workstreams they can be parallelised.
 | `HttpEmitter` with sync / fire-and-forget strategies | ADR-0020 | #486 | planned |
 | WAL for at-least-once delivery (long-lived + ephemeral) | ADR-0020 | #487 | planned |
 | Verifier-side `incomplete_tool_roundtrip` classification | ADR-0019 § O3 → ADR-0020 | (folded into WAL issue) | planned |
+| Deployment guide for ephemeral compute (Lambda, Cloud Run, Fargate, Azure Functions) | ADR-0018/0019/0020 | #535 | planned |
 
 ### Collector (receiver)
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
 | Reference collector service implementing `POST /receipts` contract | ADR-0020 | #533 | planned |
+| Operator guide for the reference collector | ADR-0020 | #536 | planned |
+
+### SDK cloud key management
+
+| Item | ADR | Issue | Status |
+|---|---|---|---|
+| Cloud KMS `Signer` adapters (AWS KMS, GCP Cloud KMS, Azure Key Vault) | ADR-0018 | #534 | planned |
 
 ### SDK payload handling
 
