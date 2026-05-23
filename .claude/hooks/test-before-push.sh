@@ -23,7 +23,7 @@ set -euo pipefail
 # include user-installed binaries like `uv` (~/.local/bin/uv). Prepend the
 # common user-bin locations so `uv run pytest` resolves without each Python
 # push needing to remember a manual PATH prefix.
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.local/bin:/opt/node22/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # --- Filter: only run for `git push` -----------------------------------------
 
