@@ -463,6 +463,40 @@ describe("HttpEmitter", () => {
 		expect(elapsed).toBeLessThan(2_000);
 	});
 
+	it("aborts an in-flight request when the cancellation signal fires", async () => {
+		// Stand up a stalling server (never calls res.end()) so the only
+		// thing that can finish the request is the abort signal — not a
+		// timeout, not a 5xx, not a retry-budget exhaustion.
+		const stalled = createServer((_req, _res) => {
+			/* hang forever */
+		});
+		await new Promise<void>((resolve) =>
+			stalled.listen(0, "127.0.0.1", resolve),
+		);
+		try {
+			const addr = stalled.address() as AddressInfo;
+			const url = `http://127.0.0.1:${addr.port}/receipts`;
+			const ac = new AbortController();
+			const emitter = new HttpEmitter({
+				endpoint: url,
+				timeoutMs: 10_000,
+				retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 },
+				signal: ac.signal,
+			});
+
+			setTimeout(() => ac.abort(new Error("test-cancel")), 25);
+			const start = Date.now();
+			const err = await emitter.emit(fakeReceipt("r")).catch((e) => e);
+			expect(Date.now() - start).toBeLessThan(2_000);
+			expect(err).toBeInstanceOf(EmitError);
+		} finally {
+			stalled.closeAllConnections?.();
+			await new Promise<void>((resolve, reject) =>
+				stalled.close((err) => (err ? reject(err) : resolve())),
+			);
+		}
+	});
+
 	it("drain() awaits pending fire-and-forget deliveries", async () => {
 		const release = (): void => {};
 		let resolveResponder: (() => void) | undefined;

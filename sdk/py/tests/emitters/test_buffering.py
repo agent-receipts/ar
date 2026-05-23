@@ -131,6 +131,8 @@ def test_propagates_downstream_errors_via_flush() -> None:
         try:
             buf.close()
         except RuntimeError:
+            # Teardown flush re-raises the same downstream failure already
+            # asserted above; nothing more to verify here.
             pass
 
 
@@ -167,6 +169,8 @@ def test_flush_attempts_every_receipt_aggregating_failures() -> None:
         try:
             buf.close()
         except (RuntimeError, BufferingFlushError):
+            # Teardown flush surfaces the same failures already asserted
+            # against `info.value.errors`; nothing more to verify here.
             pass
 
 
@@ -251,4 +255,6 @@ def test_timer_thread_swallows_downstream_errors() -> None:
         try:
             buf.close()
         except RuntimeError:
+            # Teardown flush re-raises FailingEmitter's downstream error;
+            # already exercised above via the timer-path swallow assertion.
             pass

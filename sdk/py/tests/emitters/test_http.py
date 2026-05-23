@@ -220,18 +220,15 @@ def _make_mtls_pair() -> tuple[bytes, bytes]:
 def test_mtls_config_loads_certificate_files() -> None:
     """Pin that mTLS config produces a valid SSLContext without throwing."""
     cert_pem, key_pem = _make_mtls_pair()
-    emitter = HttpEmitter(
+    with HttpEmitter(
         HttpEmitterConfig(
             endpoint="https://example.invalid/receipts",
             auth=MtlsAuth(cert=cert_pem, key=key_pem),
         )
-    )
-    try:
+    ) as emitter:
         # The SSLContext is built lazily at request time; here we just
         # assert construction did not raise.
         assert emitter._ssl_context is not None  # noqa: SLF001 — internal state
-    finally:
-        emitter.close()
 
 
 def test_mtls_tempfiles_removed_on_close() -> None:
@@ -292,20 +289,17 @@ def test_mtls_keyfile_has_0600_permissions() -> None:
     import stat
 
     cert_pem, key_pem = _make_mtls_pair()
-    emitter = HttpEmitter(
+    with HttpEmitter(
         HttpEmitterConfig(
             endpoint="https://example.invalid/receipts",
             auth=MtlsAuth(cert=cert_pem, key=key_pem),
         )
-    )
-    try:
+    ) as emitter:
         key_path = emitter._mtls_key_file  # noqa: SLF001 — internal state
         assert key_path is not None
         mode = stat.S_IMODE(os.stat(key_path).st_mode)
         # 0o600: owner read+write only.
         assert mode == 0o600, f"key file mode = {oct(mode)}; want 0o600"
-    finally:
-        emitter.close()
 
 
 def test_http_url_warns_on_construction(caplog: object) -> None:

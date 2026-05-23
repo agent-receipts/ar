@@ -33,6 +33,17 @@ describe("InMemoryEmitter", () => {
 		expect(e.received).toEqual([]);
 	});
 
+	it("returns a snapshot — mutating after emit does not change a prior read", async () => {
+		const e = new InMemoryEmitter();
+		await e.emit(fakeReceipt("a"));
+		const snapshot = e.received;
+		await e.emit(fakeReceipt("b"));
+		e.clear();
+		// The snapshot was a copy, so subsequent emits and clear() don't
+		// retroactively touch the array the caller already has in hand.
+		expect(snapshot.map((r) => r.id)).toEqual(["a"]);
+	});
+
 	it("performs no I/O — emit() resolves synchronously", async () => {
 		// If this test takes more than a few ms there's I/O happening somewhere
 		// it shouldn't be.

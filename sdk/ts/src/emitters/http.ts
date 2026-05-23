@@ -230,6 +230,19 @@ export class HttpEmitter implements Emitter {
 		// Keep the event loop free to exit while we're waiting on the
 		// upstream response — the abort path will still fire.
 		(timer as { unref?: () => void }).unref?.();
+		// Propagate the caller's signal into the in-flight request so that
+		// aborting it cancels the fetch itself, not just the backoff sleep.
+		const userSignal = this.signal;
+		const onUserAbort = (): void => {
+			controller.abort(userSignal?.reason);
+		};
+		if (userSignal !== undefined) {
+			if (userSignal.aborted) {
+				controller.abort(userSignal.reason);
+			} else {
+				userSignal.addEventListener("abort", onUserAbort, { once: true });
+			}
+		}
 		try {
 			const headers: Record<string, string> = {
 				"Content-Type": "application/ld+json",
@@ -260,6 +273,7 @@ export class HttpEmitter implements Emitter {
 			return await this.fetchImpl(this.endpoint, init as RequestInit);
 		} finally {
 			clearTimeout(timer);
+			userSignal?.removeEventListener("abort", onUserAbort);
 		}
 	}
 

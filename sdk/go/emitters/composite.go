@@ -26,10 +26,9 @@ type CompositeEmitter struct {
 }
 
 // NewComposite returns a CompositeEmitter that forwards to every child in
-// the given order. The slice is captured by reference; do not mutate it
-// after construction.
+// the given order. The caller's slice is defensively copied so subsequent
+// mutations to it do not affect the composite's child list.
 func NewComposite(children []Emitter) *CompositeEmitter {
-	// Defensive copy so the caller cannot mutate our internal slice.
 	cp := make([]Emitter, len(children))
 	copy(cp, children)
 	return &CompositeEmitter{children: cp}

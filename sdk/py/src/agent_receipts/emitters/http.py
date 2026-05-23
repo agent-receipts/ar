@@ -146,14 +146,23 @@ class HttpEmitter:
 
         Call this on graceful shutdown to give in-flight receipts a
         chance to land. With no ``timeout`` argument blocks until every
-        pending thread has joined; with a timeout returns once the
-        deadline is hit even if threads are still running. Safe to call
-        when there are no pending threads.
+        pending thread has joined; with a timeout the total wait time is
+        capped at ``timeout`` seconds across ALL threads (overall
+        deadline, not per-thread). Safe to call when there are no pending
+        threads.
         """
         with self._pending_lock:
             snapshot = list(self._pending)
+        if timeout is None:
+            for thread in snapshot:
+                thread.join()
+            return
+        deadline = time.monotonic() + timeout
         for thread in snapshot:
-            thread.join(timeout=timeout)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            thread.join(timeout=remaining)
 
     def close(self) -> None:
         """Release the mTLS temp files, if any. Safe to call multiple times."""
@@ -316,13 +325,22 @@ def _cleanup_paths(paths: list[str]) -> None:
 
     Used both by :meth:`HttpEmitter.close` and by the weakref finalizer
     so the PEM tempfiles are removed deterministically on GC even if the
-    caller forgets to call ``close()``.
+    caller forgets to call ``close()``. ``FileNotFoundError`` is expected
+    when cleanup runs twice (close() then GC, or vice versa); other
+    ``OSError`` instances are logged at debug since cleanup is non-fatal
+    but should not be invisible.
     """
     for path in paths:
         try:
             os.unlink(path)
-        except OSError:
-            pass
+        except FileNotFoundError:
+            # Already cleaned up — close() and GC both run _cleanup_paths.
+            continue
+        except OSError as exc:
+            logger.debug(
+                "HttpEmitter mTLS tempfile cleanup failed",
+                extra={"path": path, "err": str(exc)},
+            )
 
 
 # Convenience re-exports so callers can do `from agent_receipts.emitters

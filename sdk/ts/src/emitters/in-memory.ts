@@ -15,9 +15,13 @@ import type { Emitter } from "./types.js";
 export class InMemoryEmitter implements Emitter {
 	private readonly _received: AgentReceipt[] = [];
 
-	/** All receipts passed to {@link emit}, in arrival order. */
+	/**
+	 * Snapshot of all receipts passed to {@link emit}, in arrival order.
+	 * Returns a defensive copy so callers cannot mutate the recorded state
+	 * (matches the Go SDK's `Received()` semantics).
+	 */
 	get received(): readonly AgentReceipt[] {
-		return this._received;
+		return this._received.slice();
 	}
 
 	emit(receipt: AgentReceipt): Promise<void> {

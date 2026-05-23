@@ -362,7 +362,7 @@ func (e *HttpEmitter) deliver(ctx context.Context, body []byte) error {
 func (e *HttpEmitter) doRequest(ctx context.Context, body []byte) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("HttpEmitter: build request for %s: %w", e.endpoint, err)
 	}
 	req.Header.Set("Content-Type", "application/ld+json")
 	switch a := e.auth.(type) {
@@ -376,7 +376,7 @@ func (e *HttpEmitter) doRequest(ctx context.Context, body []byte) (int, error) {
 
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("HttpEmitter: POST %s: %w", e.endpoint, err)
 	}
 	// Drain and close so the underlying connection can be reused.
 	_, _ = io.Copy(io.Discard, resp.Body)
