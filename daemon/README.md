@@ -158,6 +158,34 @@ Exit codes are stable for scripting:
 | `1` | Chain failed verification (output lists per-receipt status) |
 | `2` | Usage error (bad flags, missing key file, unreadable DB) |
 
+## Read interface: `agent-receipts show <seq>`
+
+```sh
+agent-receipts show 42
+# or, against a multi-chain store / explicit DB:
+agent-receipts show 42 --chain-id default --db /var/lib/agentreceipts/receipts.db
+# raw receipt JSON:
+agent-receipts show 42 --json
+```
+
+Prints the full fields of the receipt at chain sequence `<seq>` (1-indexed):
+issuer, chain id, action type / tool, parameters hash, outcome, signature, and
+any action-specific payload (e.g. the drop count on an `events_dropped`
+receipt). Like `verify`, it opens the store **read-only** so it is safe to run
+while the daemon writes.
+
+`--chain-id` is required only when the store holds more than one chain; with a
+single chain it is auto-detected. Without it on a multi-chain store, the
+command lists the available chain ids and exits with a usage error.
+
+Exit codes are stable for scripting:
+
+| Code | Meaning |
+|---|---|
+| `0` | Receipt found and printed |
+| `1` | No receipt at the requested sequence (or empty store) |
+| `2` | Usage error (bad flags, ambiguous chain, unreadable DB) |
+
 ## Wire protocol
 
 SOCK_STREAM Unix-domain socket (uniform across Linux and macOS — see
@@ -229,7 +257,7 @@ The following are deliberate Phase 1 choices, all callable out for follow-up:
 ```
 daemon.go                                  # Run() entrypoint and Config; publishes the public key on startup
 cmd/agent-receipts-daemon/main.go          # daemon CLI: flag/env parsing, signal handling
-cmd/agent-receipts/main.go                 # read CLI: thin shim over internal/verifycli
+cmd/agent-receipts/main.go                 # read CLI: thin shim over internal/{listcli,showcli,verifycli}
 internal/
   chain/state.go                           # in-memory (seq, prev_hash) owner; sole writer
   keysource/keysource.go                   # KeySource interface (ADR-0015 shape)
@@ -237,6 +265,8 @@ internal/
   socket/listener.go                       # Unix-domain socket + length-prefix framing
   socket/peercred_{linux,darwin,other}.go  # OS-specific peer-credential capture
   pipeline/build.go                        # frame + peer -> AgentReceipt -> sign -> store
+  listcli/list.go                          # `agent-receipts list` subcommand
+  showcli/show.go                          # `agent-receipts show <seq>` subcommand
   verifycli/verify.go                      # `agent-receipts verify` subcommand
 integration_test.go                        # tags: integration. End-to-end concurrency, peer-cred, and verify-CLI fixtures.
 ```
