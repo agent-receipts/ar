@@ -10,6 +10,7 @@ package collector
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
@@ -65,6 +66,18 @@ func NewInMemoryStore() *InMemoryStore {
 }
 
 func (s *InMemoryStore) Insert(r receipt.AgentReceipt, rawJSON []byte, receiptHash string) error {
+	// Validate that rawJSON is a JSON object up front. Get re-parses the
+	// stored bytes back into a receipt struct; rejecting unparseable bytes
+	// here keeps that path's contract honest (any later Unmarshal failure
+	// in Get implies corruption, not bad input).
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &probe); err != nil {
+		return fmt.Errorf("collector: rawJSON is not valid JSON: %w", err)
+	}
+	if probe == nil {
+		return errors.New("collector: rawJSON is not a JSON object")
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.receipts[r.ID]; exists {
@@ -118,9 +131,12 @@ func (s *InMemoryStore) Get(id string) (receipt.AgentReceipt, []byte, string, bo
 
 	var r receipt.AgentReceipt
 	if err := json.Unmarshal(rawCopy, &r); err != nil {
-		// InMemoryStore.Insert validated rawJSON parses; if it doesn't now,
-		// the bytes have been corrupted under our feet. Return what we
-		// have so callers can still see the bytes and hash.
+		// Insert rejects rawJSON that isn't a JSON object, so a parse
+		// failure here implies the stored bytes were mutated in place
+		// after the Insert returned — which the in-memory store guards
+		// against via copy-on-insert. Return what we have so callers can
+		// at least see the bytes and hash, but this path is best treated
+		// as an invariant violation in test logs.
 		return receipt.AgentReceipt{}, rawCopy, sr.Hash, true
 	}
 	return r, rawCopy, sr.Hash, true

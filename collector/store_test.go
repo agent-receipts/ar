@@ -130,6 +130,36 @@ func TestInMemoryStore_ConcurrentInserts(t *testing.T) {
 	}
 }
 
+func TestInMemoryStore_RejectsInvalidPayloads(t *testing.T) {
+	// Get re-parses stored bytes; Insert must reject anything that isn't a
+	// JSON object so Get's Unmarshal contract is honest. Mirrors the SDK
+	// InsertRaw rejection set.
+	s := NewInMemoryStore()
+	r := testReceipt("urn:receipt:invalid")
+
+	cases := []struct {
+		name string
+		raw  []byte
+	}{
+		{"not json", []byte(`{not json`)},
+		{"json array", []byte(`[1, 2, 3]`)},
+		{"json scalar", []byte(`42`)},
+		{"json null", []byte(`null`)},
+		{"empty body", []byte{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := s.Insert(r, tc.raw, "sha256:invalid")
+			if err == nil {
+				t.Fatal("Insert with invalid payload: err=nil, want rejection")
+			}
+		})
+	}
+	if s.Len() != 0 {
+		t.Fatalf("store mutated by rejected payloads: %d entries", s.Len())
+	}
+}
+
 func TestInMemoryStore_ExistsUnknown(t *testing.T) {
 	s := NewInMemoryStore()
 	if exists, err := s.Exists("urn:receipt:nope"); err != nil || exists {
