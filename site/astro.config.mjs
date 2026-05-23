@@ -151,11 +151,24 @@ export default defineConfig({
             { label: "Configuration", slug: "reference/configuration" },
           ],
         },
-        { label: "Ecosystem", slug: "ecosystem" },
+        {
+          label: "Ecosystem",
+          items: [
+            { label: "Overview", slug: "ecosystem" },
+            {
+              label: "Landscape (living)",
+              slug: "ecosystem/landscape",
+            },
+          ],
+        },
         {
           label: "Blog",
           items: [
             { label: "All Posts", slug: "blog" },
+            {
+              label: "Agent Security Tooling Landscape — May 2026",
+              slug: "blog/agent-security-tooling-landscape-may-2026",
+            },
             {
               label: "Agent Security Tooling Landscape — April 2026",
               slug: "blog/agent-security-tooling-landscape-april-2026",

@@ -1,14 +1,14 @@
-# Agent Security Tooling Landscape (living)
+---
+title: Agent Security Tooling Landscape
+description: The always-current view of the agent security, policy enforcement, governance, and provenance space — kept up to date as the ecosystem moves.
+head:
+  - tag: link
+    attrs:
+      rel: canonical
+      href: https://agentreceipts.ai/ecosystem/landscape/
+---
 
-This is the **living** landscape — the always-current view, kept up to date as the
-ecosystem moves. It is published at
-<https://agentreceipts.ai/ecosystem/landscape/>.
-
-For point-in-time strategic reads ("what we thought, when"), see the dated
-snapshots. The most recent is
-[May 2026](https://agentreceipts.ai/blog/agent-security-tooling-landscape-may-2026/),
-preceded by
-[April 2026](https://agentreceipts.ai/blog/agent-security-tooling-landscape-april-2026/).
+This is the **living** landscape — we keep it current as the space moves. For point-in-time strategic reads ("what we thought, when"), see the dated snapshots: the most recent is [May 2026](/blog/agent-security-tooling-landscape-may-2026/), preceded by [April 2026](/blog/agent-security-tooling-landscape-april-2026/).
 
 _Last reviewed: 2026-05-23_
 
@@ -43,7 +43,7 @@ The category that crystallized in May 2026: tools whose primary product is the p
 | **Asqav** | Provenance record | In-agent / SDK | Signed records (ML-DSA-65, RFC 3161 timestamps) | Audit-first; post-quantum signing, EU AI Act audit packs |
 | **InALign** | Alignment + audit | In-process | SHA-256 hash chain | MCP-native; MITRE-mapped detection, EU AI Act checks |
 
-> Several of these entrants are weeks old; rows carry verified specifics where available, not fabricated detail. The axis that matters is in-agent vs. out-of-agent signing and record portability — and on the first question, nono lands on the same side as Agent Receipts, so the differentiation runs through the portable W3C VC envelope and the single cross-channel chain.
+> Several of these entrants are weeks old; rows carry verified specifics where available, not fabricated detail. The axis that matters is in-agent vs. out-of-agent signing and record portability — and on the first question, **nono lands on the same side as Agent Receipts**, so the differentiation runs through the portable [W3C VC](/specification/overview/) envelope and the single cross-channel chain. See [the audit boundary belongs outside the agent](/blog/daemon-process-separation/) for why the boundary is the durable property.
 
 ---
 
@@ -109,7 +109,7 @@ These are the tools most relevant to an individual builder or small team enterin
 | **Application middleware** (Microsoft AGT) | Weakest — same trust boundary as agent | High (agent can bypass if compromised) | Low (pip install) | Whatever the framework exposes |
 | **Hook-based** (dzervas/mcp-firewall) | Moderate — pre-execution check | Medium (depends on client enforcement) | Very low | Tool calls in supported clients |
 
-Audit & provenance tools are not enforcement tools — they record rather than block. The analogous axis for them is the trust boundary: an in-process signer shares the agent's blast radius; an out-of-agent signer does not.
+*Audit & provenance tools are not enforcement tools — they record rather than block. The analogous axis for them is the trust boundary: an in-process signer shares the agent's blast radius; an [out-of-agent signer](/blog/daemon-process-separation/) does not.*
 
 ---
 
@@ -124,7 +124,7 @@ Multiple projects have independently converged on the same cryptographic and pro
 | **DIDs (Decentralized Identifiers)** | Microsoft AGT, Agent Receipts |
 | **OPA/Rego policies** | Microsoft AGT, mcp-firewall (ressl) |
 | **Cedar policies** | Microsoft AGT |
-| **Signed, hash-chained receipt** (any scheme — table stakes) | Agent Receipts, Pipelock (EvidenceReceipt v2), Asqav, nono, InALign, Microsoft AGT |
+| **Signed, hash-chained receipt** (any scheme — *table stakes*) | Agent Receipts, Pipelock (EvidenceReceipt v2), Asqav, nono, InALign, Microsoft AGT |
 | **W3C Verifiable Credentials** (data model envelope) | Agent Receipts only — competitors sign receipts with other schemes (Asqav: ML-DSA-65; nono: Sigstore/Rekor; Pipelock: Ed25519 JSONL), not the VC envelope |
 | **Sigstore / Rekor transparency log** | nono |
 | **OWASP Agentic AI Top 10** | Microsoft AGT, Pipelock, mcp-firewall (ressl) |
@@ -144,7 +144,9 @@ EU AI Act **Article 12** requires automatic, tamper-evident logging of high-risk
 | **W3C VC Data Integrity** | W3C | The envelope our receipts use; CG argues canonicalization (JSON-LD vs. RFC 8785) | Recommendation |
 | **IETF draft-sharif** | IETF | `draft-sharif-agent-audit-trail`, a logging format for agent actions | Individual I-D (not WG-adopted) |
 
-Agent Receipts' position: the receipt is a W3C VC; the differentiator is the out-of-agent boundary plus one chain across channels; the format should be portable, and we will align with a credible standard rather than fork one.
+General supply-chain transparency work (IETF SCITT, COSE receipts) is the substrate some of these build on, but it is software-supply-chain-oriented, not agent-audit-specific, so we don't count it as part of this race.
+
+Agent Receipts' position: the receipt is a W3C VC; the differentiator is the [out-of-agent boundary](/blog/daemon-process-separation/) plus one chain across channels; the format should be portable, and we will align with a credible standard rather than fork one.
 
 ---
 
@@ -164,4 +166,4 @@ Areas that remain underserved despite the crowded landscape:
 
 ---
 
-*This document is kept current. For the point-in-time strategic read, see the May 2026 snapshot.*
+*This document is kept current. For the point-in-time strategic read, see the [May 2026 snapshot](/blog/agent-security-tooling-landscape-may-2026/).*
