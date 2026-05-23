@@ -3,7 +3,7 @@ module github.com/agent-receipts/ar/collector
 go 1.26.1
 
 require (
-	github.com/agent-receipts/ar/sdk/go v0.11.0
+	github.com/agent-receipts/ar/sdk/go v0.12.1
 	modernc.org/sqlite v1.50.1
 )
 
