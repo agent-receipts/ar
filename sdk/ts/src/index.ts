@@ -8,6 +8,18 @@ export {
 	SUPPORTED_FRAME_VERSION,
 } from "./daemon-emitter.js";
 export {
+	BufferingEmitter,
+	type BufferingEmitterConfig,
+	CompositeEmitter,
+	EmitError,
+	type Emitter,
+	HttpEmitter,
+	type HttpEmitterAuth,
+	type HttpEmitterConfig,
+	InMemoryEmitter,
+	type RetryConfig,
+} from "./emitters/index.js";
+export {
 	type ChainVerification,
 	type ReceiptVerification,
 	verifyChain,
