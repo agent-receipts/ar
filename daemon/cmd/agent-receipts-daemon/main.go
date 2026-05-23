@@ -54,6 +54,7 @@ func main() {
 
 	initKeys := flag.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
+	unsafeSocket := flag.Bool("unsafe-socket-path", false, "Permit a --socket/AGENTRECEIPTS_SOCKET path outside the per-platform safe set (logs a warning; does not override TCP rejection)")
 	flag.StringVar(&cfg.SocketPath, "socket", cfg.SocketPath, "Unix-domain socket path (env: AGENTRECEIPTS_SOCKET)")
 	flag.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	flag.StringVar(&cfg.KeyPath, "key", cfg.KeyPath, "Ed25519 PEM private key path, mode 0600 (env: AGENTRECEIPTS_KEY)")
@@ -90,6 +91,7 @@ func main() {
 	if cfg.PublicKeyPath == "" {
 		cfg.PublicKeyPath = daemon.DefaultPublicKeyPath(cfg.KeyPath)
 	}
+	cfg.UnsafeSocketPath = *unsafeSocket
 
 	logger := log.New(os.Stderr, "agent-receipts-daemon ", log.LstdFlags|log.Lmicroseconds)
 	cfg.Logger = logger

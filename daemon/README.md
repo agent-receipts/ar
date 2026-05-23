@@ -60,6 +60,7 @@ agent-receipts-daemon \
 | Flag | Env | Default |
 |---|---|---|
 | `--socket` | `AGENTRECEIPTS_SOCKET` | Linux: `$XDG_RUNTIME_DIR/agentreceipts/events.sock` (falls back to `/run/agentreceipts/events.sock`). macOS: `$XDG_DATA_HOME/agent-receipts/events.sock` (defaults to `~/.local/share/agent-receipts/events.sock`). |
+| `--unsafe-socket-path` | — | `false` — permit a `--socket` outside the per-platform safe set (see [Socket-path safety](#socket-path-safety)). |
 | `--db` | `AGENTRECEIPTS_DB` | `$XDG_DATA_HOME/agent-receipts/receipts.db` (defaults to `~/.local/share/agent-receipts/receipts.db`) |
 | `--key` | `AGENTRECEIPTS_KEY` | `$XDG_DATA_HOME/agent-receipts/signing.key` (defaults to `~/.local/share/agent-receipts/signing.key`) |
 | `--chain-id` | `AGENTRECEIPTS_CHAIN_ID` | `default` |
@@ -77,6 +78,34 @@ non-regular file at this path.
 The socket directory is created with mode `0750` if missing; the socket
 itself is `0660`. Phase 1 unprivileged installs use the per-user defaults
 (`$XDG_DATA_HOME` on macOS, `$XDG_RUNTIME_DIR` on Linux when set).
+
+### Socket-path safety
+
+The per-user runtime/data directory is what makes peer-credential capture and
+the trust boundary meaningful (ADR-0010 § IPC transport). A socket in a shared,
+world-traversable, periodically-swept directory (e.g. `/tmp`) keeps peer creds
+working but loses location privacy, and the socket file may disappear under
+load. To stop a safe default being silently abandoned by an override, the
+daemon refuses to start when `--socket` / `AGENTRECEIPTS_SOCKET` resolves
+outside the per-platform safe set:
+
+- **Linux:** under `$XDG_RUNTIME_DIR` (when set), `/run`, or `/var/run`.
+- **macOS:** under `$TMPDIR` (when set), `/var/run`, or
+  `$XDG_DATA_HOME/agent-receipts` (where the per-user default lives, alongside
+  `receipts.db` and the signing key).
+
+The path is canonicalized with `filepath.EvalSymlinks` before the check, so a
+symlink pointing out of the safe set is judged by its real target. The default
+socket path always resolves inside the safe set, so defaults are never
+rejected. TCP addresses (e.g. `127.0.0.1:9000`) are rejected unconditionally —
+the daemon speaks Unix-domain sockets only.
+
+To deliberately run on a path outside the safe set — containers with unusual
+mounts, dev experiments, the short `/tmp` path the integration tests need to
+stay within the macOS `sun_path` limit — pass `--unsafe-socket-path`. The
+daemon then starts, logs a `level=warn` line naming the path, and re-emits the
+warning every 60 seconds. The flag unblocks legitimate edge cases; it does not
+suppress the warning, and it does not override the TCP rejection.
 
 On every startup the daemon publishes the matching SPKI public key to
 `--public-key` (default `<KeyPath>.pub`, tracking any `--key` override) with

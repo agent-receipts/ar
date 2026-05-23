@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Refuse unsafe socket paths absent `--unsafe-socket-path`** ([#538](https://github.com/agent-receipts/ar/issues/538)). At startup the daemon now rejects a `--socket` / `AGENTRECEIPTS_SOCKET` override that resolves outside the per-platform safe set (Linux: `$XDG_RUNTIME_DIR`, `/run`, `/var/run`; macOS: `$TMPDIR`, `/var/run`, `$XDG_DATA_HOME/agent-receipts`) unless `--unsafe-socket-path` is also passed, in which case it starts, logs a `level=warn` line naming the path, and re-emits the warning every 60s. The path is canonicalized with `filepath.EvalSymlinks` before the check so a symlink escaping the safe set is judged by its real target. TCP addresses are rejected unconditionally (ADR-0010 § IPC transport). Defaults always resolve inside the safe set and are unaffected. This closes the "unsafe configuration silently accepted" gap where an override could quietly relocate the socket to a shared, world-traversable, swept directory like `/tmp`.
+
 ### Changed
 
 - **macOS default socket path moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/ar/issues/545)). The macOS default is now `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`), co-located with `receipts.db` and the signing key. The previous `$TMPDIR/agentreceipts/events.sock` default was unreliable because launchd's per-user TMPDIR is not inherited by every spawn context — GUI-spawned MCP servers commonly saw no TMPDIR and silently landed on `/tmp` while the daemon kept the per-user path, producing a no-error / zero-receipt failure mode. HOME is preserved across every supported spawn context, eliminating the divergence. Linux defaults are unchanged. Operators upgrading from v0.11.0 or earlier on macOS must restart both the daemon and any emitter (mcp-proxy, hook); anyone relying on TMPDIR redirection should switch to `AGENTRECEIPTS_SOCKET`. See ADR-0010's 2026-05-23 entry.
