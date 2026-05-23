@@ -77,3 +77,21 @@ func TestDefaultSocketPath_Darwin_SharesDirWithDBAndKey(t *testing.T) {
 		t.Errorf("socket dir = %q, DB dir = %q, key dir = %q; all three must share parent", socketDir, dbDir, keyDir)
 	}
 }
+
+// TestDefaultSocketPath_Darwin_EnvWinsWhenHomeUnresolvable pins the
+// PR #547 Copilot finding: AGENTRECEIPTS_SOCKET must take precedence
+// over the platform default even when xdgDataHome cannot produce a
+// path (HOME and XDG_DATA_HOME both empty / unusable). The previous
+// "platform default first, env var second" ordering swallowed the
+// override silently in that case, contradicting the docstring's
+// "consulted first" guarantee.
+func TestDefaultSocketPath_Darwin_EnvWinsWhenHomeUnresolvable(t *testing.T) {
+	const want = "/explicit/override/events.sock"
+	t.Setenv("AGENTRECEIPTS_SOCKET", want)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("HOME", "")
+
+	if got := DefaultSocketPath(); got != want {
+		t.Errorf("DefaultSocketPath() = %q; want %q (env override must win even with HOME unresolvable)", got, want)
+	}
+}

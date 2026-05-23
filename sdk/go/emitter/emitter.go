@@ -616,17 +616,14 @@ func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
 //   - Other platforms: empty string. New returns an error in that case;
 //     callers must pass WithSocketPath explicitly.
 func DefaultSocketPath() string {
-	base := platformDefaultSocketPath()
-	if base == "" {
-		// Unsupported platform — preserve the contract that callers must
-		// pass WithSocketPath explicitly. AGENTRECEIPTS_SOCKET cannot
-		// rescue this case because New still gates on platform support
-		// elsewhere; returning the env var here would just defer the
-		// failure.
-		return ""
-	}
+	// AGENTRECEIPTS_SOCKET is consulted first so an explicit override is
+	// honoured on every host — including darwin runs where xdgDataHome
+	// cannot resolve HOME, and platforms where the daemon does not run
+	// but the caller has supplied a path. New still gates real platform
+	// support elsewhere, so an unsupported host without an env override
+	// continues to fail clearly.
 	if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
 		return p
 	}
-	return base
+	return platformDefaultSocketPath()
 }
