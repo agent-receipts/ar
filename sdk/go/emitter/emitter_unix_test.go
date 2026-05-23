@@ -634,11 +634,14 @@ func TestDefaultSocketPath_EnvOverride(t *testing.T) {
 	}
 }
 
-// TestDefaultSocketPath_TmpdirFallback exercises the darwin/linux branch
-// where TMPDIR is empty and the path falls back to /tmp (darwin) or
-// /run (linux). We only assert the path is non-empty and does not contain
-// the empty string — the exact path is platform-dependent.
-func TestDefaultSocketPath_TmpdirFallback(t *testing.T) {
+// TestDefaultSocketPath_NoRuntimeEnv exercises the bare environment on
+// supported platforms: AGENTRECEIPTS_SOCKET, TMPDIR, and XDG_RUNTIME_DIR
+// all empty. The path must still resolve to something — on darwin via
+// the HOME-based XDG_DATA_HOME default (issue #545), on linux via the
+// /run system-install fallback. We only assert non-empty here; the
+// exact value is platform-specific and exercised by the targeted tests
+// below.
+func TestDefaultSocketPath_NoRuntimeEnv(t *testing.T) {
 	t.Setenv("AGENTRECEIPTS_SOCKET", "")
 	t.Setenv("TMPDIR", "")
 	t.Setenv("XDG_RUNTIME_DIR", "")

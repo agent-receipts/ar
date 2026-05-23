@@ -213,12 +213,53 @@ class TestDefaultSocketPath:
         monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
         path = default_socket_path()
         # On macOS or Linux we get a non-empty path; on other platforms empty.
+        # Directory name differs by platform: macOS uses the hyphenated
+        # ``agent-receipts/`` directory (shared with receipts.db / signing
+        # key after issue #545), Linux keeps the legacy ``agentreceipts/``
+        # under XDG_RUNTIME_DIR or /run.
         import platform
 
         system = platform.system()
         if system in ("Darwin", "Linux"):
-            assert path.endswith("agentreceipts/events.sock")
+            assert path.endswith("events.sock")
         # Other platforms: may be empty — just don't crash.
+
+    def test_macos_uses_home_based_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Issue #545: on macOS the default must resolve against HOME, not
+        TMPDIR, so a process spawned without TMPDIR (Claude Desktop's
+        MCP children, for example) still finds the same socket the
+        daemon is listening on. We stub ``platform.system`` so the
+        assertion is meaningful on Linux CI too — without this guard the
+        regression that originally caused #545 would only surface on a
+        macOS developer machine.
+        """
+        monkeypatch.delenv("AGENTRECEIPTS_SOCKET", raising=False)
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        monkeypatch.delenv("TMPDIR", raising=False)
+        monkeypatch.setenv("HOME", "/Users/testuser")
+
+        import platform as platform_module
+
+        monkeypatch.setattr(platform_module, "system", lambda: "Darwin")
+        assert (
+            default_socket_path()
+            == "/Users/testuser/.local/share/agent-receipts/events.sock"
+        )
+
+    def test_macos_ignores_tmpdir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Regression guard for #545: a fake TMPDIR must not leak into the
+        resolved path on macOS. If this assertion ever flips, the
+        env-divergence bug has been reintroduced.
+        """
+        monkeypatch.delenv("AGENTRECEIPTS_SOCKET", raising=False)
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        monkeypatch.setenv("HOME", "/Users/testuser")
+        monkeypatch.setenv("TMPDIR", "/fake-tmpdir")
+
+        import platform as platform_module
+
+        monkeypatch.setattr(platform_module, "system", lambda: "Darwin")
+        assert "/fake-tmpdir" not in default_socket_path()
 
 
 class TestEmitterConstruction:

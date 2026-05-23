@@ -49,11 +49,20 @@ def default_socket_path() -> str:
     """Return the per-OS default path for the daemon socket.
 
     Resolution order:
+
     1. ``AGENTRECEIPTS_SOCKET`` environment variable (any platform).
-    2. macOS: ``$TMPDIR/agentreceipts/events.sock`` (TMPDIR defaults to /tmp).
+    2. macOS: ``$XDG_DATA_HOME/agent-receipts/events.sock`` (XDG_DATA_HOME
+       defaults to ``~/.local/share``). HOME-based instead of $TMPDIR
+       because TMPDIR is not inherited by every spawn context — MCP
+       servers launched by GUI hosts commonly see no TMPDIR and silently
+       land on ``/tmp`` while the daemon keeps the per-user temp dir,
+       producing a no-error / zero-receipt mismatch (issue #545).
     3. Linux with ``$XDG_RUNTIME_DIR``: ``$XDG_RUNTIME_DIR/agentreceipts/events.sock``.
     4. Linux fallback: ``/run/agentreceipts/events.sock``.
     5. Other platforms: empty string (caller must supply path explicitly).
+
+    The macOS resolution mirrors the Go and TypeScript SDKs so every
+    emitter and the daemon agree on a single path per user.
     """
     env = os.environ.get("AGENTRECEIPTS_SOCKET", "")
     if env:
@@ -61,14 +70,36 @@ def default_socket_path() -> str:
 
     system = platform.system()
     if system == "Darwin":
-        base = os.environ.get("TMPDIR") or "/tmp"
-        return os.path.join(base, "agentreceipts", "events.sock")
+        base = _xdg_data_home()
+        if not base:
+            return ""
+        return os.path.join(base, "agent-receipts", "events.sock")
     if system == "Linux":
         xdg = os.environ.get("XDG_RUNTIME_DIR", "")
         if xdg:
             return os.path.join(xdg, "agentreceipts", "events.sock")
         return "/run/agentreceipts/events.sock"
     return ""
+
+
+def _xdg_data_home() -> str:
+    """Return ``$XDG_DATA_HOME`` (absolute only) or ``$HOME/.local/share``.
+
+    Mirrors ``daemon.xdgDataHome`` / ``emitter.xdgDataHome`` in the Go
+    code so the Python emitter resolves the same per-user directory the
+    daemon writes to. A relative ``XDG_DATA_HOME`` is ignored per the
+    XDG spec — silently relocating sockets under the working directory
+    of whichever process happened to start the emitter would be
+    surprising. Returns the empty string when neither source yields an
+    absolute path.
+    """
+    data_home = os.environ.get("XDG_DATA_HOME", "")
+    if data_home and os.path.isabs(data_home):
+        return data_home
+    home = os.path.expanduser("~")
+    if not home or home == "~" or not os.path.isabs(home):
+        return ""
+    return os.path.join(home, ".local", "share")
 
 
 class Emitter:

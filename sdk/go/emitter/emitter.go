@@ -39,7 +39,6 @@ import (
 	"math"
 	"net"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -592,44 +591,43 @@ func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
 }
 
 // DefaultSocketPath returns the per-OS default path for the daemon socket.
-// The OS rules match daemon.DefaultSocketPath; the emitter adds one layer:
-// AGENTRECEIPTS_SOCKET is consulted first on supported platforms so a
-// single env var redirects both daemon and emitter to a non-default socket.
-// The daemon reads the env var in main, not in its DefaultSocketPath, so
-// the two functions are not identical despite producing the same paths when
-// the env var is unset.
+// This is the canonical resolution shared by the emitter (client side) and
+// the daemon binary (daemon.DefaultSocketPath delegates here). Keeping a
+// single implementation prevents the silent drift that surfaced in issue
+// #545, where a binary-specific default could resolve to /tmp while the
+// other resolved $TMPDIR.
 //
-// The platform gate in this function applies only to automatic default path
-// resolution. Callers that pass WithSocketPath to New bypass this function
-// entirely and can use any path on any OS — platform detection is not their
-// concern.
+// AGENTRECEIPTS_SOCKET is consulted first on every host — including
+// platforms where the daemon does not run — so an explicit override is
+// always honoured. New continues to reject an empty result on
+// unsupported platforms, so callers without an override there still see
+// a clear "pass WithSocketPath explicitly" error.
 //
-//   - macOS: AGENTRECEIPTS_SOCKET if set, else $TMPDIR/agentreceipts/events.sock
-//     (TMPDIR defaults to /tmp).
-//   - Linux: AGENTRECEIPTS_SOCKET if set, else $XDG_RUNTIME_DIR/agentreceipts/
-//     events.sock when XDG_RUNTIME_DIR is set, else /run/agentreceipts/events.sock.
-//   - Other platforms: empty string. New returns an error in that case;
-//     callers must pass WithSocketPath explicitly.
+// The platform gate below the env-var check applies only to automatic
+// default path resolution. Callers that pass WithSocketPath to New
+// bypass this function entirely and can use any path on any OS —
+// platform detection is not their concern.
+//
+//   - Any platform: AGENTRECEIPTS_SOCKET if set.
+//   - macOS: $XDG_DATA_HOME/agent-receipts/events.sock (XDG_DATA_HOME
+//     defaults to ~/.local/share). HOME-based so the daemon and any
+//     emitter resolve to the same path regardless of how they were
+//     spawned — a GUI-launched proxy that loses TMPDIR no longer drifts
+//     to /tmp while the daemon keeps the per-user temp dir (issue #545).
+//   - Linux: $XDG_RUNTIME_DIR/agentreceipts/events.sock when
+//     XDG_RUNTIME_DIR is set, else /run/agentreceipts/events.sock.
+//   - Other platforms: empty string unless AGENTRECEIPTS_SOCKET supplies
+//     a path. New returns an error in the empty case; callers must pass
+//     WithSocketPath explicitly.
 func DefaultSocketPath() string {
-	switch runtime.GOOS {
-	case "darwin":
-		if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
-			return p
-		}
-		base := os.Getenv("TMPDIR")
-		if base == "" {
-			base = "/tmp"
-		}
-		return filepath.Join(base, "agentreceipts", "events.sock")
-	case "linux":
-		if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
-			return p
-		}
-		if base := os.Getenv("XDG_RUNTIME_DIR"); base != "" {
-			return filepath.Join(base, "agentreceipts", "events.sock")
-		}
-		return "/run/agentreceipts/events.sock"
-	default:
-		return ""
+	// AGENTRECEIPTS_SOCKET is consulted first so an explicit override is
+	// honoured on every host — including darwin runs where xdgDataHome
+	// cannot resolve HOME, and platforms where the daemon does not run
+	// but the caller has supplied a path. New still gates real platform
+	// support elsewhere, so an unsupported host without an env override
+	// continues to fail clearly.
+	if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
+		return p
 	}
+	return platformDefaultSocketPath()
 }

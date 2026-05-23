@@ -20,6 +20,7 @@ import (
 	"github.com/agent-receipts/ar/daemon/internal/keysource"
 	"github.com/agent-receipts/ar/daemon/internal/pipeline"
 	"github.com/agent-receipts/ar/daemon/internal/socket"
+	"github.com/agent-receipts/ar/sdk/go/emitter"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
@@ -79,8 +80,11 @@ type Config struct {
 }
 
 // DefaultSocketPath returns the per-OS default socket path. Phase 1 resolves
-// Q1 of issue #236:
-//   - macOS: $TMPDIR/agentreceipts/events.sock — per-user, unprivileged.
+// Q1 of issue #236; the macOS default was reworked again for issue #545:
+//   - macOS: $XDG_DATA_HOME/agent-receipts/events.sock — per-user,
+//     unprivileged. Defaults to $HOME/.local/share/agent-receipts/events.sock
+//     when XDG_DATA_HOME is unset, co-located with receipts.db and the
+//     signing key.
 //   - Linux with $XDG_RUNTIME_DIR set: $XDG_RUNTIME_DIR/agentreceipts/
 //     events.sock — per-user, unprivileged.
 //   - Linux fallback (no $XDG_RUNTIME_DIR): /run/agentreceipts/events.sock —
@@ -89,22 +93,16 @@ type Config struct {
 //     $XDG_RUNTIME_DIR should set AGENTRECEIPTS_SOCKET explicitly.
 //   - Other platforms: empty string (the daemon refuses to start outside
 //     Linux/macOS, see Run).
+//
+// The OS resolution is delegated to emitter.DefaultSocketPath so the daemon
+// and the SDK's emitter cannot drift on what counts as the per-user default
+// socket path. emitter.DefaultSocketPath additionally honours
+// AGENTRECEIPTS_SOCKET when set — that branch is a no-op for the daemon
+// binary, which independently consults AGENTRECEIPTS_SOCKET in main before
+// calling this function, but it keeps any library consumer aligned with the
+// emitter without needing to re-implement the env-var fallback.
 func DefaultSocketPath() string {
-	switch runtime.GOOS {
-	case "darwin":
-		base := os.Getenv("TMPDIR")
-		if base == "" {
-			base = "/tmp"
-		}
-		return filepath.Join(base, "agentreceipts", "events.sock")
-	case "linux":
-		if base := os.Getenv("XDG_RUNTIME_DIR"); base != "" {
-			return filepath.Join(base, "agentreceipts", "events.sock")
-		}
-		return "/run/agentreceipts/events.sock"
-	default:
-		return ""
-	}
+	return emitter.DefaultSocketPath()
 }
 
 // xdgDataHome returns the XDG_DATA_HOME directory or its default

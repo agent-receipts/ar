@@ -9,6 +9,12 @@ This file starts at 0.6.2; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [Unreleased]
+
+### Changed
+
+- **macOS `--socket` default moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/ar/issues/545)). The default is now `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`), inherited from the SDK's updated `emitter.DefaultSocketPath`. The previous TMPDIR-based default produced a silent receipt-loss mismatch whenever the proxy was spawned without TMPDIR (typical for MCP servers launched by GUI hosts such as Claude Desktop) while the daemon kept the per-user temp dir. Operators upgrading on macOS must restart both processes; anyone relying on TMPDIR redirection should switch to `AGENTRECEIPTS_SOCKET=…` (or pass `--socket=…` explicitly).
+
 ## [0.10.0] - 2026-05-19
 
 ### Added

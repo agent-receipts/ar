@@ -193,7 +193,7 @@ func TestEmitterRequiresOnlySocketPath(t *testing.T) {
 	t.Setenv("HOME", sandboxHome)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(sandboxHome, ".local", "share"))
 	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(sandboxHome, "run"))
-	t.Setenv("TMPDIR", filepath.Join(sandboxHome, "tmp")) // macOS default socket/DB base
+	t.Setenv("TMPDIR", filepath.Join(sandboxHome, "tmp")) // pre-#545 macOS socket base; still covered here in case anything else reads TMPDIR
 
 	// The daemon was started before the env vars were redirected and uses
 	// paths from its Config struct, so it is unaffected.

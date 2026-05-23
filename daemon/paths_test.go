@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agent-receipts/ar/sdk/go/emitter"
 )
 
 // TestDefaultDBPath_UsesXDGDataHomeWhenAbsolute pins the spec-conformant
@@ -86,5 +88,49 @@ func TestDefaultPaths_PointAtAgentReceiptsSubdir(t *testing.T) {
 		if !strings.Contains(got, "/agent-receipts/") {
 			t.Errorf("%s path %q missing /agent-receipts/ subdir", name, got)
 		}
+	}
+}
+
+// TestDefaultSocketPath_MatchesEmitter pins the invariant that the daemon
+// and the SDK's emitter resolve to the same default socket path. The
+// daemon delegates to emitter.DefaultSocketPath so the two binaries
+// cannot silently drift on path resolution (see issue #545: drift
+// between the two implementations caused silent receipt loss on
+// macOS). The matrix sweeps several env permutations so that any
+// future change to either function — say a new fallback rule — is
+// forced to update both.
+func TestDefaultSocketPath_MatchesEmitter(t *testing.T) {
+	t.Setenv("AGENTRECEIPTS_SOCKET", "")
+
+	cases := []struct {
+		name   string
+		tmpdir string
+		xdg    string
+	}{
+		{name: "with TMPDIR set", tmpdir: "/var/folders/test/T", xdg: ""},
+		{name: "without any runtime env", tmpdir: "", xdg: ""},
+		{name: "with XDG_RUNTIME_DIR set", tmpdir: "", xdg: "/run/user/1000"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TMPDIR", tc.tmpdir)
+			t.Setenv("XDG_RUNTIME_DIR", tc.xdg)
+			if got, want := DefaultSocketPath(), emitter.DefaultSocketPath(); got != want {
+				t.Errorf("DefaultSocketPath() = %q; emitter.DefaultSocketPath() = %q; the two must agree", got, want)
+			}
+		})
+	}
+}
+
+// TestDefaultSocketPath_HonoursAGENTRECEIPTS_SOCKET confirms that the
+// delegation picks up the env-var override from the emitter. Prior to
+// issue #545 the daemon's own DefaultSocketPath was env-blind; callers had
+// to wrap it in their own envOrDefault. The behaviour now matches the
+// emitter so a single env var redirects every code path.
+func TestDefaultSocketPath_HonoursAGENTRECEIPTS_SOCKET(t *testing.T) {
+	const want = "/custom/override/events.sock"
+	t.Setenv("AGENTRECEIPTS_SOCKET", want)
+	if got := DefaultSocketPath(); got != want {
+		t.Errorf("DefaultSocketPath() = %q; want %q (AGENTRECEIPTS_SOCKET must win)", got, want)
 	}
 }

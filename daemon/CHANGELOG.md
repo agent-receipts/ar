@@ -5,6 +5,13 @@ All notable changes to `agent-receipts-daemon` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **macOS default socket path moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/ar/issues/545)). The macOS default is now `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`), co-located with `receipts.db` and the signing key. The previous `$TMPDIR/agentreceipts/events.sock` default was unreliable because launchd's per-user TMPDIR is not inherited by every spawn context — GUI-spawned MCP servers commonly saw no TMPDIR and silently landed on `/tmp` while the daemon kept the per-user path, producing a no-error / zero-receipt failure mode. HOME is preserved across every supported spawn context, eliminating the divergence. Linux defaults are unchanged. Operators upgrading from v0.11.0 or earlier on macOS must restart both the daemon and any emitter (mcp-proxy, hook); anyone relying on TMPDIR redirection should switch to `AGENTRECEIPTS_SOCKET`. See ADR-0010's 2026-05-23 entry.
+- **`daemon.DefaultSocketPath` now delegates to `emitter.DefaultSocketPath`** so the two binaries share a single canonical resolver and cannot drift. The only behavioural difference is that `daemon.DefaultSocketPath()` now also honours `AGENTRECEIPTS_SOCKET` directly (library consumers no longer need to wrap the call in their own `envOrDefault`). The daemon binary's `main` already short-circuited on the env var, so the resolved path is unchanged for the daemon binary itself.
+
 ## [0.11.0] - 2026-05-19
 
 ### Added

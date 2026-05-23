@@ -59,9 +59,9 @@ agent-receipts-daemon \
 
 | Flag | Env | Default |
 |---|---|---|
-| `--socket` | `AGENTRECEIPTS_SOCKET` | `/run/agentreceipts/events.sock` (Linux), `$TMPDIR/agentreceipts/events.sock` (macOS) |
-| `--db` | `AGENTRECEIPTS_DB` | `~/.agent-receipts/receipts.db` |
-| `--key` | `AGENTRECEIPTS_KEY` | `~/.agent-receipts/signing.key` |
+| `--socket` | `AGENTRECEIPTS_SOCKET` | Linux: `$XDG_RUNTIME_DIR/agentreceipts/events.sock` (falls back to `/run/agentreceipts/events.sock`). macOS: `$XDG_DATA_HOME/agent-receipts/events.sock` (defaults to `~/.local/share/agent-receipts/events.sock`). |
+| `--db` | `AGENTRECEIPTS_DB` | `$XDG_DATA_HOME/agent-receipts/receipts.db` (defaults to `~/.local/share/agent-receipts/receipts.db`) |
+| `--key` | `AGENTRECEIPTS_KEY` | `$XDG_DATA_HOME/agent-receipts/signing.key` (defaults to `~/.local/share/agent-receipts/signing.key`) |
 | `--chain-id` | `AGENTRECEIPTS_CHAIN_ID` | `default` |
 | `--issuer-id` | `AGENTRECEIPTS_ISSUER_ID` | `did:agent-receipts-daemon:local` |
 | `--public-key` | `AGENTRECEIPTS_PUBLIC_KEY` | `<--key>.pub` |
@@ -76,7 +76,7 @@ non-regular file at this path.
 
 The socket directory is created with mode `0750` if missing; the socket
 itself is `0660`. Phase 1 unprivileged installs use the per-user defaults
-(`$TMPDIR` on macOS, `$XDG_RUNTIME_DIR` on Linux when set).
+(`$XDG_DATA_HOME` on macOS, `$XDG_RUNTIME_DIR` on Linux when set).
 
 On every startup the daemon publishes the matching SPKI public key to
 `--public-key` (default `<KeyPath>.pub`, tracking any `--key` override) with
@@ -91,8 +91,9 @@ daemon also refuses if the path is a symlink, FIFO, device, etc.
 The published key file is `0644`, but its parent directory is created at
 `0750` to match the receipt-store directory's access policy — non-owners
 must be in the daemon user's group to traverse it and reach the public key.
-Per-user installs (the MVP path: `~/.agent-receipts/`) are unaffected since
-the operator who runs the verify CLI owns the directory. System installs
+Per-user installs (the MVP path: `$XDG_DATA_HOME/agent-receipts/`, defaulting
+to `~/.local/share/agent-receipts/`) are unaffected since the operator who
+runs the verify CLI owns the directory. System installs
 (`/etc/agentreceipts/`, `/var/lib/agentreceipts/`) are expected to give the
 daemon a dedicated `agentreceipts` user and the read-side an
 `agentreceipts-read` group whose members traverse the directory; that
