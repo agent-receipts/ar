@@ -107,12 +107,18 @@ export interface HttpEmitterConfig {
 	 */
 	fetch?: typeof fetch;
 	/**
-	 * Optional cancellation handle. If the signal aborts while the emitter
-	 * is sleeping between retries (or before the next attempt starts),
-	 * `emit()` rejects with an {@link EmitError} carrying the signal's
-	 * reason as `cause`. In-flight HTTP requests are also aborted via
-	 * their per-request timeout controller — pass this signal to cancel
-	 * before the timeout fires.
+	 * Optional cancellation handle. When the signal aborts, three things
+	 * happen, in order:
+	 *
+	 * 1. Any in-flight `fetch()` is aborted (the abort is forwarded into
+	 *    the per-request `AbortController` that wraps the timeout).
+	 * 2. A backoff sleep between retries — if one is in progress — is
+	 *    short-circuited and rejects.
+	 * 3. The next retry attempt does not start; `emit()` rejects with an
+	 *    {@link EmitError} whose `cause` is the signal's reason.
+	 *
+	 * In short: aborting cuts off whatever the emitter is currently doing
+	 * (request, sleep, or pre-attempt check) and surfaces an `EmitError`.
 	 */
 	signal?: AbortSignal;
 }

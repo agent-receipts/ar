@@ -29,8 +29,13 @@ class Emitter(Protocol):
     """
 
     def emit(self, receipt: AgentReceipt) -> None:
-        """Deliver one receipt to the configured downstream."""
-        ...
+        """Deliver one receipt to the configured downstream.
+
+        Implementations override this; calling it on the Protocol itself
+        signals a programming error (the Protocol is structural and
+        never meant to be instantiated).
+        """
+        raise NotImplementedError
 
 
 class EmitError(Exception):

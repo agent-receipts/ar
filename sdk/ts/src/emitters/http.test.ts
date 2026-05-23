@@ -598,4 +598,34 @@ describe("HttpEmitter", () => {
 			);
 		}
 	});
+
+	it("rejects construction with maxAttempts < 1", () => {
+		expect(
+			() =>
+				new HttpEmitter({
+					endpoint: "https://example.invalid/receipts",
+					retry: { maxAttempts: 0 },
+				}),
+		).toThrow(/maxAttempts/);
+	});
+
+	it("rejects construction with negative backoff delays", () => {
+		expect(
+			() =>
+				new HttpEmitter({
+					endpoint: "https://example.invalid/receipts",
+					retry: { maxAttempts: 3, baseDelayMs: -1, maxDelayMs: 10 },
+				}),
+		).toThrow(/non-negative/);
+	});
+
+	it("rejects construction with baseDelayMs greater than maxDelayMs", () => {
+		expect(
+			() =>
+				new HttpEmitter({
+					endpoint: "https://example.invalid/receipts",
+					retry: { maxAttempts: 3, baseDelayMs: 2000, maxDelayMs: 1000 },
+				}),
+		).toThrow(/baseDelayMs/);
+	});
 });

@@ -148,9 +148,14 @@ type HttpEmitter struct {
 	logger   *slog.Logger
 	client   *http.Client
 
-	// pending tracks fire-and-forget background goroutines so Drain can
-	// wait for them on graceful shutdown.
-	pending sync.WaitGroup
+	// pendingMu guards `pending`. We do NOT use sync.WaitGroup here because
+	// concurrent Add() and Wait() against the same WaitGroup is a documented
+	// misuse (a positive delta after Wait observes a zero counter races with
+	// Wait's return). Tracking per-task channels under a mutex is race-free:
+	// Emit appends a channel and closes it on completion; Drain snapshots
+	// the slice under the lock and then waits on each channel outside it.
+	pendingMu sync.Mutex
+	pending   []chan struct{}
 }
 
 const (
@@ -207,6 +212,18 @@ func NewHTTP(cfg HttpEmitterConfig) (*HttpEmitter, error) {
 	}
 	if retry.MaxDelay == 0 {
 		retry.MaxDelay = defaultMaxDelay
+	}
+	// Validate the resolved retry budget. MaxAttempts < 1 would make the
+	// retry loop run zero times and return "0 attempts exhausted" without
+	// ever issuing the request; negative delays are nonsense.
+	if retry.MaxAttempts < 1 {
+		return nil, fmt.Errorf("HttpEmitter: Retry.MaxAttempts must be >= 1 (got %d)", retry.MaxAttempts)
+	}
+	if retry.BaseDelay < 0 || retry.MaxDelay < 0 {
+		return nil, fmt.Errorf("HttpEmitter: retry delays must be non-negative (BaseDelay=%v, MaxDelay=%v)", retry.BaseDelay, retry.MaxDelay)
+	}
+	if retry.BaseDelay > retry.MaxDelay {
+		return nil, fmt.Errorf("HttpEmitter: Retry.BaseDelay (%v) must be <= Retry.MaxDelay (%v)", retry.BaseDelay, retry.MaxDelay)
 	}
 
 	timeout := cfg.Timeout
@@ -273,9 +290,22 @@ func (e *HttpEmitter) Emit(ctx context.Context, r receipt.AgentReceipt) error {
 	}
 
 	if e.strategy == StrategyFireAndForget {
-		e.pending.Add(1)
+		done := make(chan struct{})
+		e.pendingMu.Lock()
+		e.pending = append(e.pending, done)
+		e.pendingMu.Unlock()
 		go func() {
-			defer e.pending.Done()
+			defer func() {
+				close(done)
+				e.pendingMu.Lock()
+				for i, ch := range e.pending {
+					if ch == done {
+						e.pending = append(e.pending[:i], e.pending[i+1:]...)
+						break
+					}
+				}
+				e.pendingMu.Unlock()
+			}()
 			if err := e.deliver(context.Background(), body); err != nil {
 				e.logger.Debug("HttpEmitter dropped receipt (fire-and-forget)",
 					slog.String("endpoint", e.endpoint),
@@ -290,21 +320,23 @@ func (e *HttpEmitter) Emit(ctx context.Context, r receipt.AgentReceipt) error {
 }
 
 // Drain waits for every fire-and-forget delivery scheduled so far to
-// complete. Returns when the WaitGroup hits zero or when ctx is done,
-// whichever comes first. Safe to call when no fire-and-forget
-// deliveries are pending.
+// complete. Returns nil once every tracked task channel is closed, or
+// the context's error if ctx is done first. Tasks scheduled after Drain
+// starts are NOT awaited by this call — they belong to the next Drain.
+// Safe to call when no fire-and-forget deliveries are pending.
 func (e *HttpEmitter) Drain(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() {
-		e.pending.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	e.pendingMu.Lock()
+	snapshot := make([]chan struct{}, len(e.pending))
+	copy(snapshot, e.pending)
+	e.pendingMu.Unlock()
+	for _, ch := range snapshot {
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
+	return nil
 }
 
 func (e *HttpEmitter) deliver(ctx context.Context, body []byte) error {

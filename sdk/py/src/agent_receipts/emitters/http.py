@@ -69,6 +69,26 @@ class HttpEmitter:
     def __init__(self, config: HttpEmitterConfig) -> None:
         if not config.endpoint:
             raise ValueError("HttpEmitter: endpoint is required")
+        # Validate retry budget up front — max_attempts < 1 would make
+        # _deliver() loop zero times and raise "attempts exhausted" without
+        # ever issuing the request.
+        if config.retry.max_attempts < 1:
+            raise ValueError(
+                "HttpEmitter: retry.max_attempts must be >= 1 "
+                f"(got {config.retry.max_attempts})"
+            )
+        if config.retry.base_delay_ms < 0 or config.retry.max_delay_ms < 0:
+            raise ValueError(
+                "HttpEmitter: retry delays must be non-negative "
+                f"(base_delay_ms={config.retry.base_delay_ms}, "
+                f"max_delay_ms={config.retry.max_delay_ms})"
+            )
+        if config.retry.base_delay_ms > config.retry.max_delay_ms:
+            raise ValueError(
+                "HttpEmitter: retry.base_delay_ms "
+                f"({config.retry.base_delay_ms}) must be <= "
+                f"retry.max_delay_ms ({config.retry.max_delay_ms})"
+            )
         self._endpoint = config.endpoint
         self._auth = config.auth
         self._strategy = config.strategy

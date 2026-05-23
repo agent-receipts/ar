@@ -426,6 +426,86 @@ func TestHttpEmitter_ContextCancellationStopsDelivery(t *testing.T) {
 	}
 }
 
+func TestHttpEmitter_RejectsInvalidRetryConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  emitters.RetryConfig
+		want string
+	}{
+		{
+			name: "negative max attempts",
+			cfg:  emitters.RetryConfig{MaxAttempts: -1},
+			want: "MaxAttempts",
+		},
+		{
+			name: "negative base delay",
+			cfg:  emitters.RetryConfig{MaxAttempts: 3, BaseDelay: -1, MaxDelay: 1},
+			want: "non-negative",
+		},
+		{
+			name: "base larger than max",
+			cfg:  emitters.RetryConfig{MaxAttempts: 3, BaseDelay: 2 * time.Second, MaxDelay: time.Second},
+			want: "BaseDelay",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := emitters.NewHTTP(emitters.HttpEmitterConfig{
+				Endpoint: "https://collector.example/receipts",
+				Retry:    tc.cfg,
+			})
+			if err == nil {
+				t.Fatalf("NewHTTP with %+v returned nil error; want error containing %q", tc.cfg, tc.want)
+			}
+			if !contains([]byte(err.Error()), tc.want) {
+				t.Errorf("NewHTTP error = %q; want substring %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+func TestHttpEmitter_DrainSafeUnderConcurrentEmit(t *testing.T) {
+	// Regression test for the WaitGroup-misuse race: concurrent Add
+	// (from Emit) and Wait (from Drain) on the same sync.WaitGroup is
+	// undefined and could panic. The channel-tracking implementation must
+	// be safe to call Drain repeatedly while emit traffic continues.
+	c := newCollector()
+	defer c.Close()
+	c.setResponder(func(_ capturedRequest, _ int) int { return http.StatusCreated })
+
+	em, err := emitters.NewHTTP(emitters.HttpEmitterConfig{
+		Endpoint: c.URL,
+		Strategy: emitters.StrategyFireAndForget,
+	})
+	if err != nil {
+		t.Fatalf("NewHTTP: %v", err)
+	}
+
+	stop := make(chan struct{})
+	emitters_done := make(chan struct{})
+	go func() {
+		defer close(emitters_done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = em.Emit(context.Background(), fakeReceipt("r"))
+			}
+		}
+	}()
+	// Spin Drain a few times concurrently with Emit. If the implementation
+	// were sync.WaitGroup, this would panic with "WaitGroup is reused
+	// before previous Wait has returned" or similar.
+	for i := 0; i < 5; i++ {
+		if err := em.Drain(context.Background()); err != nil {
+			t.Fatalf("Drain[%d]: %v", i, err)
+		}
+	}
+	close(stop)
+	<-emitters_done
+}
+
 // helpers --------------------------------------------------------------
 
 func contains(haystack []byte, needle string) bool {

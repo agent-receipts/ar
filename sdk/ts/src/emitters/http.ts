@@ -64,10 +64,10 @@ export class HttpEmitter implements Emitter {
 		attrs: Record<string, unknown>,
 	) => void;
 	private readonly fetchImpl: typeof fetch;
-	// Undici dispatcher used for mTLS. Typed as `unknown` because `fetch`'s
-	// `init` is the Web Fetch shape and doesn't surface `dispatcher` — we
-	// pass it through a tagged cast below.
-	private readonly mtlsAgent: unknown;
+	// Undici Agent used for mTLS. Forwarded as the `dispatcher` field on
+	// fetch's init below — undici globally augments RequestInit to accept
+	// it, so no cast is needed at the call site.
+	private readonly mtlsAgent: Agent | undefined;
 	private readonly signal: AbortSignal | undefined;
 	// Tracks fire-and-forget background deliveries so {@link drain} can
 	// await them. Promises remove themselves on settle so the set stays
@@ -86,6 +86,27 @@ export class HttpEmitter implements Emitter {
 			baseDelayMs: config.retry?.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
 			maxDelayMs: config.retry?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
 		};
+		// Validate retry budget. maxAttempts < 1 would make the retry loop
+		// run zero times and throw "0 attempts exhausted" without ever
+		// issuing the request.
+		if (
+			!Number.isFinite(this.retry.maxAttempts) ||
+			this.retry.maxAttempts < 1
+		) {
+			throw new Error(
+				`HttpEmitter: retry.maxAttempts must be >= 1 (got ${this.retry.maxAttempts})`,
+			);
+		}
+		if (this.retry.baseDelayMs < 0 || this.retry.maxDelayMs < 0) {
+			throw new Error(
+				`HttpEmitter: retry delays must be non-negative (baseDelayMs=${this.retry.baseDelayMs}, maxDelayMs=${this.retry.maxDelayMs})`,
+			);
+		}
+		if (this.retry.baseDelayMs > this.retry.maxDelayMs) {
+			throw new Error(
+				`HttpEmitter: retry.baseDelayMs (${this.retry.baseDelayMs}) must be <= retry.maxDelayMs (${this.retry.maxDelayMs})`,
+			);
+		}
 		this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.debugLog = config.debugLog ?? NOOP_LOG;
 		this.fetchImpl = config.fetch ?? fetch;
@@ -254,13 +275,19 @@ export class HttpEmitter implements Emitter {
 			}
 
 			// `dispatcher` is the undici-specific knob that Node's global
-			// fetch honours for plumbing a custom Agent through. The Web
-			// Fetch types don't expose it (the augmentation undici ships
-			// applies only when @types/node sees undici), so we forward via
-			// a Record and let undici read its field. Non-undici fetch
-			// implementations (browser polyfills) ignore unknown init
-			// fields — mTLS is Node-only by design.
-			const init: Record<string, unknown> = {
+			// fetch honours for plumbing a custom Agent through. We can't
+			// rely on RequestInit's augmented dispatcher field directly
+			// because @types/node ships undici-types (v7) whose Dispatcher
+			// is structurally incompatible with the undici@6 Agent we use
+			// at runtime — narrowing the init type once and forwarding the
+			// Agent through it avoids the type clash without weakening the
+			// rest of the surface. Non-undici fetch implementations
+			// (browser polyfills) ignore unknown init fields — mTLS is
+			// Node-only by design.
+			type FetchInitWithDispatcher = Omit<RequestInit, "dispatcher"> & {
+				dispatcher?: Agent;
+			};
+			const init: FetchInitWithDispatcher = {
 				method: "POST",
 				headers,
 				body,

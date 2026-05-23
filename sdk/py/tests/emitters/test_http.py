@@ -421,6 +421,38 @@ def test_invalid_strategy_rejected() -> None:
         HttpEmitter(HttpEmitterConfig(endpoint="http://example", strategy="lol"))
 
 
+def test_rejects_max_attempts_below_one() -> None:
+    with pytest.raises(ValueError, match="max_attempts"):
+        HttpEmitter(
+            HttpEmitterConfig(
+                endpoint="https://example.invalid/receipts",
+                retry=RetryConfig(max_attempts=0),
+            )
+        )
+
+
+def test_rejects_negative_backoff_delays() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        HttpEmitter(
+            HttpEmitterConfig(
+                endpoint="https://example.invalid/receipts",
+                retry=RetryConfig(max_attempts=3, base_delay_ms=-1, max_delay_ms=10),
+            )
+        )
+
+
+def test_rejects_base_delay_greater_than_max() -> None:
+    with pytest.raises(ValueError, match="base_delay_ms"):
+        HttpEmitter(
+            HttpEmitterConfig(
+                endpoint="https://example.invalid/receipts",
+                retry=RetryConfig(
+                    max_attempts=3, base_delay_ms=2000, max_delay_ms=1000
+                ),
+            )
+        )
+
+
 def test_timeout_treated_as_retryable(collector: object) -> None:
     state, url = collector  # type: ignore[misc]
     # Block the responder past the emitter timeout.
