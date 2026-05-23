@@ -136,3 +136,42 @@ func TestInMemoryStore_ExistsUnknown(t *testing.T) {
 		t.Fatalf("Exists for unknown id: exists=%v err=%v, want false/nil", exists, err)
 	}
 }
+
+func TestInMemoryStore_GetReturnsIndependentCopies(t *testing.T) {
+	// Returned struct must not alias the store's internal state. Before
+	// the rawJSON-only refactor, slice fields on receipt.AgentReceipt
+	// (Context, Type) were shared between Insert input, Get output, and
+	// the store's map, so a caller mutating Get's result would silently
+	// corrupt the store. Re-parse on Get eliminates that aliasing.
+	s := NewInMemoryStore()
+	r := testReceipt("urn:receipt:alias")
+	r.Context = []string{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"}
+	r.Type = []string{"VerifiableCredential", "AgentReceipt"}
+
+	raw := []byte(`{
+		"id": "urn:receipt:alias",
+		"@context": ["https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"],
+		"type": ["VerifiableCredential", "AgentReceipt"]
+	}`)
+	if err := s.Insert(r, raw, "sha256:alias"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	got1, raw1, _, _ := s.Get(r.ID)
+	if len(got1.Context) == 0 {
+		t.Fatal("Get returned empty Context; raw bytes parse should populate it")
+	}
+
+	// Mutate the returned struct's slice and the returned raw bytes.
+	got1.Context[0] = "evil-aliased-write"
+	raw1[0] = '!'
+
+	// Second Get must return pristine values regardless of the mutations.
+	got2, raw2, _, _ := s.Get(r.ID)
+	if got2.Context[0] == "evil-aliased-write" {
+		t.Fatalf("mutation leaked into Context: got %q", got2.Context[0])
+	}
+	if raw2[0] != '{' {
+		t.Fatalf("mutation leaked into raw bytes: first byte = %q", raw2[0])
+	}
+}

@@ -60,6 +60,12 @@ func NewServer(cfg Config, store Store) (*http.Server, error) {
 	if store == nil {
 		return nil, errors.New("collector: Store is required")
 	}
+	if cfg.MaxBodyBytes < 0 {
+		// A negative limit would make http.MaxBytesReader reject every
+		// request, bricking the server. Reject the misconfiguration at
+		// startup rather than at first-request time.
+		return nil, fmt.Errorf("collector: Config.MaxBodyBytes must be non-negative, got %d", cfg.MaxBodyBytes)
+	}
 	if cfg.MaxBodyBytes == 0 {
 		cfg.MaxBodyBytes = DefaultMaxBodyBytes
 	}

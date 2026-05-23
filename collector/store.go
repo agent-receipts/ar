@@ -8,6 +8,7 @@
 package collector
 
 import (
+	"encoding/json"
 	"errors"
 	"sync"
 
@@ -42,13 +43,18 @@ type Store interface {
 
 // InMemoryStore is an in-process Store implementation suitable for tests and
 // short-lived development use. It loses all data on process exit.
+//
+// Storage is rawJSON + hash only. The decoded receipt struct is re-parsed
+// on Get so that callers cannot alias the store's internal state via slice
+// fields on receipt.AgentReceipt (Context / Type / etc.). Mutex protection
+// only covers the map operations — without the re-parse, returned slices
+// would share backing arrays with stored state and would race the writers.
 type InMemoryStore struct {
 	mu       sync.RWMutex
 	receipts map[string]storedReceipt
 }
 
 type storedReceipt struct {
-	Receipt receipt.AgentReceipt
 	RawJSON []byte
 	Hash    string
 }
@@ -65,10 +71,12 @@ func (s *InMemoryStore) Insert(r receipt.AgentReceipt, rawJSON []byte, receiptHa
 		return ErrDuplicate
 	}
 	// Copy rawJSON so a caller mutating the underlying buffer post-Insert
-	// cannot corrupt our stored value.
+	// cannot corrupt our stored value. The receipt struct is intentionally
+	// NOT stored — its slice fields (Context, Type, etc.) would alias caller
+	// memory through the mutex; we re-parse on Get instead.
 	stored := make([]byte, len(rawJSON))
 	copy(stored, rawJSON)
-	s.receipts[r.ID] = storedReceipt{Receipt: r, RawJSON: stored, Hash: receiptHash}
+	s.receipts[r.ID] = storedReceipt{RawJSON: stored, Hash: receiptHash}
 	return nil
 }
 
@@ -89,15 +97,31 @@ func (s *InMemoryStore) Len() int {
 	return len(s.receipts)
 }
 
-// Get returns the stored receipt, the raw bytes it was decoded from, and the
-// canonical hash for the given id, or false if absent. Test-only helper; not
-// part of the Store interface.
+// Get returns a freshly-decoded receipt, a fresh copy of the raw bytes, and
+// the canonical hash for the given id, or false if absent. Test-only helper;
+// not part of the Store interface.
+//
+// Re-parse on Get is intentional: it guarantees that callers cannot mutate
+// store state via slice fields on the returned struct (Context/Type) or the
+// returned byte slice. The allocation cost is acceptable for a test-only
+// API.
 func (s *InMemoryStore) Get(id string) (receipt.AgentReceipt, []byte, string, bool) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	sr, ok := s.receipts[id]
+	s.mu.RUnlock()
 	if !ok {
 		return receipt.AgentReceipt{}, nil, "", false
 	}
-	return sr.Receipt, sr.RawJSON, sr.Hash, true
+
+	rawCopy := make([]byte, len(sr.RawJSON))
+	copy(rawCopy, sr.RawJSON)
+
+	var r receipt.AgentReceipt
+	if err := json.Unmarshal(rawCopy, &r); err != nil {
+		// InMemoryStore.Insert validated rawJSON parses; if it doesn't now,
+		// the bytes have been corrupted under our feet. Return what we
+		// have so callers can still see the bytes and hash.
+		return receipt.AgentReceipt{}, rawCopy, sr.Hash, true
+	}
+	return r, rawCopy, sr.Hash, true
 }

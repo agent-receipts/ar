@@ -882,7 +882,6 @@ func TestInsertRaw_PreservesUnknownFields(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()
 	r := makeSignedReceipt(t, kp, 1, "chain-raw", nil)
-	h, _ := receipt.HashReceipt(r)
 
 	rJSON, err := json.Marshal(r)
 	if err != nil {
@@ -893,6 +892,13 @@ func TestInsertRaw_PreservesUnknownFields(t *testing.T) {
 	raw := strings.Replace(string(rJSON), `"id":`, `"_future_field":"hello",`+`"id":`, 1)
 	if !strings.Contains(raw, `"_future_field":"hello"`) {
 		t.Fatalf("splice failed: %s", raw)
+	}
+	// Hash the raw bytes (not the struct) so the stored receipt_hash column
+	// stays internally consistent with the stored receipt_json — an auditor
+	// recomputing HashRawReceipt(stored_bytes) gets the same value back.
+	h, err := receipt.HashRawReceipt([]byte(raw))
+	if err != nil {
+		t.Fatalf("HashRawReceipt: %v", err)
 	}
 
 	if err := s.InsertRaw(r, []byte(raw), h); err != nil {
@@ -908,6 +914,16 @@ func TestInsertRaw_PreservesUnknownFields(t *testing.T) {
 	}
 	if !strings.Contains(stored, `"_future_field":"hello"`) {
 		t.Fatalf("stored bytes lost unknown field: %s", stored)
+	}
+
+	// Stored hash must round-trip with the auditor's view.
+	var storedHash string
+	if err := s.db.QueryRow("SELECT receipt_hash FROM receipts WHERE id = ?", r.ID).Scan(&storedHash); err != nil {
+		t.Fatalf("select stored hash: %v", err)
+	}
+	want, _ := receipt.HashRawReceipt([]byte(stored))
+	if storedHash != want {
+		t.Fatalf("stored receipt_hash = %s; HashRawReceipt(stored bytes) = %s; want equal", storedHash, want)
 	}
 }
 
@@ -961,6 +977,51 @@ func TestInsertRaw_AcceptsRawWithoutID(t *testing.T) {
 	}
 }
 
+func TestInsertRaw_RejectsMismatchedChainOrSequence(t *testing.T) {
+	// The indexed (chain_id, sequence) columns are taken from the struct, so
+	// receipt_json carrying different values for those fields would describe
+	// a different chain position than the row key — silent inconsistency
+	// the UNIQUE index on the indexed columns cannot catch. InsertRaw must
+	// reject both mismatch modes.
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 7, "chain-honest", nil)
+	h, _ := receipt.HashReceipt(r)
+
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "chain_id mismatch",
+			raw:  `{"id":"` + r.ID + `","credentialSubject":{"chain":{"chain_id":"chain-lie","sequence":7}}}`,
+			want: "chain.chain_id",
+		},
+		{
+			name: "sequence mismatch",
+			raw:  `{"id":"` + r.ID + `","credentialSubject":{"chain":{"chain_id":"chain-honest","sequence":99}}}`,
+			want: "chain.sequence",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := s.InsertRaw(r, []byte(tc.raw), h)
+			if err == nil {
+				t.Fatal("InsertRaw with mismatch: err=nil, want rejection")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %q does not mention %q", err.Error(), tc.want)
+			}
+		})
+	}
+
+	// No rows should have been inserted by any of the rejected attempts.
+	if got, _ := s.GetByID(r.ID); got != nil {
+		t.Fatalf("row leaked despite rejections: %+v", got)
+	}
+}
+
 func TestInsertRaw_RejectsInvalidPayloads(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()
@@ -977,6 +1038,7 @@ func TestInsertRaw_RejectsInvalidPayloads(t *testing.T) {
 		{"json null", []byte(`null`)},
 		{"empty body", []byte{}},
 		{"non-string id", []byte(`{"id": 42}`)},
+		{"non-integer sequence", []byte(`{"credentialSubject":{"chain":{"sequence":"oops"}}}`)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

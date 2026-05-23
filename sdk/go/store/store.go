@@ -201,12 +201,16 @@ func migrateToolName(db *sql.DB) error {
 // exact wire bytes the agent signed over (for cross-SDK round-trips or for
 // receipts that carry forward-compat fields the Go struct does not know
 // about) should use InsertRaw instead.
+//
+// Insert is the hot-path entry used by trusted in-process producers (the
+// daemon's pipeline). The receipt struct is the source of truth, so no
+// raw-vs-struct parity checks are performed.
 func (s *Store) Insert(r receipt.AgentReceipt, receiptHash string) error {
 	rJSON, err := json.Marshal(r)
 	if err != nil {
 		return fmt.Errorf("marshal receipt: %w", err)
 	}
-	return s.InsertRaw(r, rJSON, receiptHash)
+	return s.insertExec(r, rJSON, receiptHash)
 }
 
 // InsertRaw persists a signed receipt and the exact raw JSON bytes the
@@ -221,14 +225,21 @@ func (s *Store) Insert(r receipt.AgentReceipt, receiptHash string) error {
 // Guard rails to keep the store from accreting corrupt rows:
 //   - rawJSON must be a JSON object. Garbage or non-object payloads are
 //     rejected so GetByID/GetChain don't blow up later on Unmarshal.
-//   - If rawJSON carries an `id` field, it must equal r.ID. A mismatch
-//     means the row key would lie about the stored receipt — the kind of
-//     corruption that is silent at insert time and lethal at audit time.
+//   - If rawJSON carries an `id`, `credentialSubject.chain.chain_id`, or
+//     `credentialSubject.chain.sequence`, each must equal the corresponding
+//     struct field. The indexed columns are populated from the struct; any
+//     disagreement means receipt_json would describe a different receipt
+//     than the row key — silent at insert time, lethal at audit time.
 func (s *Store) InsertRaw(r receipt.AgentReceipt, rawJSON []byte, receiptHash string) error {
-	if err := validateRawReceipt(rawJSON, r.ID); err != nil {
+	if err := validateRawReceipt(rawJSON, r); err != nil {
 		return fmt.Errorf("insert receipt id=%s: %w", r.ID, err)
 	}
+	return s.insertExec(r, rawJSON, receiptHash)
+}
 
+// insertExec is the shared SQL path. Both Insert (trusted struct → marshal)
+// and InsertRaw (validated raw bytes) end here.
+func (s *Store) insertExec(r receipt.AgentReceipt, rawJSON []byte, receiptHash string) error {
 	subj := r.CredentialSubject
 
 	var prevHash *string
@@ -265,37 +276,62 @@ func (s *Store) InsertRaw(r receipt.AgentReceipt, rawJSON []byte, receiptHash st
 	return nil
 }
 
-// validateRawReceipt enforces that rawJSON is a JSON object and, if it
-// carries an id, that the id matches structID. Other fields are not
-// cross-checked — chain_id/sequence mismatches are caught later by the
-// UNIQUE index on (chain_id, sequence), and exact value parity with the
-// struct is not the SDK's contract to enforce (forward-compat fields the
-// struct does not know about are exactly the reason raw bytes are stored).
-func validateRawReceipt(rawJSON []byte, structID string) error {
-	// json.RawMessage avoids a second decode pass for the id-string check.
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(rawJSON, &probe); err != nil {
+// rawReceiptProbe captures the indexed fields we cross-check between the
+// raw bytes and the struct. Pointer fields distinguish "absent in raw
+// bytes" (we accept; SDK is not the structural validator) from "present
+// but mismatched" (we reject; row key would lie).
+type rawReceiptProbe struct {
+	ID                *string `json:"id,omitempty"`
+	CredentialSubject *struct {
+		Chain *struct {
+			ChainID  *string `json:"chain_id,omitempty"`
+			Sequence *int    `json:"sequence,omitempty"`
+		} `json:"chain,omitempty"`
+	} `json:"credentialSubject,omitempty"`
+}
+
+// validateRawReceipt enforces that rawJSON is a JSON object and, for each
+// of (id, chain_id, sequence), if the raw bytes carry the field it matches
+// the struct. Other fields are not cross-checked — forward-compat additions
+// that the Go struct does not know about are exactly the reason raw bytes
+// are stored, so parity beyond the row-key set would defeat the contract.
+func validateRawReceipt(rawJSON []byte, r receipt.AgentReceipt) error {
+	// Shape check: must be a JSON object. We use json.RawMessage as the
+	// map value type so we don't waste an allocation decoding the full
+	// payload at this stage.
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &top); err != nil {
 		return fmt.Errorf("rawJSON is not valid JSON: %w", err)
 	}
-	if probe == nil {
+	if top == nil {
 		// json.Unmarshal of the literal `null` succeeds and produces a nil
 		// map — reject explicitly, otherwise we'd persist "null" as the
 		// receipt_json column value.
 		return fmt.Errorf("rawJSON is not a JSON object")
 	}
-	idRaw, ok := probe["id"]
-	if !ok {
-		// No id in the raw bytes is acceptable — the SDK does not enforce
-		// schema completeness here, that is the caller's job at a higher
-		// layer (e.g. the collector's structural validator).
-		return nil
+
+	// Parity check: decode only the indexed fields via the typed probe.
+	// Unknown fields are intentionally ignored (no DisallowUnknownFields)
+	// so a future SDK's additions don't break this validator.
+	var probe rawReceiptProbe
+	if err := json.Unmarshal(rawJSON, &probe); err != nil {
+		return fmt.Errorf("rawJSON has malformed indexed fields: %w", err)
 	}
-	var bodyID string
-	if err := json.Unmarshal(idRaw, &bodyID); err != nil {
-		return fmt.Errorf("rawJSON has non-string id field: %w", err)
+
+	if probe.ID != nil && *probe.ID != r.ID {
+		return fmt.Errorf("struct id %q disagrees with rawJSON id %q", r.ID, *probe.ID)
 	}
-	if bodyID != structID {
-		return fmt.Errorf("struct id %q disagrees with rawJSON id %q", structID, bodyID)
+	if probe.CredentialSubject != nil && probe.CredentialSubject.Chain != nil {
+		ch := probe.CredentialSubject.Chain
+		want := r.CredentialSubject.Chain
+		if ch.ChainID != nil && *ch.ChainID != want.ChainID {
+			return fmt.Errorf("struct chain.chain_id %q disagrees with rawJSON chain.chain_id %q",
+				want.ChainID, *ch.ChainID)
+		}
+		if ch.Sequence != nil && *ch.Sequence != want.Sequence {
+			return fmt.Errorf("struct chain.sequence %d disagrees with rawJSON chain.sequence %d",
+				want.Sequence, *ch.Sequence)
+		}
 	}
 	return nil
 }

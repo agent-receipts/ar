@@ -243,6 +243,23 @@ func TestServer_PostReceipt_400MissingFields(t *testing.T) {
 	}
 }
 
+func TestServer_NewServer_RejectsNegativeMaxBodyBytes(t *testing.T) {
+	// A negative MaxBodyBytes would silently brick the server (every
+	// request rejected by http.MaxBytesReader). NewServer must surface
+	// the misconfiguration at startup rather than at first request.
+	_, err := NewServer(Config{
+		Addr:         ":0",
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MaxBodyBytes: -1,
+	}, NewInMemoryStore())
+	if err == nil {
+		t.Fatal("NewServer with negative MaxBodyBytes: err=nil, want rejection")
+	}
+	if !strings.Contains(err.Error(), "MaxBodyBytes") {
+		t.Fatalf("error %q does not mention MaxBodyBytes", err.Error())
+	}
+}
+
 func TestServer_PostReceipt_400BodyTooLarge(t *testing.T) {
 	store := NewInMemoryStore()
 	h, err := Handler(Config{
