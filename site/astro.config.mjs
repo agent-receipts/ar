@@ -170,16 +170,16 @@ export default defineConfig({
               slug: "blog/agent-security-tooling-landscape-may-2026",
             },
             {
-              label: "Agent Security Tooling Landscape — April 2026",
-              slug: "blog/agent-security-tooling-landscape-april-2026",
+              label: "The audit boundary belongs outside the agent",
+              slug: "blog/daemon-process-separation",
             },
             {
               label: "OpenClaw Plugin: How It Works",
               slug: "blog/openclaw-plugin-deep-dive",
             },
             {
-              label: "The audit boundary belongs outside the agent",
-              slug: "blog/daemon-process-separation",
+              label: "Agent Security Tooling Landscape — April 2026",
+              slug: "blog/agent-security-tooling-landscape-april-2026",
             },
           ],
         },
