@@ -49,6 +49,7 @@ import {
 	unlink,
 } from "node:fs/promises";
 import { join } from "node:path";
+import { agentReceiptSchema } from "../receipt/schema.js";
 import type { AgentReceipt } from "../receipt/types.js";
 import type { Emitter } from "./types.js";
 
@@ -233,7 +234,15 @@ export class FileWal implements Wal {
 			let receipt: AgentReceipt;
 			try {
 				const raw = await readFile(join(this.dir, name), "utf8");
-				receipt = JSON.parse(raw) as AgentReceipt;
+				// Validate against the receipt schema rather than asserting the
+				// type: a corrupt-but-parseable entry (e.g. missing `id` after a
+				// torn write) must not slip through and break re-delivery later.
+				// Same validation the store applies on read.
+				const parsed = agentReceiptSchema.safeParse(JSON.parse(raw));
+				if (!parsed.success) {
+					continue;
+				}
+				receipt = parsed.data;
 			} catch {
 				// A torn or unreadable entry (e.g. a leftover temp that matched
 				// loosely, or truncated JSON from a hard crash) is dropped rather
@@ -268,7 +277,15 @@ export class FileWal implements Wal {
 		} finally {
 			await fh.close();
 		}
-		await rename(tmpPath, finalPath);
+		try {
+			await rename(tmpPath, finalPath);
+		} catch (err) {
+			// Best-effort: don't leave an orphaned .tmp behind if the rename
+			// fails (permissions, transient FS error). The loader ignores
+			// .tmp files, but cleaning up keeps the WAL dir tidy.
+			await unlink(tmpPath).catch(() => {});
+			throw err;
+		}
 	}
 
 	private async unlinkQuiet(index: number): Promise<void> {
@@ -359,6 +376,12 @@ export class WalEmitter implements Emitter {
 			if (deadline !== undefined && Date.now() >= deadline) {
 				break;
 			}
+			// Only delivery failures are swallowed — a stuck receipt is left in
+			// the WAL and must not strand the rest. A wal.remove() failure is a
+			// different class of problem (disk full, permission, I/O) that the
+			// caller needs to see, so it propagates out of drain rather than
+			// being silently counted as "still pending". Matches the Python and
+			// Go backends.
 			try {
 				if (deadline === undefined) {
 					await this.inner.emit(receipt);
@@ -374,12 +397,13 @@ export class WalEmitter implements Emitter {
 					const remaining = deadline - Date.now();
 					await raceDeadline(this.inner.emit(receipt), remaining);
 				}
-				await this.wal.remove(receipt.id);
-				delivered++;
 			} catch {
-				// Leave the entry for the next drain. Continue so one stuck
-				// receipt doesn't strand the rest.
+				// Delivery failed (or the deadline race lost). Leave the entry
+				// for the next drain and move on.
+				continue;
 			}
+			await this.wal.remove(receipt.id);
+			delivered++;
 		}
 
 		const remaining = (await this.wal.list()).length;

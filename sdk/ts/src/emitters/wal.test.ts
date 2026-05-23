@@ -196,6 +196,23 @@ describe("FileWal", () => {
 		// The readable entry survives; the torn one is dropped.
 		expect((await reloaded.list()).map((r) => r.id)).toEqual(["b"]);
 	});
+
+	it("drops a parseable entry that fails receipt schema validation", async () => {
+		const wal = new FileWal(dir);
+		await wal.append(receipt("a"));
+		await wal.append(receipt("b"));
+		const files = readdirSync(dir)
+			.filter((f) => f.endsWith(".json"))
+			.sort();
+		const target = files[0];
+		if (target === undefined) throw new Error("no entry to corrupt");
+		// Valid JSON, but not a valid AgentReceipt (missing required fields).
+		const { writeFileSync } = await import("node:fs");
+		writeFileSync(join(dir, target), JSON.stringify({ id: "x", foo: 1 }));
+
+		const reloaded = new FileWal(dir);
+		expect((await reloaded.list()).map((r) => r.id)).toEqual(["b"]);
+	});
 });
 
 describe("WalEmitter", () => {
@@ -313,5 +330,24 @@ describe("WalEmitter", () => {
 
 		const remaining = await emitter.flush(50);
 		expect(remaining).toBeGreaterThan(0);
+	});
+
+	it("propagates a wal.remove failure during drain instead of swallowing it", async () => {
+		// A delivery failure must be swallowed (entry retried later), but a WAL
+		// backend error (e.g. disk full on delete) is a distinct problem the
+		// caller needs to see — it must not be silently counted as "pending".
+		const backing = new MemoryWal();
+		const wal: Wal = {
+			append: (r) => backing.append(r),
+			list: () => backing.list(),
+			remove: () => Promise.reject(new Error("disk full")),
+		};
+		const inner = new FlakyEmitter();
+		const emitter = new WalEmitter({ inner, wal });
+		await wal.append(receipt("a"));
+
+		await expect(emitter.replay()).rejects.toThrow(/disk full/);
+		// Delivery still happened — only the WAL cleanup failed.
+		expect(inner.delivered).toEqual(["a"]);
 	});
 });
