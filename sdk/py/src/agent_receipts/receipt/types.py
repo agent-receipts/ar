@@ -144,7 +144,7 @@ class Action(BaseModel):
     timestamp: str
     trusted_timestamp: str | None = None
 
-    idempotency_key: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1)
     """Stable identifier for the logical operation this action represents
     (e.g. a request ID). When an agent retries a tool call, the same key is
     stamped on every receipt for that operation so auditors can distinguish a

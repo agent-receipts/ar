@@ -95,7 +95,10 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         action_data["emitter_metadata"] = input.action.emitter_metadata
     if input.action.trusted_timestamp is not None:
         action_data["trusted_timestamp"] = input.action.trusted_timestamp
-    if input.action.idempotency_key is not None:
+    # spec §7.3.6: idempotency_key MUST be non-empty when present. A truthy
+    # check omits both None and the empty string so we never emit a
+    # schema-invalid receipt.
+    if input.action.idempotency_key:
         action_data["idempotency_key"] = input.action.idempotency_key
 
     # Compute response_hash when a response body is supplied.

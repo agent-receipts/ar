@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from agent_receipts.receipt.chain import verify_chain
 from agent_receipts.receipt.create import (
     ActionInput,
@@ -11,6 +14,7 @@ from agent_receipts.receipt.create import (
 from agent_receipts.receipt.hash import canonicalize, hash_receipt
 from agent_receipts.receipt.signing import sign_receipt
 from agent_receipts.receipt.types import (
+    Action,
     AgentReceipt,
     Chain,
     Issuer,
@@ -80,6 +84,36 @@ class TestIdempotencyKey:
         )
         wire = unsigned.model_dump(by_alias=True, exclude_none=True)
         assert "idempotency_key" not in canonicalize(wire)
+
+    def test_empty_key_is_omitted_by_create(self) -> None:
+        # spec §7.3.6: idempotency_key MUST be non-empty when present. An empty
+        # string passed to create_receipt is dropped, not emitted.
+        unsigned = create_receipt(
+            CreateReceiptInput(
+                issuer=Issuer(id="did:agent:test"),
+                principal=Principal(id="did:user:alice"),
+                action=ActionInput(
+                    type="filesystem.file.read",
+                    risk_level="low",
+                    idempotency_key="",
+                ),
+                outcome=Outcome(status="success"),
+                chain=Chain(sequence=1, previous_receipt_hash=None, chain_id="c"),
+            )
+        )
+        assert unsigned.credentialSubject.action.idempotency_key is None
+        wire = unsigned.model_dump(by_alias=True, exclude_none=True)
+        assert "idempotency_key" not in canonicalize(wire)
+
+    def test_empty_key_rejected_by_model(self) -> None:
+        with pytest.raises(ValidationError):
+            Action(
+                id="act_x",
+                type="filesystem.file.read",
+                risk_level="low",
+                timestamp="2026-05-23T00:00:00Z",
+                idempotency_key="",
+            )
 
     def test_duplicate_surfaces_as_warning_not_failure(self) -> None:
         # Receipts 0 and 2 share "req-A"; receipt 1 has a distinct key.

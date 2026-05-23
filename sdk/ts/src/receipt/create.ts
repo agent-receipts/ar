@@ -79,6 +79,13 @@ export function createReceipt(input: CreateReceiptInput): UnsignedAgentReceipt {
 			}
 		: { ...input.chain };
 
+	// spec §7.3.6: idempotency_key MUST be non-empty when present. Drop an
+	// empty string so createReceipt never emits a schema-invalid receipt.
+	const { idempotency_key, ...restAction } = input.action;
+	const action = idempotency_key
+		? { ...restAction, idempotency_key }
+		: restAction;
+
 	return {
 		"@context": CONTEXT,
 		id: `urn:receipt:${randomUUID()}`,
@@ -89,7 +96,7 @@ export function createReceipt(input: CreateReceiptInput): UnsignedAgentReceipt {
 		credentialSubject: {
 			principal: input.principal,
 			action: {
-				...input.action,
+				...action,
 				id: `act_${randomUUID()}`,
 				timestamp: actionTimestamp,
 			},
