@@ -130,44 +130,71 @@ const RAW_INPUT_SENTINEL = `__AR_RAW_INPUT_${randomUUID()}__`;
 const RAW_OUTPUT_SENTINEL = `__AR_RAW_OUTPUT_${randomUUID()}__`;
 
 /**
- * Returns the per-OS default path for the daemon socket.
- *
- * Resolution order:
- * 1. AGENTRECEIPTS_SOCKET environment variable (any platform).
- * 2. macOS: $XDG_DATA_HOME/agent-receipts/events.sock (XDG_DATA_HOME
- *    defaults to ~/.local/share). HOME-based instead of $TMPDIR because
- *    TMPDIR is not inherited by every spawn context — MCP servers
- *    launched by GUI hosts commonly see no TMPDIR and silently land on
- *    /tmp while the daemon keeps the per-user temp dir, producing a
- *    no-error / zero-receipt mismatch (issue #545).
- * 3. Linux with $XDG_RUNTIME_DIR set: $XDG_RUNTIME_DIR/agentreceipts/events.sock.
- * 4. Linux fallback: /run/agentreceipts/events.sock.
- * 5. Other platforms: empty string — pass socketPath explicitly.
- *
- * The macOS resolution mirrors the Go and Python SDKs so every emitter
- * and the daemon agree on a single path per user.
+ * Dependencies that vary by host environment. Threading them through
+ * resolveSocketPath as a parameter (instead of reading process.env / node:os
+ * directly) lets tests exercise the darwin / linux / unsupported branches on
+ * any host without monkey-patching globals. The public defaultSocketPath
+ * wires the real values once below.
  */
-export function defaultSocketPath(): string {
-	const envPath = process.env.AGENTRECEIPTS_SOCKET;
+export interface SocketPathDeps {
+	platform: () => NodeJS.Platform;
+	env: NodeJS.ProcessEnv;
+	homedir: () => string;
+}
+
+/**
+ * resolveSocketPath is the pure resolver behind defaultSocketPath, exported
+ * here (not from the package root) so the unit tests can pin the darwin
+ * branch on Linux CI. Real callers should use defaultSocketPath; consumers
+ * outside this file have no reason to override these deps.
+ *
+ * Resolution order matches defaultSocketPath:
+ * 1. AGENTRECEIPTS_SOCKET (any platform — wins everywhere so an explicit
+ *    override is honoured even on hosts where the platform default is "").
+ * 2. macOS: $XDG_DATA_HOME/agent-receipts/events.sock (defaulting to
+ *    ~/.local/share/agent-receipts/events.sock). Issue #545 moved this off
+ *    $TMPDIR so the daemon and any GUI-spawned emitter agree on the path
+ *    regardless of inherited environment.
+ * 3. Linux: $XDG_RUNTIME_DIR/agentreceipts/events.sock if set, else
+ *    /run/agentreceipts/events.sock.
+ * 4. Other platforms: empty string — pass socketPath explicitly to the
+ *    Emitter constructor.
+ */
+export function resolveSocketPath(deps: SocketPathDeps): string {
+	const envPath = deps.env.AGENTRECEIPTS_SOCKET;
 	if (envPath) {
 		return envPath;
 	}
-	const os = platform();
+	const os = deps.platform();
 	if (os === "darwin") {
-		const base = xdgDataHome();
+		const base = xdgDataHome(deps);
 		if (!base) {
 			return "";
 		}
 		return join(base, "agent-receipts", "events.sock");
 	}
 	if (os === "linux") {
-		const xdgRuntime = process.env.XDG_RUNTIME_DIR;
+		const xdgRuntime = deps.env.XDG_RUNTIME_DIR;
 		if (xdgRuntime) {
 			return join(xdgRuntime, "agentreceipts", "events.sock");
 		}
 		return "/run/agentreceipts/events.sock";
 	}
 	return "";
+}
+
+/**
+ * Returns the per-OS default path for the daemon socket. See
+ * resolveSocketPath for the full resolution order. The macOS resolution
+ * mirrors the Go and Python SDKs so every emitter and the daemon agree on
+ * a single path per user.
+ */
+export function defaultSocketPath(): string {
+	return resolveSocketPath({
+		platform,
+		env: process.env,
+		homedir,
+	});
 }
 
 /**
@@ -179,12 +206,12 @@ export function defaultSocketPath(): string {
  * would be surprising. Returns an empty string when neither source
  * yields an absolute path.
  */
-function xdgDataHome(): string {
-	const dataHome = process.env.XDG_DATA_HOME;
+function xdgDataHome(deps: SocketPathDeps): string {
+	const dataHome = deps.env.XDG_DATA_HOME;
 	if (dataHome && isAbsolute(dataHome)) {
 		return dataHome;
 	}
-	const home = homedir();
+	const home = deps.homedir();
 	if (!home || !isAbsolute(home)) {
 		return "";
 	}

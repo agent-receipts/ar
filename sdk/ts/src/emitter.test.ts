@@ -22,6 +22,8 @@ import {
 	type EmitEvent,
 	Emitter,
 	MAX_FRAME_SIZE,
+	resolveSocketPath,
+	type SocketPathDeps,
 	SUPPORTED_FRAME_VERSION,
 } from "./emitter.js";
 
@@ -504,27 +506,123 @@ describe("Emitter — frame size limit", () => {
 	});
 });
 
-describe("defaultSocketPath", () => {
-	it("respects AGENTRECEIPTS_SOCKET env var", () => {
-		const original = process.env.AGENTRECEIPTS_SOCKET;
-		process.env.AGENTRECEIPTS_SOCKET = "/custom/path.sock";
-		try {
-			expect(defaultSocketPath()).toBe("/custom/path.sock");
-		} finally {
-			if (original === undefined) {
-				delete process.env.AGENTRECEIPTS_SOCKET;
-			} else {
-				process.env.AGENTRECEIPTS_SOCKET = original;
-			}
+describe("resolveSocketPath", () => {
+	// Helper: build a SocketPathDeps from an inline spec so each test reads as
+	// a single object literal rather than three separate stubs.
+	function deps(spec: {
+		platform: NodeJS.Platform;
+		env?: NodeJS.ProcessEnv;
+		home?: string;
+	}): SocketPathDeps {
+		return {
+			platform: () => spec.platform,
+			env: spec.env ?? {},
+			homedir: () => spec.home ?? "",
+		};
+	}
+
+	it("respects AGENTRECEIPTS_SOCKET on every platform", () => {
+		// Env override wins even on platforms with no default — explicit
+		// configuration must never be silently swallowed by an unrelated
+		// HOME/XDG resolution failure (Copilot finding on PR #547).
+		for (const os of ["darwin", "linux", "win32"] as NodeJS.Platform[]) {
+			expect(
+				resolveSocketPath(
+					deps({ platform: os, env: { AGENTRECEIPTS_SOCKET: "/x.sock" } }),
+				),
+			).toBe("/x.sock");
 		}
 	});
 
-	it("returns a non-empty path on this platform (darwin or linux)", () => {
+	// Issue #545: macOS must resolve against $HOME, not $TMPDIR, so a
+	// process spawned without TMPDIR (Claude Desktop's MCP children, for
+	// instance) still finds the same socket the daemon is listening on.
+	// Injecting platform/env/homedir lets this regression run on Linux CI
+	// where sdk-ts is actually built; the Go daemon CI matrix covers the
+	// behaviour on a real macOS host.
+	it("darwin: resolves to ~/.local/share/agent-receipts/events.sock by default", () => {
+		expect(
+			resolveSocketPath(deps({ platform: "darwin", home: "/Users/testuser" })),
+		).toBe("/Users/testuser/.local/share/agent-receipts/events.sock");
+	});
+
+	it("darwin: ignores TMPDIR (#545 regression guard)", () => {
+		const got = resolveSocketPath(
+			deps({
+				platform: "darwin",
+				env: { TMPDIR: "/fake-tmpdir" },
+				home: "/Users/testuser",
+			}),
+		);
+		expect(got).not.toContain("/fake-tmpdir");
+		expect(got).toMatch(/\/\.local\/share\/agent-receipts\/events\.sock$/);
+	});
+
+	it("darwin: honours an absolute XDG_DATA_HOME", () => {
+		expect(
+			resolveSocketPath(
+				deps({
+					platform: "darwin",
+					env: { XDG_DATA_HOME: "/srv/data" },
+					home: "/Users/testuser",
+				}),
+			),
+		).toBe("/srv/data/agent-receipts/events.sock");
+	});
+
+	it("darwin: ignores a relative XDG_DATA_HOME per the XDG spec", () => {
+		// A relative value must not silently relocate the socket under the
+		// caller's CWD — the daemon's xdgDataHome makes the same guarantee.
+		expect(
+			resolveSocketPath(
+				deps({
+					platform: "darwin",
+					env: { XDG_DATA_HOME: "relative/data" },
+					home: "/Users/testuser",
+				}),
+			),
+		).toBe("/Users/testuser/.local/share/agent-receipts/events.sock");
+	});
+
+	it("darwin: returns '' when HOME cannot be resolved", () => {
+		// xdgDataHome bails on an unresolvable HOME; the public surface
+		// surfaces this as '' so the Emitter constructor can raise a clean
+		// "pass socketPath explicitly" error.
+		expect(resolveSocketPath(deps({ platform: "darwin", home: "" }))).toBe("");
+	});
+
+	it("linux: prefers XDG_RUNTIME_DIR over the /run fallback", () => {
+		expect(
+			resolveSocketPath(
+				deps({
+					platform: "linux",
+					env: { XDG_RUNTIME_DIR: "/run/user/1000" },
+				}),
+			),
+		).toBe("/run/user/1000/agentreceipts/events.sock");
+	});
+
+	it("linux: falls back to /run/agentreceipts/events.sock without XDG_RUNTIME_DIR", () => {
+		expect(resolveSocketPath(deps({ platform: "linux" }))).toBe(
+			"/run/agentreceipts/events.sock",
+		);
+	});
+
+	it("returns '' on unsupported platforms with no env override", () => {
+		expect(resolveSocketPath(deps({ platform: "win32" }))).toBe("");
+	});
+});
+
+describe("defaultSocketPath", () => {
+	// Smoke check: defaultSocketPath must wire the real platform/env/homedir
+	// into resolveSocketPath. The exhaustive branch coverage lives in the
+	// resolveSocketPath suite above; this test exists so a future refactor
+	// that breaks the wiring (drops a dep, swaps the order) fails loudly.
+	it("returns a non-empty path on this host (darwin or linux)", () => {
 		const original = process.env.AGENTRECEIPTS_SOCKET;
 		delete process.env.AGENTRECEIPTS_SOCKET;
 		try {
 			const p = defaultSocketPath();
-			// macOS and Linux both have defaults; only 'other' platforms return "".
 			const os = process.platform;
 			if (os === "darwin" || os === "linux") {
 				expect(p).not.toBe("");
@@ -536,54 +634,6 @@ describe("defaultSocketPath", () => {
 			}
 		}
 	});
-
-	// Issue #545: macOS must resolve against $HOME, not $TMPDIR, so a
-	// process spawned without TMPDIR (Claude Desktop's MCP children, for
-	// instance) still finds the same socket the daemon is listening on.
-	// This test only runs when the test process itself is on darwin; on
-	// Linux CI it short-circuits because we cannot patch `node:os`
-	// platform() without restructuring the import boundary, and a Linux
-	// test that pretended to be darwin would mostly be testing the
-	// stubbing layer rather than the regression. The Go SDK's
-	// daemon/paths_darwin_test.go exercises the same invariant in CI.
-	(process.platform === "darwin" ? it : it.skip)(
-		"resolves to a HOME-based path on macOS regardless of TMPDIR",
-		() => {
-			const original = {
-				socket: process.env.AGENTRECEIPTS_SOCKET,
-				xdg: process.env.XDG_DATA_HOME,
-				tmp: process.env.TMPDIR,
-				home: process.env.HOME,
-			};
-			delete process.env.AGENTRECEIPTS_SOCKET;
-			delete process.env.XDG_DATA_HOME;
-			process.env.TMPDIR = "/fake-tmpdir";
-			try {
-				const p = defaultSocketPath();
-				expect(p).not.toContain("/fake-tmpdir");
-				expect(p).toMatch(/\/\.local\/share\/agent-receipts\/events\.sock$/);
-			} finally {
-				for (const [k, v] of Object.entries(original) as Array<
-					[keyof typeof original, string | undefined]
-				>) {
-					const key = (
-						k === "socket"
-							? "AGENTRECEIPTS_SOCKET"
-							: k === "xdg"
-								? "XDG_DATA_HOME"
-								: k === "tmp"
-									? "TMPDIR"
-									: "HOME"
-					) as string;
-					if (v === undefined) {
-						delete process.env[key];
-					} else {
-						process.env[key] = v;
-					}
-				}
-			}
-		},
-	);
 });
 
 describe("Emitter — constructor", () => {
