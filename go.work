@@ -1,6 +1,7 @@
 go 1.26.1
 
 use (
+	./collector
 	./cross-sdk-tests
 	./daemon
 	./hook

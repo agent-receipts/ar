@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -867,5 +868,189 @@ func TestVerifyStoredChain(t *testing.T) {
 	}
 	if !result.Valid {
 		t.Errorf("expected valid chain, broken at %d", result.BrokenAt)
+	}
+}
+
+func TestInsertRaw_PreservesUnknownFields(t *testing.T) {
+	// InsertRaw must store the on-wire bytes verbatim so that auditors can
+	// later re-verify the agent's signature against exactly what the agent
+	// signed. The Go struct does not know about every field a future SDK
+	// version may emit; round-tripping via json.Marshal(struct) would drop
+	// those fields and break cross-SDK verification. This test pins that
+	// behaviour by injecting an unknown field into the raw bytes and
+	// asserting it survives the store round-trip.
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-raw", nil)
+
+	rJSON, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// Splice in an unknown top-level field. The struct decoder ignores it,
+	// but the bytes we hand to InsertRaw still contain it.
+	raw := strings.Replace(string(rJSON), `"id":`, `"_future_field":"hello",`+`"id":`, 1)
+	if !strings.Contains(raw, `"_future_field":"hello"`) {
+		t.Fatalf("splice failed: %s", raw)
+	}
+	// Hash the raw bytes (not the struct) so the stored receipt_hash column
+	// stays internally consistent with the stored receipt_json — an auditor
+	// recomputing HashRawReceipt(stored_bytes) gets the same value back.
+	h, err := receipt.HashRawReceipt([]byte(raw))
+	if err != nil {
+		t.Fatalf("HashRawReceipt: %v", err)
+	}
+
+	if err := s.InsertRaw(r, []byte(raw), h); err != nil {
+		t.Fatalf("InsertRaw: %v", err)
+	}
+
+	// Pull the stored receipt_json column back directly — using GetByID
+	// would round-trip through the Go struct and lose the field, defeating
+	// the test.
+	var stored string
+	if err := s.db.QueryRow("SELECT receipt_json FROM receipts WHERE id = ?", r.ID).Scan(&stored); err != nil {
+		t.Fatalf("select stored bytes: %v", err)
+	}
+	if !strings.Contains(stored, `"_future_field":"hello"`) {
+		t.Fatalf("stored bytes lost unknown field: %s", stored)
+	}
+
+	// Stored hash must round-trip with the auditor's view.
+	var storedHash string
+	if err := s.db.QueryRow("SELECT receipt_hash FROM receipts WHERE id = ?", r.ID).Scan(&storedHash); err != nil {
+		t.Fatalf("select stored hash: %v", err)
+	}
+	want, _ := receipt.HashRawReceipt([]byte(stored))
+	if storedHash != want {
+		t.Fatalf("stored receipt_hash = %s; HashRawReceipt(stored bytes) = %s; want equal", storedHash, want)
+	}
+}
+
+func TestInsertRaw_RejectsMismatchedID(t *testing.T) {
+	// The row key (indexed `id` column) is taken from the struct; the
+	// receipt_json column is taken from the raw bytes. If those two
+	// disagree on `id`, GetByID-by-struct-id returns a parsed receipt with
+	// a different ID — silent corruption that is lethal at audit time.
+	// InsertRaw must refuse the insert.
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-mismatch", nil)
+	h, _ := receipt.HashReceipt(r)
+
+	err := s.InsertRaw(r, []byte(`{"id":"different","raw":"bytes"}`), h)
+	if err == nil {
+		t.Fatal("InsertRaw with mismatched id: err=nil, want rejection")
+	}
+	if !strings.Contains(err.Error(), "disagrees") {
+		t.Fatalf("error %q does not mention id disagreement", err.Error())
+	}
+
+	// No row should have been inserted.
+	if got, _ := s.GetByID(r.ID); got != nil {
+		t.Fatalf("row was inserted despite rejection: %+v", got)
+	}
+}
+
+func TestInsertRaw_AcceptsRawWithoutID(t *testing.T) {
+	// The SDK is not the structural validator — a higher-layer caller (e.g.
+	// the collector) enforces that receipts carry an id. If rawJSON happens
+	// to omit the id key, the SDK accepts it: the indexed column still
+	// reflects r.ID and GetByID still works by struct id. This documents
+	// the boundary of validateRawReceipt's checks.
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-noid", nil)
+	h, _ := receipt.HashReceipt(r)
+
+	raw := []byte(`{"raw":"without-id-field"}`)
+	if err := s.InsertRaw(r, raw, h); err != nil {
+		t.Fatalf("InsertRaw without rawJSON id: %v", err)
+	}
+
+	var stored string
+	if err := s.db.QueryRow("SELECT receipt_json FROM receipts WHERE id = ?", r.ID).Scan(&stored); err != nil {
+		t.Fatalf("select stored bytes: %v", err)
+	}
+	if stored != string(raw) {
+		t.Fatalf("stored bytes = %q, want %q", stored, raw)
+	}
+}
+
+func TestInsertRaw_RejectsMismatchedChainOrSequence(t *testing.T) {
+	// The indexed (chain_id, sequence) columns are taken from the struct, so
+	// receipt_json carrying different values for those fields would describe
+	// a different chain position than the row key — silent inconsistency
+	// the UNIQUE index on the indexed columns cannot catch. InsertRaw must
+	// reject both mismatch modes.
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 7, "chain-honest", nil)
+	h, _ := receipt.HashReceipt(r)
+
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "chain_id mismatch",
+			raw:  `{"id":"` + r.ID + `","credentialSubject":{"chain":{"chain_id":"chain-lie","sequence":7}}}`,
+			want: "chain.chain_id",
+		},
+		{
+			name: "sequence mismatch",
+			raw:  `{"id":"` + r.ID + `","credentialSubject":{"chain":{"chain_id":"chain-honest","sequence":99}}}`,
+			want: "chain.sequence",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := s.InsertRaw(r, []byte(tc.raw), h)
+			if err == nil {
+				t.Fatal("InsertRaw with mismatch: err=nil, want rejection")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %q does not mention %q", err.Error(), tc.want)
+			}
+		})
+	}
+
+	// No rows should have been inserted by any of the rejected attempts.
+	if got, _ := s.GetByID(r.ID); got != nil {
+		t.Fatalf("row leaked despite rejections: %+v", got)
+	}
+}
+
+func TestInsertRaw_RejectsInvalidPayloads(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-bad", nil)
+	h, _ := receipt.HashReceipt(r)
+
+	cases := []struct {
+		name string
+		raw  []byte
+	}{
+		{"not json", []byte(`{not json`)},
+		{"json array", []byte(`[1, 2, 3]`)},
+		{"json scalar", []byte(`42`)},
+		{"json null", []byte(`null`)},
+		{"empty body", []byte{}},
+		{"non-string id", []byte(`{"id": 42}`)},
+		{"non-integer sequence", []byte(`{"credentialSubject":{"chain":{"sequence":"oops"}}}`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := s.InsertRaw(r, tc.raw, h)
+			if err == nil {
+				t.Fatal("InsertRaw with invalid payload: err=nil, want rejection")
+			}
+		})
+	}
+
+	// Re-check that none of those rejected calls leaked a row.
+	if got, _ := s.GetByID(r.ID); got != nil {
+		t.Fatalf("row was inserted by one of the rejected payloads: %+v", got)
 	}
 }
