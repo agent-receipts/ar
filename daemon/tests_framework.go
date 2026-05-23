@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -242,6 +243,12 @@ func StartDaemonFromConfig(t *testing.T, cfg Config, pubPEM string) *DaemonFixtu
 
 // EmitGoFrame emits a frame using the Go SDK's emitter.
 // Returns an error if the operation fails, allowing safe use from goroutines.
+//
+// Uses WithStrictErrors so transient dial/write failures surface as test
+// errors instead of silent drops — tests rely on at-least-once delivery,
+// not the production fire-and-forget contract. A single retry on dial
+// failure absorbs the macOS-under-race case where the 25ms dial budget
+// occasionally exceeds the runner's scheduler latency.
 func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, toolName, toolServer, decision string) error {
 	t.Helper()
 
@@ -249,21 +256,42 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 		emitter.WithSocketPath(f.Config.SocketPath),
 		emitter.WithSessionID(sessionID),
 		emitter.WithLogger(slog.Default()),
+		emitter.WithStrictErrors(),
 	)
 	if err != nil {
 		return fmt.Errorf("create emitter: %w", err)
 	}
 	defer em.Close()
 
-	err = em.Emit(context.Background(), emitter.Event{
+	ev := emitter.Event{
 		Channel: channel,
 		Tool: emitter.Tool{
 			Name:   toolName,
 			Server: toolServer,
 		},
 		Decision: decision,
-	})
-	return err
+	}
+	if err := em.Emit(context.Background(), ev); err == nil {
+		return nil
+	} else if !isTransientDialErr(err) {
+		return err
+	}
+	// One retry — the dial timeout is 25ms and macOS CI runners under -race
+	// occasionally need more. The daemon is alive (test framework waits for
+	// it before calling us), so a retry pretty much always succeeds.
+	time.Sleep(50 * time.Millisecond)
+	return em.Emit(context.Background(), ev)
+}
+
+// isTransientDialErr classifies emitter errors that are worth retrying.
+// The strict-errors mode wraps dial errors as "emitter: dial <path>: ...".
+func isTransientDialErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "emitter: dial") ||
+		strings.Contains(msg, "emitter: write")
 }
 
 // EmitGoFrameFull emits a frame using the Go SDK with full Event fields (Input, Output, Error).
