@@ -1,0 +1,41 @@
+name: "CI: collector"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "collector/**"
+      - "sdk/go/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "collector/**"
+      - "sdk/go/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.26"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./cmd/collector
+
+      # -race because the in-memory and SQLite stores carry concurrency
+      # invariants exercised by TestInMemoryStore_ConcurrentInserts and
+      # TestSQLiteStore_ConcurrentInserts.
+      - name: Test
+        run: go test -race ./... -v
