@@ -1,0 +1,344 @@
+package emitters
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"math/rand/v2"
+	"net/http"
+	"time"
+
+	"github.com/agent-receipts/ar/sdk/go/receipt"
+)
+
+// HttpEmitterAuth is implemented by every authentication variant accepted
+// by [HttpEmitter]. The concrete types are [APIKeyAuth], [BearerAuth],
+// [MTLSAuth], and [NoAuth].
+type HttpEmitterAuth interface {
+	httpEmitterAuth()
+}
+
+// APIKeyAuth sends Header: Value on every request.
+type APIKeyAuth struct {
+	Header string
+	Value  string
+}
+
+func (APIKeyAuth) httpEmitterAuth() {}
+
+// BearerAuth sends Authorization: Bearer <Token>.
+type BearerAuth struct {
+	Token string
+}
+
+func (BearerAuth) httpEmitterAuth() {}
+
+// MTLSAuth establishes a mutual-TLS connection using the given client
+// certificate. Cert and Key are PEM-encoded bytes.
+type MTLSAuth struct {
+	Cert []byte
+	Key  []byte
+}
+
+func (MTLSAuth) httpEmitterAuth() {}
+
+// NoAuth is the default. The HTTP client sends no auth headers and uses
+// the system trust store for TLS validation.
+type NoAuth struct{}
+
+func (NoAuth) httpEmitterAuth() {}
+
+// RetryConfig describes the exponential-backoff policy used by
+// [HttpEmitter] on 5xx and network errors. MaxAttempts includes the first
+// attempt.
+type RetryConfig struct {
+	MaxAttempts int
+	BaseDelay   time.Duration
+	MaxDelay    time.Duration
+}
+
+// HttpEmitterConfig configures an [HttpEmitter].
+type HttpEmitterConfig struct {
+	// Endpoint is the collector URL receiving POSTs. Required.
+	Endpoint string
+
+	// Auth is the authentication variant. Defaults to NoAuth.
+	Auth HttpEmitterAuth
+
+	// Strategy is "sync" (default) or "fire-and-forget".
+	Strategy string
+
+	// Retry overrides the exponential-backoff policy. Defaults to 5
+	// attempts with a 100ms base and 10s cap.
+	Retry RetryConfig
+
+	// Timeout is the per-request budget. Defaults to 5s.
+	Timeout time.Duration
+
+	// Logger is used for fire-and-forget drop diagnostics. Defaults to a
+	// discard logger; pass slog.Default() (or any handler) to surface
+	// drops at debug level.
+	Logger *slog.Logger
+
+	// HTTPClient overrides the underlying http.Client. Defaults to a
+	// client with the configured timeout (and TLS config built from
+	// MTLSAuth, if present). Test code can pass a mocked client.
+	HTTPClient *http.Client
+}
+
+// HttpEmitter POSTs signed receipts to a collector endpoint over HTTP(S).
+//
+// Wire contract (per ADR-0020 §"Collector contract"):
+//
+//	POST <endpoint>
+//	Content-Type: application/ld+json
+//	Body: JSON-serialised AgentReceipt
+//
+//	201 Created    -> resolve
+//	409 Conflict   -> resolve (duplicate id is idempotent re-delivery)
+//	400 Bad Request-> EmitError, no retry
+//	5xx / network  -> retry with exponential backoff + jitter
+//
+// Strategies:
+//
+//   - "sync" (default): Emit returns after the collector acknowledges or
+//     after the retry budget is exhausted.
+//   - "fire-and-forget": Emit schedules a goroutine and returns
+//     immediately; the goroutine's error is logged at debug and never
+//     surfaced to the caller.
+type HttpEmitter struct {
+	endpoint string
+	auth     HttpEmitterAuth
+	strategy string
+	retry    RetryConfig
+	logger   *slog.Logger
+	client   *http.Client
+}
+
+const (
+	defaultMaxAttempts = 5
+	defaultBaseDelay   = 100 * time.Millisecond
+	defaultMaxDelay    = 10 * time.Second
+	defaultTimeout     = 5 * time.Second
+)
+
+// EmitError is returned when the retry budget is exhausted or a
+// non-retryable response is received.
+type EmitError struct {
+	Status int    // HTTP status code, or 0 if no response was received.
+	Msg    string // Human-readable error description.
+	Cause  error  // Underlying transport error, if any.
+}
+
+// Error implements the error interface.
+func (e *EmitError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("%s: %v", e.Msg, e.Cause)
+	}
+	return e.Msg
+}
+
+// Unwrap returns the underlying cause for errors.Is / errors.As.
+func (e *EmitError) Unwrap() error { return e.Cause }
+
+// NewHTTP constructs an [HttpEmitter] from the given config.
+func NewHTTP(cfg HttpEmitterConfig) (*HttpEmitter, error) {
+	if cfg.Endpoint == "" {
+		return nil, errors.New("HttpEmitter: Endpoint is required")
+	}
+
+	strategy := cfg.Strategy
+	if strategy == "" {
+		strategy = "sync"
+	}
+	if strategy != "sync" && strategy != "fire-and-forget" {
+		return nil, fmt.Errorf("HttpEmitter: invalid strategy %q (want sync or fire-and-forget)", strategy)
+	}
+
+	auth := cfg.Auth
+	if auth == nil {
+		auth = NoAuth{}
+	}
+
+	retry := cfg.Retry
+	if retry.MaxAttempts == 0 {
+		retry.MaxAttempts = defaultMaxAttempts
+	}
+	if retry.BaseDelay == 0 {
+		retry.BaseDelay = defaultBaseDelay
+	}
+	if retry.MaxDelay == 0 {
+		retry.MaxDelay = defaultMaxDelay
+	}
+
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = defaultTimeout
+	}
+
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+
+	client := cfg.HTTPClient
+	if client == nil {
+		c := &http.Client{Timeout: timeout}
+		if m, ok := auth.(MTLSAuth); ok {
+			cert, err := tls.X509KeyPair(m.Cert, m.Key)
+			if err != nil {
+				return nil, fmt.Errorf("HttpEmitter: load mTLS keypair: %w", err)
+			}
+			c.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					Certificates: []tls.Certificate{cert},
+					MinVersion:   tls.VersionTLS12,
+				},
+			}
+		}
+		client = c
+	}
+
+	return &HttpEmitter{
+		endpoint: cfg.Endpoint,
+		auth:     auth,
+		strategy: strategy,
+		retry:    retry,
+		logger:   logger,
+		client:   client,
+	}, nil
+}
+
+// Emit delivers r to the collector. In "sync" mode it waits for the ack
+// (or the retry budget to be exhausted). In "fire-and-forget" mode it
+// schedules a goroutine and returns nil immediately.
+func (e *HttpEmitter) Emit(ctx context.Context, r receipt.AgentReceipt) error {
+	body, err := json.Marshal(r)
+	if err != nil {
+		return fmt.Errorf("HttpEmitter: marshal receipt: %w", err)
+	}
+
+	if e.strategy == "fire-and-forget" {
+		go func() {
+			if err := e.deliver(context.Background(), body); err != nil {
+				e.logger.Debug("HttpEmitter dropped receipt (fire-and-forget)",
+					slog.String("endpoint", e.endpoint),
+					slog.String("err", err.Error()),
+				)
+			}
+		}()
+		return nil
+	}
+
+	return e.deliver(ctx, body)
+}
+
+func (e *HttpEmitter) deliver(ctx context.Context, body []byte) error {
+	var lastErr error
+	var lastStatus int
+
+	for attempt := 1; attempt <= e.retry.MaxAttempts; attempt++ {
+		status, err := e.doRequest(ctx, body)
+		if err != nil {
+			lastErr = err
+			lastStatus = 0
+			if attempt >= e.retry.MaxAttempts {
+				break
+			}
+			if waitErr := sleep(ctx, e.backoff(attempt)); waitErr != nil {
+				return waitErr
+			}
+			continue
+		}
+
+		switch {
+		case status == 201 || status == 409:
+			return nil
+		case status == 400:
+			return &EmitError{
+				Status: 400,
+				Msg:    fmt.Sprintf("HttpEmitter: 400 Bad Request from %s", e.endpoint),
+			}
+		case status >= 500 && status < 600:
+			lastErr = fmt.Errorf("HTTP %d", status)
+			lastStatus = status
+			if attempt >= e.retry.MaxAttempts {
+				break
+			}
+			if waitErr := sleep(ctx, e.backoff(attempt)); waitErr != nil {
+				return waitErr
+			}
+			continue
+		default:
+			// 401, 403, 404, other 4xx are non-retryable.
+			return &EmitError{
+				Status: status,
+				Msg:    fmt.Sprintf("HttpEmitter: unexpected HTTP %d from %s", status, e.endpoint),
+			}
+		}
+	}
+
+	return &EmitError{
+		Status: lastStatus,
+		Msg:    fmt.Sprintf("HttpEmitter: %d attempts exhausted for %s", e.retry.MaxAttempts, e.endpoint),
+		Cause:  lastErr,
+	}
+}
+
+func (e *HttpEmitter) doRequest(ctx context.Context, body []byte) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/ld+json")
+	switch a := e.auth.(type) {
+	case APIKeyAuth:
+		req.Header.Set(a.Header, a.Value)
+	case BearerAuth:
+		req.Header.Set("Authorization", "Bearer "+a.Token)
+	case MTLSAuth, NoAuth:
+		// No header to add — mTLS works at the transport layer.
+	}
+
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	// Drain and close so the underlying connection can be reused.
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	return resp.StatusCode, nil
+}
+
+// backoff returns the wait time before the next attempt using
+// exponential growth with full jitter, capped at MaxDelay.
+func (e *HttpEmitter) backoff(attempt int) time.Duration {
+	exp := e.retry.BaseDelay * time.Duration(1<<(attempt-1))
+	if exp > e.retry.MaxDelay {
+		exp = e.retry.MaxDelay
+	}
+	if exp <= 0 {
+		return 0
+	}
+	// rand.N samples in [0, exp).
+	return rand.N(exp)
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
