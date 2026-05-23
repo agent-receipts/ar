@@ -137,8 +137,8 @@ brews:
           Signing key:       $XDG_DATA_HOME/agent-receipts/signing.key
                              (falls back to ~/.local/share/agent-receipts/signing.key when $XDG_DATA_HOME is unset or relative)
                              Override: AGENTRECEIPTS_KEY
-          Socket (macOS):    $TMPDIR/agentreceipts/events.sock
-                             (falls back to /tmp/agentreceipts/events.sock when $TMPDIR is unset)
+          Socket (macOS):    $XDG_DATA_HOME/agent-receipts/events.sock
+                             (falls back to ~/.local/share/agent-receipts/events.sock when $XDG_DATA_HOME is unset or relative)
                              Override: AGENTRECEIPTS_SOCKET
           Socket (Linux):    $XDG_RUNTIME_DIR/agentreceipts/events.sock
                              (falls back to /run/agentreceipts/events.sock when $XDG_RUNTIME_DIR is unset)

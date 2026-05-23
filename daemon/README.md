@@ -59,7 +59,7 @@ agent-receipts-daemon \
 
 | Flag | Env | Default |
 |---|---|---|
-| `--socket` | `AGENTRECEIPTS_SOCKET` | `/run/agentreceipts/events.sock` (Linux), `$TMPDIR/agentreceipts/events.sock` (macOS) |
+| `--socket` | `AGENTRECEIPTS_SOCKET` | Linux: `$XDG_RUNTIME_DIR/agentreceipts/events.sock` (falls back to `/run/agentreceipts/events.sock`). macOS: `$XDG_DATA_HOME/agent-receipts/events.sock` (defaults to `~/.local/share/agent-receipts/events.sock`). |
 | `--db` | `AGENTRECEIPTS_DB` | `~/.agent-receipts/receipts.db` |
 | `--key` | `AGENTRECEIPTS_KEY` | `~/.agent-receipts/signing.key` |
 | `--chain-id` | `AGENTRECEIPTS_CHAIN_ID` | `default` |
@@ -76,7 +76,7 @@ non-regular file at this path.
 
 The socket directory is created with mode `0750` if missing; the socket
 itself is `0660`. Phase 1 unprivileged installs use the per-user defaults
-(`$TMPDIR` on macOS, `$XDG_RUNTIME_DIR` on Linux when set).
+(`$XDG_DATA_HOME` on macOS, `$XDG_RUNTIME_DIR` on Linux when set).
 
 On every startup the daemon publishes the matching SPKI public key to
 `--public-key` (default `<KeyPath>.pub`, tracking any `--key` override) with

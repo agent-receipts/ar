@@ -27,7 +27,7 @@ Split every integration into two roles:
 ### IPC transport
 
 - Linux: Unix domain socket (`SOCK_STREAM` with 4-byte big-endian length-prefix framing). Default `$XDG_RUNTIME_DIR/agentreceipts/events.sock` (per-user, when the variable is set), falling back to `/run/agentreceipts/events.sock` (system-wide; requires privileged directory setup).
-- macOS: Unix domain socket (`SOCK_STREAM` with 4-byte big-endian length-prefix framing). Default `$TMPDIR/agentreceipts/events.sock` (per-user); the launchd-managed system install will select an alternative path explicitly via `AGENTRECEIPTS_SOCKET` once packaging lands.
+- macOS: Unix domain socket (`SOCK_STREAM` with 4-byte big-endian length-prefix framing). Default `$XDG_DATA_HOME/agent-receipts/events.sock` (per-user; `XDG_DATA_HOME` defaults to `~/.local/share`). HOME-based instead of the launchd per-user temp dir: TMPDIR is not inherited by every spawn context — GUI-launched MCP servers typically see no TMPDIR and drift to `/tmp` while the daemon keeps the per-user path, causing a silent receipt-loss mismatch (issue #545). The launchd-managed system install will select an alternative path explicitly via `AGENTRECEIPTS_SOCKET` once packaging lands.
 - Windows: named pipe via Node's `net` module (`\\.\pipe\agentreceipts-events`) with equivalent ACL semantics.
 - Socket and pipe locations are configurable via the `AGENTRECEIPTS_SOCKET` environment variable (Linux/macOS) or the equivalent on Windows.
 - TCP loopback is explicitly rejected — it dissolves the filesystem permission model and would require a bespoke local auth scheme.
@@ -108,6 +108,16 @@ Phase 1 (#322) implemented `SOCK_STREAM` with a 4-byte big-endian length-prefix 
 ### 2026-05-05: Default socket paths — per-user defaults instead of system paths
 
 Phase 1 (#322) defaults to per-user socket paths because MVP has no launchd- or systemd-managed system install yet. macOS uses `$TMPDIR/agentreceipts/events.sock` (the originally-specified `/var/run/agentreceipts/events.sock` is not produced by `daemon.DefaultSocketPath()`, only by explicit configuration); Linux uses `$XDG_RUNTIME_DIR/agentreceipts/events.sock` when that variable is set, falling back to `/run/agentreceipts/events.sock` only when it is not. Both originally-specified system paths can still be selected explicitly via `AGENTRECEIPTS_SOCKET` (or `--socket`) and will become the packaging-managed defaults once launchd / systemd integration lands. The *IPC transport* section above describes the current resolution.
+
+### 2026-05-23: macOS default moved off TMPDIR (issue #545)
+
+The macOS default originally lived under `$TMPDIR/agentreceipts/events.sock`, matching launchd's per-user temp dir. In practice TMPDIR is not inherited by every spawn context — MCP servers launched by Claude Desktop (or any other GUI host) commonly see no TMPDIR and silently land on `/tmp`, while a daemon launched from a shell keeps the launchd-assigned per-user temp dir. The two ends could not find each other, no error surfaced, and zero receipts landed.
+
+The macOS default now resolves against `$HOME` via `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`). HOME is preserved across every spawn context the daemon supports, so the daemon and any emitter that share a user resolve to the same path regardless of how they were started. The new directory matches the per-user directory already used for `receipts.db` and the Ed25519 signing key, so operators continue to back up a single path to capture every piece of daemon state.
+
+Linux is unchanged: `$XDG_RUNTIME_DIR` is set per-user by systemd-logind across desktop and service sessions, so the divergence pattern that breaks the macOS default does not manifest there in practice. Users running the daemon on a headless box without systemd-logind should pin the socket path explicitly via `AGENTRECEIPTS_SOCKET`, same as before.
+
+Operators upgrading from v0.11.0 or earlier on macOS must restart both the daemon and any emitter (mcp-proxy, hook) so the new default takes effect on both ends. Anyone relying on TMPDIR redirection should switch to `AGENTRECEIPTS_SOCKET` — that override has always taken precedence and is unaffected.
 
 ### 2026-05-06: OQ2 — Existing chain migration policy — abandon old chains
 

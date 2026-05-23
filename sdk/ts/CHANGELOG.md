@@ -9,6 +9,12 @@ This file starts at 0.5.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
+## [Unreleased]
+
+### Changed
+
+- **`defaultSocketPath()` macOS default is now HOME-based** ([#545](https://github.com/agent-receipts/ar/issues/545)). macOS resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. TMPDIR is not inherited by GUI-spawned Node processes (e.g., MCP servers launched by Claude Desktop), which broke the daemon ↔ emitter handshake silently. The Go and Python SDKs ship the same resolution so every emitter and the daemon agree on a single path per user. AGENTRECEIPTS_SOCKET continues to take precedence; users who relied on TMPDIR redirection should switch to it.
+
 ## [0.9.0] - 2026-05-22
 
 First stable release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#280](https://github.com/agent-receipts/ar/issues/280). Graduates `0.9.0-alpha.1` after the end-to-end alpha pass in [#519](https://github.com/agent-receipts/ar/issues/519).

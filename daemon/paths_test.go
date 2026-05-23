@@ -93,10 +93,12 @@ func TestDefaultPaths_PointAtAgentReceiptsSubdir(t *testing.T) {
 
 // TestDefaultSocketPath_MatchesEmitter pins the invariant that the daemon
 // and the SDK's emitter resolve to the same default socket path. The
-// daemon delegates to emitter.DefaultSocketPath so the two binaries cannot
-// silently drift on, e.g., TMPDIR resolution (see issue #545: a hardcoded
-// /tmp default in one binary while the other resolved $TMPDIR caused
-// silent receipt loss on macOS).
+// daemon delegates to emitter.DefaultSocketPath so the two binaries
+// cannot silently drift on path resolution (see issue #545: drift
+// between the two implementations caused silent receipt loss on
+// macOS). The matrix sweeps several env permutations so that any
+// future change to either function — say a new fallback rule — is
+// forced to update both.
 func TestDefaultSocketPath_MatchesEmitter(t *testing.T) {
 	t.Setenv("AGENTRECEIPTS_SOCKET", "")
 
@@ -105,9 +107,9 @@ func TestDefaultSocketPath_MatchesEmitter(t *testing.T) {
 		tmpdir string
 		xdg    string
 	}{
-		{name: "with TMPDIR", tmpdir: "/var/folders/test/T", xdg: ""},
-		{name: "without TMPDIR (fallback)", tmpdir: "", xdg: ""},
-		{name: "with XDG_RUNTIME_DIR", tmpdir: "", xdg: "/run/user/1000"},
+		{name: "with TMPDIR set", tmpdir: "/var/folders/test/T", xdg: ""},
+		{name: "without any runtime env", tmpdir: "", xdg: ""},
+		{name: "with XDG_RUNTIME_DIR set", tmpdir: "", xdg: "/run/user/1000"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

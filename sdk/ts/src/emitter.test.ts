@@ -536,6 +536,54 @@ describe("defaultSocketPath", () => {
 			}
 		}
 	});
+
+	// Issue #545: macOS must resolve against $HOME, not $TMPDIR, so a
+	// process spawned without TMPDIR (Claude Desktop's MCP children, for
+	// instance) still finds the same socket the daemon is listening on.
+	// This test only runs when the test process itself is on darwin; on
+	// Linux CI it short-circuits because we cannot patch `node:os`
+	// platform() without restructuring the import boundary, and a Linux
+	// test that pretended to be darwin would mostly be testing the
+	// stubbing layer rather than the regression. The Go SDK's
+	// daemon/paths_darwin_test.go exercises the same invariant in CI.
+	(process.platform === "darwin" ? it : it.skip)(
+		"resolves to a HOME-based path on macOS regardless of TMPDIR",
+		() => {
+			const original = {
+				socket: process.env.AGENTRECEIPTS_SOCKET,
+				xdg: process.env.XDG_DATA_HOME,
+				tmp: process.env.TMPDIR,
+				home: process.env.HOME,
+			};
+			delete process.env.AGENTRECEIPTS_SOCKET;
+			delete process.env.XDG_DATA_HOME;
+			process.env.TMPDIR = "/fake-tmpdir";
+			try {
+				const p = defaultSocketPath();
+				expect(p).not.toContain("/fake-tmpdir");
+				expect(p).toMatch(/\/\.local\/share\/agent-receipts\/events\.sock$/);
+			} finally {
+				for (const [k, v] of Object.entries(original) as Array<
+					[keyof typeof original, string | undefined]
+				>) {
+					const key = (
+						k === "socket"
+							? "AGENTRECEIPTS_SOCKET"
+							: k === "xdg"
+								? "XDG_DATA_HOME"
+								: k === "tmp"
+									? "TMPDIR"
+									: "HOME"
+					) as string;
+					if (v === undefined) {
+						delete process.env[key];
+					} else {
+						process.env[key] = v;
+					}
+				}
+			}
+		},
+	);
 });
 
 describe("Emitter — constructor", () => {

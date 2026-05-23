@@ -20,8 +20,8 @@
 
 import { randomUUID } from "node:crypto";
 import { createConnection, type Socket } from "node:net";
-import { platform } from "node:os";
-import { join } from "node:path";
+import { homedir, platform } from "node:os";
+import { isAbsolute, join } from "node:path";
 
 /** Maximum allowed frame size in bytes (1 MiB). Must match daemon's socket.MaxFrameSize. */
 export const MAX_FRAME_SIZE = 1 << 20;
@@ -134,10 +134,18 @@ const RAW_OUTPUT_SENTINEL = `__AR_RAW_OUTPUT_${randomUUID()}__`;
  *
  * Resolution order:
  * 1. AGENTRECEIPTS_SOCKET environment variable (any platform).
- * 2. macOS: $TMPDIR/agentreceipts/events.sock (TMPDIR defaults to /tmp).
+ * 2. macOS: $XDG_DATA_HOME/agent-receipts/events.sock (XDG_DATA_HOME
+ *    defaults to ~/.local/share). HOME-based instead of $TMPDIR because
+ *    TMPDIR is not inherited by every spawn context — MCP servers
+ *    launched by GUI hosts commonly see no TMPDIR and silently land on
+ *    /tmp while the daemon keeps the per-user temp dir, producing a
+ *    no-error / zero-receipt mismatch (issue #545).
  * 3. Linux with $XDG_RUNTIME_DIR set: $XDG_RUNTIME_DIR/agentreceipts/events.sock.
  * 4. Linux fallback: /run/agentreceipts/events.sock.
  * 5. Other platforms: empty string — pass socketPath explicitly.
+ *
+ * The macOS resolution mirrors the Go and Python SDKs so every emitter
+ * and the daemon agree on a single path per user.
  */
 export function defaultSocketPath(): string {
 	const envPath = process.env.AGENTRECEIPTS_SOCKET;
@@ -146,12 +154,11 @@ export function defaultSocketPath(): string {
 	}
 	const os = platform();
 	if (os === "darwin") {
-		const tmpdir = process.env.TMPDIR ?? "/tmp";
-		const candidate = join(tmpdir, "agentreceipts", "events.sock");
-		// AF_UNIX sun_path is ~104 bytes on macOS; guard against unusually long $TMPDIR.
-		return candidate.length <= 90
-			? candidate
-			: "/tmp/agentreceipts/events.sock";
+		const base = xdgDataHome();
+		if (!base) {
+			return "";
+		}
+		return join(base, "agent-receipts", "events.sock");
 	}
 	if (os === "linux") {
 		const xdgRuntime = process.env.XDG_RUNTIME_DIR;
@@ -161,6 +168,27 @@ export function defaultSocketPath(): string {
 		return "/run/agentreceipts/events.sock";
 	}
 	return "";
+}
+
+/**
+ * Returns $XDG_DATA_HOME (absolute only) or $HOME/.local/share. Mirrors
+ * the Go and Python xdgDataHome helpers so every SDK resolves the same
+ * per-user directory the daemon writes to. A relative XDG_DATA_HOME is
+ * ignored per the XDG spec — silently relocating sockets under the
+ * working directory of whichever process happened to start the emitter
+ * would be surprising. Returns an empty string when neither source
+ * yields an absolute path.
+ */
+function xdgDataHome(): string {
+	const dataHome = process.env.XDG_DATA_HOME;
+	if (dataHome && isAbsolute(dataHome)) {
+		return dataHome;
+	}
+	const home = homedir();
+	if (!home || !isAbsolute(home)) {
+		return "";
+	}
+	return join(home, ".local", "share");
 }
 
 /**

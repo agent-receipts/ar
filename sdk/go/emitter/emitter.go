@@ -39,7 +39,6 @@ import (
 	"math"
 	"net"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -606,32 +605,28 @@ func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
 // entirely and can use any path on any OS — platform detection is not their
 // concern.
 //
-//   - macOS: AGENTRECEIPTS_SOCKET if set, else $TMPDIR/agentreceipts/events.sock
-//     (TMPDIR defaults to /tmp).
+//   - macOS: AGENTRECEIPTS_SOCKET if set, else
+//     $XDG_DATA_HOME/agent-receipts/events.sock (XDG_DATA_HOME defaults to
+//     ~/.local/share). HOME-based so the daemon and any emitter resolve to
+//     the same path regardless of how they were spawned — a GUI-launched
+//     proxy that loses TMPDIR no longer drifts to /tmp while the daemon
+//     keeps the per-user temp dir (issue #545).
 //   - Linux: AGENTRECEIPTS_SOCKET if set, else $XDG_RUNTIME_DIR/agentreceipts/
 //     events.sock when XDG_RUNTIME_DIR is set, else /run/agentreceipts/events.sock.
 //   - Other platforms: empty string. New returns an error in that case;
 //     callers must pass WithSocketPath explicitly.
 func DefaultSocketPath() string {
-	switch runtime.GOOS {
-	case "darwin":
-		if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
-			return p
-		}
-		base := os.Getenv("TMPDIR")
-		if base == "" {
-			base = "/tmp"
-		}
-		return filepath.Join(base, "agentreceipts", "events.sock")
-	case "linux":
-		if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
-			return p
-		}
-		if base := os.Getenv("XDG_RUNTIME_DIR"); base != "" {
-			return filepath.Join(base, "agentreceipts", "events.sock")
-		}
-		return "/run/agentreceipts/events.sock"
-	default:
+	base := platformDefaultSocketPath()
+	if base == "" {
+		// Unsupported platform — preserve the contract that callers must
+		// pass WithSocketPath explicitly. AGENTRECEIPTS_SOCKET cannot
+		// rescue this case because New still gates on platform support
+		// elsewhere; returning the env var here would just defer the
+		// failure.
 		return ""
 	}
+	if p := os.Getenv("AGENTRECEIPTS_SOCKET"); p != "" {
+		return p
+	}
+	return base
 }
