@@ -1,11 +1,14 @@
 package emitters_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -328,6 +331,78 @@ func TestHttpEmitter_InvalidStrategyRejected(t *testing.T) {
 		Strategy: "lol",
 	}); err == nil {
 		t.Fatalf("NewHTTP with invalid strategy did not error")
+	}
+}
+
+func TestHttpEmitter_HTTPEndpointWarns(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	_, err := emitters.NewHTTP(emitters.HttpEmitterConfig{
+		Endpoint: "http://example.com/receipts",
+		Logger:   logger,
+	})
+	if err != nil {
+		t.Fatalf("NewHTTP: %v", err)
+	}
+	if !strings.Contains(buf.String(), "not HTTPS") {
+		t.Errorf("expected HTTP warning, got: %q", buf.String())
+	}
+}
+
+func TestHttpEmitter_HTTPSEndpointDoesNotWarn(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	_, err := emitters.NewHTTP(emitters.HttpEmitterConfig{
+		Endpoint: "https://example.com/receipts",
+		Logger:   logger,
+	})
+	if err != nil {
+		t.Fatalf("NewHTTP: %v", err)
+	}
+	if strings.Contains(buf.String(), "not HTTPS") {
+		t.Errorf("unexpected HTTPS warning: %q", buf.String())
+	}
+}
+
+func TestHttpEmitter_DrainWaitsForFireAndForget(t *testing.T) {
+	c := newCollector()
+	defer c.Close()
+	release := make(chan struct{})
+	c.setResponder(func(_ capturedRequest, _ int) int {
+		<-release
+		return http.StatusCreated
+	})
+
+	em, err := emitters.NewHTTP(emitters.HttpEmitterConfig{
+		Endpoint: c.URL,
+		Strategy: emitters.StrategyFireAndForget,
+		Timeout:  5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewHTTP: %v", err)
+	}
+	if err := em.Emit(context.Background(), fakeReceipt("r")); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	// Release the collector and call Drain; Drain must wait until the
+	// background goroutine has completed delivery.
+	go close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := em.Drain(ctx); err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+	if got := len(c.Requests()); got != 1 {
+		t.Errorf("requests after Drain = %d; want 1", got)
+	}
+}
+
+func TestHttpEmitter_StrategyConstants(t *testing.T) {
+	if emitters.StrategySync != "sync" {
+		t.Errorf("StrategySync = %q; want sync", emitters.StrategySync)
+	}
+	if emitters.StrategyFireAndForget != "fire-and-forget" {
+		t.Errorf("StrategyFireAndForget = %q; want fire-and-forget", emitters.StrategyFireAndForget)
 	}
 }
 

@@ -1,6 +1,7 @@
 package emitters_test
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -10,7 +11,17 @@ import (
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 )
+
+// emitterFunc adapts a function literal to the emitters.Emitter
+// interface — useful for one-off behaviours in tests.
+type emitterFunc func(context.Context, receipt.AgentReceipt) error
+
+func (f emitterFunc) Emit(ctx context.Context, r receipt.AgentReceipt) error {
+	return f(ctx, r)
+}
 
 // generateSelfSignedPEM produces a fresh ECDSA self-signed cert + key in
 // PEM form for tests. Self-signed (no CA) — only suitable as a test

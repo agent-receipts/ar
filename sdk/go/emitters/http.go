@@ -11,9 +11,26 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
+)
+
+// Strategy selects how Emit treats the call: synchronously waiting for
+// the collector ack ([StrategySync], the default), or scheduling a
+// goroutine and returning immediately ([StrategyFireAndForget]).
+type Strategy string
+
+const (
+	// StrategySync waits for the collector ack (or retry budget exhaustion)
+	// before Emit returns. At-least-once up to the retry budget.
+	StrategySync Strategy = "sync"
+	// StrategyFireAndForget schedules a goroutine and returns nil
+	// immediately. No delivery guarantee. Call [HttpEmitter.Drain] before
+	// shutdown to wait for in-flight deliveries.
+	StrategyFireAndForget Strategy = "fire-and-forget"
 )
 
 // HttpEmitterAuth is implemented by every authentication variant accepted
@@ -63,6 +80,11 @@ type RetryConfig struct {
 }
 
 // HttpEmitterConfig configures an [HttpEmitter].
+//
+// Auth notes: APIKeyAuth sets a caller-chosen header (e.g. X-Api-Key)
+// and is intended for custom non-Authorization headers. For
+// standard `Authorization: Bearer …` use [BearerAuth] — it keeps the
+// wire shape canonical and is what most collectors expect.
 type HttpEmitterConfig struct {
 	// Endpoint is the collector URL receiving POSTs. Required.
 	Endpoint string
@@ -70,8 +92,9 @@ type HttpEmitterConfig struct {
 	// Auth is the authentication variant. Defaults to NoAuth.
 	Auth HttpEmitterAuth
 
-	// Strategy is "sync" (default) or "fire-and-forget".
-	Strategy string
+	// Strategy is [StrategySync] (default) or [StrategyFireAndForget].
+	// Empty string is treated as [StrategySync] for backwards compat.
+	Strategy Strategy
 
 	// Retry overrides the exponential-backoff policy. Defaults to 5
 	// attempts with a 100ms base and 10s cap.
@@ -106,18 +129,28 @@ type HttpEmitterConfig struct {
 //
 // Strategies:
 //
-//   - "sync" (default): Emit returns after the collector acknowledges or
-//     after the retry budget is exhausted.
-//   - "fire-and-forget": Emit schedules a goroutine and returns
+//   - [StrategySync] (default): Emit returns after the collector
+//     acknowledges or after the retry budget is exhausted.
+//   - [StrategyFireAndForget]: Emit schedules a goroutine and returns
 //     immediately; the goroutine's error is logged at debug and never
 //     surfaced to the caller.
+//
+// !!! FIRE-AND-FORGET CRASH-LOSS RISK !!!
+// In [StrategyFireAndForget] mode the background goroutine may not have
+// completed delivery before the process exits, in which case the
+// receipt is lost on the wire. Call [HttpEmitter.Drain] on graceful
+// shutdown to wait for in-flight deliveries.
 type HttpEmitter struct {
 	endpoint string
 	auth     HttpEmitterAuth
-	strategy string
+	strategy Strategy
 	retry    RetryConfig
 	logger   *slog.Logger
 	client   *http.Client
+
+	// pending tracks fire-and-forget background goroutines so Drain can
+	// wait for them on graceful shutdown.
+	pending sync.WaitGroup
 }
 
 const (
@@ -154,9 +187,9 @@ func NewHTTP(cfg HttpEmitterConfig) (*HttpEmitter, error) {
 
 	strategy := cfg.Strategy
 	if strategy == "" {
-		strategy = "sync"
+		strategy = StrategySync
 	}
-	if strategy != "sync" && strategy != "fire-and-forget" {
+	if strategy != StrategySync && strategy != StrategyFireAndForget {
 		return nil, fmt.Errorf("HttpEmitter: invalid strategy %q (want sync or fire-and-forget)", strategy)
 	}
 
@@ -184,6 +217,20 @@ func NewHTTP(cfg HttpEmitterConfig) (*HttpEmitter, error) {
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+
+	if !strings.HasPrefix(cfg.Endpoint, "https://") {
+		// ADR-0020 requires HTTPS in production. We accept http:// for
+		// loopback and tests but warn so misconfigurations don't slip
+		// through silently. Use slog.Default() in addition to the
+		// caller's logger so the warning is visible even when the
+		// caller configured an io.Discard logger.
+		msg := "HttpEmitter: endpoint is not HTTPS; receipts will travel unencrypted"
+		attr := slog.String("endpoint", cfg.Endpoint)
+		logger.Warn(msg, attr)
+		if cfg.Logger == nil {
+			slog.Default().Warn(msg, attr)
+		}
 	}
 
 	client := cfg.HTTPClient
@@ -214,17 +261,21 @@ func NewHTTP(cfg HttpEmitterConfig) (*HttpEmitter, error) {
 	}, nil
 }
 
-// Emit delivers r to the collector. In "sync" mode it waits for the ack
-// (or the retry budget to be exhausted). In "fire-and-forget" mode it
-// schedules a goroutine and returns nil immediately.
+// Emit delivers r to the collector. In [StrategySync] mode it waits
+// for the ack (or the retry budget to be exhausted). In
+// [StrategyFireAndForget] mode it schedules a goroutine and returns nil
+// immediately; call [HttpEmitter.Drain] before process exit if you want
+// to wait for in-flight deliveries.
 func (e *HttpEmitter) Emit(ctx context.Context, r receipt.AgentReceipt) error {
 	body, err := json.Marshal(r)
 	if err != nil {
 		return fmt.Errorf("HttpEmitter: marshal receipt: %w", err)
 	}
 
-	if e.strategy == "fire-and-forget" {
+	if e.strategy == StrategyFireAndForget {
+		e.pending.Add(1)
 		go func() {
+			defer e.pending.Done()
 			if err := e.deliver(context.Background(), body); err != nil {
 				e.logger.Debug("HttpEmitter dropped receipt (fire-and-forget)",
 					slog.String("endpoint", e.endpoint),
@@ -236,6 +287,24 @@ func (e *HttpEmitter) Emit(ctx context.Context, r receipt.AgentReceipt) error {
 	}
 
 	return e.deliver(ctx, body)
+}
+
+// Drain waits for every fire-and-forget delivery scheduled so far to
+// complete. Returns when the WaitGroup hits zero or when ctx is done,
+// whichever comes first. Safe to call when no fire-and-forget
+// deliveries are pending.
+func (e *HttpEmitter) Drain(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		e.pending.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (e *HttpEmitter) deliver(ctx context.Context, body []byte) error {

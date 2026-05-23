@@ -3,6 +3,7 @@ package emitters
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -22,6 +23,10 @@ type BufferingEmitterConfig struct {
 	// FlushInterval triggers a flush after this duration of buffered
 	// inactivity. Must be > 0.
 	FlushInterval time.Duration
+
+	// Logger is used for timer-path delivery failures. Defaults to
+	// slog.Default(); pass a discard handler if you want silence.
+	Logger *slog.Logger
 }
 
 // BufferingEmitter wraps a downstream [Emitter] and buffers receipts in
@@ -40,11 +45,19 @@ type BufferingEmitter struct {
 	inner         Emitter
 	maxBatchSize  int
 	flushInterval time.Duration
+	logger        *slog.Logger
 
+	// mu guards the buffer + timer + closed fields.
 	mu     sync.Mutex
 	buffer []receipt.AgentReceipt
 	timer  *time.Timer
 	closed bool
+
+	// deliveryMu serialises every call into the inner emitter so
+	// concurrent Emit, Flush, Close, and timer-driven flushes can never
+	// interleave batches at the downstream — required for hash-chained
+	// audit trails. Acquire AFTER releasing mu; never hold both at once.
+	deliveryMu sync.Mutex
 }
 
 // NewBuffering constructs a [BufferingEmitter] from the given config.
@@ -60,10 +73,15 @@ func NewBuffering(cfg BufferingEmitterConfig) (*BufferingEmitter, error) {
 	if cfg.FlushInterval <= 0 {
 		return nil, errors.New("BufferingEmitter: FlushInterval must be > 0")
 	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &BufferingEmitter{
 		inner:         cfg.Inner,
 		maxBatchSize:  cfg.MaxBatchSize,
 		flushInterval: cfg.FlushInterval,
+		logger:        logger,
 	}, nil
 }
 
@@ -148,17 +166,33 @@ func (b *BufferingEmitter) onTimer() {
 	if len(batch) == 0 {
 		return
 	}
-	// Swallow errors on the timer path so an internal goroutine never
-	// crashes the host program on a downstream failure. Callers should
+	// Log timer-path failures at debug — the timer goroutine must never
+	// crash the host program on a downstream failure. Callers should
 	// rely on Flush / Close for error surfacing.
-	_ = b.deliver(context.Background(), batch)
+	if err := b.deliver(context.Background(), batch); err != nil {
+		b.logger.Debug("BufferingEmitter: timer flush failed",
+			slog.String("err", err.Error()),
+		)
+	}
 }
 
+// deliver pushes every receipt in batch through the inner emitter,
+// serialised by deliveryMu so no two delivery loops can interleave at
+// the downstream. Errors from individual receipts are accumulated and
+// returned as one errors.Join — every receipt is attempted even when
+// earlier ones fail, so the tail of a batch is never silently dropped
+// (retries are the inner emitter's responsibility, not ours).
 func (b *BufferingEmitter) deliver(ctx context.Context, batch []receipt.AgentReceipt) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	b.deliveryMu.Lock()
+	defer b.deliveryMu.Unlock()
+	var errs []error
 	for _, r := range batch {
 		if err := b.inner.Emit(ctx, r); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
