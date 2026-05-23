@@ -1,17 +1,21 @@
 package collector
 
 import (
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
+
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // SQLiteStore is the production Store implementation backed by the shared
 // sdk/go/store SQLite schema. The collector wraps store.Store with a
-// duplicate-detection layer that maps SQLite UNIQUE-constraint violations to
-// ErrDuplicate.
+// duplicate-detection layer that maps id collisions to ErrDuplicate while
+// preserving chain-uniqueness violations (a chain-construction bug, not a
+// safe retry) as plain insert errors.
 type SQLiteStore struct {
 	inner *store.Store
 }
@@ -19,6 +23,10 @@ type SQLiteStore struct {
 // OpenSQLiteStore opens or creates a SQLite-backed collector store at the
 // given path. Use ":memory:" for an in-process database (useful in tests but
 // not durable across process restarts).
+//
+// store.Open sets MaxOpenConns(1), which is what makes ":memory:" retain
+// state across calls in the same process — each new connection to
+// ":memory:" otherwise gets a fresh in-memory database.
 func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 	s, err := store.Open(path)
 	if err != nil {
@@ -27,29 +35,32 @@ func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 	return &SQLiteStore{inner: s}, nil
 }
 
-func (s *SQLiteStore) Insert(r receipt.AgentReceipt, receiptHash string) error {
-	// Look up first to give callers a stable ErrDuplicate before they observe
-	// a raw driver error. Concurrent inserts with the same id can still race
-	// past this check, so Insert's own error is the authoritative duplicate
-	// signal — see below.
-	existing, err := s.inner.GetByID(r.ID)
-	if err != nil {
+func (s *SQLiteStore) Insert(r receipt.AgentReceipt, rawJSON []byte, receiptHash string) error {
+	// Cheap path: if the id already exists, return ErrDuplicate without
+	// attempting an INSERT. Handles the common HttpEmitter-retry case.
+	if existing, err := s.inner.GetByID(r.ID); err != nil {
 		return fmt.Errorf("lookup existing receipt: %w", err)
-	}
-	if existing != nil {
+	} else if existing != nil {
 		return ErrDuplicate
 	}
 
-	if err := s.inner.Insert(r, receiptHash); err != nil {
-		// modernc.org/sqlite reports UNIQUE-constraint violations as errors
-		// whose string contains "UNIQUE constraint failed". The driver does
-		// not export a typed error for this case, so a string-match is the
-		// pragmatic choice. The receipts table has two UNIQUE constraints —
-		// the PRIMARY KEY on id and idx_receipts_chain on (chain_id,
-		// sequence) — so we additionally check that the constraint applied
-		// here is on the id column, to avoid mis-reporting chain conflicts
-		// as duplicates.
-		if isUniqueIDViolation(err) {
+	if err := s.inner.InsertRaw(r, rawJSON, receiptHash); err != nil {
+		// Two failure modes to distinguish:
+		//   1. PRIMARY KEY collision on receipts.id — a concurrent insert
+		//      of the same id won the race after our cheap-path lookup
+		//      missed. This is a safe-retry duplicate.
+		//   2. UNIQUE collision on (chain_id, sequence) with a *different*
+		//      id — a chain-construction bug; not a safe retry.
+		//
+		// modernc.org/sqlite happens to report whichever constraint fired
+		// first, which depends on receipt content. Rather than parse the
+		// driver's message, ask the database: re-look up by id and if the
+		// row now exists, this was case (1); otherwise it was (2) and we
+		// propagate the original error verbatim.
+		if isPrimaryKeyViolation(err) {
+			return ErrDuplicate
+		}
+		if collided, lookupErr := s.inner.GetByID(r.ID); lookupErr == nil && collided != nil {
 			return ErrDuplicate
 		}
 		return fmt.Errorf("insert receipt: %w", err)
@@ -57,13 +68,18 @@ func (s *SQLiteStore) Insert(r receipt.AgentReceipt, receiptHash string) error {
 	return nil
 }
 
-func isUniqueIDViolation(err error) bool {
-	msg := err.Error()
-	if !strings.Contains(msg, "UNIQUE constraint failed") {
+// isPrimaryKeyViolation reports whether err is a SQLite PRIMARY KEY
+// constraint failure on the receipts.id column. This is a fast path that
+// avoids the re-lookup round-trip in Insert when the driver clearly
+// identifies an id collision (the common race-loser case). The Insert path's
+// re-lookup fallback handles the case where this returns false but the row
+// nonetheless exists — that path is the source of truth.
+func isPrimaryKeyViolation(err error) bool {
+	var sqliteErr *sqlite.Error
+	if !errors.As(err, &sqliteErr) {
 		return false
 	}
-	// "UNIQUE constraint failed: receipts.id" is the id-collision case.
-	return strings.Contains(msg, "receipts.id")
+	return sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY
 }
 
 func (s *SQLiteStore) Exists(id string) (bool, error) {

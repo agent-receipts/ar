@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -36,11 +37,20 @@ func resolveVersion() string {
 	return "dev"
 }
 
+// defaultAddr binds to loopback by default so a `go run ./cmd/collector` on a
+// developer workstation does not expose an unauthenticated audit-trail
+// endpoint to the network. Operators who want network reachability must opt
+// in explicitly with --addr 0.0.0.0:8787 (or, preferably, sit a reverse
+// proxy / mesh in front).
+const defaultAddr = "127.0.0.1:8787"
+
 func main() {
-	addr := flag.String("addr", envOrDefault("AGENTRECEIPTS_COLLECTOR_ADDR", ":8787"), "HTTP listen address")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	addr := flag.String("addr", envOrDefault("AGENTRECEIPTS_COLLECTOR_ADDR", defaultAddr), "HTTP listen address (default loopback; use 0.0.0.0:port to expose)")
 	dbPath := flag.String("db", envOrDefault("AGENTRECEIPTS_COLLECTOR_DB", "collector.db"), "SQLite database path (use ':memory:' for ephemeral storage — not durable)")
-	maxBody := flag.Int64("max-body-bytes", envInt64OrDefault("AGENTRECEIPTS_COLLECTOR_MAX_BODY_BYTES", collector.DefaultMaxBodyBytes), "Maximum request body size in bytes")
-	drainTimeout := flag.Duration("drain-timeout", envDurationOrDefault("AGENTRECEIPTS_COLLECTOR_DRAIN_TIMEOUT", 10*time.Second), "Graceful shutdown timeout")
+	maxBody := flag.Int64("max-body-bytes", envInt64OrDefault(logger, "AGENTRECEIPTS_COLLECTOR_MAX_BODY_BYTES", collector.DefaultMaxBodyBytes), "Maximum request body size in bytes")
+	drainTimeout := flag.Duration("drain-timeout", envDurationOrDefault(logger, "AGENTRECEIPTS_COLLECTOR_DRAIN_TIMEOUT", 10*time.Second), "Graceful shutdown timeout")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -49,12 +59,11 @@ func main() {
 		return
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	logger.Info("collector starting", "version", resolveVersion(), "addr", *addr, "db", *dbPath)
 
 	store, err := collector.OpenSQLiteStore(*dbPath)
 	if err != nil {
-		logger.Error("failed to open store", "err", err.Error())
+		logger.Error("failed to open store", slog.Any("err", err))
 		os.Exit(1)
 	}
 	defer store.Close()
@@ -65,7 +74,7 @@ func main() {
 		Logger:       logger,
 	}, store)
 	if err != nil {
-		logger.Error("failed to construct server", "err", err.Error())
+		logger.Error("failed to construct server", slog.Any("err", err))
 		os.Exit(1)
 	}
 
@@ -73,7 +82,7 @@ func main() {
 	defer cancel()
 
 	if err := collector.Run(ctx, srv, *drainTimeout, logger); err != nil {
-		logger.Error("collector exited with error", "err", err.Error())
+		logger.Error("collector exited with error", slog.Any("err", err))
 		os.Exit(1)
 	}
 	logger.Info("collector stopped cleanly")
@@ -86,25 +95,33 @@ func envOrDefault(name, def string) string {
 	return def
 }
 
-func envInt64OrDefault(name string, def int64) int64 {
+// envInt64OrDefault parses an int64 from the named env var. On parse failure
+// it logs a warning and falls back to def — silent fallback hides operator
+// misconfigurations (e.g. setting MAX_BODY_BYTES=1MB and getting a 1 MiB
+// default rather than 1 000 000 bytes).
+func envInt64OrDefault(log *slog.Logger, name string, def int64) int64 {
 	v := os.Getenv(name)
 	if v == "" {
 		return def
 	}
-	var parsed int64
-	if _, err := fmt.Sscanf(v, "%d", &parsed); err != nil {
+	parsed, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		log.Warn("invalid env var, using default",
+			"name", name, "value", v, "default", def, slog.Any("err", err))
 		return def
 	}
 	return parsed
 }
 
-func envDurationOrDefault(name string, def time.Duration) time.Duration {
+func envDurationOrDefault(log *slog.Logger, name string, def time.Duration) time.Duration {
 	v := os.Getenv(name)
 	if v == "" {
 		return def
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
+		log.Warn("invalid env var, using default",
+			"name", name, "value", v, "default", def, slog.Any("err", err))
 		return def
 	}
 	return d

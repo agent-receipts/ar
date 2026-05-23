@@ -196,20 +196,36 @@ func migrateToolName(db *sql.DB) error {
 	return err
 }
 
-// Insert persists a signed receipt with its precomputed hash.
+// Insert persists a signed receipt with its precomputed hash. The receipt is
+// re-marshalled to JSON before storage; callers that need to preserve the
+// exact wire bytes the agent signed over (for cross-SDK round-trips or for
+// receipts that carry forward-compat fields the Go struct does not know
+// about) should use InsertRaw instead.
 func (s *Store) Insert(r receipt.AgentReceipt, receiptHash string) error {
-	subj := r.CredentialSubject
 	rJSON, err := json.Marshal(r)
 	if err != nil {
 		return fmt.Errorf("marshal receipt: %w", err)
 	}
+	return s.InsertRaw(r, rJSON, receiptHash)
+}
+
+// InsertRaw persists a signed receipt and the exact raw JSON bytes the
+// receipt was decoded from. The struct values are used for the indexed
+// columns (id, chain_id, sequence, etc.); rawJSON is stored verbatim in
+// the receipt_json column so an auditor can later re-canonicalise and verify
+// the agent's signature against the bytes the agent actually signed over.
+//
+// Intended for use by HTTP receivers (collector) and other code paths that
+// have the wire bytes in hand. Callers without raw bytes can use Insert.
+func (s *Store) InsertRaw(r receipt.AgentReceipt, rawJSON []byte, receiptHash string) error {
+	subj := r.CredentialSubject
 
 	var prevHash *string
 	if subj.Chain.PreviousReceiptHash != nil {
 		prevHash = subj.Chain.PreviousReceiptHash
 	}
 
-	_, err = s.db.Exec(`
+	_, err := s.db.Exec(`
 		INSERT INTO receipts
 		(id, chain_id, sequence, action_type, tool_name, risk_level, status,
 		 timestamp, issuer_id, principal_id, receipt_json, receipt_hash,
@@ -225,7 +241,7 @@ func (s *Store) Insert(r receipt.AgentReceipt, receiptHash string) error {
 		subj.Action.Timestamp,
 		r.Issuer.ID,
 		subj.Principal.ID,
-		string(rJSON),
+		string(rawJSON),
 		receiptHash,
 		prevHash,
 	)

@@ -37,7 +37,7 @@ func TestInMemoryStore_InsertAndExists(t *testing.T) {
 		t.Fatalf("Exists before insert: exists=%v err=%v, want false/nil", exists, err)
 	}
 
-	if err := s.Insert(r, "sha256:deadbeef"); err != nil {
+	if err := s.Insert(r, []byte(`{"raw":"bytes"}`), "sha256:deadbeef"); err != nil {
 		t.Fatalf("Insert: unexpected error: %v", err)
 	}
 
@@ -54,19 +54,45 @@ func TestInMemoryStore_InsertDuplicate(t *testing.T) {
 	s := NewInMemoryStore()
 	r := testReceipt("urn:receipt:dup")
 
-	if err := s.Insert(r, "sha256:1"); err != nil {
+	if err := s.Insert(r, []byte(`{}`), "sha256:1"); err != nil {
 		t.Fatalf("first Insert: %v", err)
 	}
 
-	err := s.Insert(r, "sha256:2")
+	err := s.Insert(r, []byte(`{}`), "sha256:2")
 	if !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("second Insert: err=%v, want ErrDuplicate", err)
 	}
 
 	// The first insert's data must not be overwritten.
-	_, hash, ok := s.Get(r.ID)
+	_, _, hash, ok := s.Get(r.ID)
 	if !ok || hash != "sha256:1" {
 		t.Fatalf("Get after duplicate Insert: hash=%q ok=%v, want sha256:1/true", hash, ok)
+	}
+}
+
+func TestInMemoryStore_InsertPreservesRawBytes(t *testing.T) {
+	s := NewInMemoryStore()
+	r := testReceipt("urn:receipt:raw")
+	raw := []byte(`{"_future_field":"forward-compat","id":"urn:receipt:raw"}`)
+
+	if err := s.Insert(r, raw, "sha256:r"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	_, gotRaw, _, ok := s.Get(r.ID)
+	if !ok {
+		t.Fatal("Get: not found")
+	}
+	if string(gotRaw) != string(raw) {
+		t.Fatalf("Get returned raw bytes %q, want %q", gotRaw, raw)
+	}
+
+	// Mutating the caller's buffer after Insert must not affect stored
+	// bytes — InMemoryStore copies on insert.
+	raw[0] = '!'
+	_, gotRawAfterMutate, _, _ := s.Get(r.ID)
+	if gotRawAfterMutate[0] == '!' {
+		t.Fatal("InMemoryStore did not copy raw bytes; caller mutation leaked into the store")
 	}
 }
 
@@ -83,7 +109,7 @@ func TestInMemoryStore_ConcurrentInserts(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i] = s.Insert(r, "sha256:r")
+			results[i] = s.Insert(r, []byte(`{}`), "sha256:r")
 		}(i)
 	}
 	wg.Wait()

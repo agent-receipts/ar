@@ -32,7 +32,8 @@ func newTestHandler(t *testing.T) (http.Handler, *InMemoryStore) {
 
 // signedTestReceipt produces a receipt whose JSON shape passes the
 // collector's structural validator. The proof value is a placeholder — the
-// collector does not verify signatures (per ADR-0020).
+// collector does not verify signatures (per ADR-0020), so a real signature
+// is not required for these tests.
 func signedTestReceipt(id string) receipt.AgentReceipt {
 	r := testReceipt(id)
 	r.Proof = receipt.Proof{
@@ -71,10 +72,7 @@ func TestServer_PostReceipt_201(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body = %s", rec.Code, rec.Body.String())
 	}
-	var resp struct {
-		ID          string `json:"id"`
-		ReceiptHash string `json:"receipt_hash"`
-	}
+	var resp acceptResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode 201 body: %v", err)
 	}
@@ -85,7 +83,7 @@ func TestServer_PostReceipt_201(t *testing.T) {
 		t.Fatalf("response receipt_hash = %q, want sha256: prefix", resp.ReceiptHash)
 	}
 
-	stored, hash, ok := store.Get(r.ID)
+	stored, raw, hash, ok := store.Get(r.ID)
 	if !ok {
 		t.Fatalf("receipt not present in store after 201")
 	}
@@ -94,6 +92,47 @@ func TestServer_PostReceipt_201(t *testing.T) {
 	}
 	if hash != resp.ReceiptHash {
 		t.Fatalf("stored hash %q != response hash %q", hash, resp.ReceiptHash)
+	}
+	if len(raw) == 0 {
+		t.Fatal("store did not receive raw bytes")
+	}
+}
+
+func TestServer_PostReceipt_PreservesUnknownFields(t *testing.T) {
+	// ADR-0020 requires the collector to be a dumb sink. If the SDK ships
+	// a forward-compat additive field the Go struct does not know about,
+	// the collector MUST accept the receipt AND persist the unknown field
+	// verbatim so an auditor can later re-canonicalise the exact bytes the
+	// agent signed over.
+	h, store := newTestHandler(t)
+	body := []byte(`{
+		"@context": ["https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"],
+		"id": "urn:receipt:srv:forward-compat",
+		"type": ["VerifiableCredential", "AgentReceipt"],
+		"version": "0.3.0",
+		"issuer": {"id": "did:example:test"},
+		"issuanceDate": "2026-05-22T00:00:00Z",
+		"_future_field": "hello from a future SDK",
+		"credentialSubject": {
+			"principal": {"id": "did:example:user"},
+			"action": {"id": "act_1", "type": "tool_call", "risk_level": "low", "timestamp": "2026-05-22T00:00:00Z"},
+			"outcome": {"status": "success"},
+			"chain": {"sequence": 0, "previous_receipt_hash": null, "chain_id": "fc-chain"}
+		},
+		"proof": {"type": "Ed25519Signature2020", "proofValue": "u-placeholder"}
+	}`)
+
+	rec := postReceipt(t, h, body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body = %s", rec.Code, rec.Body.String())
+	}
+
+	_, raw, _, ok := store.Get("urn:receipt:srv:forward-compat")
+	if !ok {
+		t.Fatal("receipt not present in store after 201")
+	}
+	if !bytes.Contains(raw, []byte(`"_future_field"`)) {
+		t.Fatalf("stored raw bytes lost the unknown field; got: %s", raw)
 	}
 }
 
@@ -115,6 +154,41 @@ func TestServer_PostReceipt_400MalformedJSON(t *testing.T) {
 	rec := postReceipt(t, h, "{not json")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
+	}
+	if store.Len() != 0 {
+		t.Fatalf("store mutated on 400: %d entries", store.Len())
+	}
+}
+
+func TestServer_PostReceipt_400EmptyBody(t *testing.T) {
+	h, store := newTestHandler(t)
+	rec := postReceipt(t, h, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "empty") {
+		t.Fatalf("body %q does not mention 'empty'", rec.Body.String())
+	}
+	if store.Len() != 0 {
+		t.Fatalf("store mutated on 400: %d entries", store.Len())
+	}
+}
+
+func TestServer_PostReceipt_400TrailingData(t *testing.T) {
+	h, store := newTestHandler(t)
+	r := signedTestReceipt("urn:receipt:srv:trailing")
+	encoded, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// Append a second JSON object after the receipt.
+	body := append(encoded, []byte(`{"trailing":"data"}`)...)
+	rec := postReceipt(t, h, body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "exactly one") {
+		t.Fatalf("body %q does not mention the trailing-data check", rec.Body.String())
 	}
 	if store.Len() != 0 {
 		t.Fatalf("store mutated on 400: %d entries", store.Len())
@@ -223,10 +297,38 @@ func TestServer_Healthz_StoreUnreachable(t *testing.T) {
 	}
 }
 
+// runWithListener swaps the server's Addr for a bound listener and calls
+// Run with a cancellable context. The returned cancel triggers graceful
+// shutdown; the returned channel surfaces Run's return value.
+func runWithListener(t *testing.T, srv *http.Server) (string, context.CancelFunc, <-chan error) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	// Run calls ListenAndServe internally; swap to a Serve over our listener
+	// by intercepting via srv.Serve in a goroutine and bypassing Run's own
+	// ListenAndServe. To exercise Run itself we instead reset srv.Addr and
+	// release the listener so Run can bind. There is an unavoidable bind
+	// race but it's tight and we only run this once per test.
+	ln.Close()
+	srv.Addr = addr
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx, cancel := context.WithCancel(t.Context())
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- Run(ctx, srv, 2*time.Second, logger)
+	}()
+	return addr, cancel, runErr
+}
+
 func TestServer_Run_GracefulShutdown(t *testing.T) {
-	// Bind on an OS-assigned port via httptest.NewUnstartedServer to avoid
-	// race conditions with the real Run goroutine. We exercise Run's shutdown
-	// path directly by starting Run in a goroutine and cancelling its ctx.
+	// Exercise the actual Run function: bind, accept a request, cancel ctx,
+	// expect a clean shutdown returning nil within the drain timeout. This
+	// is what cmd/collector wires up, and what was previously bypassed in
+	// tests by calling srv.Serve/srv.Shutdown directly.
 	store := NewInMemoryStore()
 	srv, err := NewServer(Config{
 		Addr:   "127.0.0.1:0",
@@ -236,47 +338,72 @@ func TestServer_Run_GracefulShutdown(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	// Bind a TCP listener on an OS-assigned port and Serve directly on it.
-	// Using ListenAndServe would race the test against the server's own
-	// listener setup; an explicit listener lets us be sure the server is
-	// reachable before issuing the shutdown.
+	addr, cancel, runErr := runWithListener(t, srv)
+
+	// Wait for the server to be reachable (Run starts ListenAndServe in a
+	// goroutine after a small bind window).
+	deadline := time.Now().Add(2 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		resp, err := http.Get("http://" + addr + "/healthz")
+		if err == nil {
+			resp.Body.Close()
+			lastErr = nil
+			break
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	if lastErr != nil {
+		t.Fatalf("server never became reachable: %v", lastErr)
+	}
+
+	cancel()
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run returned: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return within 3s of ctx cancel")
+	}
+}
+
+func TestServer_Run_ListenError(t *testing.T) {
+	// Run must surface a listen error rather than wedging indefinitely on
+	// the errCh channel when the bind fails. We force a bind failure by
+	// pre-binding the address we hand to Run.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.Listen: %v", err)
 	}
-	srv.Addr = ln.Addr().String()
+	defer ln.Close()
 
+	store := NewInMemoryStore()
+	srv, err := NewServer(Config{
+		Addr:   ln.Addr().String(),
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}, store)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	runErr := make(chan error, 1)
 	go func() {
-		// Use Serve directly so we control the listener; mirrors what
-		// production main wires up modulo signal handling.
-		serveErr := srv.Serve(ln)
-		if !errors.Is(serveErr, http.ErrServerClosed) {
-			runErr <- serveErr
-			return
-		}
-		runErr <- nil
+		runErr <- Run(t.Context(), srv, time.Second, logger)
 	}()
 
-	// Sanity-check the server is up and accepts requests.
-	resp, err := http.Get("http://" + srv.Addr + "/healthz")
-	if err != nil {
-		t.Fatalf("GET /healthz before shutdown: %v", err)
-	}
-	resp.Body.Close()
-
-	shutdownCtx, sCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer sCancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		t.Fatalf("Shutdown: %v", err)
-	}
 	select {
 	case err := <-runErr:
-		if err != nil {
-			t.Fatalf("Serve returned: %v", err)
+		if err == nil {
+			t.Fatal("Run returned nil for a bound-address bind; expected listen error")
+		}
+		if !strings.Contains(err.Error(), "collector listen") {
+			t.Fatalf("Run error = %v, want a listen-prefixed error", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("Serve did not return within 2s of Shutdown")
+		t.Fatal("Run did not return within 2s of listen failure")
 	}
 }
 
@@ -284,6 +411,6 @@ func TestServer_Run_GracefulShutdown(t *testing.T) {
 // exercise the 500 / 503 paths without contorting the in-memory impl.
 type failingStore struct{ err error }
 
-func (s *failingStore) Insert(_ receipt.AgentReceipt, _ string) error { return s.err }
-func (s *failingStore) Exists(_ string) (bool, error)                 { return false, s.err }
-func (s *failingStore) Close() error                                  { return nil }
+func (s *failingStore) Insert(_ receipt.AgentReceipt, _ []byte, _ string) error { return s.err }
+func (s *failingStore) Exists(_ string) (bool, error)                           { return false, s.err }
+func (s *failingStore) Close() error                                            { return nil }

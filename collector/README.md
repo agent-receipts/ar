@@ -47,14 +47,31 @@ The collector SHOULD:
 
 Structural validation only. The collector returns 400 when:
 
-- The body is not valid JSON
+- The body is empty or not valid JSON
 - The body is over `--max-body-bytes` (default 1 MiB)
 - The receipt is missing `id`, `credentialSubject.chain.chain_id`,
   `credentialSubject.action.type`, or `proof.proofValue`
 - The body contains more than one JSON object
 
-Anything that parses and has those minimal fields is accepted regardless of
-signature validity (per ADR-0020).
+Unknown JSON fields are accepted and persisted verbatim. ADR-0020 makes the
+collector a forward-compat sink: a future SDK shipping a new field MUST NOT
+require every collector to upgrade first. Anything that parses and has the
+four minimal fields above is accepted regardless of signature validity.
+
+Wire bytes are stored verbatim, not a re-marshal of the Go struct, so an
+auditor can later re-canonicalise and verify the agent's signature against
+exactly what the agent signed over.
+
+### Status codes
+
+The receipts handler emits these statuses:
+
+- `201` — accepted and persisted
+- `400` — malformed body (see above)
+- `409` — receipt id already exists
+- `500` — store backend failure (only)
+
+`/healthz` returns `200` when the store is reachable, `503` otherwise.
 
 ### Other routes
 
@@ -63,14 +80,25 @@ signature validity (per ADR-0020).
 ## Running
 
 ```sh
-go run ./cmd/collector --addr :8787 --db collector.db
+go run ./cmd/collector --addr 127.0.0.1:8787 --db collector.db
 ```
+
+The default `--addr` binds to loopback (`127.0.0.1:8787`) so a `go run` on a
+workstation does not expose an unauthenticated audit-trail endpoint to the
+network. To expose the collector beyond localhost, opt in explicitly:
+
+```sh
+go run ./cmd/collector --addr 0.0.0.0:8787
+```
+
+In production, run the collector behind a reverse proxy or service mesh that
+terminates TLS and applies authentication — see Out of scope (v0) below.
 
 ### Configuration
 
 | Flag | Env var | Default | Notes |
 |---|---|---|---|
-| `--addr` | `AGENTRECEIPTS_COLLECTOR_ADDR` | `:8787` | HTTP listen address |
+| `--addr` | `AGENTRECEIPTS_COLLECTOR_ADDR` | `127.0.0.1:8787` | HTTP listen address (loopback by default) |
 | `--db` | `AGENTRECEIPTS_COLLECTOR_DB` | `collector.db` | SQLite path; use `:memory:` for non-durable storage |
 | `--max-body-bytes` | `AGENTRECEIPTS_COLLECTOR_MAX_BODY_BYTES` | `1048576` (1 MiB) | Per-request body cap |
 | `--drain-timeout` | `AGENTRECEIPTS_COLLECTOR_DRAIN_TIMEOUT` | `10s` | Graceful shutdown drain window |

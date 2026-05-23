@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -867,5 +868,74 @@ func TestVerifyStoredChain(t *testing.T) {
 	}
 	if !result.Valid {
 		t.Errorf("expected valid chain, broken at %d", result.BrokenAt)
+	}
+}
+
+func TestInsertRaw_PreservesUnknownFields(t *testing.T) {
+	// InsertRaw must store the on-wire bytes verbatim so that auditors can
+	// later re-verify the agent's signature against exactly what the agent
+	// signed. The Go struct does not know about every field a future SDK
+	// version may emit; round-tripping via json.Marshal(struct) would drop
+	// those fields and break cross-SDK verification. This test pins that
+	// behaviour by injecting an unknown field into the raw bytes and
+	// asserting it survives the store round-trip.
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-raw", nil)
+	h, _ := receipt.HashReceipt(r)
+
+	rJSON, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// Splice in an unknown top-level field. The struct decoder ignores it,
+	// but the bytes we hand to InsertRaw still contain it.
+	raw := strings.Replace(string(rJSON), `"id":`, `"_future_field":"hello",`+`"id":`, 1)
+	if !strings.Contains(raw, `"_future_field":"hello"`) {
+		t.Fatalf("splice failed: %s", raw)
+	}
+
+	if err := s.InsertRaw(r, []byte(raw), h); err != nil {
+		t.Fatalf("InsertRaw: %v", err)
+	}
+
+	// Pull the stored receipt_json column back directly — using GetByID
+	// would round-trip through the Go struct and lose the field, defeating
+	// the test.
+	var stored string
+	if err := s.db.QueryRow("SELECT receipt_json FROM receipts WHERE id = ?", r.ID).Scan(&stored); err != nil {
+		t.Fatalf("select stored bytes: %v", err)
+	}
+	if !strings.Contains(stored, `"_future_field":"hello"`) {
+		t.Fatalf("stored bytes lost unknown field: %s", stored)
+	}
+}
+
+func TestInsertRaw_IndexedColumnsReflectStruct(t *testing.T) {
+	// When raw bytes and struct disagree on an indexed field (which should
+	// not happen in practice — the collector decodes the raw bytes — but
+	// could if a caller misused the API), the struct values win for the
+	// indexed columns. This documents that contract.
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-indexed", nil)
+	h, _ := receipt.HashReceipt(r)
+
+	if err := s.InsertRaw(r, []byte(`{"id":"different","raw":"bytes"}`), h); err != nil {
+		t.Fatalf("InsertRaw: %v", err)
+	}
+
+	got, err := s.GetByID(r.ID)
+	if err != nil {
+		t.Fatalf("GetByID by struct id: %v", err)
+	}
+	// GetByID parses the stored receipt_json — so it will see the raw bytes'
+	// id field, not the struct's. The fact that GetByID found a row at all
+	// means the indexed `id` column came from the struct.
+	if got == nil {
+		t.Fatal("row missing for struct id; indexed column did not reflect struct")
+	}
+	if got.ID != "different" {
+		t.Fatalf("decoded id = %q; expected the raw-bytes value 'different' (parser reads receipt_json)", got.ID)
 	}
 }

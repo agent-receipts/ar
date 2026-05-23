@@ -1,10 +1,12 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -14,7 +16,7 @@ import (
 
 // Config holds collector server configuration.
 type Config struct {
-	// Addr is the listen address (e.g. ":8080"). Required.
+	// Addr is the listen address (e.g. "127.0.0.1:8787"). Required.
 	Addr string
 
 	// MaxBodyBytes caps the size of a single receipt POST body. Bodies larger
@@ -34,6 +36,17 @@ type Config struct {
 // parameters_disclosure envelopes well beyond typical sizes while bounding
 // memory exposure for adversarial clients.
 const DefaultMaxBodyBytes int64 = 1 << 20
+
+// acceptResponse is the wire body returned on 201 Created.
+type acceptResponse struct {
+	ID          string `json:"id"`
+	ReceiptHash string `json:"receipt_hash"`
+}
+
+// errorResponse is the wire body returned for non-201 responses.
+type errorResponse struct {
+	Error string `json:"error"`
+}
 
 // NewServer wires the collector's routes onto a fresh http.Server. The caller
 // is responsible for starting and shutting down the returned server.
@@ -65,6 +78,10 @@ func NewServer(cfg Config, store Store) (*http.Server, error) {
 		ReadTimeout:  pickDuration(cfg.ReadTimeout, 10*time.Second),
 		WriteTimeout: pickDuration(cfg.WriteTimeout, 10*time.Second),
 		IdleTimeout:  60 * time.Second,
+		// Route net/http's internal logger through slog so accept errors and
+		// handler panics appear in the structured log stream rather than
+		// breaking it with plain-text writes to stderr.
+		ErrorLog: slog.NewLogLogger(cfg.Logger.Handler(), slog.LevelError),
 	}
 	return srv, nil
 }
@@ -92,13 +109,6 @@ type receiptHandler struct {
 	maxBodyBytes int64
 }
 
-// errorResponse is the wire body returned for non-201 responses. Mirrors the
-// shape commonly used by JSON HTTP APIs (single `error` string) so client
-// SDKs do not need a richer schema.
-type errorResponse struct {
-	Error string `json:"error"`
-}
-
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -110,22 +120,38 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func (h *receiptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Cap body size before decoding. http.MaxBytesReader fails the JSON
-	// decode with an http.MaxBytesError when the cap is exceeded.
+	// Cap body size before reading. http.MaxBytesReader surfaces
+	// http.MaxBytesError on the read side when the cap is exceeded.
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxBodyBytes)
 
-	var ar receipt.AgentReceipt
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&ar); err != nil {
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
 			h.log.Warn("receipt rejected: body too large", "limit", h.maxBodyBytes)
 			writeError(w, http.StatusBadRequest, "request body exceeds maximum size")
 			return
 		}
-		h.log.Warn("receipt rejected: malformed json", "err", err.Error())
-		writeError(w, http.StatusBadRequest, "malformed receipt: "+err.Error())
+		h.log.Warn("receipt rejected: body read failed", slog.Any("err", err))
+		writeError(w, http.StatusBadRequest, "malformed receipt")
+		return
+	}
+	if len(rawBody) == 0 {
+		writeError(w, http.StatusBadRequest, "request body is empty")
+		return
+	}
+
+	// Decode the struct view for indexed columns and validation. The raw
+	// bytes themselves are what we hand to the store — preserving any
+	// forward-compat fields the Go struct does not know about. Per
+	// ADR-0020 the collector is a dumb sink; rejecting on unknown fields
+	// would couple SDK upgrades to collector upgrades, so DisallowUnknownFields
+	// is intentionally not set.
+	var ar receipt.AgentReceipt
+	dec := json.NewDecoder(bytes.NewReader(rawBody))
+	if err := dec.Decode(&ar); err != nil {
+		h.log.Warn("receipt rejected: malformed json", slog.Any("err", err))
+		writeError(w, http.StatusBadRequest, "malformed receipt: invalid JSON")
 		return
 	}
 	// Reject trailing data after the receipt. A second JSON value in the
@@ -137,7 +163,7 @@ func (h *receiptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := validateReceiptStructure(ar); err != nil {
-		h.log.Warn("receipt rejected: structural validation failed", "id", ar.ID, "err", err.Error())
+		h.log.Warn("receipt rejected: structural validation failed", "id", ar.ID, slog.Any("err", err))
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -146,18 +172,18 @@ func (h *receiptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Canonicalisation failure here implies the receipt's JSON shape
 		// passed Unmarshal but cannot be canonicalised. Treat as malformed.
-		h.log.Warn("receipt rejected: canonicalization failed", "id", ar.ID, "err", err.Error())
-		writeError(w, http.StatusBadRequest, "receipt canonicalization failed: "+err.Error())
+		h.log.Warn("receipt rejected: canonicalization failed", "id", ar.ID, slog.Any("err", err))
+		writeError(w, http.StatusBadRequest, "receipt canonicalization failed")
 		return
 	}
 
-	if err := h.store.Insert(ar, hash); err != nil {
+	if err := h.store.Insert(ar, rawBody, hash); err != nil {
 		if errors.Is(err, ErrDuplicate) {
 			h.log.Info("receipt already exists, returning 409", "id", ar.ID)
 			writeJSON(w, http.StatusConflict, errorResponse{Error: "receipt id already exists"})
 			return
 		}
-		h.log.Error("receipt insert failed", "id", ar.ID, "err", err.Error())
+		h.log.Error("receipt insert failed", "id", ar.ID, slog.Any("err", err))
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -167,10 +193,7 @@ func (h *receiptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"chain_id", ar.CredentialSubject.Chain.ChainID,
 		"sequence", ar.CredentialSubject.Chain.Sequence,
 	)
-	writeJSON(w, http.StatusCreated, map[string]string{
-		"id":           ar.ID,
-		"receipt_hash": hash,
-	})
+	writeJSON(w, http.StatusCreated, acceptResponse{ID: ar.ID, ReceiptHash: hash})
 }
 
 // validateReceiptStructure enforces the minimal shape required to make the
@@ -196,10 +219,12 @@ func validateReceiptStructure(r receipt.AgentReceipt) error {
 
 func healthHandler(store Store, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// A simple Exists lookup against a known-missing id is enough to
-		// confirm the backing store is responsive without mutating state.
-		if _, err := store.Exists("__healthz__"); err != nil {
-			log.Error("healthz: store unreachable", "err", err.Error())
+		// Use a reserved id shape that no legitimate receipt could collide
+		// with — a real receipt id would have to fabricate this exact urn
+		// scheme, in which case Exists returning true still does not
+		// invalidate the liveness signal (the store is still reachable).
+		if _, err := store.Exists("urn:agent-receipts:collector:healthz"); err != nil {
+			log.Error("healthz: store unreachable", slog.Any("err", err))
 			writeError(w, http.StatusServiceUnavailable, "store unreachable")
 			return
 		}
@@ -232,11 +257,18 @@ func Run(ctx context.Context, srv *http.Server, drainTimeout time.Duration, log 
 		log.Info("collector shutting down", "drain_timeout", drainTimeout)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("collector shutdown: %w", err)
+		shutdownErr := srv.Shutdown(shutdownCtx)
+		// Wait for ListenAndServe to return regardless of Shutdown's outcome,
+		// so a caller restarting the server doesn't race against a still-
+		// bound socket. If Shutdown fails (drain timeout exceeded), surface
+		// that error in preference to the listen-loop's ErrServerClosed.
+		listenErr := <-errCh
+		if shutdownErr != nil {
+			return fmt.Errorf("collector shutdown: %w", shutdownErr)
 		}
-		// Wait for ListenAndServe to return so a caller restarting the
-		// server doesn't race against a still-bound socket.
-		return <-errCh
+		if listenErr != nil {
+			return fmt.Errorf("collector listen: %w", listenErr)
+		}
+		return nil
 	}
 }
