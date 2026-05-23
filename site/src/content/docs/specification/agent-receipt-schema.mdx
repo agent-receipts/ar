@@ -50,7 +50,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
   ],
   "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
   "type": ["VerifiableCredential", "AgentReceipt"],
-  "version": "0.2.0",
+  "version": "0.3.0",
 
   "issuer": {
     "id": "did:agent:claude-cowork-instance-abc123",
@@ -81,8 +81,17 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
         "resource": "/tmp/old-report.pdf"
       },
       "parameters_hash": "sha256:a3f1c2d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1d6",
-      "timestamp": "2026-03-31T14:30:00Z",
-      "trusted_timestamp": null
+      "parameters_disclosure": {
+        "path": "/tmp/old-report.pdf"
+      },
+      "peer_credential": {
+        "platform": "darwin",
+        "pid": 8421,
+        "uid": 501,
+        "gid": 20,
+        "exe_path": "/Applications/Claude.app/Contents/MacOS/Claude"
+      },
+      "timestamp": "2026-03-31T14:30:00Z"
     },
 
     "intent": {
@@ -94,10 +103,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 
     "outcome": {
       "status": "success",
-      "error": null,
       "reversible": false,
-      "reversal_method": null,
-      "reversal_window_seconds": null,
       "state_change": {
         "before_hash": "sha256:d604f3e5a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3a9",
         "after_hash": "sha256:e7a504f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4ba"
@@ -107,8 +113,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
     "authorization": {
       "scopes": ["filesystem:write"],
       "granted_at": "2026-03-31T14:00:00Z",
-      "expires_at": "2026-03-31T15:00:00Z",
-      "grant_ref": null
+      "expires_at": "2026-03-31T15:00:00Z"
     },
 
     "chain": {
@@ -135,7 +140,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `@context` | Yes | JSON-LD context. Must include the W3C VC v2 and Agent Receipt context URIs in order. |
 | `id` | Yes | Globally unique identifier. Must be `urn:receipt:<uuid>`. |
 | `type` | Yes | Must be `["VerifiableCredential", "AgentReceipt"]`. |
-| `version` | Yes | Protocol version. Must be `"0.1.0"`, `"0.2.0"`, or `"0.2.1"`. Verifiers MUST accept all three. |
+| `version` | Yes | Protocol version. Must be `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, or `"0.3.0"`. Verifiers MUST accept all four. |
 | `issuer` | Yes | The agent or platform that issued the receipt. |
 | `issuanceDate` | Yes | ISO 8601 datetime when the receipt was issued. May differ from `action.timestamp`. |
 | `credentialSubject` | Yes | The receipt payload. |
@@ -171,9 +176,12 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `risk_level` | Yes | `low`, `medium`, `high`, or `critical`. |
 | `target.system` | No | The system or service acted upon. |
 | `target.resource` | No | The specific resource within the system. |
-| `parameters_hash` | No | `sha256:` prefixed hash of action parameters (RFC 8785 canonical JSON). |
+| `parameters_hash` | No | `sha256:` prefixed hash of action parameters (RFC 8785 canonical JSON). Always authoritative for parameter integrity; `parameters_disclosure` is additive metadata. |
+| `parameters_disclosure` | No | Operator-controlled disclosure of action parameters. Either the legacy flat-map (v0.2.x — `{ [key: string]: string }`) or the HPKE asymmetric encryption envelope defined by ADR-0012 (v0.3.0+). Mode is per-emitter; a receipt MUST NOT mix shapes. The envelope shape is validated by the sibling [`parameters-disclosure.schema.json`](https://github.com/agent-receipts/ar/blob/main/spec/schema/parameters-disclosure.schema.json). Operators MUST NOT place plaintext secrets or PII in the legacy flat-map form. |
+| `peer_credential` | No | OS-attested peer process metadata captured by the daemon at the SDK↔daemon boundary (`platform`, `pid`, optional `uid`/`gid`/`exe_path`). Present only on receipts emitted through a daemon (ADR-0010); absent on direct SDK emissions. Daemon-attested, not agent-claimed. |
+| `emitter_metadata` | No | Daemon-observed emitter-side metadata. Currently a single `drop_count` field on synthetic events_dropped receipts (ADR-0010). Daemon-attested, not agent-claimed. |
 | `timestamp` | Yes | ISO 8601 datetime when the action was executed. |
-| `trusted_timestamp` | No | Base64-encoded RFC 3161 TimeStampToken, or `null`. |
+| `trusted_timestamp` | No | Base64-encoded RFC 3161 TimeStampToken. Absent (not `null`) when not present — see [Optional-field rule](#optional-field-rule). |
 
 ### `intent`
 
@@ -189,10 +197,10 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | Field | Required | Description |
 |---|---|---|
 | `status` | Yes | `success`, `failure`, or `pending`. |
-| `error` | No | Error message if `status` is `failure`. |
+| `error` | No | Error message when `status` is `failure`. Absent (not `null`) otherwise — see [Optional-field rule](#optional-field-rule). |
 | `reversible` | No | `true` if the action can be undone. |
-| `reversal_method` | No | Machine-readable reversal method (e.g. `gmail:undo_send`). |
-| `reversal_window_seconds` | No | Seconds within which reversal is possible. |
+| `reversal_method` | No | Machine-readable reversal method (e.g. `gmail:undo_send`). Absent (not `null`) when not applicable. |
+| `reversal_window_seconds` | No | Seconds within which reversal is possible. Absent (not `null`) when not applicable. |
 | `reversal_of` | No | `urn:receipt:<uuid>` of the original receipt this receipt reverses. Present only on reversal receipts. |
 | `response_hash` | No | `sha256:` prefixed hash of the tool's response (RFC 8785 canonical JSON). |
 | `state_change.before_hash` | Conditional | `sha256:` hash of state before. Required when `state_change` is present. |
@@ -205,7 +213,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `scopes` | Conditional | Authorization scopes. Required when `authorization` is present. |
 | `granted_at` | Conditional | When authorization was granted. Required when `authorization` is present. |
 | `expires_at` | No | When authorization expires. |
-| `grant_ref` | No | Reference to authorization grant (e.g. Grantex token). |
+| `grant_ref` | No | Reference to authorization grant (e.g. Grantex token). Absent (not `null`) when not applicable — see [Optional-field rule](#optional-field-rule). |
 
 ### `delegation`
 
@@ -224,7 +232,8 @@ Present when this chain was spawned by delegation from another agent. All fields
 | `chain_id` | Yes | Opaque identifier grouping receipts into a chain. |
 | `sequence` | Yes | Monotonically increasing integer, starting at `1`. |
 | `previous_receipt_hash` | Yes | `sha256:` hash of previous receipt, or `null` for first in chain. |
-| `terminal` | No | `true` if this is the final receipt in the chain. Enables tail-truncation detection by verifiers — see [Receipt Chain Verification](/specification/receipt-chain-verification/#chain-integrity-verification). |
+| `terminal` | No | `true` if this is the final receipt in the chain. Enables tail-truncation detection by verifiers — see [Receipt Chain Verification](/specification/receipt-chain-verification/#chain-integrity-verification). Explicit `false` is schema-invalid; omit the field instead. |
+| `status` | No | Only meaningful alongside `terminal: true`. One of `"complete"` (issuer reached normal end-of-session) or `"interrupted"` (best-effort terminator emitted on signal or known abort path). Absent on a terminal receipt is equivalent to `"complete"`. A non-terminal receipt carrying `status` is schema-invalid. The verifier-derived value `"unknown"` (chains with no terminal) is never written on the wire. |
 
 ## Proof
 
@@ -236,6 +245,15 @@ Present when this chain was spawned by delegation from another agent. All fields
 | `proofPurpose` | Yes | Must be `"assertionMethod"`. |
 | `proofValue` | Yes | Multibase-encoded (`u`-prefixed base64url, no padding) Ed25519 signature. |
 
+## Optional-field rule
+
+Spec §7.1.1 (tightened in v0.2.1) draws a hard line between required-nullable and optional fields:
+
+- **Required-nullable fields** MUST be emitted with their value, including the explicit JSON `null` literal when the value is null. The only such field is `chain.previous_receipt_hash` — `null` for the first receipt in a chain, a hash string for all subsequent receipts.
+- **Optional fields** MUST NOT be emitted when their value is null or absent. `"error": null`, `"trusted_timestamp": null`, `"grant_ref": null`, `"reversal_method": null`, and `"reversal_window_seconds": null` are all schema-invalid — omit the field entirely instead. An SDK that receives `null` on an optional field MUST normalise it to absent before canonicalising.
+
+This rule keeps all three SDKs producing byte-identical RFC 8785 canonical output for the same logical receipt, regardless of whether an optional field was set to `null` or omitted by the caller.
+
 ## JSON Schema
 
-A machine-readable JSON Schema (draft 2020-12) is available at [`schema/action-receipt.schema.json`](https://github.com/agent-receipts/spec/blob/main/schema/action-receipt.schema.json).
+A machine-readable JSON Schema (draft 2020-12) is available at [`spec/schema/agent-receipt.schema.json`](https://github.com/agent-receipts/ar/blob/main/spec/schema/agent-receipt.schema.json). The envelope shape of `parameters_disclosure` (v0.3.0+) is also published as a sibling schema for standalone validation: [`spec/schema/parameters-disclosure.schema.json`](https://github.com/agent-receipts/ar/blob/main/spec/schema/parameters-disclosure.schema.json).

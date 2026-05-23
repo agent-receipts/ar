@@ -50,14 +50,16 @@ Agent Receipts are hash-chained into tamper-evident sequences. This page describ
 flowchart TD
   A[Load chain ordered by sequence] --> A2{R_0.chain.previous_receipt_hash is null?}
   A2 -->|no| Z[Chain broken]
-  A2 -->|yes| A3{R_0.chain.sequence == 1?}
-  A3 -->|no| Z
-  A3 -->|yes| B[For each receipt R_i]
-  B --> C[Verify Ed25519 signature]
+  A2 -->|yes| B[For each receipt R_i]
+  B --> CID{R_i.chain.chain_id == R_0.chain.chain_id?}
+  CID -->|no| Z2["Chain broken: chain_id mismatch"]
+  CID -->|yes| C[Verify Ed25519 signature]
   C -->|fail| Z
   C -->|pass| D[SHA-256 of canonical form — proof excluded]
   D --> E{Not last receipt?}
-  E -->|yes| F["Check R_i+1.chain.previous_receipt_hash == sha256:digest"]
+  E -->|yes| TERM{R_i.chain.terminal == true?}
+  TERM -->|yes| Z3["Chain broken: receipt after terminal"]
+  TERM -->|no| F["Check R_i+1.chain.previous_receipt_hash == sha256:digest"]
   F -->|fail| Z
   F -->|pass| G[Check sequence increments by 1]
   G -->|fail| Z
@@ -75,6 +77,8 @@ The issuer signs the canonical receipt (proof field excluded) with its Ed25519 p
 
 ## Chain integrity verification
 
+**Prerequisite.** This algorithm assumes every input receipt has already been validated against the [JSON Schema](/specification/agent-receipt-schema/#json-schema), per the end-to-end verification flow (spec §7.8 step 1). The schema enforces per-receipt invariants such as `chain.sequence` being an integer ≥ 1 and `chain.previous_receipt_hash` being either `null` or a `sha256:`-prefixed hex string. The chain algorithm below does not re-validate those constraints — chains containing schema-invalid receipts will produce undefined results.
+
 To verify a receipt chain:
 
 1. Retrieve all receipts for the chain, ordered by `chain.sequence`. Let *n* be the number of receipts.
@@ -82,12 +86,20 @@ To verify a receipt chain:
    - **a.** Verify the `proof` signature against the issuer's public key at `proof.verificationMethod`. Note: resolution of `proof.verificationMethod` URLs (particularly `did:agent:` identifiers) is not specified in the current protocol — verifiers must obtain public keys through out-of-band means (e.g. the daemon's published `.pub` file).
    - **b.** Compute the hex-encoded SHA-256 digest of the RFC 8785 canonical form of *R(i)* with the `proof` field removed.
    - **c.** If *i < n - 1*, confirm *R(i+1)*'s `chain.previous_receipt_hash` equals `sha256:` concatenated with that hex digest.
-3. For each receipt *R(i)* where *i > 0*, confirm `chain.sequence` equals *R(i-1)*'s `chain.sequence` + 1.
-4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null` and `chain.sequence` is `1`.
+3. For each receipt *R(i)* where *i > 0*, confirm `chain.sequence` equals *R(i-1)*'s `chain.sequence` + 1. Any gap is a hard verification failure, not a warning — partial chains cannot be silently accepted.
+4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null`. (The spec mandates `chain.sequence` starts at `1` per §4.3.2, but the reference SDK verifiers only enforce `sequence ≥ 1` here and rely on the schema and issuer conformance for the exact starting value. Callers needing strict first-sequence enforcement should additionally validate `R(0).chain.sequence == 1` inline — schema validation alone is not sufficient because JSON Schema can only express the per-receipt `≥ 1` bound, not the position-dependent "first equals 1" rule.)
+5. Confirm every receipt shares the same `chain.chain_id` as *R(0)*. Any mismatch fails verification immediately with a `chain_id mismatch` error identifying the offending index and both values. This check is unconditional and runs independently of `previous_receipt_hash` linkage — an attacker who splices a forged hash link cannot mix receipts from two distinct chains under a single verification call.
+6. If any receipt *R(i)* carries `chain.terminal: true` and a receipt *R(i+1)* exists in the input, verification fails immediately with `receipt after terminal`. This check is unconditional — no caller parameter can suppress it.
 
 If any step fails, the chain is broken at that point. Receipts before the break may still be individually valid; receipts after are suspect.
 
-**Truncation detection.** The algorithm above detects inserted, modified, or reordered receipts, but does not detect tail truncation — a chain that ends prematurely looks identical to a normally-terminated chain. When the final receipt carries `chain.terminal: true`, verifiers SHOULD treat any chain that ends without this flag as potentially truncated. Without a terminal receipt, silently dropping the most recent events is undetectable by this algorithm alone.
+**Truncation detection.** Steps 1–6 detect inserted, modified, reordered, gapped, cross-chain-spliced, and post-terminal receipts. They do **not** detect tail truncation of an open chain — dropping the last N receipts from a non-terminal chain still produces `Valid: true`, because no in-chain field commits to the chain's total length. Three mitigations are available:
+
+- **In-band terminal marker.** When the final receipt carries `chain.terminal: true`, the receipt-after-terminal check (step 6) prevents extension. Callers MAY additionally pass `RequireTerminal` to fail verification when the final observed receipt is not explicitly terminal. The terminal receipt MAY also carry `chain.status` — `"complete"` for normal end-of-session, `"interrupted"` for best-effort terminators emitted on signal or known abort path. The verifier reports a `"complete"` / `"interrupted"` / `"unknown"` classification regardless of `RequireTerminal`. `"unknown"` is the verifier-derived label for chains with no terminal at all; issuers MUST NOT write `"unknown"` on the wire.
+- **Out-of-band witness.** Callers maintaining an external record of chain state (audit log, transparency log, signed checkpoint) MAY supply `ExpectedLength` and/or `ExpectedFinalHash` to `VerifyChain`. Verification fails when the observed chain does not match.
+- **Floor.** Tail truncation of an open (non-terminal) chain without any external witness **cannot** be detected by any mechanism in this specification.
+
+**Store trust.** Chain verification proves the integrity of the receipts the verifier is *given*; it cannot prove the verifier was given every receipt the issuer wrote. An attacker who can both delete from the store AND re-sign downstream receipts with updated `previous_receipt_hash` values (which requires the agent's signing key) can erase mid-chain history undetectably from chain verification alone. Operators who require detection of store-level tampering SHOULD layer at least one of: append-only storage (S3 Object Lock, WORM), external chain-state witnesses (per the bullet above), or periodic chain-head anchoring to a public log.
 
 ## Reversal receipts
 

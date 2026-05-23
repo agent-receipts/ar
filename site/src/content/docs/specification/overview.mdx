@@ -3,11 +3,19 @@ title: Specification Overview
 description: Design principles and core concepts of the Agent Receipt Protocol.
 ---
 
-import { Badge } from "@astrojs/starlight/components";
+import { Aside, Badge } from "@astrojs/starlight/components";
 
-<Badge text="v0.2.0" variant="note" /> <Badge text="Draft" variant="caution" />
+<Badge text="v0.3.0" variant="note" /> <Badge text="Draft" variant="caution" />
 
-The Agent Receipt Protocol defines a standard format for cryptographically signed records of AI agent actions. This page covers the design principles and core concepts. For the full specification, see the [spec source on GitHub](https://github.com/agent-receipts/spec).
+The Agent Receipt Protocol defines a standard format for cryptographically signed records of AI agent actions. This page covers the design principles and core concepts. For the full specification, see the [spec source on GitHub](https://github.com/agent-receipts/ar/tree/main/spec).
+
+<Aside type="note" title="What's new in v0.3.0">
+- W3C VC credential type renamed from `AIActionReceipt` to `AgentReceipt`. Schema file renamed to `agent-receipt.schema.json`.
+- `parameters_disclosure` widened to accept either the legacy flat-map shape (v0.2.x) or an HPKE asymmetric encryption envelope (ADR-0012).
+- `credentialSubject.action.peer_credential` — OS-attested peer process metadata captured by the daemon (`platform`, `pid`, optional `uid`/`gid`/`exe_path`). Daemon-attested, not agent-claimed.
+- `credentialSubject.action.emitter_metadata` — daemon-observed emitter-side metadata (currently `drop_count` for synthetic events_dropped receipts).
+- `version` field now accepts `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, or `"0.3.0"`. Verifiers MUST accept all four. See the [full changelog](https://github.com/agent-receipts/ar/blob/main/spec/CHANGELOG.md).
+</Aside>
 
 ## Design principles
 
