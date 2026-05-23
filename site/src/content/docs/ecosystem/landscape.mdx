@@ -124,7 +124,8 @@ Multiple projects have independently converged on the same cryptographic and pro
 | **DIDs (Decentralized Identifiers)** | Microsoft AGT, Agent Receipts |
 | **OPA/Rego policies** | Microsoft AGT, mcp-firewall (ressl) |
 | **Cedar policies** | Microsoft AGT |
-| **W3C Verifiable Credentials** | Agent Receipts; Pipelock EvidenceReceipt v2 (Ed25519-signed receipts) |
+| **Signed, hash-chained receipt** (any scheme — *table stakes*) | Agent Receipts, Pipelock (EvidenceReceipt v2), Asqav, nono, InALign, Microsoft AGT |
+| **W3C Verifiable Credentials** (data model envelope) | Agent Receipts only — competitors sign receipts with other schemes (Asqav: ML-DSA-65; nono: Sigstore/Rekor; Pipelock: Ed25519 JSONL), not the VC envelope |
 | **Sigstore / Rekor transparency log** | nono |
 | **OWASP Agentic AI Top 10** | Microsoft AGT, Pipelock, mcp-firewall (ressl) |
 | **YAML policy config** | All enforcement projects |
