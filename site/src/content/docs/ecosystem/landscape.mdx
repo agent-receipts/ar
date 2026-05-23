@@ -16,7 +16,7 @@ _Last reviewed: 2026-05-23_
 
 ## Executive Summary
 
-The agent security space has matured past "can we intercept the agent?" into "can we prove what it did, in a form a third party will accept?" Every enforcement approach — MCP proxying, egress firewalling, kernel-level enforcement, application-level policy engines, and enterprise gateways — has at least one serious implementation. Microsoft's Agent Governance Toolkit (AGT) is the most comprehensive single project; with **v3.5 (May 14, 2026)** it integrates directly into the Agent Framework, making governance a framework default rather than an opt-in install.
+The agent security space has matured past "can we intercept the agent?" into "can we prove what it did, in a form a third party will accept?" Every enforcement approach — MCP proxying, egress firewalling, kernel-level enforcement, application-level policy engines, and enterprise gateways — has at least one serious implementation. Microsoft's Agent Governance Toolkit (AGT, v3.0 Public Preview) is the most comprehensive single project; it now integrates directly into the Agent Framework, making governance a framework default rather than an opt-in install.
 
 The decisive shift in 2026 is **provenance**: signed, hash-chained receipts went from a differentiator to table stakes. What now separates projects is the **trust boundary** — whether the process that signs the audit trail is the same process being audited — and whether the record is **portable** enough for an external verifier.
 
@@ -28,7 +28,7 @@ The space segments into five layers:
 | **Agent Firewalls** (open-source) | Intercept + scan agent traffic (MCP and/or HTTP) | Pipelock, mcp-firewall (ressl), Agent Wall, mcp-firewall (dzervas) |
 | **Kernel-Level Enforcement** | OS-level syscall interception, sandboxing | agentsh / Canyon Road, Anthropic sandbox-runtime |
 | **Governance Frameworks** | Application-level policy engine, identity, compliance | Microsoft AGT, GitHub Agentic Workflows |
-| **Audit & Provenance** | The provenance record *is* the product | Agent Receipts, Asqav, nono, InALign, OpenKedge, CAP-SRP |
+| **Audit & Provenance** | The provenance record *is* the product | Agent Receipts, nono, Asqav, InALign |
 
 ---
 
@@ -38,14 +38,14 @@ The category that crystallized in May 2026: tools whose primary product is the p
 
 | | Primary product | Signing locus | Envelope | Notes |
 |---|---|---|---|---|
-| **Agent Receipts** | Provenance record | **Out-of-agent daemon** | W3C VC (Ed25519, RFC 8785) | Keys live outside the audited process; one chain across all channels |
-| **Asqav** | Provenance record | In-agent / SDK | Signed records | Most direct audit-first competitor |
-| **nono** | Provenance record | In-agent / SDK | Signed records | Audit-first; lightweight integration focus |
-| **InALign** | Alignment + audit | In-process | — | Audit is a feature of an alignment product |
-| **OpenKedge** | Provenance / lineage | In-process | — | Emerging; positioning still forming |
-| **CAP-SRP** | Provenance protocol | Protocol-defined | — | Specification-led, like draft-sharif and EvidenceReceipt |
+| **Agent Receipts** | Provenance record | **Out-of-agent daemon** | W3C VC (Ed25519, RFC 8785) | Keys + chain outside the audited process; one chain across all channels |
+| **nono** | Provenance record | **Out-of-process** (append-only Merkle log) | Sigstore/Rekor anchored | Closest on the boundary axis; binary-identity binding |
+| **Asqav** | Provenance record | In-agent / SDK | Signed records (ML-DSA-65, RFC 3161 timestamps) | Audit-first; post-quantum signing, EU AI Act audit packs |
+| **InALign** | Alignment + audit | In-process | SHA-256 hash chain | MCP-native; MITRE-mapped detection, EU AI Act checks |
 
-> Many of these entrants are weeks old and detail is still emerging — rows are filled to the level we can support, not fabricated. The axis that matters is in-agent vs. out-of-agent signing and record portability. See [the audit boundary belongs outside the agent](/blog/daemon-process-separation/) for why the boundary, not the format, is the durable property.
+> Several of these entrants are weeks old; rows carry verified specifics where available, not fabricated detail. The axis that matters is in-agent vs. out-of-agent signing and record portability — and on the first question, **nono lands on the same side as Agent Receipts**, so the differentiation runs through the portable [W3C VC](/specification/overview/) envelope and the single cross-channel chain. See [the audit boundary belongs outside the agent](/blog/daemon-process-separation/) for why the boundary is the durable property.
+>
+> A related but distinct effort is **CAP-SRP** (VeritasChain) — a *refusal*-provenance spec proving an AI declined harmful content. It is adjacent to this layer, not a general agent-action audit format, so it solves a different problem than the cross-channel agent record.
 
 ---
 
@@ -55,7 +55,7 @@ These are the tools most relevant to an individual builder or small team enterin
 
 | | **Microsoft AGT** | **Pipelock** | **mcp-firewall (ressl)** | **agentsh (Canyon Road)** | **Agent Wall** | **mcp-firewall (dzervas)** |
 |---|---|---|---|---|---|---|
-| **Released** | v3.5 May 2026 (Apr 2026 initial) | Jan 2026 | Feb 2026 | 2025–2026 | Feb 2026 | 2026 |
+| **Released** | v3.0 Public Preview (Apr 2026) | Jan 2026 | Feb 2026 | 2025–2026 | Feb 2026 | 2026 |
 | **Language** | Python (primary), TS, .NET, Rust, Go SDKs | Go | Python | Go + system-level | Node.js | Rust |
 | **License** | MIT | Apache 2.0 | AGPL-3.0 (commercial available) | Source-available (commercial) | MIT | MIT |
 | **Approach** | Application middleware + Agent Framework integration | Egress proxy + MCP proxy | MCP stdio proxy + SDK library | Kernel enforcement (Landlock, FUSE, ptrace, seccomp) | MCP stdio proxy | Claude Code pre-tool-use hook |
@@ -126,25 +126,28 @@ Multiple projects have independently converged on the same cryptographic and pro
 | **DIDs (Decentralized Identifiers)** | Microsoft AGT, Agent Receipts |
 | **OPA/Rego policies** | Microsoft AGT, mcp-firewall (ressl) |
 | **Cedar policies** | Microsoft AGT |
-| **W3C Verifiable Credentials** | Agent Receipts; Pipelock EvidenceReceipt v2 (format play); CAP-SRP (protocol) |
+| **W3C Verifiable Credentials** | Agent Receipts; Pipelock EvidenceReceipt v2 (Ed25519-signed receipts) |
+| **Sigstore / Rekor transparency log** | nono |
 | **OWASP Agentic AI Top 10** | Microsoft AGT, Pipelock, mcp-firewall (ressl) |
 | **YAML policy config** | All enforcement projects |
-| **Out-of-agent signing key** | Agent Receipts (daemon owns keys + chain; others sign in-process) |
+| **Out-of-agent signing / log** | Agent Receipts (daemon owns keys + chain); nono (append-only log the agent can't reach); others sign in-process |
 | **Hook-based emission** | Claude Code (full tool-surface coverage), Codex CLI (partial — no WebSearch, partial shell); Agent Receipts aligns with both hook surfaces |
 
 ---
 
 ## Standards Window
 
-EU AI Act **Article 12** record-keeping obligations begin enforcement on **August 2, 2026** — automatic, tamper-evident logging of high-risk AI system operation over its lifetime. That is, nearly verbatim, the problem a hash-chained, independently-signed receipt solves. Three efforts are positioning into that window:
+EU AI Act **Article 12** requires automatic, tamper-evident logging of high-risk AI system operation over its lifetime — nearly verbatim, the problem a hash-chained, independently-signed receipt solves. **August 2, 2026** is a genuine AI Act milestone, though some Annex III high-risk obligations were reportedly deferred (to late 2027) in a recent political agreement, so the deadline is softer than a single date implies. The direction of travel — tamper-evident logging as a legal expectation — is the durable signal.
 
-| Effort | Venue | What it is |
-|---|---|---|
-| **IETF draft-sharif** | IETF | Early draft toward a wire format for agent action records |
-| **EvidenceReceipt v2** | Pipelock | Bid to standardize the firewall-emitted receipt format |
-| **W3C Verifiable Credentials CG** | W3C | Where the envelope question (VC Data Integrity, JSON-LD vs. RFC 8785) is argued |
+| Effort | Venue | What it is | Maturity |
+|---|---|---|---|
+| **EvidenceReceipt v2** | Pipelock | Receipt format (Ed25519, `evidence.jsonl`); bid to standardize the firewall-emitted record | Shipping |
+| **W3C VC Data Integrity** | W3C | The envelope our receipts use; CG argues canonicalization (JSON-LD vs. RFC 8785) | Recommendation |
+| **IETF draft-sharif** | IETF | `draft-sharif-agent-audit-trail`, a logging format for agent actions | Individual I-D (not WG-adopted) |
 
-Agent Receipts' position: the receipt is a W3C VC; the differentiator is the [out-of-agent boundary](/blog/daemon-process-separation/); the format should be portable, and we will align with a credible standard rather than fork one.
+General supply-chain transparency work (IETF SCITT, COSE receipts) is the substrate some of these build on, but it is software-supply-chain-oriented, not agent-audit-specific, so we don't count it as part of this race.
+
+Agent Receipts' position: the receipt is a W3C VC; the differentiator is the [out-of-agent boundary](/blog/daemon-process-separation/) plus one chain across channels; the format should be portable, and we will align with a credible standard rather than fork one.
 
 ---
 
@@ -154,7 +157,7 @@ Areas that remain underserved despite the crowded landscape:
 
 | Gap | Description | Who's closest |
 |---|---|---|
-| **Audit independent of the audited process** | Signing keys held outside the agent so the trail survives a compromised agent | Agent Receipts (daemon process separation); most audit-first tools sign in-process |
+| **Audit independent of the audited process** | Signing keys/log held outside the agent so the trail survives a compromised agent | Agent Receipts (daemon process separation) and nono (append-only log the agent can't reach); most other audit-first tools sign in-process |
 | **Unified cross-channel audit** | Correlating MCP calls + REST calls + shell commands + browser actions into one timeline per agent session | Agent Receipts (one daemon, one chain across channels); Canyon Road Watchtower (commercial/closed) |
 | **CISO-ready reporting** | PDF/HTML reports a security team can review to approve agentic AI adoption | mcp-firewall (ressl) has compliance reports; Microsoft AGT has framework mappings; neither produces turnkey CISO artifacts |
 | **HTTP/OpenAPI interception** | Policy-enforced proxy for agent REST API calls (not just MCP) | Pipelock (egress proxy); agentsh (network proxy) — but neither is OpenAPI-schema-aware |
