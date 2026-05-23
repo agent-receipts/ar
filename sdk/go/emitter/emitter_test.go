@@ -194,7 +194,7 @@ var silentLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 func TestEmit_FrameRoundTrip(t *testing.T) {
 	d := startDaemon(t, shortSocketDir(t))
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(d.cfg.SocketPath),
 		emitter.WithLogger(silentLogger),
 	)
@@ -246,7 +246,7 @@ func TestEmit_FrameRoundTrip(t *testing.T) {
 func TestEmit_SessionIDStableAcrossEmits(t *testing.T) {
 	d := startDaemon(t, shortSocketDir(t))
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(d.cfg.SocketPath),
 		emitter.WithLogger(silentLogger),
 	)
@@ -289,7 +289,7 @@ func TestEmit_SessionIDStableAcrossEmits(t *testing.T) {
 func TestEmit_HashDeterminism(t *testing.T) {
 	d := startDaemon(t, shortSocketDir(t))
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(d.cfg.SocketPath),
 		emitter.WithLogger(silentLogger),
 	)
@@ -330,7 +330,7 @@ func TestEmit_FireAndForgetWhenDaemonDown(t *testing.T) {
 	dir := shortSocketDir(t)
 	socketPath := filepath.Join(dir, "no-such-daemon.sock")
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(socketPath),
 		emitter.WithLogger(silentLogger),
 	)
@@ -366,7 +366,7 @@ func TestEmit_ReconnectAfterDaemonRestart(t *testing.T) {
 	dir := shortSocketDir(t)
 	d1 := startDaemon(t, dir)
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(d1.cfg.SocketPath),
 		emitter.WithLogger(silentLogger),
 	)
@@ -457,7 +457,7 @@ func TestEmit_ReturnsErrorAfterClose(t *testing.T) {
 	dir := shortSocketDir(t)
 	d := startDaemon(t, dir)
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(d.cfg.SocketPath),
 		emitter.WithLogger(silentLogger),
 	)
@@ -484,7 +484,7 @@ func TestEmit_ReturnsErrorAfterClose(t *testing.T) {
 // events the daemon would hard-reject, before any dial attempt. These are
 // caller bugs, not transient failures, so they must not be silently dropped.
 func TestEmit_ValidatesEvent(t *testing.T) {
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath("/nonexistent/events.sock"),
 		emitter.WithLogger(silentLogger),
 	)
@@ -541,7 +541,7 @@ func TestEmit_WithSessionIDOverride(t *testing.T) {
 	d := startDaemon(t, shortSocketDir(t))
 
 	const hostSession = "host-supplied-session-9f3a"
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(d.cfg.SocketPath),
 		emitter.WithSessionID(hostSession),
 		emitter.WithLogger(silentLogger),

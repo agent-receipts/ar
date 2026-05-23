@@ -12,7 +12,7 @@ repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 sdk_py_path = os.path.join(repo_root, "sdk/py/src")
 sys.path.insert(0, sdk_py_path)
 
-from agent_receipts import Emitter
+from agent_receipts import DaemonEmitter
 
 def main():
     if len(sys.argv) != 6:
@@ -21,7 +21,7 @@ def main():
 
     socket_path, session_id, channel, tool_name, decision = sys.argv[1:]
 
-    emitter = Emitter(socket_path=socket_path, session_id=session_id)
+    emitter = DaemonEmitter(socket_path=socket_path, session_id=session_id)
     emitter.emit(
         channel=channel,
         tool_name=tool_name,

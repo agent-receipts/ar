@@ -149,10 +149,10 @@ func serve() {
 	// when the daemon is unreachable, which propagates to the handler as a log
 	// line. An empty --socket is still accepted for backward compatibility with
 	// installations that have not yet deployed the daemon.
-	var em *emitter.Emitter
+	var em *emitter.DaemonEmitter
 	if sp := *socketPath; sp != "" {
 		var initErr error
-		em, initErr = emitter.New(
+		em, initErr = emitter.NewDaemon(
 			emitter.WithSocketPath(sp),
 			emitter.WithSessionID(sessionID),
 			emitter.WithStrictErrors(),
@@ -522,7 +522,7 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 // errStr carries the error payload string (raw JSON-RPC error object JSON for
 // upstream errors, a policy message for denied calls; empty for success).
 // decision must be "allowed", "denied", or "pending".
-func emitToContext(em *emitter.Emitter, serverName, toolName string, input, output json.RawMessage, errStr, decision string) {
+func emitToContext(em *emitter.DaemonEmitter, serverName, toolName string, input, output json.RawMessage, errStr, decision string) {
 	if em == nil {
 		return
 	}

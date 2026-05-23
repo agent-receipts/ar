@@ -174,9 +174,16 @@ func WithIdentity(id Identity) Option {
 	return func(c *config) { c.defaults = id }
 }
 
-// Emitter is the daemon-socket client. Construct with New, fire events
-// with Emit, release the socket with Close. Safe for concurrent Emit.
-type Emitter struct {
+// DaemonEmitter is the daemon-socket client. Construct with NewDaemon, fire
+// events with Emit, release the socket with Close. Safe for concurrent Emit.
+//
+// Per ADR-0020 step 1, this type is the legacy daemon-socket adapter and
+// its Emit(ctx, Event) signature takes an unsigned tool-call event frame —
+// not an AgentReceipt. It therefore does NOT implement the new Emitter
+// interface defined in github.com/agent-receipts/ar/sdk/go/emitters. Step 2
+// of the migration (daemon learns to ingest signed receipts) is tracked
+// separately.
+type DaemonEmitter struct {
 	// dropCount accumulates failed sends. Swapped to zero when a frame is
 	// successfully written; the captured value is embedded in that frame's
 	// drop_count field so the daemon can record the gap as a synthetic receipt.
@@ -194,15 +201,15 @@ type Emitter struct {
 	closed bool
 }
 
-// New returns an Emitter with the given options applied. The session_id
-// is fixed for the lifetime of the returned Emitter (ADR-0010 OQ4):
-// every Emit, including those after a daemon reconnect, carries the
-// same value. Call Close to release the socket.
+// NewDaemon returns a DaemonEmitter with the given options applied. The
+// session_id is fixed for the lifetime of the returned DaemonEmitter
+// (ADR-0010 OQ4): every Emit, including those after a daemon reconnect,
+// carries the same value. Call Close to release the socket.
 //
-// New does NOT dial the daemon — dialing is lazy on the first Emit so
-// that constructing an emitter cannot fail because the daemon happens
+// NewDaemon does NOT dial the daemon — dialing is lazy on the first Emit
+// so that constructing an emitter cannot fail because the daemon happens
 // to be down at the moment.
-func New(opts ...Option) (*Emitter, error) {
+func NewDaemon(opts ...Option) (*DaemonEmitter, error) {
 	cfg := config{}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -219,7 +226,7 @@ func New(opts ...Option) (*Emitter, error) {
 	if cfg.logger == nil {
 		cfg.logger = slog.Default()
 	}
-	return &Emitter{
+	return &DaemonEmitter{
 		socketPath:   cfg.socketPath,
 		sessionID:    cfg.sessionID,
 		logger:       cfg.logger,
@@ -231,7 +238,7 @@ func New(opts ...Option) (*Emitter, error) {
 // SessionID returns the stable per-emitter session identifier. Useful for
 // tests and for callers that want to log or correlate the value the
 // daemon is recording on every receipt.
-func (e *Emitter) SessionID() string { return e.sessionID }
+func (e *DaemonEmitter) SessionID() string { return e.sessionID }
 
 // frame mirrors daemon/internal/pipeline.EmitterFrame field-for-field.
 // Defined locally so the emitter does not import a daemon-internal
@@ -264,7 +271,7 @@ type frameTool struct {
 // caller bugs (Emitter closed, oversized frame, invalid event fields,
 // malformed Input/Output JSON — situations a retry could not fix) or
 // when ctx is already cancelled on entry or is cancelled while dialling.
-func (e *Emitter) Emit(ctx context.Context, ev Event) error {
+func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -489,7 +496,7 @@ func (e *Emitter) Emit(ctx context.Context, ev Event) error {
 // Close releases the underlying connection. After Close, subsequent Emit
 // calls return an error. Safe to call multiple times. Any drop count
 // accumulated but not yet flushed to the daemon is abandoned on Close.
-func (e *Emitter) Close() error {
+func (e *DaemonEmitter) Close() error {
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -512,7 +519,7 @@ func (e *Emitter) Close() error {
 // concurrent Emit calls don't serialise on a single 25ms dialTimeout.
 // DialContext is used (not net.DialTimeout) so a caller-supplied ctx with
 // a tighter deadline cuts the dial short.
-func (e *Emitter) dial(ctx context.Context) (net.Conn, error) {
+func (e *DaemonEmitter) dial(ctx context.Context) (net.Conn, error) {
 	d := net.Dialer{Timeout: dialTimeout}
 	return d.DialContext(ctx, "unix", e.socketPath)
 }
@@ -521,7 +528,7 @@ func (e *Emitter) dial(ctx context.Context) (net.Conn, error) {
 // hold e.mu so concurrent writes cannot interleave bytes on the same
 // connection (the 4-byte header and body must reach the daemon as one
 // contiguous sequence).
-func (e *Emitter) writeFrame(ctx context.Context, conn net.Conn, body []byte) error {
+func (e *DaemonEmitter) writeFrame(ctx context.Context, conn net.Conn, body []byte) error {
 	// The effective write deadline is min(now+writeTimeout, ctx.Deadline()).
 	// Without honouring ctx here, a caller's tighter deadline could be
 	// silently extended up to writeTimeout, breaking the fire-and-forget
@@ -581,7 +588,7 @@ func saturatingIncr(c *atomic.Int64) {
 	}
 }
 
-func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
+func (e *DaemonEmitter) logDrop(ctx context.Context, stage string, err error) {
 	saturatingIncr(&e.dropCount)
 	e.logger.LogAttrs(ctx, slog.LevelDebug, "agent-receipts emitter dropped event",
 		slog.String("stage", stage),

@@ -71,8 +71,8 @@ export interface EmitEvent {
 	decision: "allowed" | "denied" | "pending";
 }
 
-/** Options for constructing an Emitter. */
-export interface EmitterOptions {
+/** Options for constructing a DaemonEmitter. */
+export interface DaemonEmitterOptions {
 	/**
 	 * Override the daemon socket path. When unset, resolved from the
 	 * AGENTRECEIPTS_SOCKET env var then the per-OS default.
@@ -228,8 +228,9 @@ function rfc3339Nano(): string {
 }
 
 /**
- * Emitter is the daemon-socket client. Construct with `new Emitter(...)`,
- * fire events with `emit()`, release the socket with `close()`.
+ * DaemonEmitter is the daemon-socket client. Construct with
+ * `new DaemonEmitter(...)`, fire events with `emit()`, release the socket
+ * with `close()`.
  *
  * The session_id is generated once at construction (UUID v4) and remains
  * stable for the lifetime of this instance — including across daemon
@@ -238,8 +239,15 @@ function rfc3339Nano(): string {
  * Construction does NOT dial the daemon — dialing is lazy on the first
  * `emit()` so that constructing an emitter cannot fail because the daemon
  * happens to be down at the moment.
+ *
+ * Per ADR-0020 step 1, this class is the legacy daemon-socket client and
+ * its `emit()` accepts the unsigned `EmitEvent` frame — not an
+ * `AgentReceipt`. It therefore does NOT implement the new `Emitter`
+ * interface defined in `./emitters/types.js`. Step 2 of the migration
+ * (daemon learns to accept signed receipts) is tracked separately and is
+ * out of scope for this rename.
  */
-export class Emitter {
+export class DaemonEmitter {
 	readonly sessionId: string;
 
 	private readonly socketPath: string;
@@ -253,7 +261,7 @@ export class Emitter {
 	// Serialise writes so concurrent emit() calls cannot interleave bytes.
 	private writeQueue: Promise<void> = Promise.resolve();
 
-	constructor(options: EmitterOptions = {}) {
+	constructor(options: DaemonEmitterOptions = {}) {
 		const socketPath = options.socketPath ?? defaultSocketPath();
 		if (!socketPath) {
 			throw new Error(

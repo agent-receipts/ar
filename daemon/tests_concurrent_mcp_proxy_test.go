@@ -48,7 +48,7 @@ func TestTwoMCPProxySessionsConcurrent(t *testing.T) {
 
 			// One persistent emitter per session — models a long-lived mcp-proxy process
 			// that keeps one connection open across multiple tool calls.
-			em, err := emitter.New(
+			em, err := emitter.NewDaemon(
 				emitter.WithSocketPath(fix.Config.SocketPath),
 				emitter.WithSessionID(fmt.Sprintf("mcp-proxy-session-%d", session)),
 				emitter.WithLogger(slog.Default()),

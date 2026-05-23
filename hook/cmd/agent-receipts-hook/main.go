@@ -130,7 +130,7 @@ func main() {
 		opts = append(opts, emitter.WithSessionID(sessionID))
 	}
 
-	em, err := emitter.New(opts...)
+	em, err := emitter.NewDaemon(opts...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agent-receipts-hook: cannot create emitter: %v\n", err)
 		os.Exit(1)

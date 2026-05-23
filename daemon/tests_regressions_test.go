@@ -57,7 +57,7 @@ func TestConcurrentDaemonStartSameSocket(t *testing.T) {
 	}
 
 	// The first daemon must still be alive and serving.
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(fix.Config.SocketPath),
 		emitter.WithLogger(slog.Default()),
 	)
@@ -96,13 +96,13 @@ func TestDropCounterEndToEnd(t *testing.T) {
 		t.Fatal("first daemon did not stop within 3s")
 	}
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(cfg.SocketPath),
 		emitter.WithSessionID("drop-e2e-session"),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 	if err != nil {
-		t.Fatalf("emitter.New: %v", err)
+		t.Fatalf("emitter.NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -198,13 +198,13 @@ func TestEmitterRequiresOnlySocketPath(t *testing.T) {
 	// The daemon was started before the env vars were redirected and uses
 	// paths from its Config struct, so it is unaffected.
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(fix.Config.SocketPath),
 		emitter.WithSessionID("socket-only-session"),
 		emitter.WithLogger(slog.Default()),
 	)
 	if err != nil {
-		t.Fatalf("emitter.New: %v", err)
+		t.Fatalf("emitter.NewDaemon: %v", err)
 	}
 	defer em.Close()
 

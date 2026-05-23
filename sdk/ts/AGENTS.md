@@ -38,7 +38,7 @@ src/
 
 - **ESM-only** (`"type": "module"`, imports use `.js` extensions)
 - **Strict TypeScript** — `strict: true`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`
-- **Runtime dependencies** — `zod` (schema validation), `node:crypto`, `node:sqlite`; `@hpke/core` for HPKE disclosure functions (tracked for removal in #473)
+- **Runtime dependencies** — `zod` (schema validation), `node:crypto`, `node:sqlite`; `@hpke/core` for HPKE disclosure functions (tracked for removal in #473); `undici` (mTLS dispatcher path — Node 18+ already bundles undici, so the package.json entry exposes the public API surface to TypeScript rather than introducing new runtime code; required because Node's global `fetch` silently ignores `init.agent` and only honours undici's `dispatcher` field)
 - **Colocated tests** — `foo.ts` → `foo.test.ts` in the same directory
 - **Biome** for linting and formatting (tab indentation, double quotes)
 - **Explicit type imports** — use `import type` for type-only imports

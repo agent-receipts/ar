@@ -176,13 +176,13 @@ func TestEmit_RoundTripWireFormat(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithSessionID("wire-format-test"),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -237,13 +237,13 @@ func TestEmit_SessionIDStableAcrossCalls(t *testing.T) {
 	rl := newRecordingListener(t, dir)
 
 	const sid = "stable-session-2026-05"
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithSessionID(sid),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -273,13 +273,13 @@ func TestEmit_ReconnectsAfterListenerRestart(t *testing.T) {
 	dir := shortSocketDir(t)
 
 	rl1 := newRecordingListener(t, dir)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(rl1.path),
 		WithSessionID("reconnect-test"),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -345,13 +345,13 @@ func TestEmit_ReconnectsAfterListenerRestart(t *testing.T) {
 
 func TestEmit_FireAndForgetWhenSocketMissing(t *testing.T) {
 	dir := shortSocketDir(t)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithSessionID("no-daemon-test"),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -378,12 +378,12 @@ func TestEmit_FireAndForgetWhenSocketMissing(t *testing.T) {
 // immediately when the context is already cancelled before the call.
 func TestEmit_ContextCancelledOnEntry(t *testing.T) {
 	dir := shortSocketDir(t)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -408,12 +408,12 @@ func TestEmit_ContextCancelledOnEntry(t *testing.T) {
 // generating a UUID, matching the behaviour when WithSessionID is not passed.
 func TestNew_EmptySessionIDGeneratesUUID(t *testing.T) {
 	dir := shortSocketDir(t)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithSessionID(""), // explicit empty → generate UUID
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 	if got := em.SessionID(); got == "" {
@@ -425,12 +425,12 @@ func TestNew_EmptySessionIDGeneratesUUID(t *testing.T) {
 // Input slice (distinct from nil, which means "no payload").
 func TestEmit_NonNilEmptyInput(t *testing.T) {
 	dir := shortSocketDir(t)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -448,12 +448,12 @@ func TestEmit_NonNilEmptyInput(t *testing.T) {
 // TestEmit_NonNilEmptyOutput mirrors TestEmit_NonNilEmptyInput for Output.
 func TestEmit_NonNilEmptyOutput(t *testing.T) {
 	dir := shortSocketDir(t)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -472,12 +472,12 @@ func TestEmit_NonNilEmptyOutput(t *testing.T) {
 // MaxFrameSize is rejected before any dial attempt.
 func TestEmit_OversizedCombinedPayload(t *testing.T) {
 	dir := shortSocketDir(t)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -508,12 +508,12 @@ func TestEmit_OnClosedEmitter(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 
 	// Close the emitter.
@@ -538,12 +538,12 @@ func TestSessionID(t *testing.T) {
 	dir := shortSocketDir(t)
 
 	t.Run("explicit", func(t *testing.T) {
-		em, err := New(
+		em, err := NewDaemon(
 			WithSocketPath(filepath.Join(dir, "missing.sock")),
 			WithSessionID("explicit-session-id"),
 		)
 		if err != nil {
-			t.Fatalf("New: %v", err)
+			t.Fatalf("NewDaemon: %v", err)
 		}
 		defer em.Close()
 		if got := em.SessionID(); got != "explicit-session-id" {
@@ -552,11 +552,11 @@ func TestSessionID(t *testing.T) {
 	})
 
 	t.Run("generated", func(t *testing.T) {
-		em, err := New(
+		em, err := NewDaemon(
 			WithSocketPath(filepath.Join(dir, "missing.sock")),
 		)
 		if err != nil {
-			t.Fatalf("New: %v", err)
+			t.Fatalf("NewDaemon: %v", err)
 		}
 		defer em.Close()
 		if got := em.SessionID(); got == "" {
@@ -589,12 +589,12 @@ func TestWriteFrame_TighterContextDeadline(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -658,12 +658,12 @@ func TestEmit_WriteFailureResetsConn(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -712,12 +712,12 @@ func TestEmit_DropCounterIncrementsOnFailure(t *testing.T) {
 	dir := shortSocketDir(t)
 	missingPath := filepath.Join(dir, "missing.sock")
 
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(missingPath),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -764,12 +764,12 @@ func TestEmit_DropCounterResetAfterFlush(t *testing.T) {
 	dir := shortSocketDir(t)
 	missingPath := filepath.Join(dir, "missing.sock")
 
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(missingPath),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -822,9 +822,9 @@ func TestEmit_DropCounterRestoredOnWriteFailure(t *testing.T) {
 	dir := shortSocketDir(t)
 
 	rl1 := newRecordingListener(t, dir)
-	em, err := New(WithSocketPath(rl1.path), WithLogger(silentLogger()))
+	em, err := NewDaemon(WithSocketPath(rl1.path), WithLogger(silentLogger()))
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -895,13 +895,13 @@ func TestEmit_DropCounterRestoredOnWriteFailure(t *testing.T) {
 // silently returning nil (the default fire-and-forget behaviour).
 func TestEmit_StrictErrors_DialFailure(t *testing.T) {
 	dir := shortSocketDir(t)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithLogger(silentLogger()),
 		WithStrictErrors(),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -922,13 +922,13 @@ func TestEmit_StrictErrors_WriteFailure(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithLogger(silentLogger()),
 		WithStrictErrors(),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -961,13 +961,13 @@ func TestEmit_StrictErrors_WriteFailure(t *testing.T) {
 // the default fire-and-forget behaviour is preserved: dial failure returns nil.
 func TestEmit_NoStrictErrors_DialFailure(t *testing.T) {
 	dir := shortSocketDir(t)
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithLogger(silentLogger()),
 		// no WithStrictErrors
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -987,7 +987,7 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 
 	t.Run("identity fields present", func(t *testing.T) {
 		rl := newRecordingListener(t, dir)
-		em, err := New(
+		em, err := NewDaemon(
 			WithSocketPath(rl.path),
 			WithLogger(silentLogger()),
 			WithIdentity(Identity{
@@ -998,7 +998,7 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 			}),
 		)
 		if err != nil {
-			t.Fatalf("New: %v", err)
+			t.Fatalf("NewDaemon: %v", err)
 		}
 		defer em.Close()
 
@@ -1031,13 +1031,13 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 
 	t.Run("identity fields absent when not set", func(t *testing.T) {
 		rl := newRecordingListener(t, dir)
-		em, err := New(
+		em, err := NewDaemon(
 			WithSocketPath(rl.path),
 			WithLogger(silentLogger()),
 			// no WithIdentity
 		)
 		if err != nil {
-			t.Fatalf("New: %v", err)
+			t.Fatalf("NewDaemon: %v", err)
 		}
 		defer em.Close()
 
@@ -1066,7 +1066,7 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 
 	t.Run("per-event override takes precedence over default", func(t *testing.T) {
 		rl := newRecordingListener(t, dir)
-		em, err := New(
+		em, err := NewDaemon(
 			WithSocketPath(rl.path),
 			WithLogger(silentLogger()),
 			WithIdentity(Identity{
@@ -1076,7 +1076,7 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 			}),
 		)
 		if err != nil {
-			t.Fatalf("New: %v", err)
+			t.Fatalf("NewDaemon: %v", err)
 		}
 		defer em.Close()
 
@@ -1112,7 +1112,7 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 		// Verifies that per-field merge is independent: unset event fields fall
 		// through to the default, and the overridden field is taken from the event.
 		rl := newRecordingListener(t, dir)
-		em, err := New(
+		em, err := NewDaemon(
 			WithSocketPath(rl.path),
 			WithLogger(silentLogger()),
 			WithIdentity(Identity{
@@ -1121,7 +1121,7 @@ func TestEmit_WithIdentityDefaultsStampedOnFrame(t *testing.T) {
 			}),
 		)
 		if err != nil {
-			t.Fatalf("New: %v", err)
+			t.Fatalf("NewDaemon: %v", err)
 		}
 		defer em.Close()
 
@@ -1159,13 +1159,13 @@ func TestEmit_ConcurrentCallsAreSerialised(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
-	em, err := New(
+	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithSessionID("concurrent-test"),
 		WithLogger(silentLogger()),
 	)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewDaemon: %v", err)
 	}
 	defer em.Close()
 

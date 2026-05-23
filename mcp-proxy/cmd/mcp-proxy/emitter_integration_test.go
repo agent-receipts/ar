@@ -158,21 +158,21 @@ func waitForDaemonReceipts(t *testing.T, dbPath, chainID string, want int, timeo
 }
 
 // silentSlog returns a slog.Logger that discards every level. Tests pass it
-// to emitter.New so dial/write drops do not pollute `go test -v` output.
+// to emitter.NewDaemon so dial/write drops do not pollute `go test -v` output.
 func silentSlog() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 // newSilentEmitter returns an Emitter that discards its slog drop output.
-func newSilentEmitter(t *testing.T, socketPath, sessionID string) *emitter.Emitter {
+func newSilentEmitter(t *testing.T, socketPath, sessionID string) *emitter.DaemonEmitter {
 	t.Helper()
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(socketPath),
 		emitter.WithSessionID(sessionID),
 		emitter.WithLogger(silentSlog()),
 	)
 	if err != nil {
-		t.Fatalf("emitter.New: %v", err)
+		t.Fatalf("emitter.NewDaemon: %v", err)
 	}
 	t.Cleanup(func() { _ = em.Close() })
 	return em
@@ -267,13 +267,13 @@ func TestEmitToContext_MultipleEvents(t *testing.T) {
 // 100ms) and log a drop.
 func TestEmitToContext_FireAndForgetWhenNoDaemon(t *testing.T) {
 	dir := shortSocketDirEmitter(t)
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(filepath.Join(dir, "no-daemon.sock")),
 		emitter.WithSessionID("proxy-test-noDaemon"),
 		emitter.WithLogger(silentSlog()),
 	)
 	if err != nil {
-		t.Fatalf("emitter.New: %v", err)
+		t.Fatalf("emitter.NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -295,13 +295,13 @@ func TestEmitToContext_FireAndForgetWhenNoDaemon(t *testing.T) {
 // (no-daemon) emitter so the full Emit call path is exercised.
 func TestEmitToContext_NilInputsAreValid(t *testing.T) {
 	dir := shortSocketDirEmitter(t)
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(filepath.Join(dir, "no-daemon2.sock")),
 		emitter.WithSessionID("proxy-test-nilinputs"),
 		emitter.WithLogger(silentSlog()),
 	)
 	if err != nil {
-		t.Fatalf("emitter.New: %v", err)
+		t.Fatalf("emitter.NewDaemon: %v", err)
 	}
 	defer em.Close()
 
