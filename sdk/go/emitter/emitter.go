@@ -592,12 +592,14 @@ func (e *Emitter) logDrop(ctx context.Context, stage string, err error) {
 }
 
 // DefaultSocketPath returns the per-OS default path for the daemon socket.
-// The OS rules match daemon.DefaultSocketPath; the emitter adds one layer:
+// This is the canonical resolution shared by the emitter (client side) and
+// the daemon binary (daemon.DefaultSocketPath delegates here). Keeping a
+// single implementation prevents the silent drift that surfaced in issue
+// #545, where a binary-specific default could resolve to /tmp while the
+// other resolved $TMPDIR.
+//
 // AGENTRECEIPTS_SOCKET is consulted first on supported platforms so a
-// single env var redirects both daemon and emitter to a non-default socket.
-// The daemon reads the env var in main, not in its DefaultSocketPath, so
-// the two functions are not identical despite producing the same paths when
-// the env var is unset.
+// single env var redirects every component to the same non-default socket.
 //
 // The platform gate in this function applies only to automatic default path
 // resolution. Callers that pass WithSocketPath to New bypass this function
