@@ -147,6 +147,23 @@ describe("FileWal", () => {
 		expect(readdirSync(dir).filter((f) => f.endsWith(".json"))).toHaveLength(2);
 	});
 
+	it("serialises concurrent appends without duplicating or losing entries", async () => {
+		const wal = new FileWal(dir);
+		// Fire many appends without awaiting between them — they must queue
+		// through the op chain rather than racing the index counter or files.
+		await Promise.all([
+			wal.append(receipt("a", 1)),
+			wal.append(receipt("b", 2)),
+			wal.append(receipt("c", 3)),
+			// Same id concurrently with itself: must collapse to one entry/file.
+			wal.append(receipt("a", 1)),
+		]);
+		const ids = (await wal.list()).map((r) => r.id).sort();
+		expect(ids).toEqual(["a", "b", "c"]);
+		// One file per distinct id — no orphan from the same-id race.
+		expect(readdirSync(dir).filter((f) => f.endsWith(".json"))).toHaveLength(3);
+	});
+
 	it("drops a torn entry rather than failing the load", async () => {
 		const wal = new FileWal(dir);
 		await wal.append(receipt("a"));

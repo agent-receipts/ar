@@ -133,56 +133,83 @@ interface FileEntry {
  */
 export class FileWal implements Wal {
 	private readonly dir: string;
-	// id -> entry. Loaded lazily so construction stays synchronous, matching
-	// `new FileWal(dir)` ergonomics elsewhere in the emitter layer.
+	// id -> entry. Loaded lazily on first use so construction stays synchronous,
+	// matching `new FileWal(dir)` ergonomics elsewhere in the emitter layer.
 	private readonly byId = new Map<string, FileEntry>();
 	private maxIndex = 0;
-	private loaded: Promise<void> | null = null;
+	private loaded = false;
+	// Serialises every operation through one promise chain so interleaved
+	// awaits can't race the index counter or the on-disk files (the Node event
+	// loop is single-threaded but `async` methods still interleave at each
+	// await). This is the TS counterpart to the Python backend's threading.Lock
+	// and the Go backend's sync.Mutex.
+	private opChain: Promise<unknown> = Promise.resolve();
 
 	constructor(dir: string) {
 		this.dir = dir;
 	}
 
-	async append(receipt: AgentReceipt): Promise<void> {
-		await this.ensureLoaded();
-		// Reuse the existing slot on idempotent re-append so the entry keeps
-		// its position in the order; otherwise take the next index.
-		const existing = this.byId.get(receipt.id);
-		const index = existing ? existing.index : ++this.maxIndex;
-		await this.writeEntry(index, receipt);
-		this.byId.set(receipt.id, { index, receipt });
+	append(receipt: AgentReceipt): Promise<void> {
+		return this.runExclusive(async () => {
+			await this.ensureLoaded();
+			// Reuse the existing slot on idempotent re-append so the entry keeps
+			// its position in the order; otherwise take the next index.
+			const existing = this.byId.get(receipt.id);
+			const index = existing ? existing.index : ++this.maxIndex;
+			await this.writeEntry(index, receipt);
+			this.byId.set(receipt.id, { index, receipt });
+		});
 	}
 
-	async remove(id: string): Promise<void> {
-		await this.ensureLoaded();
-		const entry = this.byId.get(id);
-		if (!entry) {
+	remove(id: string): Promise<void> {
+		return this.runExclusive(async () => {
+			await this.ensureLoaded();
+			const entry = this.byId.get(id);
+			if (!entry) {
+				return;
+			}
+			this.byId.delete(id);
+			try {
+				await unlink(this.path(entry.index));
+			} catch (err) {
+				// A missing file is fine — the entry is gone either way.
+				if (!isNotFound(err)) {
+					throw err;
+				}
+			}
+		});
+	}
+
+	list(): Promise<AgentReceipt[]> {
+		return this.runExclusive(async () => {
+			await this.ensureLoaded();
+			return Array.from(this.byId.values())
+				.sort((a, b) => a.index - b.index)
+				.map((e) => e.receipt);
+		});
+	}
+
+	// Queue `fn` after any in-flight operation. The chain advances regardless of
+	// whether the prior op resolved or rejected, so one failure can't wedge the
+	// backend; the caller still sees this op's own outcome.
+	private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+		const result = this.opChain.then(fn, fn);
+		this.opChain = result.then(
+			() => {},
+			() => {},
+		);
+		return result;
+	}
+
+	// Caller must hold the op chain (run inside runExclusive). Scans the
+	// directory exactly once; on failure `loaded` stays false so a later call
+	// retries rather than caching the error forever.
+	private async ensureLoaded(): Promise<void> {
+		if (this.loaded) {
 			return;
 		}
-		this.byId.delete(id);
-		try {
-			await unlink(this.path(entry.index));
-		} catch (err) {
-			// A missing file is fine — the entry is gone either way.
-			if (!isNotFound(err)) {
-				throw err;
-			}
-		}
-	}
-
-	async list(): Promise<AgentReceipt[]> {
-		await this.ensureLoaded();
-		return Array.from(this.byId.values())
-			.sort((a, b) => a.index - b.index)
-			.map((e) => e.receipt);
-	}
-
-	private ensureLoaded(): Promise<void> {
-		// Memoise the scan so concurrent callers share one load.
-		if (this.loaded === null) {
-			this.loaded = this.load();
-		}
-		return this.loaded;
+		await this.load();
+		this.loaded = true;
 	}
 
 	private async load(): Promise<void> {
@@ -332,9 +359,12 @@ export class WalEmitter implements Emitter {
 				} else {
 					// The inner emitter can't be interrupted mid-call (HttpEmitter
 					// owns its own per-request timeout/retry budget), so race the
-					// delivery against the remaining deadline. A late success after
-					// the race is harmless: it will still clear its own WAL entry,
-					// and a duplicate POST is idempotent at the collector (409).
+					// delivery against the remaining deadline. If the delivery
+					// settles after the race is lost it does NOT clear its WAL
+					// entry (nothing awaits it past this point), so the entry
+					// stays pending and is re-delivered on the next drain —
+					// harmless because a duplicate POST is idempotent at the
+					// collector (409).
 					const remaining = deadline - Date.now();
 					await raceDeadline(this.inner.emit(receipt), remaining);
 				}
