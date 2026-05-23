@@ -13,7 +13,7 @@ import { existsSync } from "fs";
 import process from "process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const distPath = join(__dirname, "..", "..", "sdk", "ts", "dist", "emitter.js");
+const distPath = join(__dirname, "..", "..", "sdk", "ts", "dist", "daemon-emitter.js");
 
 if (!existsSync(distPath)) {
   console.error(
@@ -24,7 +24,7 @@ if (!existsSync(distPath)) {
 
 // Wrap in async IIFE so we can use await before dynamic import attempts to load
 (async () => {
-  const { Emitter } = await import("../../sdk/ts/dist/emitter.js");
+  const { DaemonEmitter } = await import("../../sdk/ts/dist/daemon-emitter.js");
 
   const [socketPath, sessionId, channel, toolName, decision] = process.argv.slice(2);
 
@@ -33,7 +33,7 @@ if (!existsSync(distPath)) {
     process.exit(1);
   }
 
-  const emitter = new Emitter({
+  const emitter = new DaemonEmitter({
     socketPath,
     sessionId,
     debugLog: (message, attrs) => {
