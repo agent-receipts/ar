@@ -1,0 +1,89 @@
+---
+title: Agent Security Tooling Landscape — May 2026
+description: How the agent security space shifted in May 2026 — receipts as table stakes, the out-of-agent audit boundary as the durable differentiator, and the standards-window race toward the August 2 EU AI Act enforcement date.
+head:
+  - tag: link
+    attrs:
+      rel: canonical
+      href: https://agentreceipts.ai/blog/agent-security-tooling-landscape-may-2026/
+---
+
+_Published 2026-05-23_
+
+This is our dated read of the agent security space as of May 2026 — what we think, and when. For the always-current matrices, see the [living landscape](/ecosystem/landscape/). The previous snapshot is [April 2026](/blog/agent-security-tooling-landscape-april-2026/).
+
+## Executive Summary
+
+A month ago the space was segmenting by enforcement mechanism — kernel, egress, MCP proxy, application middleware, gateway. That segmentation still holds, but the centre of gravity moved. The story in May is **provenance**: who can prove what an agent did, in a form a third party will accept.
+
+Two shifts drove this:
+
+1. **Receipts went from differentiator to table stakes.** In April, a signed audit trail was something Agent Receipts and a handful of firewalls did. In May, signed, hash-chained, often W3C-VC-shaped receipts show up across the audit-first entrants (Asqav, nono), in Pipelock's EvidenceReceipt v2 standardization play, and in Microsoft AGT's compliance pipeline. Emitting a signed receipt is no longer the thing that sets a project apart.
+
+2. **The durable differentiator is the trust boundary, not the receipt format.** If the process that signs the audit trail is the same process being audited, the signature proves the bytes weren't altered in transit — not that the auditor recorded honestly. The property that survives a compromised agent is *where the signing key lives*. Agent Receipts' answer is the [out-of-agent boundary](/blog/daemon-process-separation/): keys and chain live in `agent-receipts-daemon`, a separate OS user the agent process can't reach. That, paired with the portable [W3C Verifiable Credential envelope](/specification/overview/), is what we're positioning on — not "we also sign receipts."
+
+```mermaid
+graph TD
+  subgraph inproc["In-agent signing (table stakes)"]
+    A1[firewall / proxy / middleware]
+    A2[signs its own trail]
+    A1 --- A2
+  end
+  subgraph outproc["Out-of-agent boundary (differentiator)"]
+    D1[emitter — no keys]
+    D2[daemon — owns keys + chain]
+    D1 -. fire-and-forget .-> D2
+  end
+  inproc --> Q{"Survives a<br/>compromised agent?"}
+  outproc --> Q
+```
+
+## What changed since April
+
+### Microsoft AGT is the distribution wildcard
+
+On **May 14**, Microsoft shipped **AGT v3.5** with first-class **Agent Framework** integration — governance moves from an opt-in middleware install to something wired into the framework agents are already built on. AGT's reach (five language SDKs, 12+ framework adapters, EU AI Act / NIST / SOC 2 mappings) was already the broadest in the space; bundling it with the framework changes the default. The architectural caveat from April is unchanged: AGT signs **in-process**, same trust boundary as the agent. Distribution scale doesn't move the audit boundary — but it does set the baseline everyone is now measured against.
+
+### An audit & provenance layer is forming
+
+April's four-layer model (gateways, firewalls, kernel, governance frameworks) missed a category that crystallized in May: tools whose primary product *is* the provenance record, not enforcement. The direct, audit-first entrants are **Asqav** and **nono**; **InALign**, **OpenKedge**, and **CAP-SRP** round out the layer.
+
+| | Primary product | Signing locus | Envelope | Notes |
+|---|---|---|---|---|
+| **Agent Receipts** | Provenance record | **Out-of-agent daemon** | W3C VC (Ed25519, RFC 8785) | Keys live outside the audited process; one chain across all channels |
+| **Asqav** | Provenance record | In-agent / SDK | Signed records | Most direct audit-first competitor |
+| **nono** | Provenance record | In-agent / SDK | Signed records | Audit-first; lightweight integration focus |
+| **InALign** | Alignment + audit | In-process | — | Audit is a feature of an alignment product |
+| **OpenKedge** | Provenance / lineage | In-process | — | Emerging; positioning still forming |
+| **CAP-SRP** | Provenance protocol | Protocol-defined | — | Specification-led, like draft-sharif and EvidenceReceipt |
+
+The point of the table isn't a feature scorecard — most of these are days-to-weeks old and detail is still emerging. The point is the axis that separates them: **does the audit layer sit inside or outside the agent's trust boundary, and is the record portable across verifiers?** That axis is where we expect the next year of competition to play out.
+
+### Pipelock's standardization play
+
+Pipelock's **EvidenceReceipt v2** is a bid to standardize the receipt format itself — moving from "our firewall emits an audit record" toward "here is the record format the ecosystem should adopt." It's the clearest signal that the format layer is consolidating. Format standardization is good for the space and good for us: a portable record is only valuable if more than one tool emits and reads it. The question a standard has to answer is the same boundary question — a standard receipt signed in-process still can't outlive a compromised signer.
+
+## The standards window
+
+The reason this snapshot is time-sensitive: **EU AI Act Article 12 record-keeping obligations begin enforcement on August 2, 2026** — roughly ten weeks out. Article 12 requires automatic, tamper-evident logging of high-risk AI system operation over its lifetime. That is, almost verbatim, the problem a hash-chained, independently-signed receipt solves.
+
+Two standards efforts are positioning into that window:
+
+- **IETF draft-sharif** — an early draft toward a wire format for agent action records.
+- **Pipelock EvidenceReceipt v2** — the format play described above.
+- **W3C Verifiable Credentials CG** — where the envelope question (VC Data Integrity, JSON-LD vs. RFC 8785 canonicalization) gets argued.
+
+These reviewers read the public landscape to understand how each project positions itself. Our position has to be legible before those conversations harden: the receipt is a W3C VC; the differentiator is the out-of-agent boundary; the format should be portable and we'll align with a credible standard rather than fork one. Publishing this read *is* the standards-room prerequisite, not an afterthought.
+
+## Where v0.3.0 fits
+
+The [v0.3.0 spec](/specification/agent-receipt-schema/) (2026-05-21) makes the boundary concrete in the wire format. Two additions came directly out of the daemon split:
+
+- **`peer_credential`** — OS-attested process metadata (pid, uid, gid, exe_path) the daemon captures from the kernel at the socket, not from the emitter's self-report. The connecting process can lie about its payload; it can't lie about who it is.
+- **`emitter_metadata`** — daemon-observed `drop_count` on synthetic `events_dropped` receipts, so a gap in the trail is itself recorded in the chain.
+
+Both fields are *daemon-attested, not agent-claimed*. That distinction — encoded in the schema, not just the implementation — is the out-of-agent boundary expressed as protocol. The credential type also became `AgentReceipt` (from `AIActionReceipt`), aligning the spec name with the project.
+
+## The read in one paragraph
+
+Signed receipts are now baseline; the audit-first layer (Asqav, nono, et al.) has receipts too. What differentiates is whether the audit survives a compromised agent — which comes down to where the signing key lives — and whether the record is portable enough for a third party to verify. Agent Receipts' bet is the out-of-agent daemon plus the W3C VC envelope, and the next ten weeks of standards positioning is where that bet gets tested. Full matrices, kept current, live in the [landscape document](/ecosystem/landscape/).
