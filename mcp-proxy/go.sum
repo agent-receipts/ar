@@ -1,5 +1,5 @@
-github.com/agent-receipts/ar/daemon v0.9.1 h1:C8OyE04+mymOlWBIWsFeNqYNord/udkLmy8QIJJDfBw=
-github.com/agent-receipts/ar/daemon v0.9.1/go.mod h1:aboC9nI890QcajbomkWAOUXBa3BeQ9KocdA+y8+WOv8=
+github.com/agent-receipts/ar/daemon v0.12.1 h1:t4Ol9cRsd9YN1sX6MKaEtgUpYx5ptLtjARq6sTalFDE=
+github.com/agent-receipts/ar/daemon v0.12.1/go.mod h1:W5SWBJm0Pr3ung/2G0Ldl+PPOh3pNjSyWzgQHUbOYZ8=
 github.com/agent-receipts/ar/sdk/go v0.12.1 h1:FavWBocmh+hBhsZClG07ylHaXADvmZ72sp+euPN7e9M=
 github.com/agent-receipts/ar/sdk/go v0.12.1/go.mod h1:rV1TjisR+09QWX3JQ6/gP5KFVyCF8fteM4u9+VTFB9g=
 github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
