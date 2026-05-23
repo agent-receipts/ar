@@ -953,6 +953,13 @@ class TestChainIDBinding:
     def test_single_mismatched_receipt_in_middle_rejected(self) -> None:
         """A single off-chain receipt spliced into the middle (with a valid
         signature for its own chain_id) is rejected solely on chain_id.
+
+        Isolation note: this test confirms the chain would otherwise verify
+        cleanly; the only failure mode is the chain_id binding check. We
+        re-sign the middle receipt with a different chain_id AND re-link and
+        re-sign the trailing receipt so its previous_receipt_hash points at
+        the middle's new hash — keeping hash linkage valid so the sole
+        invariant violated is chain_id binding (not collateral hash breakage).
         """
         chain = _build_chain_with_id(3, TEST_PRIVATE_KEY, "chain-A")
         # Re-sign the middle receipt with chain_id="chain-other" so its
@@ -972,6 +979,26 @@ class TestChainIDBinding:
         )
         resigned = sign_receipt(unsigned, TEST_PRIVATE_KEY, "did:agent:test#key-1")
         chain[1] = resigned
+
+        # Re-link the trailing receipt to the re-signed middle so hash linkage
+        # stays valid; its chain_id remains "chain-A".
+        tail = chain[2]
+        tail.credentialSubject.chain.previous_receipt_hash = hash_receipt(resigned)
+        unsigned_tail = UnsignedAgentReceipt(
+            **{
+                "@context": tail.context,
+                "id": tail.id,
+                "type": tail.type,
+                "version": tail.version,
+                "issuer": tail.issuer,
+                "issuanceDate": tail.issuanceDate,
+                "credentialSubject": tail.credentialSubject,
+            }
+        )
+        resigned_tail = sign_receipt(
+            unsigned_tail, TEST_PRIVATE_KEY, "did:agent:test#key-1"
+        )
+        chain[2] = resigned_tail
 
         result = verify_chain(chain, TEST_PUBLIC_KEY)
         assert result.valid is False

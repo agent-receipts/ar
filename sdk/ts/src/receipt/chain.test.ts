@@ -1010,14 +1010,19 @@ describe("verifyChain", () => {
 	});
 
 	it("chain_id binding: single mismatched receipt in the middle is rejected", () => {
+		// Isolation note: this test confirms the chain would otherwise verify
+		// cleanly; the only failure mode is the chain_id binding check. We
+		// re-sign the middle receipt with a different chain_id AND re-link and
+		// re-sign the trailing receipt so its previous_receipt_hash points at
+		// the middle's new hash — keeping hash linkage valid so the sole
+		// invariant violated is chain_id binding (not collateral hash breakage).
 		const { publicKey, privateKey } = generateKeyPair();
 		const chain = buildChainWithId(3, privateKey, "chain-A");
-		// Re-sign the middle receipt with a different chain_id so signatures
-		// still verify; the verifier must reject solely on chain_id.
+
 		const middle = chain[1];
 		if (!middle) throw new Error("test setup");
 		middle.credentialSubject.chain.chain_id = "chain-other";
-		const resigned = signReceipt(
+		const resignedMiddle = signReceipt(
 			{
 				"@context": middle["@context"],
 				id: middle.id,
@@ -1030,7 +1035,28 @@ describe("verifyChain", () => {
 			privateKey,
 			"did:agent:test#key-1",
 		);
-		chain[1] = resigned;
+		chain[1] = resignedMiddle;
+
+		// Re-link the trailing receipt to the re-signed middle so hash linkage
+		// stays valid; its chain_id remains "chain-A".
+		const tail = chain[2];
+		if (!tail) throw new Error("test setup");
+		tail.credentialSubject.chain.previous_receipt_hash =
+			hashReceipt(resignedMiddle);
+		const resignedTail = signReceipt(
+			{
+				"@context": tail["@context"],
+				id: tail.id,
+				type: tail.type,
+				version: tail.version,
+				issuer: tail.issuer,
+				issuanceDate: tail.issuanceDate,
+				credentialSubject: tail.credentialSubject,
+			},
+			privateKey,
+			"did:agent:test#key-1",
+		);
+		chain[2] = resignedTail;
 
 		const result = verifyChain(chain, publicKey);
 
