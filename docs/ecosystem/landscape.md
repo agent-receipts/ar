@@ -164,4 +164,4 @@ Areas that remain underserved despite the crowded landscape:
 
 ---
 
-*This document is kept current. For the point-in-time strategic read, see the May 2026 snapshot. Last reviewed: 2026-05-23.*
+*This document is kept current. For the point-in-time strategic read, see the May 2026 snapshot.*
