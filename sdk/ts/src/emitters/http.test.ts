@@ -7,7 +7,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
@@ -53,12 +53,8 @@ function generateMtlsFixture(dir: string): MtlsFixture {
 		caCrt,
 	]);
 	const extFile = join(dir, "san.ext");
-	rmSync(extFile, { force: true });
 	// SAN required for Node TLS to match 127.0.0.1.
-	execFileSync("bash", [
-		"-c",
-		`printf 'subjectAltName=IP:127.0.0.1\\n' > ${JSON.stringify(extFile)}`,
-	]);
+	writeFileSync(extFile, "subjectAltName=IP:127.0.0.1\n");
 	run(["genrsa", "-out", srvKey, "2048"]);
 	run([
 		"req",
@@ -121,6 +117,20 @@ function generateMtlsFixture(dir: string): MtlsFixture {
 		clientKey: readFileSync(cliKey),
 	};
 }
+
+// The mTLS handshake test needs openssl to mint a throwaway cert chain.
+// Minimal CI images and some dev machines lack it; skip rather than fail
+// there. Node has no stdlib X.509-with-SAN minting API, so a pure-Node
+// fixture would mean pulling in a cert-generation dependency just for one
+// test — not worth it for a feature that is Node-on-a-real-host by design.
+const hasOpenssl = ((): boolean => {
+	try {
+		execFileSync("openssl", ["version"], { stdio: "ignore" });
+		return true;
+	} catch {
+		return false;
+	}
+})();
 
 function fakeReceipt(id: string): AgentReceipt {
 	return {
@@ -338,89 +348,92 @@ describe("HttpEmitter", () => {
 		).not.toThrow();
 	});
 
-	it("mTLS: client cert reaches the wire (handshake succeeds; missing cert is rejected)", async () => {
-		// Spin up a real HTTPS server that requires client-cert auth. This is
-		// the only way to catch the previous bug where init.agent was set on
-		// undici-backed fetch and silently ignored.
-		const tmp = mkdtempSync(join(tmpdir(), "ar-mtls-"));
-		try {
-			const { caCert, serverCert, serverKey, clientCert, clientKey } =
-				generateMtlsFixture(tmp);
-
-			const server = createHttpsServer({
-				cert: serverCert,
-				key: serverKey,
-				ca: caCert,
-				requestCert: true,
-				rejectUnauthorized: true,
-			});
-			server.on("request", (_req, res) => {
-				res.statusCode = 201;
-				res.end();
-			});
-			await new Promise<void>((resolve) =>
-				server.listen(0, "127.0.0.1", resolve),
-			);
+	it.skipIf(!hasOpenssl)(
+		"mTLS: client cert reaches the wire (handshake succeeds; missing cert is rejected)",
+		async () => {
+			// Spin up a real HTTPS server that requires client-cert auth. This is
+			// the only way to catch the previous bug where init.agent was set on
+			// undici-backed fetch and silently ignored.
+			const tmp = mkdtempSync(join(tmpdir(), "ar-mtls-"));
 			try {
-				const addr = server.address() as AddressInfo;
-				const url = `https://127.0.0.1:${addr.port}/receipts`;
+				const { caCert, serverCert, serverKey, clientCert, clientKey } =
+					generateMtlsFixture(tmp);
 
-				// Set NODE_EXTRA_CA_CERTS-equivalent via the dispatcher's CA. The
-				// emitter doesn't expose CA config, so we trust the server cert
-				// at the undici layer by overriding the global dispatcher only
-				// for this test. The simplest production-faithful approach is to
-				// validate that mTLS works against a self-signed CA by supplying
-				// the CA bundle through the same dispatcher path we'd use in
-				// production tests.
-				const { Agent } = await import("undici");
-				const dispatcher = new Agent({
-					connect: { ca: caCert, cert: clientCert, key: clientKey },
+				const server = createHttpsServer({
+					cert: serverCert,
+					key: serverKey,
+					ca: caCert,
+					requestCert: true,
+					rejectUnauthorized: true,
 				});
-				type DispatcherInit = RequestInit & { dispatcher?: unknown };
-				const customFetch: typeof fetch = (input, init) =>
-					fetch(input, {
-						...init,
-						dispatcher,
-					} as DispatcherInit);
-
-				// First confirm that mTLS works WITH the client cert. The
-				// emitter still needs to provide the cert via its own auth
-				// path — we use the custom fetch only to supply the CA bundle.
-				const ok = new HttpEmitter({
-					endpoint: url,
-					auth: { type: "mtls", cert: clientCert, key: clientKey },
-					retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 },
-					fetch: customFetch,
+				server.on("request", (_req, res) => {
+					res.statusCode = 201;
+					res.end();
 				});
-				await expect(ok.emit(fakeReceipt("r"))).resolves.toBeUndefined();
-
-				// Now confirm that WITHOUT the client cert the handshake is
-				// rejected by the server. (We still go through the same custom
-				// fetch / CA, so only the client cert differs.)
-				const bare = new Agent({ connect: { ca: caCert } });
-				const bareFetch: typeof fetch = (input, init) =>
-					fetch(input, {
-						...init,
-						dispatcher: bare,
-					} as RequestInit & { dispatcher?: unknown });
-				const noCert = new HttpEmitter({
-					endpoint: url,
-					retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 },
-					fetch: bareFetch,
-				});
-				await expect(noCert.emit(fakeReceipt("r"))).rejects.toBeInstanceOf(
-					EmitError,
+				await new Promise<void>((resolve) =>
+					server.listen(0, "127.0.0.1", resolve),
 				);
+				try {
+					const addr = server.address() as AddressInfo;
+					const url = `https://127.0.0.1:${addr.port}/receipts`;
+
+					// Set NODE_EXTRA_CA_CERTS-equivalent via the dispatcher's CA. The
+					// emitter doesn't expose CA config, so we trust the server cert
+					// at the undici layer by overriding the global dispatcher only
+					// for this test. The simplest production-faithful approach is to
+					// validate that mTLS works against a self-signed CA by supplying
+					// the CA bundle through the same dispatcher path we'd use in
+					// production tests.
+					const { Agent } = await import("undici");
+					const dispatcher = new Agent({
+						connect: { ca: caCert, cert: clientCert, key: clientKey },
+					});
+					type DispatcherInit = RequestInit & { dispatcher?: unknown };
+					const customFetch: typeof fetch = (input, init) =>
+						fetch(input, {
+							...init,
+							dispatcher,
+						} as DispatcherInit);
+
+					// First confirm that mTLS works WITH the client cert. The
+					// emitter still needs to provide the cert via its own auth
+					// path — we use the custom fetch only to supply the CA bundle.
+					const ok = new HttpEmitter({
+						endpoint: url,
+						auth: { type: "mtls", cert: clientCert, key: clientKey },
+						retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 },
+						fetch: customFetch,
+					});
+					await expect(ok.emit(fakeReceipt("r"))).resolves.toBeUndefined();
+
+					// Now confirm that WITHOUT the client cert the handshake is
+					// rejected by the server. (We still go through the same custom
+					// fetch / CA, so only the client cert differs.)
+					const bare = new Agent({ connect: { ca: caCert } });
+					const bareFetch: typeof fetch = (input, init) =>
+						fetch(input, {
+							...init,
+							dispatcher: bare,
+						} as RequestInit & { dispatcher?: unknown });
+					const noCert = new HttpEmitter({
+						endpoint: url,
+						retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 },
+						fetch: bareFetch,
+					});
+					await expect(noCert.emit(fakeReceipt("r"))).rejects.toBeInstanceOf(
+						EmitError,
+					);
+				} finally {
+					server.closeAllConnections?.();
+					await new Promise<void>((resolve, reject) =>
+						server.close((err) => (err ? reject(err) : resolve())),
+					);
+				}
 			} finally {
-				server.closeAllConnections?.();
-				await new Promise<void>((resolve, reject) =>
-					server.close((err) => (err ? reject(err) : resolve())),
-				);
+				rmSync(tmp, { recursive: true, force: true });
 			}
-		} finally {
-			rmSync(tmp, { recursive: true, force: true });
-		}
-	});
+		},
+	);
 
 	it("warns when endpoint is http://", () => {
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

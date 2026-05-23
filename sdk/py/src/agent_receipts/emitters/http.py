@@ -231,8 +231,11 @@ class HttpEmitter:
             except urllib.error.HTTPError as exc:
                 # urllib raises HTTPError for any non-2xx; treat it as a
                 # transport-level result so we can apply the status-mapping
-                # logic uniformly.
+                # logic uniformly. HTTPError is file-like and holds the
+                # underlying socket open — close it once we have the status
+                # so the connection is not leaked across retries.
                 status = exc.code
+                exc.close()
             except (urllib.error.URLError, TimeoutError) as exc:
                 last_error = exc
                 last_status = None
@@ -326,14 +329,17 @@ def _write_mtls_files(cert: bytes, key: bytes) -> tuple[str, str]:
     3.12; in-memory loading was added in 3.13. We target 3.11+ so the
     tempfile path is required.
     """
+    # os.write can perform a partial write, which would truncate the PEM and
+    # cause intermittent load_cert_chain failures. Wrap each fd in a file
+    # object whose write() loops until every byte is flushed; the with-block
+    # also owns and closes the fd. Writing the cert before creating the key
+    # tempfile means a failed cert write leaves no orphaned key fd.
     cert_fd, cert_path = tempfile.mkstemp(prefix="ar-mtls-cert-", suffix=".pem")
+    with os.fdopen(cert_fd, "wb") as cert_file:
+        cert_file.write(cert)
     key_fd, key_path = tempfile.mkstemp(prefix="ar-mtls-key-", suffix=".pem")
-    try:
-        os.write(cert_fd, cert)
-        os.write(key_fd, key)
-    finally:
-        os.close(cert_fd)
-        os.close(key_fd)
+    with os.fdopen(key_fd, "wb") as key_file:
+        key_file.write(key)
     # Tighten permissions on the private key — mkstemp already opens at
     # 0600 on POSIX, but be explicit so reviewers don't have to check.
     os.chmod(key_path, 0o600)

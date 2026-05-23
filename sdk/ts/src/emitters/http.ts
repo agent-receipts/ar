@@ -205,6 +205,12 @@ export class HttpEmitter implements Emitter {
 				continue;
 			}
 
+			// We never read the response payload, but undici only returns the
+			// underlying socket to its pool once the body is consumed or
+			// cancelled. Skipping this pins one connection per request and
+			// exhausts the pool under sustained load.
+			await drainResponseBody(response);
+
 			if (response.status === 201 || response.status === 409) {
 				return;
 			}
@@ -315,6 +321,15 @@ export class HttpEmitter implements Emitter {
 			this.retry.baseDelayMs * 2 ** (attempt - 1),
 		);
 		return Math.floor(Math.random() * exp);
+	}
+}
+
+async function drainResponseBody(response: Response): Promise<void> {
+	try {
+		await response.body?.cancel();
+	} catch {
+		// Best-effort: a body that already errored or is locked can't be
+		// cancelled, and in that case there is no socket left to release.
 	}
 }
 
