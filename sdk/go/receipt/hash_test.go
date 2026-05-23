@@ -1,6 +1,7 @@
 package receipt
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -212,5 +213,130 @@ func TestHashReceiptDeterministic(t *testing.T) {
 	}
 	if h1 != h2 {
 		t.Errorf("hashes differ: %s vs %s", h1, h2)
+	}
+}
+
+func TestHashRawReceipt_MatchesHashReceiptForKnownFields(t *testing.T) {
+	// For a receipt whose every field is known to the Go struct, the raw
+	// bytes contain no forward-compat additions — so HashRawReceipt and
+	// HashReceipt must agree. This is the equivalence that lets the
+	// collector swap one for the other without breaking existing callers.
+	kp, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	unsigned := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 1, ChainID: "chain-eq"},
+	})
+	signed, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	wantHash, err := HashReceipt(signed)
+	if err != nil {
+		t.Fatalf("HashReceipt: %v", err)
+	}
+
+	raw, err := json.Marshal(signed)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	gotHash, err := HashRawReceipt(raw)
+	if err != nil {
+		t.Fatalf("HashRawReceipt: %v", err)
+	}
+
+	if gotHash != wantHash {
+		t.Fatalf("HashRawReceipt = %s, HashReceipt = %s; want equal", gotHash, wantHash)
+	}
+}
+
+func TestHashRawReceipt_PreservesUnknownFields(t *testing.T) {
+	// The whole point of HashRawReceipt: when the wire bytes carry a
+	// field the Go struct does not know about (e.g. a future SDK extension),
+	// that field MUST contribute to the hash. Otherwise an older collector
+	// would store a hash that diverges from what the agent computed, and
+	// chain integrity breaks across SDK versions.
+	kp, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	unsigned := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 1, ChainID: "chain-fc"},
+	})
+	signed, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	raw, err := json.Marshal(signed)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	baseHash, err := HashRawReceipt(raw)
+	if err != nil {
+		t.Fatalf("HashRawReceipt(base): %v", err)
+	}
+
+	// Splice in a forward-compat top-level field. The Go struct ignores
+	// it on Unmarshal, but HashRawReceipt operates on the raw bytes and
+	// must observe the change.
+	enriched := strings.Replace(
+		string(raw), `"id":`, `"_future_field":"v2","id":`, 1)
+	if !strings.Contains(enriched, `"_future_field":"v2"`) {
+		t.Fatalf("splice failed: %s", enriched)
+	}
+	enrichedHash, err := HashRawReceipt([]byte(enriched))
+	if err != nil {
+		t.Fatalf("HashRawReceipt(enriched): %v", err)
+	}
+
+	if baseHash == enrichedHash {
+		t.Fatalf("HashRawReceipt did not observe the unknown field; hash unchanged: %s", baseHash)
+	}
+}
+
+func TestHashRawReceipt_StripsProof(t *testing.T) {
+	// The unsigned-receipt hashing scheme requires `proof` to be removed
+	// before hashing. Two receipts that differ ONLY in proof must hash
+	// to the same value.
+	base := []byte(`{
+		"id": "urn:r:1",
+		"issuer": {"id": "did:example:a"},
+		"credentialSubject": {"x": 1},
+		"proof": {"type": "Ed25519Signature2020", "proofValue": "u-AAA"}
+	}`)
+	alt := []byte(`{
+		"id": "urn:r:1",
+		"issuer": {"id": "did:example:a"},
+		"credentialSubject": {"x": 1},
+		"proof": {"type": "Ed25519Signature2020", "proofValue": "u-ZZZ"}
+	}`)
+	h1, err := HashRawReceipt(base)
+	if err != nil {
+		t.Fatalf("HashRawReceipt(base): %v", err)
+	}
+	h2, err := HashRawReceipt(alt)
+	if err != nil {
+		t.Fatalf("HashRawReceipt(alt): %v", err)
+	}
+	if h1 != h2 {
+		t.Fatalf("hashes differ across proofs: %s vs %s; proof should be stripped", h1, h2)
+	}
+}
+
+func TestHashRawReceipt_RejectsNonObject(t *testing.T) {
+	for _, body := range []string{`[1,2,3]`, `42`, `"string"`, ``, `null`} {
+		if _, err := HashRawReceipt([]byte(body)); err == nil {
+			t.Errorf("HashRawReceipt(%q): err=nil, want error", body)
+		}
 	}
 }

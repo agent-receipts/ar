@@ -98,7 +98,7 @@ across workstreams they can be parallelised.
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Reference collector service implementing `POST /receipts` contract | ADR-0020 | #533 | planned |
+| Reference collector service implementing `POST /receipts` contract | ADR-0020 | #533 | in review (#537) |
 | Operator guide for the reference collector | ADR-0020 | #536 | planned |
 
 ### SDK cloud key management

@@ -134,6 +134,24 @@ func TestServer_PostReceipt_PreservesUnknownFields(t *testing.T) {
 	if !bytes.Contains(raw, []byte(`"_future_field"`)) {
 		t.Fatalf("stored raw bytes lost the unknown field; got: %s", raw)
 	}
+
+	// The receipt_hash returned to the client (and stored in the
+	// receipt_hash column) MUST be derived from the raw bytes — including
+	// the forward-compat field — so an auditor recomputing the hash from
+	// the stored bytes gets the same value. If we hashed the Go struct
+	// instead, _future_field would have been dropped and the two hashes
+	// would diverge across collector SDK versions.
+	var resp acceptResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode 201 body: %v", err)
+	}
+	want, err := receipt.HashRawReceipt(raw)
+	if err != nil {
+		t.Fatalf("HashRawReceipt(stored bytes): %v", err)
+	}
+	if resp.ReceiptHash != want {
+		t.Fatalf("response receipt_hash = %s; auditor-computed = %s; want equal", resp.ReceiptHash, want)
+	}
 }
 
 func TestServer_PostReceipt_409Duplicate(t *testing.T) {

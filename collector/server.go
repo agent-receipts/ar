@@ -168,7 +168,11 @@ func (h *receiptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := receipt.HashReceipt(ar)
+	// Hash the raw bytes, not the decoded struct: forward-compat fields the
+	// Go struct does not know about MUST contribute to the hash, otherwise
+	// the value we store and return diverges from what the agent computed
+	// (and what an auditor will compute from the stored raw bytes).
+	hash, err := receipt.HashRawReceipt(rawBody)
 	if err != nil {
 		// Canonicalisation failure here implies the receipt's JSON shape
 		// passed Unmarshal but cannot be canonicalised. Treat as malformed.

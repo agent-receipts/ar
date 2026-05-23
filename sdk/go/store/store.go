@@ -245,7 +245,13 @@ func (s *Store) InsertRaw(r receipt.AgentReceipt, rawJSON []byte, receiptHash st
 		receiptHash,
 		prevHash,
 	)
-	return err
+	if err != nil {
+		// Wrap with the receipt id so operational logs surface which row
+		// failed. The underlying *sqlite.Error is preserved for errors.As
+		// callers (collector's SQLITE_CONSTRAINT_PRIMARYKEY classification).
+		return fmt.Errorf("insert receipt id=%s: %w", r.ID, err)
+	}
+	return nil
 }
 
 // GetByID retrieves a receipt by its ID. Returns nil if not found.

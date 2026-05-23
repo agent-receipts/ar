@@ -55,6 +55,40 @@ func HashReceipt(r AgentReceipt) (string, error) {
 	return SHA256Hash(canonical), nil
 }
 
+// HashRawReceipt computes the canonical SHA-256 hash of a receipt directly
+// from its on-wire JSON bytes, without round-tripping through the Go struct.
+//
+// This is the hash form auditors and forward-compat receivers should use:
+// it preserves every JSON field present on the wire, including ones the
+// current Go struct does not know about. HashReceipt, by contrast, hashes a
+// re-marshal of the struct, so any field added by a newer SDK gets dropped
+// before the hash is computed — meaning a collector running an older SDK
+// would store a hash that diverges from what the agent (and any auditor
+// looking at the raw bytes) sees.
+//
+// The proof block is stripped before hashing, matching HashReceipt's
+// "unsigned receipt" hashing scheme. Both top-level field ordering and
+// nested field ordering are handled by Canonicalize per RFC 8785.
+//
+// Returns an error if rawJSON is not a JSON object.
+func HashRawReceipt(rawJSON []byte) (string, error) {
+	var generic map[string]any
+	if err := json.Unmarshal(rawJSON, &generic); err != nil {
+		return "", fmt.Errorf("unmarshal raw receipt: %w", err)
+	}
+	// json.Unmarshal of "null" into *map sets generic to nil rather than
+	// failing — reject explicitly so we don't silently hash an empty object.
+	if generic == nil {
+		return "", fmt.Errorf("raw receipt is not a JSON object")
+	}
+	delete(generic, "proof")
+	canonical, err := Canonicalize(generic)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize raw receipt: %w", err)
+	}
+	return SHA256Hash(canonical), nil
+}
+
 // Canonicalize serialises v to RFC 8785 canonical JSON.
 func Canonicalize(v any) (string, error) {
 	// Marshal to JSON first so we work with a generic representation.
