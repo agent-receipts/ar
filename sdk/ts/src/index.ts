@@ -1,12 +1,12 @@
 export {
+	DaemonEmitter,
+	type DaemonEmitterOptions,
 	defaultSocketPath,
 	type EmitEvent,
 	type EmitTool,
-	Emitter,
-	type EmitterOptions,
 	MAX_FRAME_SIZE,
 	SUPPORTED_FRAME_VERSION,
-} from "./emitter.js";
+} from "./daemon-emitter.js";
 export {
 	type ChainVerification,
 	type ReceiptVerification,

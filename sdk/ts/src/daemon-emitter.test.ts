@@ -18,14 +18,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	DaemonEmitter,
 	defaultSocketPath,
 	type EmitEvent,
-	Emitter,
 	MAX_FRAME_SIZE,
 	resolveSocketPath,
 	type SocketPathDeps,
 	SUPPORTED_FRAME_VERSION,
-} from "./emitter.js";
+} from "./daemon-emitter.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -145,9 +145,9 @@ const GOOD_EVENT: EmitEvent = {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("Emitter — validation errors (caller bugs)", () => {
+describe("DaemonEmitter — validation errors (caller bugs)", () => {
 	it("returns an error for empty channel", async () => {
-		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const e = new DaemonEmitter({ socketPath: tempSockPath("noop") });
 		const err = await e.emit({ ...GOOD_EVENT, channel: "" });
 		expect(err).toBeInstanceOf(Error);
 		expect(err?.message).toMatch(/missing channel/);
@@ -155,7 +155,7 @@ describe("Emitter — validation errors (caller bugs)", () => {
 	});
 
 	it("returns an error for empty tool.name", async () => {
-		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const e = new DaemonEmitter({ socketPath: tempSockPath("noop") });
 		const err = await e.emit({ ...GOOD_EVENT, tool: { name: "" } });
 		expect(err).toBeInstanceOf(Error);
 		expect(err?.message).toMatch(/missing tool\.name/);
@@ -163,7 +163,7 @@ describe("Emitter — validation errors (caller bugs)", () => {
 	});
 
 	it("returns an error for invalid decision", async () => {
-		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const e = new DaemonEmitter({ socketPath: tempSockPath("noop") });
 		const err = await e.emit({
 			...GOOD_EVENT,
 			// @ts-expect-error testing invalid decision value
@@ -175,7 +175,7 @@ describe("Emitter — validation errors (caller bugs)", () => {
 	});
 
 	it("returns an error for malformed input JSON", async () => {
-		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const e = new DaemonEmitter({ socketPath: tempSockPath("noop") });
 		const err = await e.emit({ ...GOOD_EVENT, input: "{bad json}" });
 		expect(err).toBeInstanceOf(Error);
 		expect(err?.message).toMatch(/input is not valid JSON/);
@@ -183,7 +183,7 @@ describe("Emitter — validation errors (caller bugs)", () => {
 	});
 
 	it("returns an error for malformed output JSON", async () => {
-		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const e = new DaemonEmitter({ socketPath: tempSockPath("noop") });
 		const err = await e.emit({ ...GOOD_EVENT, output: "[unclosed" });
 		expect(err).toBeInstanceOf(Error);
 		expect(err?.message).toMatch(/output is not valid JSON/);
@@ -194,7 +194,7 @@ describe("Emitter — validation errors (caller bugs)", () => {
 		// 1e400 overflows float64 to Infinity; JSON.parse accepts it but the
 		// daemon's RFC 8785 canonicaliser rejects it — catch it here as a
 		// caller-bug Error rather than letting it become a silent drop.
-		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const e = new DaemonEmitter({ socketPath: tempSockPath("noop") });
 		const err = await e.emit({ ...GOOD_EVENT, input: '{"n":1e400}' });
 		expect(err).toBeInstanceOf(Error);
 		expect(err?.message).toMatch(/input is not valid JSON/);
@@ -202,7 +202,7 @@ describe("Emitter — validation errors (caller bugs)", () => {
 	});
 
 	it("returns an error for output containing a non-finite number", async () => {
-		const e = new Emitter({ socketPath: tempSockPath("noop") });
+		const e = new DaemonEmitter({ socketPath: tempSockPath("noop") });
 		const err = await e.emit({ ...GOOD_EVENT, output: "[1e400]" });
 		expect(err).toBeInstanceOf(Error);
 		expect(err?.message).toMatch(/output is not valid JSON/);
@@ -213,7 +213,7 @@ describe("Emitter — validation errors (caller bugs)", () => {
 		const sockPath = tempSockPath("closed");
 		const server = startEchoServer(sockPath);
 		await server.ready;
-		const e = new Emitter({ socketPath: sockPath });
+		const e = new DaemonEmitter({ socketPath: sockPath });
 		e.close();
 		const err = await e.emit(GOOD_EVENT);
 		expect(err).toBeInstanceOf(Error);
@@ -222,16 +222,16 @@ describe("Emitter — validation errors (caller bugs)", () => {
 	});
 });
 
-describe("Emitter — frame round-trip", () => {
+describe("DaemonEmitter — frame round-trip", () => {
 	let sockPath: string;
 	let server: ReturnType<typeof startEchoServer>;
-	let emitter: Emitter;
+	let emitter: DaemonEmitter;
 
 	beforeEach(async () => {
 		sockPath = tempSockPath("roundtrip");
 		server = startEchoServer(sockPath);
 		await server.ready;
-		emitter = new Emitter({ socketPath: sockPath });
+		emitter = new DaemonEmitter({ socketPath: sockPath });
 	});
 
 	afterEach(async () => {
@@ -372,12 +372,12 @@ describe("Emitter — frame round-trip", () => {
 	});
 });
 
-describe("Emitter — session_id stability", () => {
+describe("DaemonEmitter — session_id stability", () => {
 	it("session_id is stable across multiple emits", async () => {
 		const sockPath = tempSockPath("session");
 		const server = startEchoServer(sockPath);
 		await server.ready;
-		const emitter = new Emitter({ socketPath: sockPath });
+		const emitter = new DaemonEmitter({ socketPath: sockPath });
 
 		await emitter.emit(GOOD_EVENT);
 		await emitter.emit(GOOD_EVENT);
@@ -396,7 +396,7 @@ describe("Emitter — session_id stability", () => {
 		const sockPath = tempSockPath("supplied-session");
 		const server = startEchoServer(sockPath);
 		await server.ready;
-		const emitter = new Emitter({
+		const emitter = new DaemonEmitter({
 			socketPath: sockPath,
 			sessionId: "my-session-42",
 		});
@@ -415,7 +415,7 @@ describe("Emitter — session_id stability", () => {
 	});
 
 	it("empty sessionId falls back to a generated UUID", () => {
-		const emitter = new Emitter({
+		const emitter = new DaemonEmitter({
 			socketPath: tempSockPath("empty-session"),
 			sessionId: "",
 		});
@@ -426,10 +426,10 @@ describe("Emitter — session_id stability", () => {
 	});
 });
 
-describe("Emitter — fire-and-forget when daemon is down", () => {
+describe("DaemonEmitter — fire-and-forget when daemon is down", () => {
 	it("returns null quickly when no daemon is listening", async () => {
 		const sockPath = tempSockPath("down");
-		const emitter = new Emitter({ socketPath: sockPath });
+		const emitter = new DaemonEmitter({ socketPath: sockPath });
 
 		const start = Date.now();
 		const err = await emitter.emit(GOOD_EVENT);
@@ -445,7 +445,7 @@ describe("Emitter — fire-and-forget when daemon is down", () => {
 	it("logs a drop when daemon is down (debugLog is called)", async () => {
 		const sockPath = tempSockPath("drop-log");
 		const drops: Array<{ message: string; attrs: Record<string, string> }> = [];
-		const emitter = new Emitter({
+		const emitter = new DaemonEmitter({
 			socketPath: sockPath,
 			debugLog: (message, attrs) => drops.push({ message, attrs }),
 		});
@@ -460,12 +460,12 @@ describe("Emitter — fire-and-forget when daemon is down", () => {
 	});
 });
 
-describe("Emitter — reconnect after daemon restart", () => {
+describe("DaemonEmitter — reconnect after daemon restart", () => {
 	it("re-dials after the server stops and restarts", async () => {
 		const sockPath = tempSockPath("reconnect");
 		const server1 = startEchoServer(sockPath);
 		await server1.ready;
-		const emitter = new Emitter({ socketPath: sockPath });
+		const emitter = new DaemonEmitter({ socketPath: sockPath });
 
 		// First emit reaches server1.
 		await emitter.emit(GOOD_EVENT);
@@ -492,10 +492,10 @@ describe("Emitter — reconnect after daemon restart", () => {
 	});
 });
 
-describe("Emitter — frame size limit", () => {
+describe("DaemonEmitter — frame size limit", () => {
 	it("returns an error for oversized frames", async () => {
 		const sockPath = tempSockPath("oversize");
-		const emitter = new Emitter({ socketPath: sockPath });
+		const emitter = new DaemonEmitter({ socketPath: sockPath });
 		// Construct a JSON string that, when marshalled into the full frame, exceeds 1 MiB.
 		// A 1 MiB payload string alone is sufficient.
 		const bigInput = JSON.stringify("x".repeat(MAX_FRAME_SIZE));
@@ -636,7 +636,7 @@ describe("defaultSocketPath", () => {
 	});
 });
 
-describe("Emitter — constructor", () => {
+describe("DaemonEmitter — constructor", () => {
 	it("throws when socketPath is an empty string and no env override is set", () => {
 		// An explicit empty socketPath replicates the same failure code path
 		// that occurs on platforms where defaultSocketPath() returns "".
@@ -646,7 +646,7 @@ describe("Emitter — constructor", () => {
 		const original = process.env.AGENTRECEIPTS_SOCKET;
 		delete process.env.AGENTRECEIPTS_SOCKET;
 		try {
-			expect(() => new Emitter({ socketPath: "" })).toThrow(
+			expect(() => new DaemonEmitter({ socketPath: "" })).toThrow(
 				/no default socket path/,
 			);
 		} finally {
@@ -657,16 +657,18 @@ describe("Emitter — constructor", () => {
 	});
 
 	it("does not throw when given a valid explicit socket path", () => {
-		expect(() => new Emitter({ socketPath: "/tmp/test.sock" })).not.toThrow();
+		expect(
+			() => new DaemonEmitter({ socketPath: "/tmp/test.sock" }),
+		).not.toThrow();
 	});
 });
 
-describe("Emitter — socket-error robustness", () => {
+describe("DaemonEmitter — socket-error robustness", () => {
 	// Reach into the private conn to simulate Node firing an 'error' event on
 	// the underlying socket (peer reset, daemon crash, EPIPE). Without a
 	// permanent error listener the host process would crash via Node's
 	// unhandled-'error' rule. These tests pin that contract.
-	function getConn(emitter: Emitter): import("node:net").Socket | null {
+	function getConn(emitter: DaemonEmitter): import("node:net").Socket | null {
 		// @ts-expect-error accessing private conn for test assertions
 		return emitter.conn;
 	}
@@ -676,7 +678,7 @@ describe("Emitter — socket-error robustness", () => {
 		const server = startEchoServer(sockPath);
 		await server.ready;
 		const drops: string[] = [];
-		const emitter = new Emitter({
+		const emitter = new DaemonEmitter({
 			socketPath: sockPath,
 			debugLog: (_msg, attrs) => {
 				if (attrs.stage) drops.push(attrs.stage);
@@ -709,7 +711,7 @@ describe("Emitter — socket-error robustness", () => {
 		const sockPath = tempSockPath("err-redial");
 		const server = startEchoServer(sockPath);
 		await server.ready;
-		const emitter = new Emitter({ socketPath: sockPath });
+		const emitter = new DaemonEmitter({ socketPath: sockPath });
 
 		// First emit dials and delivers.
 		await emitter.emit(GOOD_EVENT);
@@ -736,7 +738,7 @@ describe("Emitter — socket-error robustness", () => {
 		const sockPath = tempSockPath("close-during-dial");
 		const server = startEchoServer(sockPath);
 		await server.ready;
-		const emitter = new Emitter({ socketPath: sockPath });
+		const emitter = new DaemonEmitter({ socketPath: sockPath });
 
 		const emitPromise = emitter.emit(GOOD_EVENT);
 		// Close immediately. Depending on timing this may or may not race
