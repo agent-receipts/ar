@@ -217,7 +217,18 @@ func (s *Store) Insert(r receipt.AgentReceipt, receiptHash string) error {
 //
 // Intended for use by HTTP receivers (collector) and other code paths that
 // have the wire bytes in hand. Callers without raw bytes can use Insert.
+//
+// Guard rails to keep the store from accreting corrupt rows:
+//   - rawJSON must be a JSON object. Garbage or non-object payloads are
+//     rejected so GetByID/GetChain don't blow up later on Unmarshal.
+//   - If rawJSON carries an `id` field, it must equal r.ID. A mismatch
+//     means the row key would lie about the stored receipt — the kind of
+//     corruption that is silent at insert time and lethal at audit time.
 func (s *Store) InsertRaw(r receipt.AgentReceipt, rawJSON []byte, receiptHash string) error {
+	if err := validateRawReceipt(rawJSON, r.ID); err != nil {
+		return fmt.Errorf("insert receipt id=%s: %w", r.ID, err)
+	}
+
 	subj := r.CredentialSubject
 
 	var prevHash *string
@@ -250,6 +261,41 @@ func (s *Store) InsertRaw(r receipt.AgentReceipt, rawJSON []byte, receiptHash st
 		// failed. The underlying *sqlite.Error is preserved for errors.As
 		// callers (collector's SQLITE_CONSTRAINT_PRIMARYKEY classification).
 		return fmt.Errorf("insert receipt id=%s: %w", r.ID, err)
+	}
+	return nil
+}
+
+// validateRawReceipt enforces that rawJSON is a JSON object and, if it
+// carries an id, that the id matches structID. Other fields are not
+// cross-checked — chain_id/sequence mismatches are caught later by the
+// UNIQUE index on (chain_id, sequence), and exact value parity with the
+// struct is not the SDK's contract to enforce (forward-compat fields the
+// struct does not know about are exactly the reason raw bytes are stored).
+func validateRawReceipt(rawJSON []byte, structID string) error {
+	// json.RawMessage avoids a second decode pass for the id-string check.
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &probe); err != nil {
+		return fmt.Errorf("rawJSON is not valid JSON: %w", err)
+	}
+	if probe == nil {
+		// json.Unmarshal of the literal `null` succeeds and produces a nil
+		// map — reject explicitly, otherwise we'd persist "null" as the
+		// receipt_json column value.
+		return fmt.Errorf("rawJSON is not a JSON object")
+	}
+	idRaw, ok := probe["id"]
+	if !ok {
+		// No id in the raw bytes is acceptable — the SDK does not enforce
+		// schema completeness here, that is the caller's job at a higher
+		// layer (e.g. the collector's structural validator).
+		return nil
+	}
+	var bodyID string
+	if err := json.Unmarshal(idRaw, &bodyID); err != nil {
+		return fmt.Errorf("rawJSON has non-string id field: %w", err)
+	}
+	if bodyID != structID {
+		return fmt.Errorf("struct id %q disagrees with rawJSON id %q", structID, bodyID)
 	}
 	return nil
 }
