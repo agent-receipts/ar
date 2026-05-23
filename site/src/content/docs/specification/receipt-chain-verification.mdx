@@ -50,14 +50,16 @@ Agent Receipts are hash-chained into tamper-evident sequences. This page describ
 flowchart TD
   A[Load chain ordered by sequence] --> A2{R_0.chain.previous_receipt_hash is null?}
   A2 -->|no| Z[Chain broken]
-  A2 -->|yes| A3{R_0.chain.sequence == 1?}
-  A3 -->|no| Z
-  A3 -->|yes| B[For each receipt R_i]
-  B --> C[Verify Ed25519 signature]
+  A2 -->|yes| B[For each receipt R_i]
+  B --> CID{R_i.chain.chain_id == R_0.chain.chain_id?}
+  CID -->|no| Z2["Chain broken: chain_id mismatch"]
+  CID -->|yes| C[Verify Ed25519 signature]
   C -->|fail| Z
   C -->|pass| D[SHA-256 of canonical form — proof excluded]
   D --> E{Not last receipt?}
-  E -->|yes| F["Check R_i+1.chain.previous_receipt_hash == sha256:digest"]
+  E -->|yes| TERM{R_i.chain.terminal == true?}
+  TERM -->|yes| Z3["Chain broken: receipt after terminal"]
+  TERM -->|no| F["Check R_i+1.chain.previous_receipt_hash == sha256:digest"]
   F -->|fail| Z
   F -->|pass| G[Check sequence increments by 1]
   G -->|fail| Z
@@ -85,7 +87,7 @@ To verify a receipt chain:
    - **b.** Compute the hex-encoded SHA-256 digest of the RFC 8785 canonical form of *R(i)* with the `proof` field removed.
    - **c.** If *i < n - 1*, confirm *R(i+1)*'s `chain.previous_receipt_hash` equals `sha256:` concatenated with that hex digest.
 3. For each receipt *R(i)* where *i > 0*, confirm `chain.sequence` equals *R(i-1)*'s `chain.sequence` + 1. Any gap is a hard verification failure, not a warning — partial chains cannot be silently accepted.
-4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null`. (The spec mandates `chain.sequence` starts at `1` per §4.3.2, but the reference SDK verifiers only enforce `sequence ≥ 1` here and rely on the schema and issuer conformance for the exact starting value. Callers needing strict first-sequence enforcement should additionally validate against `chain.sequence == 1` on R(0) or supply `ExpectedLength`.)
+4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null`. (The spec mandates `chain.sequence` starts at `1` per §4.3.2, but the reference SDK verifiers only enforce `sequence ≥ 1` here and rely on the schema and issuer conformance for the exact starting value. Callers needing strict first-sequence enforcement should additionally validate `R(0).chain.sequence == 1` inline — schema validation alone is not sufficient because JSON Schema can only express the per-receipt `≥ 1` bound, not the position-dependent "first equals 1" rule.)
 5. Confirm every receipt shares the same `chain.chain_id` as *R(0)*. Any mismatch fails verification immediately with a `chain_id mismatch` error identifying the offending index and both values. This check is unconditional and runs independently of `previous_receipt_hash` linkage — an attacker who splices a forged hash link cannot mix receipts from two distinct chains under a single verification call.
 6. If any receipt *R(i)* carries `chain.terminal: true` and a receipt *R(i+1)* exists in the input, verification fails immediately with `receipt after terminal`. This check is unconditional — no caller parameter can suppress it.
 
