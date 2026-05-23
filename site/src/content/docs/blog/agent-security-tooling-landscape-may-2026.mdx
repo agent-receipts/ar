@@ -59,8 +59,6 @@ April's four-layer model (gateways, firewalls, kernel, governance frameworks) mi
 
 The point of the table isn't a feature scorecard — several of these are days-to-weeks old. The point is the axis that separates them: **does the audit layer sit inside or outside the agent's trust boundary, and is the record portable across verifiers?** Note that we and nono land on the same side of the first question; the W3C VC envelope and single cross-channel chain are where we differ. That axis is where we expect the next year of competition to play out.
 
-A related but distinct effort is **CAP-SRP** (VeritasChain) — a *refusal*-provenance spec that proves an AI declined harmful content. It's adjacent to this layer, not a general agent-action audit format, so it solves a different problem than the cross-channel agent record.
-
 ### Pipelock's standardization play
 
 Pipelock's **EvidenceReceipt v2** is a bid to standardize the receipt format itself — moving from "our firewall emits an audit record" toward "here is the record format the ecosystem should adopt." It's the clearest signal that the format layer is consolidating. Format standardization is good for the space and good for us: a portable record is only valuable if more than one tool emits and reads it. The question a standard has to answer is the same boundary question — a standard receipt signed in-process still can't outlive a compromised signer.

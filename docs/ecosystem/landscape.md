@@ -44,8 +44,6 @@ The category that crystallized in May 2026: tools whose primary product is the p
 | **InALign** | Alignment + audit | In-process | SHA-256 hash chain | MCP-native; MITRE-mapped detection, EU AI Act checks |
 
 > Several of these entrants are weeks old; rows carry verified specifics where available, not fabricated detail. The axis that matters is in-agent vs. out-of-agent signing and record portability — and on the first question, nono lands on the same side as Agent Receipts, so the differentiation runs through the portable W3C VC envelope and the single cross-channel chain.
->
-> A related but distinct effort is CAP-SRP (VeritasChain) — a *refusal*-provenance spec proving an AI declined harmful content. It is adjacent to this layer, not a general agent-action audit format.
 
 ---
 
