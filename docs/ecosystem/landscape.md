@@ -58,7 +58,6 @@ These are the tools most relevant to an individual builder or small team enterin
 | **Released** | v3.5 May 2026 (Apr 2026 initial) | Jan 2026 | Feb 2026 | 2025–2026 | Feb 2026 | 2026 |
 | **Language** | Python (primary), TS, .NET, Rust, Go SDKs | Go | Python | Go + system-level | Node.js | Rust |
 | **License** | MIT | Apache 2.0 | AGPL-3.0 (commercial available) | Source-available (commercial) | MIT | MIT |
-| **Stars** | New (days old) | 29 | ~50+ | ~100+ | ~30 | ~20 |
 | **Approach** | Application middleware + Agent Framework integration | Egress proxy + MCP proxy | MCP stdio proxy + SDK library | Kernel enforcement (Landlock, FUSE, ptrace, seccomp) | MCP stdio proxy | Claude Code pre-tool-use hook |
 | **MCP proxy** | No (framework adapters) | Yes (stdio) | Yes (stdio) | No (syscall-level) | Yes (stdio) | No (hook-based) |
 | **HTTP/egress proxy** | No | Yes (7-layer scanner) | No | Yes (network proxy) | No | No |
