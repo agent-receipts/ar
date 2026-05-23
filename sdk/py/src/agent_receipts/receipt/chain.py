@@ -89,6 +89,22 @@ def _classify_termination_status(receipts: list[AgentReceipt]) -> str:
     return STATUS_COMPLETE
 
 
+def _is_incomplete_tool_roundtrip(receipts: list[AgentReceipt]) -> bool:
+    """True when the final non-terminal receipt has outcome.status == "pending".
+
+    Detects a tool call whose result receipt never arrived (ADR-0019 §O3,
+    retained by ADR-0020). Empty chains and chains whose final receipt is
+    terminal (even if its outcome is "pending") return False. Advisory; does
+    not by itself fail verification.
+    """
+    if not receipts:
+        return False
+    last = receipts[-1]
+    if last.credentialSubject.chain.terminal is True:
+        return False
+    return last.credentialSubject.outcome.status == "pending"
+
+
 @dataclass
 class ChainVerification:
     """Result of verifying an entire chain."""
@@ -109,6 +125,10 @@ class ChainVerification:
     # retries are legitimate, so duplicates are flagged for auditor review
     # rather than treated as failures. Empty when there are no warnings.
     warnings: list[str] = field(default_factory=_empty_warnings)
+    # True when the final non-terminal receipt has outcome.status == "pending"
+    # — a tool call whose result receipt never arrived (ADR-0019 §O3, retained
+    # by ADR-0020). Advisory; does not by itself fail verification.
+    incomplete_tool_roundtrip: bool = False
 
 
 def verify_chain(
@@ -157,10 +177,17 @@ def verify_chain(
                     f"expected chain length does not match: "
                     f"expected {expected_length}, got 0"
                 ),
+                incomplete_tool_roundtrip=False,
             )
-        return ChainVerification(valid=True, length=0, status=STATUS_UNKNOWN)
+        return ChainVerification(
+            valid=True,
+            length=0,
+            status=STATUS_UNKNOWN,
+            incomplete_tool_roundtrip=False,
+        )
 
     status = _classify_termination_status(receipts)
+    incomplete_roundtrip = _is_incomplete_tool_roundtrip(receipts)
 
     # Idempotency-key duplicate detection is independent of validity (spec
     # §7.3.6) — compute it once up front so every return path can surface it.
@@ -268,6 +295,7 @@ def verify_chain(
                     f"expected {quoted_expected}, got {quoted_observed}"
                 ),
                 warnings=warnings,
+                incomplete_tool_roundtrip=incomplete_roundtrip,
             )
 
     # Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
@@ -293,6 +321,7 @@ def verify_chain(
                 broken_at=broken_at,
                 error=error_msg,
                 warnings=warnings,
+                incomplete_tool_roundtrip=incomplete_roundtrip,
             )
 
     cv = ChainVerification(
@@ -303,6 +332,7 @@ def verify_chain(
         broken_at=broken_at,
         error=loop_error,
         warnings=warnings,
+        incomplete_tool_roundtrip=incomplete_roundtrip,
     )
 
     # Response-hash verification (spec §4.3.2).

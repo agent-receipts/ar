@@ -9,3 +9,11 @@ export {
 	type HttpEmitterConfig,
 	type RetryConfig,
 } from "./types.js";
+export {
+	FileWal,
+	MemoryWal,
+	type Wal,
+	type WalDrainResult,
+	WalEmitter,
+	type WalEmitterConfig,
+} from "./wal.js";

@@ -41,6 +41,13 @@ type ChainVerification struct {
 	// values (spec §7.3.6): retries are legitimate, so duplicates are flagged for
 	// auditor review rather than treated as failures.
 	Warnings []string `json:"warnings,omitempty"`
+	// IncompleteToolRoundtrip is true when the final, non-terminal receipt has
+	// outcome.status == pending — a tool call whose result receipt never arrived
+	// (ADR-0019 §O3, retained by ADR-0020). Advisory only: it does NOT by itself
+	// set Valid=false, since the chain may still verify cryptographically. It is
+	// surfaced separately from a generic chain break so callers can report
+	// "incomplete tool roundtrip" specifically.
+	IncompleteToolRoundtrip bool `json:"incomplete_tool_roundtrip,omitempty"`
 }
 
 // classifyTerminationStatus inspects the wire form of the final receipt and
@@ -96,6 +103,23 @@ func duplicateIdempotencyWarnings(receipts []AgentReceipt) []string {
 			" (retries are legitimate; review for double-counting)")
 	}
 	return warnings
+}
+
+// isIncompleteToolRoundtrip reports whether the final receipt is non-terminal
+// (Terminal absent or false) AND carries outcome.status == pending — a tool
+// call whose result receipt never arrived (ADR-0019 §O3, retained by ADR-0020).
+// A terminal receipt closes the chain deliberately, so a pending terminal
+// receipt is not flagged. An empty chain is not flagged. Advisory only:
+// independent of whether the chain verifies.
+func isIncompleteToolRoundtrip(receipts []AgentReceipt) bool {
+	if len(receipts) == 0 {
+		return false
+	}
+	last := receipts[len(receipts)-1]
+	if last.CredentialSubject.Chain.Terminal != nil && *last.CredentialSubject.Chain.Terminal {
+		return false
+	}
+	return last.CredentialSubject.Outcome.Status == StatusPending
 }
 
 // ChainVerifyOptions holds optional parameters for VerifyChain.
@@ -155,18 +179,23 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		opt = opts[0]
 	}
 
+	// Computed once and stamped onto every returned ChainVerification below;
+	// advisory and never affects Valid.
+	incompleteToolRoundtrip := isIncompleteToolRoundtrip(receipts)
+
 	if len(receipts) == 0 {
 		// Handle ExpectedLength=0 edge case: empty chain with ExpectedLength=0 is valid.
 		if opt.ExpectedLength != nil && *opt.ExpectedLength != 0 {
 			return ChainVerification{
-				Valid:    false,
-				Length:   0,
-				Status:   ChainStatusUnknown,
-				BrokenAt: 0,
-				Error:    "expected chain length does not match: expected " + strconv.Itoa(*opt.ExpectedLength) + ", got 0",
+				Valid:                   false,
+				Length:                  0,
+				Status:                  ChainStatusUnknown,
+				BrokenAt:                0,
+				Error:                   "expected chain length does not match: expected " + strconv.Itoa(*opt.ExpectedLength) + ", got 0",
+				IncompleteToolRoundtrip: incompleteToolRoundtrip,
 			}
 		}
-		return ChainVerification{Valid: true, Length: 0, Status: ChainStatusUnknown, BrokenAt: -1}
+		return ChainVerification{Valid: true, Length: 0, Status: ChainStatusUnknown, BrokenAt: -1, IncompleteToolRoundtrip: incompleteToolRoundtrip}
 	}
 
 	status := classifyTerminationStatus(receipts)
@@ -306,7 +335,8 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 				BrokenAt: i,
 				Error: "chain_id mismatch at index " + strconv.Itoa(i) +
 					`: expected "` + expectedChainID + `", got "` + observed + `"`,
-				Warnings: warnings,
+				Warnings:                warnings,
+				IncompleteToolRoundtrip: incompleteToolRoundtrip,
 			}
 		}
 	}
@@ -329,26 +359,28 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 					errMsg = "receipt after terminal: receipt at index " + strconv.Itoa(i+1) + " follows a terminal receipt at index " + strconv.Itoa(i)
 				}
 				return ChainVerification{
-					Valid:    false,
-					Length:   len(receipts),
-					Status:   status,
-					Receipts: results,
-					BrokenAt: brokenAt,
-					Error:    errMsg,
-					Warnings: warnings,
+					Valid:                   false,
+					Length:                  len(receipts),
+					Status:                  status,
+					Receipts:                results,
+					BrokenAt:                brokenAt,
+					Error:                   errMsg,
+					Warnings:                warnings,
+					IncompleteToolRoundtrip: incompleteToolRoundtrip,
 				}
 			}
 		}
 	}
 
 	cv := ChainVerification{
-		Valid:    brokenAt == -1,
-		Length:   len(receipts),
-		Status:   status,
-		Receipts: results,
-		BrokenAt: brokenAt,
-		Error:    loopErr,
-		Warnings: warnings,
+		Valid:                   brokenAt == -1,
+		Length:                  len(receipts),
+		Status:                  status,
+		Receipts:                results,
+		BrokenAt:                brokenAt,
+		Error:                   loopErr,
+		Warnings:                warnings,
+		IncompleteToolRoundtrip: incompleteToolRoundtrip,
 	}
 
 	// Response-hash verification (spec §4.3.2).

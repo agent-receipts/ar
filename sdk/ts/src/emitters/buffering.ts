@@ -9,9 +9,9 @@
  * !!! CRASH-LOSS RISK !!!
  * Buffered receipts are lost if the process exits before {@link flush}
  * completes. This emitter is NOT suitable for environments where audit
- * completeness is critical. Use a synchronous {@link HttpEmitter} (or a
- * persistent WAL — tracked separately) when every receipt must reach the
- * collector.
+ * completeness is critical. Use a synchronous {@link HttpEmitter} (or wrap
+ * one in a WalEmitter for at-least-once delivery) when every receipt must
+ * reach the collector.
  */
 
 import type { AgentReceipt } from "../receipt/types.js";

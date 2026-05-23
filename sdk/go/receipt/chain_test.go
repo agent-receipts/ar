@@ -1261,6 +1261,136 @@ func TestChainIDBindingRejectsSingleMismatchedReceipt(t *testing.T) {
 	}
 }
 
+// --- Incomplete tool roundtrip (ADR-0019 §O3, retained by ADR-0020) ---
+
+// buildPendingTail builds a valid `count`-receipt chain whose final,
+// non-terminal receipt carries outcome.status == pending — modelling a tool
+// call whose result receipt never arrived.
+func buildPendingTail(t *testing.T, kp KeyPair, count int) []AgentReceipt {
+	t.Helper()
+	chain := make([]AgentReceipt, 0, count)
+	var prevHash *string
+	for i := 1; i <= count; i++ {
+		status := StatusSuccess
+		if i == count {
+			status = StatusPending
+		}
+		unsigned := Create(CreateInput{
+			Issuer:    Issuer{ID: "did:agent:test"},
+			Principal: Principal{ID: "did:user:test"},
+			Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+			Outcome:   Outcome{Status: status},
+			Chain:     Chain{Sequence: i, PreviousReceiptHash: prevHash, ChainID: "chain-1"},
+		})
+		signed, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		chain = append(chain, signed)
+		h, err := HashReceipt(signed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+	return chain
+}
+
+func TestIncompleteToolRoundtripFlagsPendingTail(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildPendingTail(t, kp, 3)
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if !result.Valid {
+		t.Errorf("pending tail must not break verification; broken at %d: %s", result.BrokenAt, result.Error)
+	}
+	if !result.IncompleteToolRoundtrip {
+		t.Error("expected IncompleteToolRoundtrip=true for a pending non-terminal tail")
+	}
+}
+
+func TestIncompleteToolRoundtripIgnoresCompletedTail(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 3) // all StatusSuccess
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.IncompleteToolRoundtrip {
+		t.Error("expected IncompleteToolRoundtrip=false for a completed tail")
+	}
+}
+
+func TestIncompleteToolRoundtripIgnoresNonFinalPending(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	// Build a 3-receipt chain whose MIDDLE receipt is pending but the final one
+	// is success — only the final receipt's status is consulted.
+	chain := make([]AgentReceipt, 0, 3)
+	var prevHash *string
+	for i := 1; i <= 3; i++ {
+		status := StatusSuccess
+		if i == 2 {
+			status = StatusPending
+		}
+		unsigned := Create(CreateInput{
+			Issuer:    Issuer{ID: "did:agent:test"},
+			Principal: Principal{ID: "did:user:test"},
+			Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+			Outcome:   Outcome{Status: status},
+			Chain:     Chain{Sequence: i, PreviousReceiptHash: prevHash, ChainID: "chain-1"},
+		})
+		signed, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		chain = append(chain, signed)
+		h, err := HashReceipt(signed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.IncompleteToolRoundtrip {
+		t.Error("expected IncompleteToolRoundtrip=false when only a non-final receipt is pending")
+	}
+}
+
+func TestIncompleteToolRoundtripIgnoresTerminalPending(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 2)
+	terminalHash, err := HashReceipt(chain[len(chain)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Final receipt is terminal AND pending — a deliberate close, not flagged.
+	unsigned := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: "filesystem.file.read", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusPending},
+		Chain:     Chain{Sequence: 3, PreviousReceiptHash: &terminalHash, ChainID: "chain-1"},
+		Terminal:  true,
+	})
+	signed, err := Sign(unsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain = append(chain, signed)
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if result.IncompleteToolRoundtrip {
+		t.Error("expected IncompleteToolRoundtrip=false for a terminal pending receipt")
+	}
+}
+
+func TestIncompleteToolRoundtripEmptyChain(t *testing.T) {
+	kp, _ := GenerateKeyPair()
+	result := VerifyChain(nil, kp.PublicKey)
+	if result.IncompleteToolRoundtrip {
+		t.Error("expected IncompleteToolRoundtrip=false for an empty chain")
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || findStr(s, sub))
 }

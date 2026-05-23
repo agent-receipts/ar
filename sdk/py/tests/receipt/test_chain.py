@@ -978,3 +978,83 @@ class TestChainIDBinding:
         assert "chain_id mismatch at index 1" in result.error
         assert '"chain-A"' in result.error
         assert '"chain-other"' in result.error
+
+
+def _append_receipt(
+    chain: list,
+    private_key: str,
+    status: Literal["success", "failure", "pending"],
+    terminal: bool = False,
+) -> list:
+    """Append a receipt with the given outcome status to the tail of `chain`."""
+    last = chain[-1] if chain else None
+    prev_hash = hash_receipt(last) if last is not None else None
+    unsigned = create_receipt(
+        CreateReceiptInput(
+            issuer=Issuer(id="did:agent:test"),
+            principal=Principal(id="did:user:test"),
+            action=ActionInput(type="filesystem.file.read", risk_level="low"),
+            outcome=Outcome(status=status),
+            chain=Chain(
+                sequence=len(chain) + 1,
+                previous_receipt_hash=prev_hash,
+                chain_id="chain_test",
+            ),
+            terminal=terminal,
+        )
+    )
+    signed = sign_receipt(unsigned, private_key, "did:agent:test#key-1")
+    return [*chain, signed]
+
+
+class TestIncompleteToolRoundtrip:
+    """ADR-0019 §O3 (retained by ADR-0020): advisory incomplete-roundtrip flag."""
+
+    def test_flags_pending_non_terminal_tail(self) -> None:
+        kp = generate_key_pair()
+        chain = _append_receipt(
+            _build_chain(2, kp.private_key), kp.private_key, "pending"
+        )
+
+        result = verify_chain(chain, kp.public_key)
+
+        # Advisory only: the chain still verifies cryptographically.
+        assert result.valid is True
+        assert result.incomplete_tool_roundtrip is True
+
+    def test_does_not_flag_completed_tail(self) -> None:
+        kp = generate_key_pair()
+        chain = _append_receipt(
+            _build_chain(2, kp.private_key), kp.private_key, "success"
+        )
+
+        result = verify_chain(chain, kp.public_key)
+
+        assert result.valid is True
+        assert result.incomplete_tool_roundtrip is False
+
+    def test_does_not_flag_pending_that_is_not_final(self) -> None:
+        kp = generate_key_pair()
+        # pending in the middle, success at the tail
+        with_pending = _append_receipt(
+            _build_chain(1, kp.private_key), kp.private_key, "pending"
+        )
+        chain = _append_receipt(with_pending, kp.private_key, "success")
+
+        result = verify_chain(chain, kp.public_key)
+
+        assert result.incomplete_tool_roundtrip is False
+
+    def test_does_not_flag_terminal_even_if_pending(self) -> None:
+        kp = generate_key_pair()
+        chain = _append_receipt(
+            _build_chain(2, kp.private_key), kp.private_key, "pending", terminal=True
+        )
+
+        result = verify_chain(chain, kp.public_key)
+
+        assert result.incomplete_tool_roundtrip is False
+
+    def test_empty_chain_is_false(self) -> None:
+        kp = generate_key_pair()
+        assert verify_chain([], kp.public_key).incomplete_tool_roundtrip is False
