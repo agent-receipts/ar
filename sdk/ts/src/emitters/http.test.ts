@@ -403,16 +403,19 @@ describe("HttpEmitter", () => {
 					// validate that mTLS works against a self-signed CA by supplying
 					// the CA bundle through the same dispatcher path we'd use in
 					// production tests.
-					const { Agent } = await import("undici");
+					const { Agent, fetch: undiciFetch } = await import("undici");
 					const dispatcher = new Agent({
 						connect: { ca: caCert, cert: clientCert, key: clientKey },
 					});
 					type DispatcherInit = RequestInit & { dispatcher?: unknown };
+					// Wrap undici's fetch (not the global) so the dispatcher and the
+					// fetch implementation share an undici build — the same pairing
+					// the emitter's own mTLS path relies on.
 					const customFetch: typeof fetch = (input, init) =>
-						fetch(input, {
+						undiciFetch(input, {
 							...init,
 							dispatcher,
-						} as DispatcherInit);
+						} as DispatcherInit) as unknown as ReturnType<typeof fetch>;
 
 					// First confirm that mTLS works WITH the client cert. The
 					// emitter still needs to provide the cert via its own auth
@@ -430,10 +433,12 @@ describe("HttpEmitter", () => {
 					// fetch / CA, so only the client cert differs.)
 					const bare = new Agent({ connect: { ca: caCert } });
 					const bareFetch: typeof fetch = (input, init) =>
-						fetch(input, {
+						undiciFetch(input, {
 							...init,
 							dispatcher: bare,
-						} as RequestInit & { dispatcher?: unknown });
+						} as RequestInit & {
+							dispatcher?: unknown;
+						}) as unknown as ReturnType<typeof fetch>;
 					const noCert = new HttpEmitter({
 						endpoint: url,
 						retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 },

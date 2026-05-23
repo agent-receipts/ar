@@ -20,10 +20,13 @@
  *     pending set so callers can {@link HttpEmitter.drain} before process
  *     exit to avoid losing in-flight receipts.
  *
- * mTLS uses an `undici.Agent` with the supplied cert/key bytes. Node's
- * global `fetch` is undici-based and accepts the `dispatcher` option;
- * the older `node:https.Agent` / `init.agent` style is ignored by
- * `globalThis.fetch` and therefore unsuitable here.
+ * mTLS uses an `undici.Agent` with the supplied cert/key bytes, plumbed
+ * through fetch's `dispatcher` option (the older `node:https.Agent` /
+ * `init.agent` style is ignored by `globalThis.fetch`). The Agent and the
+ * fetch implementation must come from the same undici build, so the mTLS
+ * path uses undici's own `fetch` rather than the platform global — see
+ * {@link HttpEmitter.fetchImpl} for why. Plain requests keep using the
+ * platform's global `fetch`.
  *
  * !!! FIRE-AND-FORGET CRASH-LOSS RISK !!!
  * In `"fire-and-forget"` mode the background delivery promise may not
@@ -32,7 +35,7 @@
  * need at-least-once delivery semantics from this mode.
  */
 
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 import type { AgentReceipt } from "../receipt/types.js";
 import {
 	EmitError,
@@ -63,6 +66,12 @@ export class HttpEmitter implements Emitter {
 		message: string,
 		attrs: Record<string, unknown>,
 	) => void;
+	// Defaults to the platform's global `fetch`. For mTLS we instead use
+	// undici's own `fetch` so it shares an undici build with mtlsAgent: a
+	// dispatcher from the npm `undici` package handed to Node's bundled
+	// fetch is rejected with "invalid onRequestStart method" when the two
+	// undici versions' dispatch-handler contracts diverge. A caller-supplied
+	// fetch always wins (they own the dispatcher/version pairing then).
 	private readonly fetchImpl: typeof fetch;
 	// Undici Agent used for mTLS. Forwarded as the `dispatcher` field on
 	// fetch's init below — undici globally augments RequestInit to accept
@@ -112,7 +121,9 @@ export class HttpEmitter implements Emitter {
 		}
 		this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.debugLog = config.debugLog ?? NOOP_LOG;
-		this.fetchImpl = config.fetch ?? fetch;
+		this.fetchImpl =
+			config.fetch ??
+			(this.auth.type === "mtls" ? (undiciFetch as typeof fetch) : fetch);
 		this.signal = config.signal;
 
 		if (!this.endpoint.startsWith("https://")) {
@@ -298,16 +309,16 @@ export class HttpEmitter implements Emitter {
 				headers.Authorization = `Bearer ${this.auth.token}`;
 			}
 
-			// `dispatcher` is the undici-specific knob that Node's global
-			// fetch honours for plumbing a custom Agent through. We can't
-			// rely on RequestInit's augmented dispatcher field directly
-			// because @types/node ships undici-types (v7) whose Dispatcher
-			// is structurally incompatible with the undici@6 Agent we use
-			// at runtime — narrowing the init type once and forwarding the
-			// Agent through it avoids the type clash without weakening the
-			// rest of the surface. Non-undici fetch implementations
-			// (browser polyfills) ignore unknown init fields — mTLS is
-			// Node-only by design.
+			// `dispatcher` is the undici-specific knob that fetch honours for
+			// plumbing a custom Agent through (undici's own fetch on the mTLS
+			// path; see fetchImpl). We can't rely on RequestInit's augmented
+			// dispatcher field directly because @types/node ships undici-types
+			// whose Dispatcher is structurally incompatible with the npm
+			// undici Agent we use at runtime — narrowing the init type once and
+			// forwarding the Agent through it avoids the type clash without
+			// weakening the rest of the surface. Non-undici fetch
+			// implementations (browser polyfills) ignore unknown init fields —
+			// mTLS is Node-only by design.
 			type FetchInitWithDispatcher = Omit<RequestInit, "dispatcher"> & {
 				dispatcher?: Agent;
 			};
