@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - "sdk/py/**"
+      - "cross-sdk-tests/**"
+      - "spec/**"
   pull_request:
     branches: [main]
     paths:
       - "sdk/py/**"
+      - "cross-sdk-tests/**"
+      - "spec/**"
 
 permissions:
   contents: read
