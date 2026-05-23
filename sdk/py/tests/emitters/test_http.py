@@ -184,23 +184,15 @@ def test_no_auth_header_when_none(collector: object) -> None:
     assert "Authorization" not in state.requests[0]["headers"]
 
 
-def test_mtls_config_loads_certificate_files(tmp_path: object) -> None:
-    """Pin that mTLS config produces a valid SSLContext without throwing.
-
-    A full TLS handshake against a synthetic server requires generating a
-    matching server cert too; integration tests against a real collector
-    exercise the handshake. This test ensures the config plumbing works.
-    """
-    # Self-signed cert+key generated via cryptography for test use only.
+def _make_mtls_pair() -> tuple[bytes, bytes]:
+    """Return (cert_pem, key_pem) — self-signed for test fixtures only."""
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.x509.oid import NameOID
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = x509.Name(
-        [x509.NameAttribute(NameOID.COMMON_NAME, "ar-test")],
-    )
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "ar-test")])
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -216,14 +208,18 @@ def test_mtls_config_loads_certificate_files(tmp_path: object) -> None:
         )
         .sign(key, hashes.SHA256())
     )
-
     cert_pem = cert.public_bytes(serialization.Encoding.PEM)
     key_pem = key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     )
+    return cert_pem, key_pem
 
+
+def test_mtls_config_loads_certificate_files() -> None:
+    """Pin that mTLS config produces a valid SSLContext without throwing."""
+    cert_pem, key_pem = _make_mtls_pair()
     emitter = HttpEmitter(
         HttpEmitterConfig(
             endpoint="https://example.invalid/receipts",
@@ -232,11 +228,154 @@ def test_mtls_config_loads_certificate_files(tmp_path: object) -> None:
     )
     try:
         # The SSLContext is built lazily at request time; here we just
-        # assert construction did not raise and that close() removes the
-        # tempfiles.
-        assert emitter._ssl_context is not None  # noqa: SLF001 — test asserts internal state
+        # assert construction did not raise.
+        assert emitter._ssl_context is not None  # noqa: SLF001 — internal state
     finally:
         emitter.close()
+
+
+def test_mtls_tempfiles_removed_on_close() -> None:
+    """close() must remove the cert+key tempfiles immediately."""
+    import os
+
+    cert_pem, key_pem = _make_mtls_pair()
+    emitter = HttpEmitter(
+        HttpEmitterConfig(
+            endpoint="https://example.invalid/receipts",
+            auth=MtlsAuth(cert=cert_pem, key=key_pem),
+        )
+    )
+    cert_path = emitter._mtls_cert_file  # noqa: SLF001 — internal state
+    key_path = emitter._mtls_key_file  # noqa: SLF001 — internal state
+    assert cert_path is not None
+    assert key_path is not None
+    assert os.path.exists(cert_path)
+    assert os.path.exists(key_path)
+    emitter.close()
+    assert not os.path.exists(cert_path)
+    assert not os.path.exists(key_path)
+
+
+def test_mtls_tempfiles_removed_on_gc_without_close() -> None:
+    """weakref.finalize must clean up the PEM tempfiles when the emitter
+    is GC'd, even if close() is never called. This is the load-bearing
+    test for B2 — private keys must not linger on disk past the
+    emitter's lifetime.
+    """
+    import gc
+    import os
+
+    cert_pem, key_pem = _make_mtls_pair()
+    emitter = HttpEmitter(
+        HttpEmitterConfig(
+            endpoint="https://example.invalid/receipts",
+            auth=MtlsAuth(cert=cert_pem, key=key_pem),
+        )
+    )
+    cert_path = emitter._mtls_cert_file  # noqa: SLF001 — internal state
+    key_path = emitter._mtls_key_file  # noqa: SLF001 — internal state
+    assert cert_path is not None
+    assert key_path is not None
+    assert os.path.exists(cert_path)
+    assert os.path.exists(key_path)
+    # Drop the only reference; force a collection cycle. The finalizer
+    # registered with weakref.finalize must fire and remove both files.
+    del emitter
+    gc.collect()
+    assert not os.path.exists(cert_path)
+    assert not os.path.exists(key_path)
+
+
+def test_mtls_keyfile_has_0600_permissions() -> None:
+    """The on-disk key tempfile must be readable only by the owner."""
+    import os
+    import stat
+
+    cert_pem, key_pem = _make_mtls_pair()
+    emitter = HttpEmitter(
+        HttpEmitterConfig(
+            endpoint="https://example.invalid/receipts",
+            auth=MtlsAuth(cert=cert_pem, key=key_pem),
+        )
+    )
+    try:
+        key_path = emitter._mtls_key_file  # noqa: SLF001 — internal state
+        assert key_path is not None
+        mode = stat.S_IMODE(os.stat(key_path).st_mode)
+        # 0o600: owner read+write only.
+        assert mode == 0o600, f"key file mode = {oct(mode)}; want 0o600"
+    finally:
+        emitter.close()
+
+
+def test_http_url_warns_on_construction(caplog: object) -> None:
+    """http:// endpoints log a warning (ADR-0020 requires HTTPS)."""
+    import logging
+
+    caplog.set_level(  # type: ignore[attr-defined]
+        logging.WARNING, logger="agent_receipts.emitters.http"
+    )
+    HttpEmitter(HttpEmitterConfig(endpoint="http://example.com/receipts"))
+    msgs = [r.getMessage() for r in caplog.records]  # type: ignore[attr-defined]
+    assert any("not HTTPS" in m for m in msgs), f"no HTTPS warning in {msgs}"
+
+
+def test_https_url_does_not_warn(caplog: object) -> None:
+    import logging
+
+    caplog.set_level(  # type: ignore[attr-defined]
+        logging.WARNING, logger="agent_receipts.emitters.http"
+    )
+    HttpEmitter(HttpEmitterConfig(endpoint="https://example.com/receipts"))
+    msgs = [r.getMessage() for r in caplog.records]  # type: ignore[attr-defined]
+    assert not any("not HTTPS" in m for m in msgs), f"unexpected warning: {msgs}"
+
+
+def test_cancel_event_short_circuits_retry_backoff(collector: object) -> None:
+    """Setting cancel_event mid-flight aborts the retry loop without
+    waiting out the backoff budget."""
+    state, url = collector  # type: ignore[misc]
+    state.responder = lambda _r, _a: 502
+    cancel = threading.Event()
+    emitter = HttpEmitter(
+        HttpEmitterConfig(
+            endpoint=url,
+            retry=RetryConfig(
+                max_attempts=10, base_delay_ms=10_000, max_delay_ms=10_000
+            ),
+            cancel_event=cancel,
+        )
+    )
+    # Cancel 50ms in — long before the 10s backoff would elapse.
+    threading.Timer(0.05, cancel.set).start()
+    start = time.monotonic()
+    with pytest.raises(EmitError):
+        emitter.emit(make_receipt(id="urn:r:1"))
+    elapsed_ms = (time.monotonic() - start) * 1000
+    assert elapsed_ms < 2_000, (
+        f"retry not cancelled; took {elapsed_ms:.0f}ms (want <2000ms)"
+    )
+
+
+def test_drain_waits_for_fire_and_forget(collector: object) -> None:
+    """drain() blocks until every background fire-and-forget thread finishes."""
+    state, url = collector  # type: ignore[misc]
+    gate = threading.Event()
+
+    def gated(_r: dict[str, object], _a: int) -> int:
+        # Hold the collector until drain() unblocks the gate.
+        gate.wait(timeout=2.0)
+        return 201
+
+    state.responder = gated
+    emitter = HttpEmitter(HttpEmitterConfig(endpoint=url, strategy="fire-and-forget"))
+    emitter.emit(make_receipt(id="urn:r:1"))
+    # Background thread is in flight but blocked on the collector.
+    assert len(state.requests) == 0
+    # Release the responder right after drain() starts. drain() must wait.
+    threading.Timer(0.05, gate.set).start()
+    emitter.drain()
+    assert len(state.requests) == 1
 
 
 def test_fire_and_forget_returns_immediately(collector: object) -> None:

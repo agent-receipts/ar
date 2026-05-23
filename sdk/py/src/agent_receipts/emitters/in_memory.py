@@ -9,9 +9,12 @@ NOT for production use.
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from agent_receipts.receipt.types import AgentReceipt
 
 
@@ -20,19 +23,25 @@ class InMemoryEmitter:
 
     def __init__(self) -> None:
         self._received: list[AgentReceipt] = []
+        self._lock = threading.Lock()
 
     @property
-    def received(self) -> list[AgentReceipt]:
+    def received(self) -> Sequence[AgentReceipt]:
         """All receipts passed to :meth:`emit`, in arrival order.
 
-        Returned as a live list reference for cheap test assertions; copy
-        before mutating if you need an independent snapshot.
+        Returns an independent snapshot — mutating it does not affect
+        future deliveries, matching the snapshot semantics of the Go SDK
+        (``Received()`` returns a copy). Safe to call concurrently with
+        :meth:`emit`.
         """
-        return self._received
+        with self._lock:
+            return list(self._received)
 
     def emit(self, receipt: AgentReceipt) -> None:
-        self._received.append(receipt)
+        with self._lock:
+            self._received.append(receipt)
 
     def clear(self) -> None:
         """Drop all recorded receipts. Useful between test cases."""
-        self._received.clear()
+        with self._lock:
+            self._received.clear()

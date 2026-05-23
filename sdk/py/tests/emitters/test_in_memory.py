@@ -29,6 +29,18 @@ def test_clear_empties_received() -> None:
     assert e.received == []
 
 
+def test_received_returns_snapshot_not_live_reference() -> None:
+    """`received` must return a defensive copy so callers can't mutate the
+    internal buffer (matches Go SDK's snapshot semantics)."""
+    e = InMemoryEmitter()
+    e.emit(make_receipt(id="urn:r:1"))
+    snap = e.received
+    # snap is detached — clear() must not affect it.
+    e.clear()
+    assert [r.id for r in snap] == ["urn:r:1"]
+    assert e.received == []
+
+
 def test_implements_emitter_protocol() -> None:
     # Light runtime check via the @runtime_checkable Protocol — this is the
     # contract every test-double must satisfy.

@@ -9,6 +9,7 @@ from agent_receipts.emitters.in_memory import InMemoryEmitter
 from agent_receipts.emitters.types import (
     ApiKeyAuth,
     BearerAuth,
+    BufferingFlushError,
     CompositeEmitError,
     EmitError,
     Emitter,
@@ -23,6 +24,7 @@ __all__ = [
     "ApiKeyAuth",
     "BearerAuth",
     "BufferingEmitter",
+    "BufferingFlushError",
     "CompositeEmitError",
     "CompositeEmitter",
     "EmitError",

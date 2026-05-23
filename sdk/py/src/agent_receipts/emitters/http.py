@@ -16,12 +16,21 @@ Strategy:
       the full retry budget.
     - "fire-and-forget": emit() schedules the POST on a background
       thread and returns immediately; the background thread's error is
-      logged at debug and never raised to the caller.
+      logged at debug and never raised to the caller. Background
+      deliveries are tracked so :meth:`HttpEmitter.drain` can wait for
+      them on graceful shutdown.
+
+!!! FIRE-AND-FORGET CRASH-LOSS RISK !!!
+``"fire-and-forget"`` does not guarantee the receipt reached the wire
+before the process exits. Call :meth:`drain` before shutdown when you
+need a best-effort flush of in-flight background deliveries.
 
 mTLS support uses :func:`ssl.SSLContext.load_cert_chain` which requires
-file paths. The PEM-encoded bytes are written to a per-instance
-:class:`tempfile.NamedTemporaryFile` at construction; the files live as
-long as the emitter does and are cleaned up on close.
+file paths. The PEM-encoded bytes are written to per-instance tempfiles
+(mode 0600, created atomically) at construction. A
+:func:`weakref.finalize` callback removes them on GC even if the caller
+forgets to call :meth:`close` — so the PEM-encoded private key never
+lingers on disk past the emitter's lifetime.
 """
 
 from __future__ import annotations
@@ -35,6 +44,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import weakref
 from typing import TYPE_CHECKING, Any
 
 from agent_receipts.emitters.types import (
@@ -69,13 +79,35 @@ class HttpEmitter:
             )
         self._retry = config.retry
         self._timeout = config.timeout_ms / 1000.0
+        self._cancel_event = config.cancel_event
+
+        if not self._endpoint.startswith("https://"):
+            # ADR-0020 requires HTTPS in production. We accept http:// for
+            # tests and local-loopback usage but warn so misconfigurations
+            # don't reach prod silently.
+            logger.warning(
+                "HttpEmitter: endpoint %s is not HTTPS; "
+                "receipts will travel unencrypted",
+                self._endpoint,
+            )
+
+        # Track fire-and-forget background threads so callers can drain
+        # them on shutdown. Guarded by a dedicated lock so emit() and
+        # drain() can race safely.
+        self._pending_lock = threading.Lock()
+        self._pending: set[threading.Thread] = set()
 
         # mTLS bytes -> on-disk PEM files -> SSLContext. We keep the
         # tempfiles alive for the emitter's lifetime so the SSL handshake
-        # can load them on every request.
+        # can load them on every request. Cleanup is via weakref.finalize
+        # so the private key on disk goes away on GC even if the caller
+        # forgets to call close().
         self._mtls_cert_file: str | None = None
         self._mtls_key_file: str | None = None
         self._ssl_context: ssl.SSLContext | None = None
+        # weakref.finalize is generic over the finalised object's type, but
+        # we never read its return type — typing it as Any is more honest.
+        self._finalizer: weakref.finalize[..., Any] | None = None
         if isinstance(self._auth, MtlsAuth):
             cert_path, key_path = _write_mtls_files(self._auth.cert, self._auth.key)
             self._mtls_cert_file = cert_path
@@ -83,6 +115,11 @@ class HttpEmitter:
             ctx = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
             ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
             self._ssl_context = ctx
+            # Capture only the paths (not `self`) so the finalizer doesn't
+            # keep the emitter alive.
+            self._finalizer = weakref.finalize(
+                self, _cleanup_paths, [cert_path, key_path]
+            )
 
     def emit(self, receipt: AgentReceipt) -> None:
         body = receipt.model_dump_json(by_alias=True).encode()
@@ -92,24 +129,38 @@ class HttpEmitter:
             # interpreter alive past the caller's exit. Errors are
             # swallowed because the caller explicitly opted in to no
             # guarantee.
-            threading.Thread(
+            thread = threading.Thread(
                 target=self._fire_and_forget,
                 args=(body,),
                 daemon=True,
-            ).start()
+            )
+            with self._pending_lock:
+                self._pending.add(thread)
+            thread.start()
             return
 
         self._deliver(body)
 
+    def drain(self, timeout: float | None = None) -> None:
+        """Wait for fire-and-forget background deliveries to finish.
+
+        Call this on graceful shutdown to give in-flight receipts a
+        chance to land. With no ``timeout`` argument blocks until every
+        pending thread has joined; with a timeout returns once the
+        deadline is hit even if threads are still running. Safe to call
+        when there are no pending threads.
+        """
+        with self._pending_lock:
+            snapshot = list(self._pending)
+        for thread in snapshot:
+            thread.join(timeout=timeout)
+
     def close(self) -> None:
         """Release the mTLS temp files, if any. Safe to call multiple times."""
-        for path in (self._mtls_cert_file, self._mtls_key_file):
-            if path is None:
-                continue
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+        if self._finalizer is not None and self._finalizer.alive:
+            # Explicit cleanup — also detach so GC doesn't double-unlink.
+            self._finalizer()
+            self._finalizer.detach()
         self._mtls_cert_file = None
         self._mtls_key_file = None
 
@@ -123,6 +174,7 @@ class HttpEmitter:
     # ------------------------------------------------------------------
 
     def _fire_and_forget(self, body: bytes) -> None:
+        current = threading.current_thread()
         try:
             self._deliver(body)
         except Exception as exc:  # noqa: BLE001 — fire-and-forget swallows everything
@@ -130,12 +182,21 @@ class HttpEmitter:
                 "HttpEmitter dropped receipt (fire-and-forget)",
                 extra={"endpoint": self._endpoint, "err": str(exc)},
             )
+        finally:
+            with self._pending_lock:
+                self._pending.discard(current)
 
     def _deliver(self, body: bytes) -> None:
         last_error: BaseException | None = None
         last_status: int | None = None
 
         for attempt in range(1, self._retry.max_attempts + 1):
+            if self._cancel_event is not None and self._cancel_event.is_set():
+                raise EmitError(
+                    f"HttpEmitter: cancelled before attempt {attempt} to "
+                    f"{self._endpoint}",
+                    status=last_status,
+                ) from last_error
             try:
                 status = self._do_request(body)
             except urllib.error.HTTPError as exc:
@@ -148,7 +209,12 @@ class HttpEmitter:
                 last_status = None
                 if attempt >= self._retry.max_attempts:
                     break
-                time.sleep(_backoff_delay(self._retry, attempt) / 1000.0)
+                if self._wait_backoff(attempt):
+                    raise EmitError(
+                        f"HttpEmitter: cancelled while waiting to retry "
+                        f"{self._endpoint}",
+                        status=None,
+                    ) from exc
                 continue
 
             if status in (201, 409):
@@ -166,7 +232,12 @@ class HttpEmitter:
                 last_status = status
                 if attempt >= self._retry.max_attempts:
                     break
-                time.sleep(_backoff_delay(self._retry, attempt) / 1000.0)
+                if self._wait_backoff(attempt):
+                    raise EmitError(
+                        f"HttpEmitter: cancelled while waiting to retry "
+                        f"{self._endpoint}",
+                        status=status,
+                    ) from last_error
                 continue
             # Any other status (401/403/404/4xx) is non-retryable.
             raise EmitError(
@@ -179,6 +250,16 @@ class HttpEmitter:
             f"{self._endpoint}",
             status=last_status,
         ) from last_error
+
+    def _wait_backoff(self, attempt: int) -> bool:
+        """Sleep before the next retry. Returns True if cancellation fired."""
+        delay = _backoff_delay(self._retry, attempt) / 1000.0
+        if self._cancel_event is not None:
+            # Event.wait returns True iff the event was set during the
+            # wait — that's our "cancellation fired" signal.
+            return self._cancel_event.wait(timeout=delay)
+        time.sleep(delay)
+        return False
 
     def _do_request(self, body: bytes) -> int:
         headers: dict[str, str] = {"Content-Type": "application/ld+json"}
@@ -224,10 +305,24 @@ def _write_mtls_files(cert: bytes, key: bytes) -> tuple[str, str]:
     finally:
         os.close(cert_fd)
         os.close(key_fd)
-    # Tighten permissions on the private key — tempfile already opens at
+    # Tighten permissions on the private key — mkstemp already opens at
     # 0600 on POSIX, but be explicit so reviewers don't have to check.
     os.chmod(key_path, 0o600)
     return cert_path, key_path
+
+
+def _cleanup_paths(paths: list[str]) -> None:
+    """Remove each path on the filesystem, ignoring missing files.
+
+    Used both by :meth:`HttpEmitter.close` and by the weakref finalizer
+    so the PEM tempfiles are removed deterministically on GC even if the
+    caller forgets to call ``close()``.
+    """
+    for path in paths:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 # Convenience re-exports so callers can do `from agent_receipts.emitters

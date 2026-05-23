@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    import threading
+
     from agent_receipts.receipt.types import AgentReceipt
 
 
@@ -53,6 +55,22 @@ class CompositeEmitError(Exception):
     order they were thrown. ``CompositeEmitter`` always attempts every
     child even when earlier children fail, so this exception's presence
     does NOT mean delivery to later children was skipped.
+    """
+
+    def __init__(self, message: str, errors: list[BaseException]) -> None:
+        super().__init__(message)
+        self.errors = errors
+
+
+class BufferingFlushError(Exception):
+    """Raised by :class:`BufferingEmitter` when one or more receipts in a
+    flushed batch fail downstream.
+
+    The :attr:`errors` attribute carries the per-receipt exceptions in
+    the order they were thrown. ``BufferingEmitter`` always attempts
+    every receipt in the batch even when earlier ones fail — receipts
+    that fail are not requeued (retries are the inner emitter's
+    responsibility).
     """
 
     def __init__(self, message: str, errors: list[BaseException]) -> None:
@@ -113,10 +131,23 @@ class RetryConfig:
 
 @dataclass(frozen=True)
 class HttpEmitterConfig:
-    """Configuration for :class:`HttpEmitter`."""
+    """Configuration for :class:`HttpEmitter`.
+
+    The ``auth`` field controls authentication; for standard
+    ``Authorization: Bearer …`` tokens use :class:`BearerAuth`. The
+    :class:`ApiKeyAuth` variant is meant for custom non-``Authorization``
+    headers (e.g. ``X-Api-Key``) — collectors that expect a bearer scheme
+    should be configured via :class:`BearerAuth` so the wire shape stays
+    canonical.
+
+    Pass a :class:`threading.Event` as ``cancel_event`` to short-circuit
+    retry sleeps. When the event is set, the emitter aborts the retry
+    loop with :class:`EmitError` instead of waiting out the backoff.
+    """
 
     endpoint: str
     auth: HttpEmitterAuth = field(default_factory=NoAuth)
     strategy: str = "sync"  # "sync" | "fire-and-forget"
     retry: RetryConfig = field(default_factory=RetryConfig)
     timeout_ms: int = 5_000
+    cancel_event: threading.Event | None = None
