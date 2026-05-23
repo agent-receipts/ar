@@ -155,13 +155,13 @@ func TestIntegration_ClaudeCodeFrame(t *testing.T) {
 		t.Fatalf("readClaudeCode: %v", err)
 	}
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(rl.path),
 		emitter.WithSessionID(sid),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 	if err != nil {
-		t.Fatalf("emitter.New: %v", err)
+		t.Fatalf("emitter.NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -228,14 +228,14 @@ func TestIntegration_DaemonDown_StrictErrors(t *testing.T) {
 		t.Fatalf("readClaudeCode: %v", err)
 	}
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(socketPath),
 		emitter.WithSessionID(sid),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		emitter.WithStrictErrors(),
 	)
 	if err != nil {
-		t.Fatalf("emitter.New: %v", err)
+		t.Fatalf("emitter.NewDaemon: %v", err)
 	}
 	defer em.Close()
 
@@ -276,14 +276,14 @@ func TestIntegration_DaemonDown_FireAndForget(t *testing.T) {
 		t.Fatalf("readClaudeCode: %v", err)
 	}
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(socketPath),
 		emitter.WithSessionID(sid),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		// no WithStrictErrors — fire-and-forget mode
 	)
 	if err != nil {
-		t.Fatalf("emitter.New: %v", err)
+		t.Fatalf("emitter.NewDaemon: %v", err)
 	}
 	defer em.Close()
 

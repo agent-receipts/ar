@@ -245,7 +245,7 @@ func StartDaemonFromConfig(t *testing.T, cfg Config, pubPEM string) *DaemonFixtu
 func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, toolName, toolServer, decision string) error {
 	t.Helper()
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(f.Config.SocketPath),
 		emitter.WithSessionID(sessionID),
 		emitter.WithLogger(slog.Default()),
@@ -271,7 +271,7 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 func (f *DaemonFixture) EmitGoFrameFull(t *testing.T, sessionID string, event emitter.Event) error {
 	t.Helper()
 
-	em, err := emitter.New(
+	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(f.Config.SocketPath),
 		emitter.WithSessionID(sessionID),
 		emitter.WithLogger(slog.Default()),
