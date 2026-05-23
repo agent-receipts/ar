@@ -127,6 +127,34 @@ describe("BufferingEmitter", () => {
 		await expect(buf.flush()).rejects.toThrow(/downstream failed/);
 	});
 
+	it("flush() attempts every receipt even when the inner fails mid-batch", async () => {
+		// Inner alternates: r1 fails, r2 succeeds, r3 fails, r4 succeeds.
+		const attempted: string[] = [];
+		const flaky: Emitter = {
+			emit(receipt: AgentReceipt): Promise<void> {
+				attempted.push(receipt.id);
+				if (attempted.length % 2 === 1) {
+					return Promise.reject(new Error(`fail-${receipt.id}`));
+				}
+				return Promise.resolve();
+			},
+		};
+		const buf = new BufferingEmitter({
+			inner: flaky,
+			maxBatchSize: 100,
+			flushIntervalMs: 10_000,
+		});
+		for (const id of ["a", "b", "c", "d"]) {
+			await buf.emit(fakeReceipt(id));
+		}
+		const err = await buf.flush().catch((e: unknown) => e);
+		// Every receipt was attempted, in order.
+		expect(attempted).toEqual(["a", "b", "c", "d"]);
+		// Two failures aggregated.
+		expect(err).toBeInstanceOf(AggregateError);
+		expect((err as AggregateError).errors).toHaveLength(2);
+	});
+
 	it("close() drains the buffer and rejects further emits", async () => {
 		const inner = new InMemoryEmitter();
 		const buf = new BufferingEmitter({

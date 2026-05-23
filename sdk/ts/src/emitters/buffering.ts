@@ -95,8 +95,24 @@ export class BufferingEmitter implements Emitter {
 		// next batch, not this one. This keeps the chain progressing even if
 		// the downstream is slow.
 		const batch = this.buffer.splice(0, this.buffer.length);
+		const errors: unknown[] = [];
 		for (const receipt of batch) {
-			await this.inner.emit(receipt);
+			// Attempt every receipt — failing fast on the first error would
+			// silently drop receipts already removed from the buffer.
+			try {
+				await this.inner.emit(receipt);
+			} catch (err) {
+				errors.push(err);
+			}
+		}
+		if (errors.length === 1) {
+			throw errors[0];
+		}
+		if (errors.length > 1) {
+			throw new AggregateError(
+				errors,
+				`BufferingEmitter: ${errors.length} of ${batch.length} receipts failed`,
+			);
 		}
 	}
 

@@ -45,7 +45,19 @@ export class EmitError extends Error {
 	}
 }
 
-/** Authentication variants supported by {@link HttpEmitter}. */
+/**
+ * Authentication variants supported by {@link HttpEmitter}.
+ *
+ * - `api-key`: sends `header: value` on every request. Intended for
+ *   custom non-`Authorization` headers (e.g. `X-Api-Key`). For standard
+ *   `Authorization: Bearer …` use the `bearer` variant — it sets the
+ *   header consistently and is what most collectors expect.
+ * - `bearer`: sets `Authorization: Bearer <token>`.
+ * - `mtls`: client-certificate authentication. Requires Node 18+ with
+ *   undici-backed fetch (the default in supported Node versions).
+ * - `none`: no auth headers; TLS validation still uses the system trust
+ *   store.
+ */
 export type HttpEmitterAuth =
 	| { type: "api-key"; header: string; value: string }
 	| { type: "bearer"; token: string }
@@ -94,4 +106,13 @@ export interface HttpEmitterConfig {
 	 * should leave this unset.
 	 */
 	fetch?: typeof fetch;
+	/**
+	 * Optional cancellation handle. If the signal aborts while the emitter
+	 * is sleeping between retries (or before the next attempt starts),
+	 * `emit()` rejects with an {@link EmitError} carrying the signal's
+	 * reason as `cause`. In-flight HTTP requests are also aborted via
+	 * their per-request timeout controller — pass this signal to cancel
+	 * before the timeout fires.
+	 */
+	signal?: AbortSignal;
 }
