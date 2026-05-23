@@ -1,0 +1,152 @@
+{
+  "$comment": "Cross-SDK v0.4.0 test vectors: pins the optional action.idempotency_key field (spec §7.3.6, ADR-0019 §S5, #480). All three SDKs MUST verify the signatures and reproduce expectedReceiptHash byte-for-byte, and MUST report the duplicate-key chain as valid with exactly one warning. Warning text is SDK-local prose and is intentionally not pinned.",
+  "version": "0.4.0",
+  "keys": {
+    "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZMzh2Qtdx/p40WlXhD+gKmaTDv3rLGm6TeY7TsJUKSQ=\n-----END PUBLIC KEY-----\n",
+    "privateKey": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIJqomA2cjqhLUYPhkMJyg4+A7hU8GiZtVzkN0Yz6jJPF\n-----END PRIVATE KEY-----\n"
+  },
+  "idempotencyKeyReceipt": {
+    "description": "Signed v0.4.0 receipt carrying action.idempotency_key. The new field is an ordinary sorted string key under RFC 8785; cross-SDK hash/sign/verify must be byte-identical.",
+    "idempotencyKey": "jsonrpc-req-7c3a9f10",
+    "receipt": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://agentreceipts.ai/context/v1"
+      ],
+      "credentialSubject": {
+        "action": {
+          "id": "act_040e0040-0000-4040-a040-000000000001",
+          "idempotency_key": "jsonrpc-req-7c3a9f10",
+          "risk_level": "high",
+          "timestamp": "2026-05-23T00:00:00Z",
+          "type": "system.command.execute"
+        },
+        "chain": {
+          "chain_id": "chain_v040_idempotency_test",
+          "previous_receipt_hash": null,
+          "sequence": 1
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "principal": {
+          "id": "did:user:test"
+        }
+      },
+      "id": "urn:receipt:040e0040-0000-4040-a040-000000000001",
+      "issuanceDate": "2026-05-23T00:00:00Z",
+      "issuer": {
+        "id": "did:agent:test"
+      },
+      "proof": {
+        "created": "2026-05-23T00:00:00Z",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "u-abQMKcumWX68aJLkVPIG-hG2LGxJRcjhv3pNbeSKyIOcrJoK67TyhZiTP4-1DKD4hVym7p5RPW4IQJpZNwtBA",
+        "type": "Ed25519Signature2020",
+        "verificationMethod": "did:agent:test#key-1"
+      },
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.4.0"
+    },
+    "expectedReceiptHash": "sha256:c396d4c4080359f17cdfaf5e42ae44da460a59b7573a9071e7c09b51e283f2c3",
+    "expectedValid": true
+  },
+  "duplicateIdempotencyChain": {
+    "description": "Two-receipt chain whose receipts share one action.idempotency_key — a tool call that timed out (failure) and was retried (success). Verifiers MUST report valid: true (retries are legitimate) and surface exactly one duplicate-key advisory.",
+    "duplicateKey": "jsonrpc-req-retry-001",
+    "receipts": [
+      {
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          "https://agentreceipts.ai/context/v1"
+        ],
+        "credentialSubject": {
+          "action": {
+            "id": "act_040e0040-0000-4040-a040-000000000002",
+            "idempotency_key": "jsonrpc-req-retry-001",
+            "risk_level": "low",
+            "timestamp": "2026-05-23T00:00:00Z",
+            "type": "data.api.read"
+          },
+          "chain": {
+            "chain_id": "chain_v040_duplicate_test",
+            "previous_receipt_hash": null,
+            "sequence": 1
+          },
+          "outcome": {
+            "error": "upstream timeout",
+            "status": "failure"
+          },
+          "principal": {
+            "id": "did:user:test"
+          }
+        },
+        "id": "urn:receipt:040e0040-0000-4040-a040-000000000002",
+        "issuanceDate": "2026-05-23T00:00:00Z",
+        "issuer": {
+          "id": "did:agent:test"
+        },
+        "proof": {
+          "created": "2026-05-23T00:00:00Z",
+          "proofPurpose": "assertionMethod",
+          "proofValue": "uaFnQzyQexOpaSLWziujIegXRb90G0J8xeU4SlRit9eGtdRVVWj7Eeo4CZmYtJFtd5bgnkJPZQEmckgwK56uWDw",
+          "type": "Ed25519Signature2020",
+          "verificationMethod": "did:agent:test#key-1"
+        },
+        "type": [
+          "VerifiableCredential",
+          "AgentReceipt"
+        ],
+        "version": "0.4.0"
+      },
+      {
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          "https://agentreceipts.ai/context/v1"
+        ],
+        "credentialSubject": {
+          "action": {
+            "id": "act_040e0040-0000-4040-a040-000000000003",
+            "idempotency_key": "jsonrpc-req-retry-001",
+            "risk_level": "low",
+            "timestamp": "2026-05-23T00:00:00Z",
+            "type": "data.api.read"
+          },
+          "chain": {
+            "chain_id": "chain_v040_duplicate_test",
+            "previous_receipt_hash": "sha256:67091303644f28434bcb85d387b3703b9fa5f2bc5331d18fa67026b525e1d124",
+            "sequence": 2
+          },
+          "outcome": {
+            "status": "success"
+          },
+          "principal": {
+            "id": "did:user:test"
+          }
+        },
+        "id": "urn:receipt:040e0040-0000-4040-a040-000000000003",
+        "issuanceDate": "2026-05-23T00:00:00Z",
+        "issuer": {
+          "id": "did:agent:test"
+        },
+        "proof": {
+          "created": "2026-05-23T00:00:00Z",
+          "proofPurpose": "assertionMethod",
+          "proofValue": "ubImjLpM72iaNVp3nh20YrcyzoDGfpOH4-N8uuiy-pAnUKmX5Y4R6yALXdq9emo5nkP_Kyumca08901RCvkqPDw",
+          "type": "Ed25519Signature2020",
+          "verificationMethod": "did:agent:test#key-1"
+        },
+        "type": [
+          "VerifiableCredential",
+          "AgentReceipt"
+        ],
+        "version": "0.4.0"
+      }
+    ],
+    "expectedValid": true,
+    "expectedWarningCount": 1
+  }
+}

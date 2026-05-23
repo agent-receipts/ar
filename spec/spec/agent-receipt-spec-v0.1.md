@@ -251,6 +251,7 @@ All five `proof` fields are required even in the minimal form.
 | `action.parameters_hash` | No | `sha256:`-prefixed hash of the action parameters (RFC 8785 canonical JSON). A verifier can independently canonicalize any disclosed parameters and recompute this hash; however, this version of the spec does not define per-action-type parameter schemas, so verifiers cannot reliably determine whether the disclosed parameters are complete or expected for the action type, and mismatches may be ambiguous. See §9.9. |
 | `action.timestamp` | Yes | ISO 8601 datetime when the action was executed. |
 | `action.trusted_timestamp` | No | Base64-encoded RFC 3161 `TimeStampToken` (DER encoding, then base64). The TSA MUST timestamp the same canonical JSON (proof field removed) used for signing. If no trusted timestamp is available, this field MAY be omitted or set explicitly to `null`. See §7.7. |
+| `action.idempotency_key` | No | Stable identifier for the logical operation this action represents (e.g. a request ID). When an agent retries a tool call, the SDK or MCP proxy SHOULD stamp the same `idempotency_key` on every receipt emitted for that operation. Verifiers surface duplicate values across a chain as a warning, not a failure — retries are legitimate. MUST be a non-empty string when present; MUST NOT be `null`. See §7.3.6 and ADR-0019 §S5. |
 | `intent` | No | Context about the agent's intent at time of action. |
 | `intent.conversation_hash` | No | `sha256:` prefixed hash of the conversation context. |
 | `intent.prompt_preview` | No | Plain-text preview of the prompt that triggered the action (may be truncated). |
@@ -505,6 +506,12 @@ Operators who require detection of store-level tampering SHOULD layer at least o
 - **Periodic chain-head anchoring** — publish chain-head hashes to an append-only public log at regular intervals; gaps relative to the anchored state are evidence of store-level rewriting.
 
 These are operational controls outside the protocol; the verifier cannot synthesize them and the spec does not mandate any specific backend. They are listed here so that compliance reviewers can match the protocol's verification contract to their operational threat model.
+
+#### 7.3.6 Idempotency key and retry deduplication
+
+When an agent retries a tool call (e.g. on timeout), the wrapping proxy or SDK may emit more than one `tool_call` receipt for the same logical operation. Without a shared identifier, an auditor cannot distinguish a legitimate retry from a duplicated emission. `action.idempotency_key` (§4.3.2) carries a stable identifier for the logical operation so that all receipts arising from one operation share a value. The SDK and MCP proxy SHOULD populate it automatically where a stable source exists (e.g. the MCP proxy derives it from the wrapped JSON-RPC request `id`).
+
+Duplicate `idempotency_key` values are **not** a verification failure. Retries are a normal, legitimate occurrence and the protocol does not attempt to suppress duplicate receipts. Verifiers MUST treat two or more receipts sharing a non-empty `idempotency_key` as a **warning** surfaced alongside the verification result, leaving `valid` unchanged. The warning lets auditors review whether the duplicates represent expected retries or unexpected double-counting. Receipts that omit `idempotency_key` never contribute to duplicate warnings.
 
 ### 7.4 Reversal receipts
 

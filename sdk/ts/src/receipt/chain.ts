@@ -3,6 +3,42 @@ import { verifyReceipt } from "./signing.js";
 import type { AgentReceipt } from "./types.js";
 
 /**
+ * Scan the chain for non-empty `action.idempotency_key` values that appear on
+ * more than one receipt and return a human-readable advisory for each such key
+ * (spec §7.3.6). Retries are legitimate, so these are warnings, not failures.
+ * Order is deterministic: warnings follow the first-seen order of each
+ * duplicated key, and the indices within each warning are in chain order.
+ * Receipts that omit the key never contribute. Returns undefined when there
+ * are no duplicates so the optional `warnings` field stays absent.
+ */
+function duplicateIdempotencyWarnings(
+	receipts: AgentReceipt[],
+): string[] | undefined {
+	const indices = new Map<string, number[]>();
+	const order: string[] = [];
+	receipts.forEach((r, i) => {
+		const key = r.credentialSubject.action.idempotency_key;
+		if (!key) return;
+		const existing = indices.get(key);
+		if (existing === undefined) {
+			order.push(key);
+			indices.set(key, [i]);
+		} else {
+			existing.push(i);
+		}
+	});
+	const warnings: string[] = [];
+	for (const key of order) {
+		const idx = indices.get(key);
+		if (idx === undefined || idx.length < 2) continue;
+		warnings.push(
+			`duplicate idempotency_key ${JSON.stringify(key)} on receipts at indices ${idx.join(", ")} (retries are legitimate; review for double-counting)`,
+		);
+	}
+	return warnings.length > 0 ? warnings : undefined;
+}
+
+/**
  * Classify chain termination based purely on what the receipts claim on the
  * wire (independent of verification result). See spec §7.3.3.
  */
@@ -67,6 +103,14 @@ export interface ChainVerification {
 	responseHashNote?: string;
 	/** Non-empty when verification failed with a descriptive message. */
 	error?: string;
+	/**
+	 * Non-fatal advisories about the verified chain, populated independently of
+	 * `valid` — a warning never changes the verification result. Currently
+	 * surfaces duplicate `action.idempotency_key` values (spec §7.3.6): retries
+	 * are legitimate, so duplicates are flagged for auditor review rather than
+	 * treated as failures. Omitted when there are no warnings.
+	 */
+	warnings?: string[];
 }
 
 /**
@@ -145,6 +189,10 @@ export function verifyChain(
 	}
 
 	const status = classifyTerminationStatus(receipts);
+
+	// Idempotency-key duplicate detection is independent of validity (spec
+	// §7.3.6) — compute it once up front so every return path can surface it.
+	const warnings = duplicateIdempotencyWarnings(receipts);
 
 	const results: ReceiptVerification[] = [];
 	let brokenAt = -1;
@@ -270,6 +318,7 @@ export function verifyChain(
 				receipts: results,
 				brokenAt: i,
 				responseHashNote: undefined,
+				warnings,
 				error: `chain_id mismatch at index ${i}: expected "${expectedChainId}", got "${observedChainId}"`,
 			};
 		}
@@ -298,6 +347,7 @@ export function verifyChain(
 				receipts: results,
 				brokenAt,
 				responseHashNote: undefined,
+				warnings,
 				error,
 			};
 		}
@@ -310,6 +360,9 @@ export function verifyChain(
 		receipts: results,
 		brokenAt,
 	};
+	if (warnings !== undefined) {
+		cv.warnings = warnings;
+	}
 	if (loopError !== undefined) {
 		cv.error = loopError;
 	}

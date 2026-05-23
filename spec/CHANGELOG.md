@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-23
+
+### Added
+- `credentialSubject.action.idempotency_key` — optional stable identifier for the logical operation an action represents (e.g. a request ID). When an agent retries a tool call, the SDK or MCP proxy stamps the same `idempotency_key` on every receipt emitted for that operation, letting auditors distinguish a legitimate retry from a duplicated emission. MUST be a non-empty string when present; MUST NOT be `null`. The MCP proxy populates it automatically from the wrapped JSON-RPC request `id`. See spec §4.3.2, §7.3.6, and ADR-0019 §S5 (#480).
+- Spec §7.3.6: normative verifier rule — two or more receipts in a chain sharing a non-empty `idempotency_key` are surfaced as a **warning**, never a verification failure. Retries are legitimate. SDK chain verifiers expose these advisories on their verification result (Go `ChainVerification.Warnings`, TS `ChainVerification.warnings`, Python `ChainVerification.warnings`).
+
+### Changed
+- `version` field now accepts `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, `"0.3.0"`, or `"0.4.0"`. Verifiers MUST accept all five. All new receipts SHOULD use `"0.4.0"`.
+
+### Upgrade notes
+
+**Issuers:** No action required to remain protocol-valid. To deduplicate retries, stamp a stable `action.idempotency_key` on each receipt for the same logical operation — omit the field entirely when no stable identifier is available (never emit `null` or an empty string). Upgrade to `"version": "0.4.0"` when emitting new receipts.
+
+**Verifiers:** No breaking changes. Receipts at `0.1.0`–`0.3.0` validate unchanged. Duplicate `idempotency_key` values produce an advisory warning on the verification result, not a failure.
+
 ## [0.3.0] - 2026-05-21
 
 ### Changed

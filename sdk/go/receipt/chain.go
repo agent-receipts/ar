@@ -3,6 +3,7 @@ package receipt
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 )
 
 // hashReceipt is overridable in tests so the error-return path of HashReceipt
@@ -34,6 +35,12 @@ type ChainVerification struct {
 	// ResponseHashNote is non-empty when one or more receipts carry response_hash
 	// but no response body was supplied for recomputation.
 	ResponseHashNote string `json:"response_hash_note,omitempty"`
+	// Warnings carries non-fatal advisories about the verified chain. It is
+	// populated independently of Valid — a warning never changes the
+	// verification result. Currently it surfaces duplicate action.idempotency_key
+	// values (spec §7.3.6): retries are legitimate, so duplicates are flagged for
+	// auditor review rather than treated as failures.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // classifyTerminationStatus inspects the wire form of the final receipt and
@@ -52,6 +59,43 @@ func classifyTerminationStatus(receipts []AgentReceipt) ChainStatus {
 		return ChainStatusInterrupted
 	}
 	return ChainStatusComplete
+}
+
+// duplicateIdempotencyWarnings scans the chain for non-empty
+// action.idempotency_key values that appear on more than one receipt and
+// returns a human-readable advisory for each such key (spec §7.3.6). Retries
+// are legitimate, so these are warnings, not failures. Order is deterministic:
+// warnings follow the first-seen order of each duplicated key, and the indices
+// within each warning are in chain order. Receipts that omit the key never
+// contribute. Returns nil when there are no duplicates.
+func duplicateIdempotencyWarnings(receipts []AgentReceipt) []string {
+	indices := make(map[string][]int)
+	var order []string
+	for i, r := range receipts {
+		key := r.CredentialSubject.Action.IdempotencyKey
+		if key == "" {
+			continue
+		}
+		if _, seen := indices[key]; !seen {
+			order = append(order, key)
+		}
+		indices[key] = append(indices[key], i)
+	}
+	var warnings []string
+	for _, key := range order {
+		idx := indices[key]
+		if len(idx) < 2 {
+			continue
+		}
+		parts := make([]string, len(idx))
+		for j, v := range idx {
+			parts[j] = strconv.Itoa(v)
+		}
+		warnings = append(warnings, "duplicate idempotency_key "+strconv.Quote(key)+
+			" on receipts at indices "+strings.Join(parts, ", ")+
+			" (retries are legitimate; review for double-counting)")
+	}
+	return warnings
 }
 
 // ChainVerifyOptions holds optional parameters for VerifyChain.
@@ -126,6 +170,10 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	}
 
 	status := classifyTerminationStatus(receipts)
+
+	// Idempotency-key duplicate detection is independent of validity (spec
+	// §7.3.6) — compute it once up front so every return path can surface it.
+	warnings := duplicateIdempotencyWarnings(receipts)
 
 	results := make([]ReceiptVerification, 0, len(receipts))
 	brokenAt := -1
@@ -258,6 +306,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 				BrokenAt: i,
 				Error: "chain_id mismatch at index " + strconv.Itoa(i) +
 					`: expected "` + expectedChainID + `", got "` + observed + `"`,
+				Warnings: warnings,
 			}
 		}
 	}
@@ -286,6 +335,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 					Receipts: results,
 					BrokenAt: brokenAt,
 					Error:    errMsg,
+					Warnings: warnings,
 				}
 			}
 		}
@@ -298,6 +348,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		Receipts: results,
 		BrokenAt: brokenAt,
 		Error:    loopErr,
+		Warnings: warnings,
 	}
 
 	// Response-hash verification (spec §4.3.2).

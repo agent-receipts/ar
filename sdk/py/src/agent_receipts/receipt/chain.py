@@ -28,6 +28,44 @@ def _empty_receipts() -> list[ReceiptVerification]:
     return []
 
 
+def _empty_warnings() -> list[str]:
+    """Typed default for ChainVerification.warnings (satisfies pyright strict)."""
+    return []
+
+
+def _duplicate_idempotency_warnings(receipts: list[AgentReceipt]) -> list[str]:
+    """Return an advisory for each non-empty ``action.idempotency_key`` value
+    that appears on more than one receipt (spec §7.3.6).
+
+    Retries are legitimate, so these are warnings, not failures. Order is
+    deterministic: warnings follow the first-seen order of each duplicated key,
+    and the indices within each warning are in chain order. Receipts that omit
+    the key never contribute. Returns an empty list when there are no
+    duplicates.
+    """
+    indices: dict[str, list[int]] = {}
+    order: list[str] = []
+    for i, r in enumerate(receipts):
+        key = r.credentialSubject.action.idempotency_key
+        if not key:
+            continue
+        if key not in indices:
+            order.append(key)
+            indices[key] = []
+        indices[key].append(i)
+    warnings: list[str] = []
+    for key in order:
+        idx = indices[key]
+        if len(idx) < 2:
+            continue
+        joined = ", ".join(str(v) for v in idx)
+        warnings.append(
+            f"duplicate idempotency_key {key!r} on receipts at indices "
+            f"{joined} (retries are legitimate; review for double-counting)"
+        )
+    return warnings
+
+
 # Chain termination status values (spec §7.3.3).
 STATUS_COMPLETE = "complete"
 STATUS_INTERRUPTED = "interrupted"
@@ -65,6 +103,12 @@ class ChainVerification:
     # Non-empty when one or more receipts carry response_hash but no response
     # body was supplied for recomputation.
     response_hash_note: str = ""
+    # Non-fatal advisories about the verified chain, populated independently of
+    # ``valid`` — a warning never changes the verification result. Currently
+    # surfaces duplicate ``action.idempotency_key`` values (spec §7.3.6):
+    # retries are legitimate, so duplicates are flagged for auditor review
+    # rather than treated as failures. Empty when there are no warnings.
+    warnings: list[str] = field(default_factory=_empty_warnings)
 
 
 def verify_chain(
@@ -117,6 +161,10 @@ def verify_chain(
         return ChainVerification(valid=True, length=0, status=STATUS_UNKNOWN)
 
     status = _classify_termination_status(receipts)
+
+    # Idempotency-key duplicate detection is independent of validity (spec
+    # §7.3.6) — compute it once up front so every return path can surface it.
+    warnings = _duplicate_idempotency_warnings(receipts)
 
     results: list[ReceiptVerification] = []
     broken_at = -1
@@ -219,6 +267,7 @@ def verify_chain(
                     f"chain_id mismatch at index {i}: "
                     f"expected {quoted_expected}, got {quoted_observed}"
                 ),
+                warnings=warnings,
             )
 
     # Receipt-after-terminal integrity check (unconditional — spec §7.3.2).
@@ -243,6 +292,7 @@ def verify_chain(
                 receipts=results,
                 broken_at=broken_at,
                 error=error_msg,
+                warnings=warnings,
             )
 
     cv = ChainVerification(
@@ -252,6 +302,7 @@ def verify_chain(
         receipts=results,
         broken_at=broken_at,
         error=loop_error,
+        warnings=warnings,
     )
 
     # Response-hash verification (spec §4.3.2).

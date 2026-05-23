@@ -32,7 +32,7 @@ class TestConstants:
         assert "AgentReceipt" in CREDENTIAL_TYPE
 
     def test_version(self) -> None:
-        assert VERSION == "0.3.0"
+        assert VERSION == "0.4.0"
 
 
 class TestAgentReceipt:

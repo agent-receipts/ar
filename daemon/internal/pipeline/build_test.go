@@ -147,6 +147,69 @@ func TestProcess_BuildsSignedReceipt(t *testing.T) {
 	}
 }
 
+// TestProcess_StampsIdempotencyKey verifies the daemon copies the frame's
+// idempotency_key onto action.idempotency_key (spec §7.3.6, #480) and omits it
+// when the frame leaves it empty.
+func TestProcess_StampsIdempotencyKey(t *testing.T) {
+	build := func(t *testing.T, key string) receipt.Action {
+		t.Helper()
+		ks := newTestKeySource(t)
+		st := newTestStore(t)
+		state := chain.New("chain-1")
+		p := New(state, ks, st, "did:agent-receipts-daemon:test")
+		body, err := json.Marshal(EmitterFrame{
+			Version:        "1",
+			TsEmit:         "2026-05-23T00:00:00Z",
+			SessionID:      "s",
+			Channel:        "mcp",
+			Tool:           EmitterTool{Name: "do_thing"},
+			Decision:       "allowed",
+			IdempotencyKey: key,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Process(socket.Frame{Payload: body}); err != nil {
+			t.Fatal(err)
+		}
+		chainReceipts, err := st.GetChain("chain-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(chainReceipts) != 1 {
+			t.Fatalf("got %d receipts, want 1", len(chainReceipts))
+		}
+		return chainReceipts[0].CredentialSubject.Action
+	}
+
+	t.Run("present", func(t *testing.T) {
+		if got := build(t, "jsonrpc-req-99").IdempotencyKey; got != "jsonrpc-req-99" {
+			t.Errorf("action.idempotency_key = %q, want %q", got, "jsonrpc-req-99")
+		}
+	})
+	t.Run("absent", func(t *testing.T) {
+		if got := build(t, "").IdempotencyKey; got != "" {
+			t.Errorf("action.idempotency_key = %q, want empty", got)
+		}
+	})
+}
+
+// TestValidateFrame_RejectsOversizeIdempotencyKey pins the per-field cap so a
+// runaway idempotency_key cannot inflate receipts.
+func TestValidateFrame_RejectsOversizeIdempotencyKey(t *testing.T) {
+	f := &EmitterFrame{
+		Version:        "1",
+		SessionID:      "s",
+		Channel:        "mcp",
+		Tool:           EmitterTool{Name: "t"},
+		Decision:       "allowed",
+		IdempotencyKey: strings.Repeat("x", maxIdentityFieldLen+1),
+	}
+	if err := validateFrame(f); err == nil {
+		t.Error("validateFrame accepted an oversize idempotency_key; want rejection")
+	}
+}
+
 func TestProcess_OutcomeStatus(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -574,11 +637,11 @@ func TestProcess_RejectsUnrepresentableNumbers(t *testing.T) {
 // the chain mutex via deferred Rollback even when buildAndSign panics.
 type panicSigningKeySource struct{}
 
-func (panicSigningKeySource) Init() error                  { return nil }
-func (panicSigningKeySource) Teardown() error              { return nil }
-func (panicSigningKeySource) PublicKey() (string, error)   { return "", nil }
-func (panicSigningKeySource) VerificationMethod() string   { return "did:test#k1" }
-func (panicSigningKeySource) Rotate() error                { return nil }
+func (panicSigningKeySource) Init() error                { return nil }
+func (panicSigningKeySource) Teardown() error            { return nil }
+func (panicSigningKeySource) PublicKey() (string, error) { return "", nil }
+func (panicSigningKeySource) VerificationMethod() string { return "did:test#k1" }
+func (panicSigningKeySource) Rotate() error              { return nil }
 func (panicSigningKeySource) Sign(_ []byte) ([]byte, error) {
 	panic("simulated panic during signing")
 }

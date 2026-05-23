@@ -46,6 +46,7 @@ class ActionInput(BaseModel):
     peer_credential: PeerCredential | None = None
     emitter_metadata: EmitterMetadata | None = None
     trusted_timestamp: str | None = None
+    idempotency_key: str | None = None
 
 
 class CreateReceiptInput(BaseModel):
@@ -94,6 +95,11 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         action_data["emitter_metadata"] = input.action.emitter_metadata
     if input.action.trusted_timestamp is not None:
         action_data["trusted_timestamp"] = input.action.trusted_timestamp
+    # spec §7.3.6: idempotency_key MUST be non-empty when present. A truthy
+    # check omits both None and the empty string so we never emit a
+    # schema-invalid receipt.
+    if input.action.idempotency_key:
+        action_data["idempotency_key"] = input.action.idempotency_key
 
     # Compute response_hash when a response body is supplied.
     if input.response_body is not None:

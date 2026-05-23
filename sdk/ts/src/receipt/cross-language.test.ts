@@ -369,3 +369,63 @@ describe("cross-language: v0.3.0 vectors", () => {
 		).toBe(true);
 	});
 });
+
+interface V040Vectors {
+	version: string;
+	keys: { publicKey: string; privateKey: string };
+	idempotencyKeyReceipt: {
+		idempotencyKey: string;
+		receipt: AgentReceipt;
+		expectedReceiptHash: string;
+		expectedValid: boolean;
+	};
+	duplicateIdempotencyChain: {
+		duplicateKey: string;
+		receipts: AgentReceipt[];
+		expectedValid: boolean;
+		expectedWarningCount: number;
+	};
+}
+
+function loadV040Vectors(): V040Vectors {
+	const path = resolve(
+		currentDir,
+		"../../../../cross-sdk-tests/v040_vectors.json",
+	);
+	return JSON.parse(readFileSync(path, "utf-8"));
+}
+
+// Cross-SDK reproduction of the v0.4.0 vectors pinned in
+// cross-sdk-tests/v040_vectors.json (#480). The TS SDK MUST hash the
+// idempotency_key receipt to the same digest as Go and Python, and its chain
+// verifier MUST flag the shared-key chain as valid with exactly one warning.
+describe("cross-language: v0.4.0 vectors", () => {
+	it("idempotency_key receipt hash matches pin", () => {
+		const v = loadV040Vectors();
+		expect(hashReceipt(v.idempotencyKeyReceipt.receipt)).toBe(
+			v.idempotencyKeyReceipt.expectedReceiptHash,
+		);
+	});
+
+	it("idempotency_key receipt verifies with shared key", () => {
+		const v = loadV040Vectors();
+		expect(
+			verifyReceipt(v.idempotencyKeyReceipt.receipt, v.keys.publicKey),
+		).toBe(true);
+	});
+
+	it("duplicate-idempotency_key chain is valid with one warning", () => {
+		const v = loadV040Vectors();
+		const result = verifyChain(
+			v.duplicateIdempotencyChain.receipts,
+			v.keys.publicKey,
+		);
+		expect(result.valid).toBe(v.duplicateIdempotencyChain.expectedValid);
+		expect(result.warnings ?? []).toHaveLength(
+			v.duplicateIdempotencyChain.expectedWarningCount,
+		);
+		expect(result.warnings?.[0]).toContain(
+			v.duplicateIdempotencyChain.duplicateKey,
+		);
+	});
+});

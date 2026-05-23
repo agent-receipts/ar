@@ -197,8 +197,9 @@ func serve() {
 	// keeps the block/pause/success emit paths identical and avoids a
 	// second `json.Marshal` per call.
 	type pendingCall struct {
-		toolName string
-		argJSON  json.RawMessage
+		toolName       string
+		argJSON        json.RawMessage
+		idempotencyKey string
 	}
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
@@ -272,8 +273,9 @@ func serve() {
 
 				pendingMu.Lock()
 				pendingCalls[jsonrpcID] = &pendingCall{
-					toolName: toolName,
-					argJSON:  argJSON,
+					toolName:       toolName,
+					argJSON:        argJSON,
+					idempotencyKey: jsonrpcID,
 				}
 				pendingMu.Unlock()
 
@@ -283,7 +285,7 @@ func serve() {
 					pendingMu.Lock()
 					delete(pendingCalls, jsonrpcID)
 					pendingMu.Unlock()
-					emitToContext(em, *serverName, toolName, argJSON, nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied")
+					emitToContext(em, *serverName, toolName, argJSON, nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied", jsonrpcID)
 					return &proxy.HandlerResult{
 						Block:          true,
 						ClientResponse: proxy.MakeErrorResponse(msg.ID, -32001, fmt.Sprintf("blocked by policy: %s", decision.Reason)),
@@ -309,7 +311,7 @@ func serve() {
 						pendingMu.Lock()
 						delete(pendingCalls, jsonrpcID)
 						pendingMu.Unlock()
-						emitToContext(em, *serverName, toolName, argJSON, nil, message, "denied")
+						emitToContext(em, *serverName, toolName, argJSON, nil, message, "denied", jsonrpcID)
 						return &proxy.HandlerResult{
 							Block: true,
 							ClientResponse: proxy.MakeErrorResponseWithData(
@@ -373,7 +375,7 @@ func serve() {
 				if resultStr != "" && json.Valid([]byte(resultStr)) {
 					outputRaw = json.RawMessage(resultStr)
 				}
-				emitToContext(em, *serverName, pc.toolName, pc.argJSON, outputRaw, errorStr, "allowed")
+				emitToContext(em, *serverName, pc.toolName, pc.argJSON, outputRaw, errorStr, "allowed", pc.idempotencyKey)
 			}
 		}
 
@@ -522,17 +524,24 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 // errStr carries the error payload string (raw JSON-RPC error object JSON for
 // upstream errors, a policy message for denied calls; empty for success).
 // decision must be "allowed", "denied", or "pending".
-func emitToContext(em *emitter.DaemonEmitter, serverName, toolName string, input, output json.RawMessage, errStr, decision string) {
+//
+// idempotencyKey is the wrapped JSON-RPC request id of the tool call. The
+// daemon stamps it onto action.idempotency_key (spec §7.3.6) so that retries
+// of the same logical operation share a value and auditors can tell a
+// legitimate retry from a duplicated emission. Empty when no id was present;
+// the emitter omits the field from the frame in that case.
+func emitToContext(em *emitter.DaemonEmitter, serverName, toolName string, input, output json.RawMessage, errStr, decision, idempotencyKey string) {
 	if em == nil {
 		return
 	}
 	if err := em.Emit(context.Background(), emitter.Event{
-		Channel:  "mcp",
-		Tool:     emitter.Tool{Server: serverName, Name: toolName},
-		Input:    input,
-		Output:   output,
-		Error:    errStr,
-		Decision: decision,
+		Channel:        "mcp",
+		Tool:           emitter.Tool{Server: serverName, Name: toolName},
+		Input:          input,
+		Output:         output,
+		Error:          errStr,
+		Decision:       decision,
+		IdempotencyKey: idempotencyKey,
 	}); err != nil {
 		log.Printf("mcp-proxy: emitter: %v", err)
 	}

@@ -196,6 +196,13 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("wrote v030_vectors.json")
+
+	// --- v0.4.0 vectors ---
+	if err := generateV040Vectors(tsVectors.Keys); err != nil {
+		fmt.Fprintf(os.Stderr, "generate v040 vectors: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("wrote v040_vectors.json")
 }
 
 // generateV020Vectors builds and writes v020_vectors.json using the shared keypair
@@ -248,6 +255,11 @@ func generateV020Vectors(keys keysSection) error {
 		r.IssuanceDate = fixedTimestamp
 		r.CredentialSubject.Action.ID = fmt.Sprintf("act_v020_%d", i)
 		r.CredentialSubject.Action.Timestamp = fixedTimestamp
+		// Pin the protocol version: this is a *v0.2.0* fixture, so it must not
+		// drift to whatever the SDK's current Version constant is (Create stamps
+		// that). Without this, every protocol bump silently rewrites the pinned
+		// v020 vector and its signatures.
+		r.Version = "0.2.0"
 
 		s, err := receipt.Sign(r, keys.PrivateKey, "did:agent:test#key-1")
 		if err != nil {
@@ -537,6 +549,183 @@ func generateV030Vectors(keys keysSection) error {
 		return fmt.Errorf("marshal v030 vectors: %w", err)
 	}
 	return os.WriteFile("v030_vectors.json", append(outBytes, '\n'), 0644)
+}
+
+// --- v0.4.0 vector generation ---
+//
+// The v0.4.0 receipt shape adds the optional action.idempotency_key string
+// (spec §7.3.6, ADR-0019 §S5). These vectors pin two cross-SDK contracts:
+//
+//   - idempotencyKeyReceipt: a single signed receipt carrying
+//     action.idempotency_key. All three SDKs MUST canonicalise, hash, and
+//     verify it identically (the new field is just another sorted string key
+//     under RFC 8785).
+//   - duplicateIdempotencyChain: a two-receipt chain whose receipts share one
+//     idempotency_key. All three SDK chain verifiers MUST report the chain as
+//     valid (retries are legitimate) AND surface exactly one duplicate-key
+//     advisory. The warning string itself is SDK-local prose and is NOT pinned;
+//     only the count and the duplicated key value are.
+
+type v040Vectors struct {
+	Comment        string                       `json:"$comment"`
+	Version        string                       `json:"version"`
+	Keys           keysSection                  `json:"keys"`
+	Idempotency    idempotencyKeyReceiptSection `json:"idempotencyKeyReceipt"`
+	DuplicateChain duplicateChainSection        `json:"duplicateIdempotencyChain"`
+}
+
+type idempotencyKeyReceiptSection struct {
+	Description         string          `json:"description"`
+	IdempotencyKey      string          `json:"idempotencyKey"`
+	Receipt             json.RawMessage `json:"receipt"`
+	ExpectedReceiptHash string          `json:"expectedReceiptHash"`
+	ExpectedValid       bool            `json:"expectedValid"`
+}
+
+type duplicateChainSection struct {
+	Description          string            `json:"description"`
+	DuplicateKey         string            `json:"duplicateKey"`
+	Receipts             []json.RawMessage `json:"receipts"`
+	ExpectedValid        bool              `json:"expectedValid"`
+	ExpectedWarningCount int               `json:"expectedWarningCount"`
+}
+
+func generateV040Vectors(keys keysSection) error {
+	const fixedTimestamp = "2026-05-23T00:00:00Z"
+
+	// --- single receipt carrying action.idempotency_key ---
+	const singleKey = "jsonrpc-req-7c3a9f10"
+	idemUnsigned := map[string]any{
+		"@context":     []any{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"},
+		"id":           "urn:receipt:040e0040-0000-4040-a040-000000000001",
+		"type":         []any{"VerifiableCredential", "AgentReceipt"},
+		"version":      "0.4.0",
+		"issuer":       map[string]any{"id": "did:agent:test"},
+		"issuanceDate": fixedTimestamp,
+		"credentialSubject": map[string]any{
+			"principal": map[string]any{"id": "did:user:test"},
+			"action": map[string]any{
+				"id":              "act_040e0040-0000-4040-a040-000000000001",
+				"type":            "system.command.execute",
+				"risk_level":      "high",
+				"idempotency_key": singleKey,
+				"timestamp":       fixedTimestamp,
+			},
+			"outcome": map[string]any{"status": "success"},
+			"chain": map[string]any{
+				"sequence":              1,
+				"previous_receipt_hash": nil,
+				"chain_id":              "chain_v040_idempotency_test",
+			},
+		},
+	}
+	idemSigned, idemHash, err := signAndHashMap(idemUnsigned, keys, fixedTimestamp)
+	if err != nil {
+		return fmt.Errorf("idempotency receipt: %w", err)
+	}
+
+	// --- two-receipt chain sharing one idempotency_key (a recorded retry) ---
+	const dupKey = "jsonrpc-req-retry-001"
+	const dupChainID = "chain_v040_duplicate_test"
+	dup1Unsigned := map[string]any{
+		"@context":     []any{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"},
+		"id":           "urn:receipt:040e0040-0000-4040-a040-000000000002",
+		"type":         []any{"VerifiableCredential", "AgentReceipt"},
+		"version":      "0.4.0",
+		"issuer":       map[string]any{"id": "did:agent:test"},
+		"issuanceDate": fixedTimestamp,
+		"credentialSubject": map[string]any{
+			"principal": map[string]any{"id": "did:user:test"},
+			"action": map[string]any{
+				"id":              "act_040e0040-0000-4040-a040-000000000002",
+				"type":            "data.api.read",
+				"risk_level":      "low",
+				"idempotency_key": dupKey,
+				"timestamp":       fixedTimestamp,
+			},
+			"outcome": map[string]any{"status": "failure", "error": "upstream timeout"},
+			"chain": map[string]any{
+				"sequence":              1,
+				"previous_receipt_hash": nil,
+				"chain_id":              dupChainID,
+			},
+		},
+	}
+	dup1Signed, dup1Hash, err := signAndHashMap(dup1Unsigned, keys, fixedTimestamp)
+	if err != nil {
+		return fmt.Errorf("duplicate chain receipt 1: %w", err)
+	}
+	dup2Unsigned := map[string]any{
+		"@context":     []any{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"},
+		"id":           "urn:receipt:040e0040-0000-4040-a040-000000000003",
+		"type":         []any{"VerifiableCredential", "AgentReceipt"},
+		"version":      "0.4.0",
+		"issuer":       map[string]any{"id": "did:agent:test"},
+		"issuanceDate": fixedTimestamp,
+		"credentialSubject": map[string]any{
+			"principal": map[string]any{"id": "did:user:test"},
+			"action": map[string]any{
+				"id":              "act_040e0040-0000-4040-a040-000000000003",
+				"type":            "data.api.read",
+				"risk_level":      "low",
+				"idempotency_key": dupKey,
+				"timestamp":       fixedTimestamp,
+			},
+			"outcome": map[string]any{"status": "success"},
+			"chain": map[string]any{
+				"sequence":              2,
+				"previous_receipt_hash": dup1Hash,
+				"chain_id":              dupChainID,
+			},
+		},
+	}
+	dup2Signed, _, err := signAndHashMap(dup2Unsigned, keys, fixedTimestamp)
+	if err != nil {
+		return fmt.Errorf("duplicate chain receipt 2: %w", err)
+	}
+
+	// Self-check: the duplicate chain must verify as valid with exactly one
+	// idempotency warning, matching what the TS and Py SDK tests assert.
+	var r1, r2 receipt.AgentReceipt
+	if err := json.Unmarshal(dup1Signed, &r1); err != nil {
+		return fmt.Errorf("unmarshal dup receipt 1: %w", err)
+	}
+	if err := json.Unmarshal(dup2Signed, &r2); err != nil {
+		return fmt.Errorf("unmarshal dup receipt 2: %w", err)
+	}
+	res := receipt.VerifyChain([]receipt.AgentReceipt{r1, r2}, keys.PublicKey)
+	if !res.Valid {
+		return fmt.Errorf("generated duplicate chain failed verification: %s", res.Error)
+	}
+	if len(res.Warnings) != 1 {
+		return fmt.Errorf("generated duplicate chain produced %d warnings, want 1", len(res.Warnings))
+	}
+
+	out := v040Vectors{
+		Comment: "Cross-SDK v0.4.0 test vectors: pins the optional action.idempotency_key field (spec §7.3.6, ADR-0019 §S5, #480). All three SDKs MUST verify the signatures and reproduce expectedReceiptHash byte-for-byte, and MUST report the duplicate-key chain as valid with exactly one warning. Warning text is SDK-local prose and is intentionally not pinned.",
+		Version: "0.4.0",
+		Keys:    keys,
+		Idempotency: idempotencyKeyReceiptSection{
+			Description:         "Signed v0.4.0 receipt carrying action.idempotency_key. The new field is an ordinary sorted string key under RFC 8785; cross-SDK hash/sign/verify must be byte-identical.",
+			IdempotencyKey:      singleKey,
+			Receipt:             idemSigned,
+			ExpectedReceiptHash: idemHash,
+			ExpectedValid:       true,
+		},
+		DuplicateChain: duplicateChainSection{
+			Description:          "Two-receipt chain whose receipts share one action.idempotency_key — a tool call that timed out (failure) and was retried (success). Verifiers MUST report valid: true (retries are legitimate) and surface exactly one duplicate-key advisory.",
+			DuplicateKey:         dupKey,
+			Receipts:             []json.RawMessage{dup1Signed, dup2Signed},
+			ExpectedValid:        true,
+			ExpectedWarningCount: 1,
+		},
+	}
+
+	outBytes, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal v040 vectors: %w", err)
+	}
+	return os.WriteFile("v040_vectors.json", append(outBytes, '\n'), 0644)
 }
 
 // signAndHashMap signs an unsigned-receipt JSON map with the Ed25519 PEM

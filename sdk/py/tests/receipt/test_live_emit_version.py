@@ -29,7 +29,7 @@ from agent_receipts.receipt.types import (
     Principal,
 )
 
-LIVE_EMIT_VERSION = "0.3.0"
+LIVE_EMIT_VERSION = "0.4.0"
 
 
 class TestCreateReceiptCrossSDKVersion:

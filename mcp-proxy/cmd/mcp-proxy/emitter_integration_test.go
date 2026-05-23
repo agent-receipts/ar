@@ -192,9 +192,28 @@ func TestEmitToContext_AllowedToolCall(t *testing.T) {
 		json.RawMessage(`{"content":"hello"}`),
 		"",
 		"allowed",
+		"jsonrpc-req-42",
 	)
 
 	waitForDaemonReceipts(t, d.cfg.DBPath, d.cfg.ChainID, 1, 5*time.Second)
+
+	// The wrapped JSON-RPC request id must reach action.idempotency_key
+	// (spec §7.3.6): proxy → emitter frame → daemon build → signed receipt.
+	s, err := store.OpenReadOnly(d.cfg.DBPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	receipts, err := s.GetChain(d.cfg.ChainID)
+	if err != nil {
+		t.Fatalf("GetChain: %v", err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts, want 1", len(receipts))
+	}
+	if got := receipts[0].CredentialSubject.Action.IdempotencyKey; got != "jsonrpc-req-42" {
+		t.Errorf("action.idempotency_key = %q, want %q", got, "jsonrpc-req-42")
+	}
 }
 
 // TestEmitToContext_DeniedToolCall verifies that a "denied" decision (blocked by
@@ -210,6 +229,7 @@ func TestEmitToContext_DeniedToolCall(t *testing.T) {
 		nil,
 		"blocked by policy: delete_secrets matches block rule",
 		"denied",
+		"",
 	)
 
 	waitForDaemonReceipts(t, d.cfg.DBPath, d.cfg.ChainID, 1, 5*time.Second)
@@ -234,7 +254,7 @@ func TestEmitToContext_MultipleEvents(t *testing.T) {
 	}
 
 	for _, ev := range events {
-		emitToContext(em, "multi-server", ev.tool, ev.input, ev.output, "", ev.decision)
+		emitToContext(em, "multi-server", ev.tool, ev.input, ev.output, "", ev.decision, "")
 	}
 
 	waitForDaemonReceipts(t, d.cfg.DBPath, d.cfg.ChainID, len(events), 5*time.Second)
@@ -279,7 +299,7 @@ func TestEmitToContext_FireAndForgetWhenNoDaemon(t *testing.T) {
 
 	start := time.Now()
 	// emitToContext logs the drop via log.Printf — that's fine for tests.
-	emitToContext(em, "srv", "noop", nil, nil, "", "allowed")
+	emitToContext(em, "srv", "noop", nil, nil, "", "allowed", "")
 	elapsed := time.Since(start)
 
 	// 25ms dial timeout + 100ms write deadline = 125ms worst-case. We allow
@@ -307,7 +327,7 @@ func TestEmitToContext_NilInputsAreValid(t *testing.T) {
 
 	// nil input and output are valid: the emitter accepts them and the daemon
 	// treats them as absent. No panic, no error returned.
-	emitToContext(em, "srv", "tool-with-no-io", nil, nil, "", "allowed")
+	emitToContext(em, "srv", "tool-with-no-io", nil, nil, "", "allowed", "")
 }
 
 // TestEmitToContext_NilEmitterIsNoOp guards the nil-emitter path in serve():
@@ -317,7 +337,7 @@ func TestEmitToContext_NilInputsAreValid(t *testing.T) {
 // explicit guard at the call sites is kept for clarity.
 func TestEmitToContext_NilEmitterIsNoOp(t *testing.T) {
 	// Must not panic.
-	emitToContext(nil, "srv", "tool", nil, nil, "", "allowed")
+	emitToContext(nil, "srv", "tool", nil, nil, "", "allowed", "")
 }
 
 // TestEmitToContext_SessionIDPropagatesToReceipts verifies the ADR-0010 OQ4
@@ -331,7 +351,7 @@ func TestEmitToContext_SessionIDPropagatesToReceipts(t *testing.T) {
 	em := newSilentEmitter(t, d.cfg.SocketPath, sid)
 
 	for i := 0; i < 3; i++ {
-		emitToContext(em, "srv", "tool", json.RawMessage(`{"i":1}`), nil, "", "allowed")
+		emitToContext(em, "srv", "tool", json.RawMessage(`{"i":1}`), nil, "", "allowed", "")
 	}
 
 	waitForDaemonReceipts(t, d.cfg.DBPath, d.cfg.ChainID, 3, 5*time.Second)

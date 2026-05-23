@@ -102,6 +102,14 @@ type Event struct {
 	IssuerModel  string
 	OperatorID   string
 	OperatorName string
+
+	// IdempotencyKey is a stable identifier for the logical operation this
+	// event represents (e.g. the wrapped JSON-RPC request id). The daemon
+	// stamps it onto action.idempotency_key so retries of the same operation
+	// share a value and auditors can distinguish a legitimate retry from a
+	// duplicated emission. Optional; omitted from the frame when empty.
+	// See spec §7.3.6 and ADR-0019 §S5.
+	IdempotencyKey string
 }
 
 // Option configures an Emitter at construction.
@@ -244,20 +252,21 @@ func (e *DaemonEmitter) SessionID() string { return e.sessionID }
 // Defined locally so the emitter does not import a daemon-internal
 // package; the wire format is the contract, not the type definition.
 type frame struct {
-	Version      string          `json:"v"`
-	TsEmit       string          `json:"ts_emit"`
-	SessionID    string          `json:"session_id"`
-	Channel      string          `json:"channel"`
-	Tool         frameTool       `json:"tool"`
-	Input        json.RawMessage `json:"input,omitempty"`
-	Output       json.RawMessage `json:"output,omitempty"`
-	Error        string          `json:"error,omitempty"`
-	Decision     string          `json:"decision"`
-	DropCount    int64           `json:"drop_count,omitempty"`
-	IssuerName   string          `json:"issuer_name,omitempty"`
-	IssuerModel  string          `json:"issuer_model,omitempty"`
-	OperatorID   string          `json:"operator_id,omitempty"`
-	OperatorName string          `json:"operator_name,omitempty"`
+	Version        string          `json:"v"`
+	TsEmit         string          `json:"ts_emit"`
+	SessionID      string          `json:"session_id"`
+	Channel        string          `json:"channel"`
+	Tool           frameTool       `json:"tool"`
+	Input          json.RawMessage `json:"input,omitempty"`
+	Output         json.RawMessage `json:"output,omitempty"`
+	Error          string          `json:"error,omitempty"`
+	Decision       string          `json:"decision"`
+	DropCount      int64           `json:"drop_count,omitempty"`
+	IssuerName     string          `json:"issuer_name,omitempty"`
+	IssuerModel    string          `json:"issuer_model,omitempty"`
+	OperatorID     string          `json:"operator_id,omitempty"`
+	OperatorName   string          `json:"operator_name,omitempty"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 }
 
 type frameTool struct {
@@ -348,11 +357,12 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 	}
 	// Mirror the daemon's per-field length cap so oversized values are caught
 	// at the emitter rather than silently rejected by the daemon after the write.
-	for _, f := range [4]struct{ name, val string }{
+	for _, f := range [5]struct{ name, val string }{
 		{"issuer_name", issuerName},
 		{"issuer_model", issuerModel},
 		{"operator_id", operatorID},
 		{"operator_name", operatorName},
+		{"idempotency_key", ev.IdempotencyKey},
 	} {
 		if len(f.val) > MaxIdentityFieldLen {
 			e.dropCount.Add(pendingDrops)
@@ -361,20 +371,21 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 	}
 
 	body, err := json.Marshal(frame{
-		Version:      SupportedFrameVersion,
-		TsEmit:       time.Now().UTC().Format(time.RFC3339Nano),
-		SessionID:    e.sessionID,
-		Channel:      ev.Channel,
-		Tool:         frameTool{Server: ev.Tool.Server, Name: ev.Tool.Name},
-		Input:        ev.Input,
-		Output:       ev.Output,
-		Error:        ev.Error,
-		Decision:     ev.Decision,
-		DropCount:    pendingDrops,
-		IssuerName:   issuerName,
-		IssuerModel:  issuerModel,
-		OperatorID:   operatorID,
-		OperatorName: operatorName,
+		Version:        SupportedFrameVersion,
+		TsEmit:         time.Now().UTC().Format(time.RFC3339Nano),
+		SessionID:      e.sessionID,
+		Channel:        ev.Channel,
+		Tool:           frameTool{Server: ev.Tool.Server, Name: ev.Tool.Name},
+		Input:          ev.Input,
+		Output:         ev.Output,
+		Error:          ev.Error,
+		Decision:       ev.Decision,
+		DropCount:      pendingDrops,
+		IssuerName:     issuerName,
+		IssuerModel:    issuerModel,
+		OperatorID:     operatorID,
+		OperatorName:   operatorName,
+		IdempotencyKey: ev.IdempotencyKey,
 	})
 	if err != nil {
 		// Marshal failure is a caller bug, not a transient outage. Restore

@@ -42,8 +42,8 @@
       "description": "MUST be [\"VerifiableCredential\", \"AgentReceipt\"]."
     },
     "version": {
-      "enum": ["0.1.0", "0.2.0", "0.2.1", "0.3.0"],
-      "description": "Protocol version. MUST be one of \"0.1.0\", \"0.2.0\", \"0.2.1\", or \"0.3.0\". Verifiers MUST accept all four."
+      "enum": ["0.1.0", "0.2.0", "0.2.1", "0.3.0", "0.4.0"],
+      "description": "Protocol version. MUST be one of \"0.1.0\", \"0.2.0\", \"0.2.1\", \"0.3.0\", or \"0.4.0\". Verifiers MUST accept all five."
     },
     "issuer": { "$ref": "#/$defs/issuer" },
     "issuanceDate": {
@@ -221,6 +221,11 @@
           "type": "string",
           "contentEncoding": "base64",
           "description": "Base64-encoded RFC 3161 TimeStampToken (DER encoding). Absent when not present; MUST NOT be null."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional stable identifier for the logical operation this action represents (e.g. a request ID). When an agent retries a tool call on timeout, the SDK or MCP proxy SHOULD stamp the same idempotency_key on every emitted receipt for that logical operation, so auditors can distinguish a legitimate retry from a duplicated emission. Verifier tooling surfaces duplicate idempotency_key values across a chain as a warning, not a failure — retries are legitimate. Absent when not applicable; MUST NOT be null or empty. See ADR-0019 §S5."
         }
       },
       "allOf": [

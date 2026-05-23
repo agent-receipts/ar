@@ -58,20 +58,21 @@ const actionTypeEventsDropped = "agent_receipts.events_dropped"
 // events_dropped receipt with this count before the live receipt so the gap
 // is visible in the chain.
 type EmitterFrame struct {
-	Version      string          `json:"v"`
-	TsEmit       string          `json:"ts_emit"`
-	SessionID    string          `json:"session_id"`
-	Channel      string          `json:"channel"`
-	Tool         EmitterTool     `json:"tool"`
-	Input        json.RawMessage `json:"input,omitempty"`
-	Output       json.RawMessage `json:"output,omitempty"`
-	Error        string          `json:"error,omitempty"`
-	Decision     string          `json:"decision"`
-	DropCount    int64           `json:"drop_count,omitempty"`
-	IssuerName   string          `json:"issuer_name,omitempty"`
-	IssuerModel  string          `json:"issuer_model,omitempty"`
-	OperatorID   string          `json:"operator_id,omitempty"`
-	OperatorName string          `json:"operator_name,omitempty"`
+	Version        string          `json:"v"`
+	TsEmit         string          `json:"ts_emit"`
+	SessionID      string          `json:"session_id"`
+	Channel        string          `json:"channel"`
+	Tool           EmitterTool     `json:"tool"`
+	Input          json.RawMessage `json:"input,omitempty"`
+	Output         json.RawMessage `json:"output,omitempty"`
+	Error          string          `json:"error,omitempty"`
+	Decision       string          `json:"decision"`
+	DropCount      int64           `json:"drop_count,omitempty"`
+	IssuerName     string          `json:"issuer_name,omitempty"`
+	IssuerModel    string          `json:"issuer_model,omitempty"`
+	OperatorID     string          `json:"operator_id,omitempty"`
+	OperatorName   string          `json:"operator_name,omitempty"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -88,8 +89,8 @@ type Pipeline struct {
 	Store    store.ReceiptStore
 	IssuerID string // e.g. "did:agent-receipts-daemon:<host>"
 	Now      func() time.Time
-	TraceLog io.Writer              // Optional trace log for testing; nil = silent
-	ErrorLog func(string, ...any)   // Optional error logger; nil = silent
+	TraceLog io.Writer            // Optional trace log for testing; nil = silent
+	ErrorLog func(string, ...any) // Optional error logger; nil = silent
 
 	// ParameterDisclosure is the historical opt-in for plaintext tool
 	// input/output in the legacy string-map shape of parameters_disclosure.
@@ -313,6 +314,9 @@ func validateFrame(f *EmitterFrame) error {
 	if f.OperatorName != "" && f.OperatorID == "" {
 		return fmt.Errorf("operator_name set without operator_id")
 	}
+	if len(f.IdempotencyKey) > maxIdentityFieldLen {
+		return fmt.Errorf("idempotency_key exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.IdempotencyKey))
+	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
 	// JSON syntax, so anything reaching this point is well-formed. The hash
@@ -446,6 +450,7 @@ func (p *Pipeline) buildAndSign(
 		RiskLevel:      risk,
 		Timestamp:      now,
 		PeerCredential: peerCred,
+		IdempotencyKey: f.IdempotencyKey,
 	}
 	if hasJSONPayload(f.Input) {
 		hash, err := canonicalSHA256(f.Input)
