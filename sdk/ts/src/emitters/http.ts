@@ -73,6 +73,9 @@ export class HttpEmitter implements Emitter {
 	// await them. Promises remove themselves on settle so the set stays
 	// bounded.
 	private readonly pending: Set<Promise<void>> = new Set();
+	// Guards close() so a second call doesn't re-close the undici Agent,
+	// which throws ClientDestroyedError. Keeps close() idempotent.
+	private closed = false;
 
 	constructor(config: HttpEmitterConfig) {
 		if (!config.endpoint) {
@@ -171,6 +174,21 @@ export class HttpEmitter implements Emitter {
 		// the next drain cycle, not this one.
 		const snapshot = Array.from(this.pending);
 		await Promise.allSettled(snapshot);
+	}
+
+	/**
+	 * Release the mTLS connection pool. Call on graceful shutdown, after
+	 * {@link drain}, so the underlying undici Agent's sockets are closed and
+	 * stop keeping the process alive. Idempotent and a no-op when the emitter
+	 * was not configured for mTLS (the global fetch dispatcher owns its own
+	 * pool in that case). Mirrors the Python SDK's `HttpEmitter.close`.
+	 */
+	async close(): Promise<void> {
+		if (this.closed) {
+			return;
+		}
+		this.closed = true;
+		await this.mtlsAgent?.close();
 	}
 
 	private async deliver(receipt: AgentReceipt): Promise<void> {

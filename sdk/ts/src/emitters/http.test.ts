@@ -348,6 +348,25 @@ describe("HttpEmitter", () => {
 		).not.toThrow();
 	});
 
+	it("close() releases the mTLS agent and is idempotent", async () => {
+		const emitter = new HttpEmitter({
+			endpoint: "https://example.com/receipts",
+			auth: {
+				type: "mtls",
+				cert: new TextEncoder().encode("-----BEGIN CERTIFICATE-----\n"),
+				key: new TextEncoder().encode("-----BEGIN PRIVATE KEY-----\n"),
+			},
+		});
+		await expect(emitter.close()).resolves.toBeUndefined();
+		// Second close must not throw even though the agent is already closed.
+		await expect(emitter.close()).resolves.toBeUndefined();
+	});
+
+	it("close() is a no-op when not configured for mTLS", async () => {
+		const emitter = new HttpEmitter({ endpoint: collector.url });
+		await expect(emitter.close()).resolves.toBeUndefined();
+	});
+
 	it.skipIf(!hasOpenssl)(
 		"mTLS: client cert reaches the wire (handshake succeeds; missing cert is rejected)",
 		async () => {
@@ -511,7 +530,6 @@ describe("HttpEmitter", () => {
 	});
 
 	it("drain() awaits pending fire-and-forget deliveries", async () => {
-		const release = (): void => {};
 		let resolveResponder: (() => void) | undefined;
 		const gate = new Promise<void>((resolve) => {
 			resolveResponder = resolve;
@@ -536,7 +554,6 @@ describe("HttpEmitter", () => {
 		resolveResponder?.();
 		await drained;
 		expect(collector.requests).toHaveLength(1);
-		release();
 	});
 
 	it("fire-and-forget resolves immediately without waiting for the collector", async () => {
