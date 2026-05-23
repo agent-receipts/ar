@@ -40,12 +40,18 @@ func platformDefaultSocketPath() string {
 // xdgDataHome mirrors daemon.xdgDataHome so the emitter and the daemon
 // resolve the same per-user directory without the emitter taking a
 // runtime dependency on the daemon package (which would create an
-// import cycle). The contract matches the daemon helper: honour an
-// absolute XDG_DATA_HOME, ignore relative values per the XDG spec,
-// otherwise fall back to $HOME/.local/share. Returns the empty string
-// when neither source yields an absolute path so the caller can surface
-// a clean "Config.SocketPath required" rather than emitting under a
-// relative working directory.
+// import cycle). Both honour an absolute XDG_DATA_HOME, ignore relative
+// values per the XDG spec, and otherwise fall back to
+// $HOME/.local/share.
+//
+// One conservative divergence from the daemon: this helper rejects an
+// empty or non-absolute $HOME and returns "" in those cases, so the
+// caller surfaces a clean "Config.SocketPath required" rather than
+// emitting under a relative working directory. daemon.xdgDataHome
+// trusts os.UserHomeDir to return an absolute path on every supported
+// platform (which it does in practice), so the two functions agree on
+// every realistic environment; this version is just belt-and-braces
+// against a pathological host.
 func xdgDataHome() string {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if dataHome != "" && filepath.IsAbs(dataHome) {
