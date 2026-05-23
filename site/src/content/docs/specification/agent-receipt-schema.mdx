@@ -177,11 +177,45 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `target.system` | No | The system or service acted upon. |
 | `target.resource` | No | The specific resource within the system. |
 | `parameters_hash` | No | `sha256:` prefixed hash of action parameters (RFC 8785 canonical JSON). Always authoritative for parameter integrity; `parameters_disclosure` is additive metadata. |
-| `parameters_disclosure` | No | Operator-controlled disclosure of action parameters. Either the legacy flat-map (v0.2.x — `{ [key: string]: string }`) or the HPKE asymmetric encryption envelope defined by ADR-0012 (v0.3.0+). Mode is per-emitter; a receipt MUST NOT mix shapes. The envelope shape is validated by the sibling [`parameters-disclosure.schema.json`](https://github.com/agent-receipts/ar/blob/main/spec/schema/parameters-disclosure.schema.json). Operators MUST NOT place plaintext secrets or PII in the legacy flat-map form. |
+| `parameters_disclosure` | No | Operator-controlled disclosure of action parameters. Either the legacy flat-map (v0.2.x — `{ [key: string]: string }`) or the HPKE asymmetric encryption envelope defined by ADR-0012 (v0.3.0+). Mode is per-emitter; a receipt MUST NOT mix shapes. See [`parameters_disclosure` envelope (HPKE)](#parameters_disclosure-envelope-hpke) for the envelope shape and an example. Operators MUST NOT place plaintext secrets or PII in the legacy flat-map form. |
 | `peer_credential` | No | OS-attested peer process metadata captured by the daemon at the SDK↔daemon boundary (`platform`, `pid`, optional `uid`/`gid`/`exe_path`). Present only on receipts emitted through a daemon (ADR-0010); absent on direct SDK emissions. Daemon-attested, not agent-claimed. |
 | `emitter_metadata` | No | Daemon-observed emitter-side metadata. Currently a single `drop_count` field on synthetic events_dropped receipts (ADR-0010). Daemon-attested, not agent-claimed. |
 | `timestamp` | Yes | ISO 8601 datetime when the action was executed. |
 | `trusted_timestamp` | No | Base64-encoded RFC 3161 TimeStampToken. Absent (not `null`) when not present — see [Optional-field rule](#optional-field-rule). |
+
+#### `parameters_disclosure` envelope (HPKE)
+
+`parameters_hash` is always authoritative for parameter integrity. `parameters_disclosure` is optional, additive metadata that lets an operator make the underlying parameters recoverable. It takes one of two shapes — mode is per-emitter, and a single receipt MUST NOT mix them:
+
+- **Legacy flat-map** (v0.2.x) — `{ [key: string]: string }` of operator-redacted plaintext, as shown in the full receipt example above. Operators MUST NOT place plaintext secrets or PII here.
+- **HPKE envelope** (v0.3.0+, ADR-0012) — the parameters are encrypted to a forensic recipient so they never appear in plaintext on the wire. This is the headline v0.3.0 disclosure mode.
+
+The v1 envelope is HPKE base mode (RFC 9180) with ciphersuite KEM = DHKEM(X25519, HKDF-SHA256), KDF = HKDF-SHA256, AEAD = AES-256-GCM. Both the HPKE `info` and AEAD `aad` are the empty string; there is no `nonce` field (HPKE single-shot derives it internally). The plaintext is the RFC 8785 canonical JSON of the parameters object — top-level strings, numbers, and arrays are not valid plaintext; wrap them in an object.
+
+| Field | Required | Description |
+|---|---|---|
+| `v` | Yes | Envelope schema version. The JSON string `"1"` (not the number `1`). Any change to the field set, encoding, or ciphersuite is a future `"2"`. |
+| `alg` | Yes | Ciphersuite tag. Exactly `"hpke-x25519-hkdf-sha256-aes-256-gcm"` — no whitespace or case variation. |
+| `recipients` | Yes | Array of recipient descriptors. Exactly one entry in v1 (multi-recipient is reserved for a future envelope version). |
+| `recipients[].kid` | Yes | Recipient public-key identifier — either an ADR-0007 `did:key` URL with an encryption-key fragment (e.g. `did:key:z6Mk…#enc-1`) or a `sha256:<hex>` fingerprint. An index only; not itself authenticated. |
+| `recipients[].enc` | Yes | HPKE encapsulated key (RFC 9180 §4.1) — the 32-byte X25519 ephemeral public key as 43 unpadded base64url characters. |
+| `ct` | Yes | AEAD ciphertext including the 16-byte GCM tag, as unpadded base64url (no `=`, `+`, or `/`). |
+
+```json
+"parameters_disclosure": {
+  "v": "1",
+  "alg": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+  "recipients": [
+    {
+      "kid": "did:key:z6LSeu9HkTHSfLLeUs2nnzUSNedgDUevfNQUQUaHL9XJ7Z5W#enc-1",
+      "enc": "N_2jVnvb1ijohmjDyNfpfR0SU7bU6m1EwVD3QfG_RDE"
+    }
+  ],
+  "ct": "YGn3i4NpiZxHjeZVggTP8lTxb0ZVdLl-2HjW31qsvo28PjQ_Lt_UQgAMidEXjzwhJPHM7OM"
+}
+```
+
+This envelope decrypts to `{"command":"echo \"build complete\""}` for the holder of the recipient key. It is byte-for-byte the first conformance vector in [`spec/test-vectors/disclosure-envelope/vectors.json`](https://github.com/agent-receipts/ar/blob/main/spec/test-vectors/disclosure-envelope/vectors.json), which all three SDKs reproduce. The envelope shape is validated by the sibling [`parameters-disclosure.schema.json`](https://github.com/agent-receipts/ar/blob/main/spec/schema/parameters-disclosure.schema.json) (also inlined as `$defs/parametersDisclosureEnvelope` in the main schema so single-file validators resolve it without external refs).
 
 ### `intent`
 
