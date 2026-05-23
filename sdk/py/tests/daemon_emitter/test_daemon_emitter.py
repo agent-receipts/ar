@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from agent_receipts.emitter import Emitter, default_socket_path
+from agent_receipts.daemon_emitter import DaemonEmitter, default_socket_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -262,20 +262,20 @@ class TestDefaultSocketPath:
         assert "/fake-tmpdir" not in default_socket_path()
 
 
-class TestEmitterConstruction:
+class TestDaemonEmitterConstruction:
     def test_generates_session_id(self) -> None:
-        e = Emitter(socket_path="/tmp/nonexistent.sock")
+        e = DaemonEmitter(socket_path="/tmp/nonexistent.sock")
         assert e.session_id
         assert len(e.session_id) == 36  # UUID v4 canonical form
 
     def test_accepts_host_session_id(self) -> None:
         sid = "host-session-abc123"
-        e = Emitter(socket_path="/tmp/nonexistent.sock", session_id=sid)
+        e = DaemonEmitter(socket_path="/tmp/nonexistent.sock", session_id=sid)
         assert e.session_id == sid
 
     def test_session_id_unique_per_instance(self) -> None:
-        e1 = Emitter(socket_path="/tmp/nonexistent.sock")
-        e2 = Emitter(socket_path="/tmp/nonexistent.sock")
+        e1 = DaemonEmitter(socket_path="/tmp/nonexistent.sock")
+        e2 = DaemonEmitter(socket_path="/tmp/nonexistent.sock")
         assert e1.session_id != e2.session_id  # each gets a fresh UUID
 
     def test_raises_on_unsupported_platform_without_path(
@@ -284,23 +284,23 @@ class TestEmitterConstruction:
         monkeypatch.delenv("AGENTRECEIPTS_SOCKET", raising=False)
         monkeypatch.setattr("platform.system", lambda: "Windows")
         with pytest.raises(ValueError, match="no default socket path"):
-            Emitter()
+            DaemonEmitter()
 
     def test_context_manager(self) -> None:
-        with Emitter(socket_path="/tmp/nonexistent.sock") as e:
+        with DaemonEmitter(socket_path="/tmp/nonexistent.sock") as e:
             assert e.session_id
 
     def test_close_idempotent(self) -> None:
-        e = Emitter(socket_path="/tmp/nonexistent.sock")
+        e = DaemonEmitter(socket_path="/tmp/nonexistent.sock")
         e.close()
         e.close()  # should not raise
 
 
-class TestEmitterValidation:
+class TestDaemonEmitterValidation:
     """Validation errors are raised before any dial attempt."""
 
     def setup_method(self) -> None:
-        self.e = Emitter(socket_path="/tmp/nonexistent-validation.sock")
+        self.e = DaemonEmitter(socket_path="/tmp/nonexistent-validation.sock")
 
     def teardown_method(self) -> None:
         self.e.close()
@@ -414,7 +414,7 @@ class TestFireAndForgetWhenDaemonDown:
     """Emit must return quickly and not raise when the daemon is absent."""
 
     def test_returns_none_quickly(self) -> None:
-        e = Emitter(socket_path="/tmp/no-such-daemon-py-test.sock")
+        e = DaemonEmitter(socket_path="/tmp/no-such-daemon-py-test.sock")
         start = time.monotonic()
         result = e.emit(channel="sdk", tool_name="noop", decision="allowed")
         elapsed = time.monotonic() - start
@@ -423,7 +423,7 @@ class TestFireAndForgetWhenDaemonDown:
         e.close()
 
     def test_multiple_emits_all_return_none(self) -> None:
-        e = Emitter(socket_path="/tmp/no-such-daemon-py-test.sock")
+        e = DaemonEmitter(socket_path="/tmp/no-such-daemon-py-test.sock")
         for _ in range(5):
             result = e.emit(channel="sdk", tool_name="noop", decision="allowed")
             assert result is None
@@ -491,7 +491,7 @@ class TestThreadSafety:
         bind_ready.wait(timeout=2.0)
 
         try:
-            e = Emitter(socket_path=sock_path)
+            e = DaemonEmitter(socket_path=sock_path)
 
             def _producer(idx: int) -> None:
                 for j in range(n_per_thread):
@@ -570,7 +570,7 @@ class TestRawJSONPassthrough:
         ready.wait(timeout=2)
 
         try:
-            e = Emitter(socket_path=sock_path)
+            e = DaemonEmitter(socket_path=sock_path)
             # Whitespace and key-order variation — must travel verbatim.
             raw_input = b'{ "b":  2 , "a" : 1 }'
             e.emit(
@@ -601,7 +601,7 @@ class TestRawJSONPassthrough:
 @requires_daemon
 def test_emit_frame_round_trip(daemon: DaemonHandle) -> None:
     """Three events materialise as three signed receipts in the daemon's chain."""
-    e = Emitter(socket_path=daemon.socket_path)
+    e = DaemonEmitter(socket_path=daemon.socket_path)
 
     e.emit(channel="sdk", tool_name="alpha", tool_server="fixture", decision="allowed")
     e.emit(channel="sdk", tool_name="beta", tool_server="fixture", decision="denied")
@@ -625,7 +625,7 @@ def test_emit_frame_round_trip(daemon: DaemonHandle) -> None:
 @requires_daemon
 def test_emit_session_id_stable(daemon: DaemonHandle) -> None:
     """session_id is generated once and reused across all emits (ADR-0010 OQ4)."""
-    e = Emitter(socket_path=daemon.socket_path)
+    e = DaemonEmitter(socket_path=daemon.socket_path)
     want_session = e.session_id
     assert want_session  # non-empty
 
@@ -645,7 +645,7 @@ def test_emit_session_id_stable(daemon: DaemonHandle) -> None:
 def test_emit_with_host_session_id(daemon: DaemonHandle) -> None:
     """WithSessionID forwards a host-supplied id to the daemon."""
     host_session = "host-supplied-session-py-9f3a"
-    e = Emitter(socket_path=daemon.socket_path, session_id=host_session)
+    e = DaemonEmitter(socket_path=daemon.socket_path, session_id=host_session)
     assert e.session_id == host_session
 
     e.emit(channel="sdk", tool_name="noop", decision="allowed")
@@ -664,7 +664,7 @@ def test_emit_reconnect_after_daemon_restart() -> None:
         d1 = DaemonHandle(tmpdir)
         d1.start()
 
-        e = Emitter(socket_path=d1.socket_path)
+        e = DaemonEmitter(socket_path=d1.socket_path)
         want_session = e.session_id
 
         # Round 1: two emits to the first daemon.
@@ -706,7 +706,7 @@ def test_emit_reconnect_after_daemon_restart() -> None:
 @requires_daemon
 def test_emit_returns_error_after_close(daemon: DaemonHandle) -> None:
     """emit() raises RuntimeError after close(); close() is idempotent."""
-    e = Emitter(socket_path=daemon.socket_path)
+    e = DaemonEmitter(socket_path=daemon.socket_path)
     e.close()
     e.close()  # idempotent
 

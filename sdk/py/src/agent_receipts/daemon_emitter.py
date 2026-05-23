@@ -102,15 +102,22 @@ def _xdg_data_home() -> str:
     return os.path.join(home, ".local", "share")
 
 
-class Emitter:
+class DaemonEmitter:
     """Fire-and-forget client for the agent-receipts daemon socket.
 
-    Construct with :func:`Emitter`, fire events with :meth:`emit`, release
-    the socket with :meth:`close`. Thread-safe: ``emit()`` may be called
-    concurrently from multiple threads.
+    Construct with :class:`DaemonEmitter`, fire events with :meth:`emit`,
+    release the socket with :meth:`close`. Thread-safe: ``emit()`` may be
+    called concurrently from multiple threads.
 
     The ``session_id`` is fixed for the lifetime of the emitter — even
     across daemon reconnects — per ADR-0010 OQ4.
+
+    Per ADR-0020 step 1, the name :class:`DaemonEmitter` reserves
+    :class:`agent_receipts.emitters.Emitter` for the new signed-receipt
+    delivery Protocol. This class still takes the unsigned event frame
+    (``channel`` / ``tool_name`` / ``decision`` / ...) and does NOT yet
+    implement the new ``Emitter`` Protocol. Step 2 of the migration is
+    tracked separately.
     """
 
     def __init__(
@@ -296,7 +303,7 @@ class Emitter:
                     pass  # best-effort close; connection is being discarded regardless
                 self._conn = None
 
-    def __enter__(self) -> Emitter:
+    def __enter__(self) -> DaemonEmitter:
         return self
 
     def __exit__(self, *_: object) -> None:
