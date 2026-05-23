@@ -140,7 +140,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `@context` | Yes | JSON-LD context. Must include the W3C VC v2 and Agent Receipt context URIs in order. |
 | `id` | Yes | Globally unique identifier. Must be `urn:receipt:<uuid>`. |
 | `type` | Yes | Must be `["VerifiableCredential", "AgentReceipt"]`. |
-| `version` | Yes | Protocol version. Must be `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, or `"0.3.0"`. Verifiers MUST accept all four. |
+| `version` | Yes | Protocol version. Must be `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, `"0.3.0"`, or `"0.4.0"`. Verifiers MUST accept all five. |
 | `issuer` | Yes | The agent or platform that issued the receipt. |
 | `issuanceDate` | Yes | ISO 8601 datetime when the receipt was issued. May differ from `action.timestamp`. |
 | `credentialSubject` | Yes | The receipt payload. |
@@ -182,6 +182,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `emitter_metadata` | No | Daemon-observed emitter-side metadata. Currently a single `drop_count` field on synthetic events_dropped receipts (ADR-0010). Daemon-attested, not agent-claimed. |
 | `timestamp` | Yes | ISO 8601 datetime when the action was executed. |
 | `trusted_timestamp` | No | Base64-encoded RFC 3161 TimeStampToken. Absent (not `null`) when not present — see [Optional-field rule](#optional-field-rule). |
+| `idempotency_key` | No | Stable identifier for the logical operation this action represents (e.g. a request ID). When an agent retries a tool call, the SDK or MCP proxy stamps the same `idempotency_key` on every receipt for that operation; verifiers surface duplicates across a chain as a warning, not a failure (retries are legitimate). Non-empty string when present; absent (not `null`) otherwise. Added in v0.4.0 (ADR-0019 §S5). |
 
 #### `parameters_disclosure` envelope (HPKE)
 

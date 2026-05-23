@@ -39,8 +39,8 @@ describe("receipt schema constants", () => {
 		expect(CREDENTIAL_TYPE).toEqual(["VerifiableCredential", "AgentReceipt"]);
 	});
 
-	it("has version 0.3.0", () => {
-		expect(VERSION).toBe("0.3.0");
+	it("has version 0.4.0", () => {
+		expect(VERSION).toBe("0.4.0");
 	});
 });
 

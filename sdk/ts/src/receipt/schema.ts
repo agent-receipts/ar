@@ -127,6 +127,7 @@ const actionSchema = z
 		emitter_metadata: emitterMetadataSchema.optional(),
 		timestamp: z.string(),
 		trusted_timestamp: z.string().optional(),
+		idempotency_key: z.string().optional(),
 	})
 	.passthrough();
 

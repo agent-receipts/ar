@@ -16,7 +16,7 @@ func Context() []string { return append([]string{}, protocolContext...) }
 // CredentialType returns a copy of the credential type array.
 func CredentialType() []string { return append([]string{}, protocolCredentialType...) }
 
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 // RiskLevel classifies the security risk of an action.
 type RiskLevel string
@@ -121,6 +121,13 @@ type Action struct {
 	EmitterMetadata      *EmitterMetadata    `json:"emitter_metadata,omitempty"`
 	Timestamp            string              `json:"timestamp"`
 	TrustedTimestamp     string              `json:"trusted_timestamp,omitempty"`
+	// IdempotencyKey is a stable identifier for the logical operation this
+	// action represents (e.g. a request ID). When an agent retries a tool call,
+	// the same key is stamped on every receipt for that operation so auditors
+	// can distinguish a legitimate retry from a duplicated emission. Omitted
+	// (omitempty) when no stable source exists; MUST NOT be empty when present.
+	// See spec §7.3.6 and ADR-0019 §S5.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // Intent captures conversation context behind the action.

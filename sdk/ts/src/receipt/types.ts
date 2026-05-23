@@ -18,7 +18,7 @@ export const CREDENTIAL_TYPE = [
 	"AgentReceipt",
 ] as const;
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 
 // --- Risk levels ---
 
@@ -129,6 +129,15 @@ export interface Action {
 	emitter_metadata?: EmitterMetadata;
 	timestamp: string;
 	trusted_timestamp?: string;
+	/**
+	 * Stable identifier for the logical operation this action represents
+	 * (e.g. a request ID). When an agent retries a tool call, the same key is
+	 * stamped on every receipt for that operation so auditors can distinguish
+	 * a legitimate retry from a duplicated emission. Omitted when no stable
+	 * source exists; MUST be a non-empty string when present.
+	 * See spec §7.3.6 and ADR-0019 §S5.
+	 */
+	idempotency_key?: string;
 }
 
 // --- Intent ---
