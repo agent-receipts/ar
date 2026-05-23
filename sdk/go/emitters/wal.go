@@ -194,7 +194,10 @@ func NewFileWal(dir string) (*FileWal, error) {
 // lower-index files). Caller must NOT hold w.mu — it is called only from the
 // constructor before the value is shared.
 func (w *FileWal) load() error {
-	if err := os.MkdirAll(w.dir, 0o755); err != nil {
+	// 0o700: keep the WAL directory owner-only so other local users can't list
+	// pending receipts in a multi-user environment. Entry files are written
+	// 0o600 (os.CreateTemp default) below.
+	if err := os.MkdirAll(w.dir, 0o700); err != nil {
 		return fmt.Errorf("FileWal: create dir %s: %w", w.dir, err)
 	}
 	dirEntries, err := os.ReadDir(w.dir)
@@ -371,12 +374,15 @@ func NewWAL(inner Emitter, wal Wal) *WALEmitter {
 // error is returned to the caller.
 func (e *WALEmitter) Emit(ctx context.Context, r receipt.AgentReceipt) error {
 	if err := e.wal.Append(ctx, r); err != nil {
-		return err
+		return fmt.Errorf("WALEmitter: append %s: %w", r.ID, err)
 	}
 	if err := e.inner.Emit(ctx, r); err != nil {
-		return err
+		return fmt.Errorf("WALEmitter: inner emit %s: %w", r.ID, err)
 	}
-	return e.wal.Remove(ctx, r.ID)
+	if err := e.wal.Remove(ctx, r.ID); err != nil {
+		return fmt.Errorf("WALEmitter: remove %s: %w", r.ID, err)
+	}
+	return nil
 }
 
 // Replay re-delivers every receipt left unacknowledged in the WAL. Call once
@@ -411,7 +417,7 @@ func (e *WALEmitter) Flush(ctx context.Context) (int, error) {
 func (e *WALEmitter) Pending(ctx context.Context) (int, error) {
 	pending, err := e.wal.List(ctx)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("WALEmitter: list pending: %w", err)
 	}
 	return len(pending), nil
 }
@@ -424,7 +430,7 @@ func (e *WALEmitter) Pending(ctx context.Context) (int, error) {
 func (e *WALEmitter) drain(ctx context.Context) (WALDrainResult, error) {
 	pending, err := e.wal.List(ctx)
 	if err != nil {
-		return WALDrainResult{}, err
+		return WALDrainResult{}, fmt.Errorf("WALEmitter: list pending: %w", err)
 	}
 
 	delivered := 0
@@ -437,7 +443,7 @@ func (e *WALEmitter) drain(ctx context.Context) (WALDrainResult, error) {
 			continue
 		}
 		if err := e.wal.Remove(ctx, r.ID); err != nil {
-			return WALDrainResult{}, err
+			return WALDrainResult{}, fmt.Errorf("WALEmitter: remove %s: %w", r.ID, err)
 		}
 		delivered++
 	}

@@ -213,7 +213,9 @@ export class FileWal implements Wal {
 	}
 
 	private async load(): Promise<void> {
-		await mkdir(this.dir, { recursive: true });
+		// 0o700: keep the WAL directory owner-only so other local users can't
+		// list pending receipts in a multi-user environment.
+		await mkdir(this.dir, { recursive: true, mode: 0o700 });
 		const names = await readdir(this.dir);
 		// Sort by index so a duplicate id (possible if a crash interleaved an
 		// idempotent rewrite) resolves to the highest-index file; the stale
@@ -253,7 +255,11 @@ export class FileWal implements Wal {
 	): Promise<void> {
 		const finalPath = this.path(index);
 		const tmpPath = `${finalPath}.tmp`;
-		const fh = await open(tmpPath, "w");
+		// 0o600: WAL entries hold signed receipts, which may carry sensitive
+		// payload metadata — keep them owner-only, matching the Python/Go
+		// backends. (Only applied on create; an idempotent rewrite of an
+		// existing file keeps its mode.)
+		const fh = await open(tmpPath, "w", 0o600);
 		try {
 			await fh.writeFile(JSON.stringify(receipt));
 			// fsync the data before the rename so a crash can't expose a

@@ -6,7 +6,7 @@
  * a simulated crash, and deadline-bounded flush for ephemeral shutdown.
  */
 
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -103,6 +103,21 @@ describe("FileWal", () => {
 		expect(files).toHaveLength(2);
 		expect(files.every((f) => f.endsWith(".json"))).toBe(true);
 	});
+
+	it.skipIf(process.platform === "win32")(
+		"writes entry files and the WAL dir owner-only (0600/0700)",
+		async () => {
+			// Fresh subdir the FileWal must create itself, so we assert its
+			// mkdir mode rather than the mkdtemp parent's.
+			const sub = join(dir, "wal-sub");
+			const wal = new FileWal(sub);
+			await wal.append(receipt("a"));
+			const entry = readdirSync(sub).find((f) => f.endsWith(".json"));
+			if (entry === undefined) throw new Error("no entry file written");
+			expect(statSync(join(sub, entry)).mode & 0o777).toBe(0o600);
+			expect(statSync(sub).mode & 0o777).toBe(0o700);
+		},
+	);
 
 	it("removes entries and deletes their files", async () => {
 		const wal = new FileWal(dir);

@@ -191,7 +191,10 @@ class FileWal:
         self._loaded = True
 
     def _load(self) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
+        # mode=0o700: keep the WAL directory owner-only so other local users
+        # can't list pending receipts in a multi-user environment. Entry files
+        # are written 0o600 in _write_entry.
+        self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         # Sort by index so a duplicate id (possible if a crash interleaved an
         # idempotent rewrite) resolves to the highest-index file; the stale
         # lower-index file is unlinked.
