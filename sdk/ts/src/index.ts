@@ -13,11 +13,17 @@ export {
 	CompositeEmitter,
 	EmitError,
 	type Emitter,
+	FileWal,
 	HttpEmitter,
 	type HttpEmitterAuth,
 	type HttpEmitterConfig,
 	InMemoryEmitter,
+	MemoryWal,
 	type RetryConfig,
+	type Wal,
+	type WalDrainResult,
+	WalEmitter,
+	type WalEmitterConfig,
 } from "./emitters/index.js";
 export {
 	type ChainVerification,

@@ -55,6 +55,25 @@ function classifyTerminationStatus(
 }
 
 /**
+ * Detect an incomplete tool roundtrip: a chain whose final, non-terminal
+ * receipt records `outcome.status: "pending"` — a tool call that was logged
+ * but whose result receipt never arrived (e.g. the emitter crashed between
+ * the call and the result, or the WAL never drained).
+ *
+ * Reported as a distinct advisory signal (ADR-0019 §O3, retained by
+ * ADR-0020) rather than folded into the generic chain-break path: the chain
+ * may still verify cryptographically. A terminal receipt closes the chain
+ * deliberately, so a `pending` terminal receipt is not flagged here.
+ */
+function isIncompleteToolRoundtrip(receipts: AgentReceipt[]): boolean {
+	const last = receipts[receipts.length - 1];
+	if (!last || last.credentialSubject.chain.terminal === true) {
+		return false;
+	}
+	return last.credentialSubject.outcome.status === "pending";
+}
+
+/**
  * Result of verifying a single receipt in a chain.
  */
 export interface ReceiptVerification {
@@ -99,6 +118,14 @@ export interface ChainVerification {
 	receipts: ReceiptVerification[];
 	/** Index of the first broken receipt, or -1 if chain is valid. */
 	brokenAt: number;
+	/**
+	 * True when the final non-terminal receipt has `outcome.status: "pending"`
+	 * — a tool call whose result receipt never arrived (ADR-0019 §O3, retained
+	 * by ADR-0020). Advisory: it does not by itself set `valid: false`, since
+	 * the chain may verify cryptographically. Distinct from a generic chain
+	 * break so callers can surface "incomplete tool roundtrip" specifically.
+	 */
+	incompleteToolRoundtrip: boolean;
 	/** Non-empty when one or more receipts carry response_hash but no response body was supplied. */
 	responseHashNote?: string;
 	/** Non-empty when verification failed with a descriptive message. */
@@ -176,6 +203,7 @@ export function verifyChain(
 				status: "unknown",
 				receipts: [],
 				brokenAt: 0,
+				incompleteToolRoundtrip: false,
 				responseHashNote: undefined,
 			};
 		}
@@ -185,10 +213,12 @@ export function verifyChain(
 			status: "unknown",
 			receipts: [],
 			brokenAt: -1,
+			incompleteToolRoundtrip: false,
 		};
 	}
 
 	const status = classifyTerminationStatus(receipts);
+	const incompleteToolRoundtrip = isIncompleteToolRoundtrip(receipts);
 
 	// Idempotency-key duplicate detection is independent of validity (spec
 	// §7.3.6) — compute it once up front so every return path can surface it.
@@ -317,6 +347,7 @@ export function verifyChain(
 				status,
 				receipts: results,
 				brokenAt: i,
+				incompleteToolRoundtrip,
 				responseHashNote: undefined,
 				warnings,
 				error: `chain_id mismatch at index ${i}: expected "${expectedChainId}", got "${observedChainId}"`,
@@ -346,6 +377,7 @@ export function verifyChain(
 				status,
 				receipts: results,
 				brokenAt,
+				incompleteToolRoundtrip,
 				responseHashNote: undefined,
 				warnings,
 				error,
@@ -359,6 +391,7 @@ export function verifyChain(
 		status,
 		receipts: results,
 		brokenAt,
+		incompleteToolRoundtrip,
 	};
 	if (warnings !== undefined) {
 		cv.warnings = warnings;

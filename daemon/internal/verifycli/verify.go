@@ -122,6 +122,14 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		fmt.Fprintf(stderr, "Note: %s\n", result.ResponseHashNote)
 	}
 
+	// Advisory: a final non-terminal receipt with outcome.status pending is a
+	// tool call whose result receipt never arrived (ADR-0019 §O3, retained by
+	// ADR-0020). It does NOT break the chain, so it never changes the exit
+	// code — surface it as an advisory line regardless of Valid.
+	if result.IncompleteToolRoundtrip {
+		fmt.Fprintln(stdout, "Advisory: incomplete tool roundtrip: final tool call has no result receipt")
+	}
+
 	if result.Valid {
 		fmt.Fprintf(stdout, "Chain %s: VALID (%d receipts)\n", *chainID, result.Length)
 		return ExitOK

@@ -19,6 +19,13 @@ from agent_receipts.emitters.types import (
     NoAuth,
     RetryConfig,
 )
+from agent_receipts.emitters.wal import (
+    FileWal,
+    MemoryWal,
+    Wal,
+    WalDrainResult,
+    WalEmitter,
+)
 
 __all__ = [
     "ApiKeyAuth",
@@ -29,11 +36,16 @@ __all__ = [
     "CompositeEmitter",
     "EmitError",
     "Emitter",
+    "FileWal",
     "HttpEmitter",
     "HttpEmitterAuth",
     "HttpEmitterConfig",
     "InMemoryEmitter",
+    "MemoryWal",
     "MtlsAuth",
     "NoAuth",
     "RetryConfig",
+    "Wal",
+    "WalDrainResult",
+    "WalEmitter",
 ]

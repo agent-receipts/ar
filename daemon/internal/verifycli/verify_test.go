@@ -72,6 +72,68 @@ func fixtureChain(t *testing.T, dir, chainID string, count int) (dbPath, pubKeyP
 	return dbPath, pubKeyPath
 }
 
+// fixturePendingTailChain writes a valid signed chain whose final receipt is
+// non-terminal with outcome.status == pending — the shape that VerifyChain
+// flags as IncompleteToolRoundtrip. Returns the db path and public-key path.
+func fixturePendingTailChain(t *testing.T, dir, chainID string, count int) (dbPath, pubKeyPath string) {
+	t.Helper()
+
+	dbPath = filepath.Join(dir, "receipts.db")
+	pubKeyPath = filepath.Join(dir, "signing.key.pub")
+
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privDER, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubDER, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
+	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+	if err := os.WriteFile(pubKeyPath, pubPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	var prevHash *string
+	for i := 1; i <= count; i++ {
+		status := receipt.StatusSuccess
+		if i == count {
+			status = receipt.StatusPending
+		}
+		unsigned := receipt.Create(receipt.CreateInput{
+			Issuer:    receipt.Issuer{ID: "did:test"},
+			Principal: receipt.Principal{ID: "did:user:test"},
+			Action:    receipt.Action{Type: "filesystem.file.read", RiskLevel: receipt.RiskLow},
+			Outcome:   receipt.Outcome{Status: status},
+			Chain:     receipt.Chain{Sequence: i, PreviousReceiptHash: prevHash, ChainID: chainID},
+		})
+		signed, err := receipt.Sign(unsigned, privPEM, "did:test#k1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := receipt.HashReceipt(signed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Insert(signed, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+	return dbPath, pubKeyPath
+}
+
 func runOnce(t *testing.T, args []string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errb bytes.Buffer
@@ -95,6 +157,27 @@ func TestRun_VerifiesGoodChain(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "VALID (3 receipts)") {
 		t.Errorf("stdout = %q, expected VALID with count", stdout)
+	}
+}
+
+func TestRun_FlagsIncompleteToolRoundtrip(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath := fixturePendingTailChain(t, dir, "chain-1", 3)
+
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--chain-id", "chain-1",
+	})
+	// The advisory is informational only — it must not change the exit code.
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (incomplete roundtrip is advisory, not a break); stderr=%s", code, ExitOK, stderr)
+	}
+	if !strings.Contains(stdout, "incomplete tool roundtrip") {
+		t.Errorf("stdout = %q, expected an incomplete-tool-roundtrip advisory line", stdout)
+	}
+	if !strings.Contains(stdout, "VALID") {
+		t.Errorf("stdout = %q, expected the chain to still report VALID", stdout)
 	}
 }
 

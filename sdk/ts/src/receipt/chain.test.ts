@@ -1040,3 +1040,94 @@ describe("verifyChain", () => {
 		expect(result.error).toMatch(/"chain-other"/);
 	});
 });
+
+describe("verifyChain incompleteToolRoundtrip", () => {
+	// Append a non-terminal receipt with the given outcome status, linked to
+	// the tail of `chain`.
+	function appendReceipt(
+		chain: ReturnType<typeof buildChain>,
+		privateKey: string,
+		status: "success" | "failure" | "pending",
+		terminal = false,
+	) {
+		const last = chain.at(-1);
+		const prevHash = last != null ? hashReceipt(last) : null;
+		const unsigned = createReceipt({
+			issuer: { id: "did:agent:test" },
+			principal: { id: "did:user:test" },
+			action: { type: "filesystem.file.read", risk_level: "low" },
+			outcome: { status },
+			chain: {
+				sequence: chain.length + 1,
+				previous_receipt_hash: prevHash,
+				chain_id: "chain_test",
+			},
+			...(terminal ? { terminal: true as const } : {}),
+		});
+		const signed = signReceipt(unsigned, privateKey, "did:agent:test#key-1");
+		return [...chain, signed];
+	}
+
+	it("flags a chain whose final non-terminal receipt is pending", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = appendReceipt(
+			buildChain(2, privateKey),
+			privateKey,
+			"pending",
+		);
+
+		const result = verifyChain(chain, publicKey);
+
+		// Advisory only: the chain still verifies cryptographically.
+		expect(result.valid).toBe(true);
+		expect(result.incompleteToolRoundtrip).toBe(true);
+	});
+
+	it("does not flag a chain whose final receipt completed", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = appendReceipt(
+			buildChain(2, privateKey),
+			privateKey,
+			"success",
+		);
+
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.valid).toBe(true);
+		expect(result.incompleteToolRoundtrip).toBe(false);
+	});
+
+	it("does not flag a pending receipt that is not the final one", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		// pending in the middle, success at the tail
+		const withPending = appendReceipt(
+			buildChain(1, privateKey),
+			privateKey,
+			"pending",
+		);
+		const chain = appendReceipt(withPending, privateKey, "success");
+
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.incompleteToolRoundtrip).toBe(false);
+	});
+
+	it("does not flag a terminal receipt even if its outcome is pending", () => {
+		const { publicKey, privateKey } = generateKeyPair();
+		const chain = appendReceipt(
+			buildChain(2, privateKey),
+			privateKey,
+			"pending",
+			true,
+		);
+
+		const result = verifyChain(chain, publicKey);
+
+		expect(result.incompleteToolRoundtrip).toBe(false);
+	});
+
+	it("reports false for an empty chain", () => {
+		const { publicKey } = generateKeyPair();
+		expect(verifyChain([], publicKey).incompleteToolRoundtrip).toBe(false);
+	});
+});
