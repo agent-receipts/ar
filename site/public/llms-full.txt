@@ -125,7 +125,7 @@ Implementations may escalate but must not downgrade risk levels.
 
 ## Repositories
 
-- **spec** (https://github.com/agent-receipts/spec): Protocol specification, JSON Schema, action taxonomy
+- **spec** (https://github.com/agent-receipts/ar/tree/main/spec): Protocol specification, JSON Schema, action taxonomy
 - **sdk-ts** (https://github.com/agent-receipts/ar/tree/main/sdk/ts): TypeScript SDK — create, sign, verify receipts
 - **sdk-py** (https://github.com/agent-receipts/ar/tree/main/sdk/py): Python SDK — create, sign, verify receipts
 - **openclaw** (https://github.com/agent-receipts/openclaw): OpenClaw plugin for automatic receipt generation
@@ -134,5 +134,5 @@ Implementations may escalate but must not downgrade risk levels.
 
 - Documentation: https://agentreceipts.ai
 - Specification: https://agentreceipts.ai/specification/overview/
-- JSON Schema: https://github.com/agent-receipts/spec/blob/main/schema/agent-receipt.schema.json
+- JSON Schema: https://github.com/agent-receipts/ar/blob/main/spec/schema/agent-receipt.schema.json
 - GitHub org: https://github.com/agent-receipts
