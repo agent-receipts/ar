@@ -75,6 +75,8 @@ The issuer signs the canonical receipt (proof field excluded) with its Ed25519 p
 
 ## Chain integrity verification
 
+**Prerequisite.** This algorithm assumes every input receipt has already been validated against the [JSON Schema](/specification/agent-receipt-schema/#json-schema), per the end-to-end verification flow (spec §7.8 step 1). The schema enforces per-receipt invariants such as `chain.sequence` being an integer ≥ 1 and `chain.previous_receipt_hash` being either `null` or a `sha256:`-prefixed hex string. The chain algorithm below does not re-validate those constraints — chains containing schema-invalid receipts will produce undefined results.
+
 To verify a receipt chain:
 
 1. Retrieve all receipts for the chain, ordered by `chain.sequence`. Let *n* be the number of receipts.
@@ -83,7 +85,7 @@ To verify a receipt chain:
    - **b.** Compute the hex-encoded SHA-256 digest of the RFC 8785 canonical form of *R(i)* with the `proof` field removed.
    - **c.** If *i < n - 1*, confirm *R(i+1)*'s `chain.previous_receipt_hash` equals `sha256:` concatenated with that hex digest.
 3. For each receipt *R(i)* where *i > 0*, confirm `chain.sequence` equals *R(i-1)*'s `chain.sequence` + 1. Any gap is a hard verification failure, not a warning — partial chains cannot be silently accepted.
-4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null` and `chain.sequence` is `1`.
+4. Confirm *R(0)*'s `chain.previous_receipt_hash` is `null`. (The spec mandates `chain.sequence` starts at `1` per §4.3.2, but the reference SDK verifiers only enforce `sequence ≥ 1` here and rely on the schema and issuer conformance for the exact starting value. Callers needing strict first-sequence enforcement should additionally validate against `chain.sequence == 1` on R(0) or supply `ExpectedLength`.)
 5. Confirm every receipt shares the same `chain.chain_id` as *R(0)*. Any mismatch fails verification immediately with a `chain_id mismatch` error identifying the offending index and both values. This check is unconditional and runs independently of `previous_receipt_hash` linkage — an attacker who splices a forged hash link cannot mix receipts from two distinct chains under a single verification call.
 6. If any receipt *R(i)* carries `chain.terminal: true` and a receipt *R(i+1)* exists in the input, verification fails immediately with `receipt after terminal`. This check is unconditional — no caller parameter can suppress it.
 

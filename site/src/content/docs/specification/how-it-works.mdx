@@ -100,7 +100,7 @@ sequenceDiagram
 
   E->>D: emitter frame (v, ts_emit, tool, session_id, channel, decision, input?, output?, error?) [Unix socket]
   Note over D: daemon builds receipt fields from frame
-  Note over D: capture peer_credential (platform, pid, uid, gid, exe_path)
+  Note over D: capture peer_credential (platform, pid; uid?, gid?, exe_path? — POSIX/best-effort)
   Note over D: RFC 8785 canonicalize<br/>hash input → action.parameters_hash<br/>(optional) encrypt input → action.parameters_disclosure (HPKE envelope)<br/>hash output → outcome.response_hash<br/>(plaintext not stored)
   Note over D: SHA-256 of this receipt → next receipt's chain.previous_receipt_hash
   Note over D: Ed25519 sign
