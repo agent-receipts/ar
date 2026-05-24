@@ -227,7 +227,7 @@ func looksLikeTCPAddress(s string) bool {
 // is safe for concurrent use, so it can share cfg.Logger with the main path.
 func warnUnsafeSocketPath(ctx context.Context, logger *log.Logger, socketPath string, interval time.Duration) {
 	logger.Printf(
-		"level=warn unsafe socket path %q is outside the per-platform safe set; the daemon started only because --unsafe-socket-path was passed. Shared, world-traversable, periodically-swept directories (e.g. /tmp) defeat the per-user trust boundary (issue #538)",
+		"level=warn unsafe socket path %q is outside the per-platform safe set; startup is proceeding only because --unsafe-socket-path was passed. Shared, world-traversable, periodically-swept directories (e.g. /tmp) defeat the per-user trust boundary (issue #538)",
 		socketPath,
 	)
 	if interval <= 0 {
