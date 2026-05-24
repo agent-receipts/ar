@@ -61,7 +61,7 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	// Empty default means "auto-detect": use the sole chain when there is
 	// exactly one, otherwise require the operator to disambiguate.
 	chainID := fs.String("chain-id", envLookup("AGENTRECEIPTS_CHAIN_ID"), "Chain id to read from (env: AGENTRECEIPTS_CHAIN_ID); required only when the store holds more than one chain")
-	asJSON := fs.Bool("json", false, "Output the raw receipt JSON instead of human-readable text")
+	asJSON := fs.Bool("json", false, "Output the receipt as pretty-printed JSON instead of human-readable text")
 	// flag.Parse stops at the first non-flag token, so a positional <seq>
 	// placed before a flag (e.g. the documented `show 42 --json`) would hide
 	// that flag. Parse in a loop, peeling off one positional per pass, so the
@@ -161,6 +161,9 @@ func writeJSON(stdout, stderr io.Writer, r *receipt.AgentReceipt) int {
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(r); err != nil {
+		if errors.Is(err, syscall.EPIPE) || errors.Is(err, io.ErrClosedPipe) {
+			return ExitOK
+		}
 		fmt.Fprintf(stderr, "agent-receipts show: encode JSON: %v\n", err)
 		return ExitUsageError
 	}

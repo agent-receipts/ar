@@ -164,7 +164,7 @@ Exit codes are stable for scripting:
 agent-receipts show 42
 # or, against a multi-chain store / explicit DB:
 agent-receipts show 42 --chain-id default --db /var/lib/agentreceipts/receipts.db
-# raw receipt JSON:
+# pretty-printed JSON:
 agent-receipts show 42 --json
 ```
 
