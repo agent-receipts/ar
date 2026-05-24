@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"time"
 
 	"github.com/agent-receipts/ar/daemon/internal/chain"
 	"github.com/agent-receipts/ar/daemon/internal/keysource"
@@ -83,6 +84,10 @@ type Config struct {
 	//     - name: my-secret
 	//       pattern: 'MY_SECRET_[A-Z0-9]+'
 	RedactPatternsPath string
+
+	// ShutdownDeadline is the total time budget for emitting interrupted-chain
+	// terminators on SIGTERM/SIGINT. Defaults to 200ms when zero.
+	ShutdownDeadline time.Duration
 }
 
 // DefaultSocketPath returns the per-OS default socket path. Phase 1 resolves
@@ -355,6 +360,25 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	cfg.Logger.Printf("loaded chain %s, next seq=%d", cfg.ChainID, state.NextSeq())
 
+	// Refuse to start if the chain already has a terminal receipt. Appending
+	// after a terminal receipt produces a chain that fails VerifyChain (spec
+	// §7.3.2). After a graceful shutdown use a new --chain-id or fresh --db.
+	if state.NextSeq() > 1 {
+		tail, tailErr := st.GetChainTailReceipt(cfg.ChainID)
+		if tailErr != nil {
+			return fmt.Errorf("check chain tail: %w", tailErr)
+		}
+		if tail != nil && tail.CredentialSubject.Chain.Terminal != nil && *tail.CredentialSubject.Chain.Terminal {
+			return fmt.Errorf(
+				"chain %q tail (seq %d) is already terminal (chain.status=%q); "+
+					"use a new --chain-id or a fresh --db to start a new chain",
+				cfg.ChainID,
+				tail.CredentialSubject.Chain.Sequence,
+				tail.CredentialSubject.Chain.Status,
+			)
+		}
+	}
+
 	if cfg.ParameterDisclosure {
 		cfg.Logger.Printf("NOTICE: --parameter-disclosure is enabled but currently a no-op.")
 		cfg.Logger.Printf("NOTICE: The legacy plaintext-in-body shape was removed by the v0.3.0")
@@ -389,8 +413,32 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := ln.Serve(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
+
+	// The listener is closed and all in-flight handlers have exited.
+	// Emit interrupted-chain terminators for any open chains before the
+	// deferred st.Close() commits the WAL. Use a fresh context — the caller's
+	// ctx is already cancelled.
+	terminateCtx, terminateCancel := context.WithTimeout(context.Background(), cfg.shutdownDeadline())
+	defer terminateCancel()
+	if err := pp.EmitTerminator(terminateCtx); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			cfg.Logger.Printf("level=warn terminator: deadline expired, chain %s will be classified as 'unknown' by verifier", cfg.ChainID)
+		} else {
+			cfg.Logger.Printf("level=warn terminator: %v (chain %s may be classified as 'unknown' by verifier)", err, cfg.ChainID)
+			return fmt.Errorf("emit terminator: %w", err)
+		}
+	}
+
 	cfg.Logger.Printf("agent-receipts-daemon shutdown complete")
 	return nil
+}
+
+// shutdownDeadline returns the configured shutdown deadline, or 200ms if unset.
+func (cfg Config) shutdownDeadline() time.Duration {
+	if cfg.ShutdownDeadline > 0 {
+		return cfg.ShutdownDeadline
+	}
+	return 200 * time.Millisecond
 }
 
 // allowedDBPerm is the maximum permission set the daemon will allow on the
@@ -630,6 +678,9 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.VerificationMethodID == "" {
 		return errors.New("Config.VerificationMethodID is required")
+	}
+	if cfg.ShutdownDeadline < 0 {
+		return fmt.Errorf("Config.ShutdownDeadline must be non-negative; got %v", cfg.ShutdownDeadline)
 	}
 	return nil
 }

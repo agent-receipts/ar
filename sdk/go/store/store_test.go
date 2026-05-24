@@ -1211,3 +1211,95 @@ func TestInsertRaw_RejectsInvalidPayloads(t *testing.T) {
 		t.Fatalf("row was inserted by one of the rejected payloads: %+v", got)
 	}
 }
+
+func TestGetChainTailReceipt_Empty(t *testing.T) {
+	s := setupStore(t)
+	got, err := s.GetChainTailReceipt("chain-1")
+	if err != nil {
+		t.Fatalf("GetChainTailReceipt on empty store: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("GetChainTailReceipt on empty store: want nil, got %+v", got)
+	}
+}
+
+func TestGetChainTailReceipt_ReturnsHighestSequence(t *testing.T) {
+	s := setupStore(t)
+	kp := mustKeyPair(t)
+
+	r1 := makeSignedReceipt(t, kp, 1, "chain-1", nil)
+	h1 := mustHashReceipt(t, r1)
+	r2 := makeSignedReceipt(t, kp, 2, "chain-1", &h1)
+	h2 := mustHashReceipt(t, r2)
+
+	if err := s.Insert(r1, h1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Insert(r2, h2); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetChainTailReceipt("chain-1")
+	if err != nil {
+		t.Fatalf("GetChainTailReceipt: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetChainTailReceipt: want receipt, got nil")
+	}
+	if got.CredentialSubject.Chain.Sequence != 2 {
+		t.Errorf("GetChainTailReceipt: got sequence %d, want 2", got.CredentialSubject.Chain.Sequence)
+	}
+}
+
+func TestGetChainTailReceipt_ChainIsolation(t *testing.T) {
+	s := setupStore(t)
+	kp := mustKeyPair(t)
+
+	rA := makeSignedReceipt(t, kp, 1, "chain-A", nil)
+	hA := mustHashReceipt(t, rA)
+	rB := makeSignedReceipt(t, kp, 1, "chain-B", nil)
+	hB := mustHashReceipt(t, rB)
+
+	if err := s.Insert(rA, hA); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Insert(rB, hB); err != nil {
+		t.Fatal(err)
+	}
+
+	gotA, err := s.GetChainTailReceipt("chain-A")
+	if err != nil {
+		t.Fatalf("GetChainTailReceipt chain-A: %v", err)
+	}
+	if gotA == nil || gotA.CredentialSubject.Chain.ChainID != "chain-A" {
+		t.Errorf("GetChainTailReceipt chain-A: got %+v", gotA)
+	}
+
+	gotC, err := s.GetChainTailReceipt("chain-C")
+	if err != nil {
+		t.Fatalf("GetChainTailReceipt chain-C: %v", err)
+	}
+	if gotC != nil {
+		t.Errorf("GetChainTailReceipt unknown chain: want nil, got %+v", gotC)
+	}
+}
+
+func TestGetChainTailReceipt_CorruptJSON(t *testing.T) {
+	s := setupStore(t)
+
+	// Bypass InsertRaw validation and write a row with invalid JSON directly
+	// to simulate on-disk corruption reaching GetChainTailReceipt.
+	_, err := s.db.Exec(
+		`INSERT INTO receipts (id, chain_id, sequence, action_type, risk_level, status, timestamp, issuer_id, receipt_hash, receipt_json)
+		 VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		"corrupt-id", "chain-corrupt", 1, "test.action", "low", "success", "2026-01-01T00:00:00Z", "did:test", "deadbeef", `{not valid json`,
+	)
+	if err != nil {
+		t.Fatalf("direct insert: %v", err)
+	}
+
+	_, err = s.GetChainTailReceipt("chain-corrupt")
+	if err == nil {
+		t.Error("GetChainTailReceipt with corrupt JSON: want error, got nil")
+	}
+}

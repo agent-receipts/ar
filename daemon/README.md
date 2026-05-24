@@ -67,6 +67,7 @@ agent-receipts-daemon \
 | `--issuer-id` | `AGENTRECEIPTS_ISSUER_ID` | `did:agent-receipts-daemon:local` |
 | `--public-key` | `AGENTRECEIPTS_PUBLIC_KEY` | `<--key>.pub` |
 | `--verification-method` | `AGENTRECEIPTS_VERIFICATION_METHOD` | `did:agent-receipts-daemon:local#k1` |
+| `--shutdown-deadline` | — | `200ms` — time budget for emitting interrupted-chain terminators on SIGTERM/SIGINT (see [Graceful shutdown](#graceful-shutdown)). |
 
 The signing key file must be a PKCS#8-encoded Ed25519 private key (the format
 `receipt.GenerateKeyPair()` in `sdk/go` produces) with permissions no looser
@@ -130,6 +131,22 @@ ownership/grouping is a packaging concern (Homebrew / launchd / systemd) and
 not something the daemon assigns at runtime. If the directory already exists
 the daemon does not modify its mode, so operator-managed permissions are
 preserved.
+
+## Graceful shutdown
+
+On SIGTERM or SIGINT the daemon performs a three-phase shutdown:
+
+1. **Stop accepting** — the IPC socket listener closes immediately. New emitter connections are refused from this point.
+2. **Drain** — Active handler goroutines that have already started reading their frame run to completion; connections not yet fully accepted or partially read are closed. No new receipts can enter the chain after this step.
+3. **Terminate** — if the configured chain (`--chain-id`) has at least one receipt and no terminal receipt yet, the daemon emits a terminal receipt with `chain.terminal: true` and `chain.status: "interrupted"`. This receipt is signed with the daemon's key and persisted to the store before the process exits, so verifiers can later classify the chain as `interrupted` rather than `unknown`. (The daemon owns one chain per process; multi-chain support is future work.)
+
+The total deadline for step 3 is `--shutdown-deadline` (default `200ms`). The deadline is **best-effort**: it gates entry into the signing and store operations, but cannot preempt an already-in-progress SQLite call (the store does not yet use context-aware `QueryRowContext`/`ExecContext`). Under normal conditions (single-writer process, local disk) this is not a practical concern. If the deadline expires before the terminator is written, the daemon logs a `level=warn` line (`terminator: deadline expired, chain … will be classified as 'unknown' by verifier`) and exits cleanly — the verifier's `unknown` classification (spec §7.3.3) is the documented fallback for chains whose terminator could not be written in time. Store I/O or signing failures during terminator emission are surfaced as a non-zero exit code.
+
+Once a terminal receipt has been written, the daemon will refuse to start again against the same `--chain-id` and `--db`; use a new `--chain-id` or a fresh `--db` for subsequent runs.
+
+**Crash case (SIGKILL / OOM kill):** the daemon cannot write anything. Chains left without a terminal receipt are classified as `unknown` by the verifier. This is by design — spec §7.3.3 documents `unknown` as the recourse for chains the daemon never sees again.
+
+**TTL semantics (v1):** there is no idle-chain TTL in v1. The daemon emits `interrupted` for every open chain at shutdown time, regardless of how long ago the last receipt was written. Over-emitting `interrupted` for a long-idle chain is the lesser failure mode compared to designing TTL semantics under shutdown pressure. Follow-up issue tracked separately.
 
 ## Read interface: `agent-receipts verify`
 
