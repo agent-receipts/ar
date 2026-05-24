@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strconv"
 	"syscall"
 	"text/tabwriter"
@@ -102,22 +101,19 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		return code
 	}
 
-	chain, err := s.GetChain(resolved)
+	r, err := s.GetByChainSequence(resolved, seq)
 	if err != nil {
 		fmt.Fprintf(stderr, "agent-receipts show: read chain %q: %v\n", resolved, err)
 		return ExitUsageError
 	}
-	for i := range chain {
-		if chain[i].CredentialSubject.Chain.Sequence == seq {
-			if *asJSON {
-				return writeJSON(stdout, stderr, &chain[i])
-			}
-			return writeHuman(stdout, &chain[i])
-		}
+	if r == nil {
+		fmt.Fprintf(stderr, "agent-receipts show: no receipt at sequence %d in chain %q\n", seq, resolved)
+		return ExitNotFound
 	}
-
-	fmt.Fprintf(stderr, "agent-receipts show: no receipt at sequence %d in chain %q\n", seq, resolved)
-	return ExitNotFound
+	if *asJSON {
+		return writeJSON(stdout, stderr, r)
+	}
+	return writeHuman(stdout, r)
 }
 
 // resolveChainID returns the chain id to read from. When requested is non-empty
@@ -129,7 +125,7 @@ func resolveChainID(s *store.Store, requested string, stderr io.Writer) (string,
 		return requested, ExitOK
 	}
 
-	chains, err := distinctChains(s)
+	chains, err := s.DistinctChainIDs()
 	if err != nil {
 		fmt.Fprintf(stderr, "agent-receipts show: enumerate chains: %v\n", err)
 		return "", ExitUsageError
@@ -147,24 +143,6 @@ func resolveChainID(s *store.Store, requested string, stderr io.Writer) (string,
 		}
 		return "", ExitUsageError
 	}
-}
-
-// distinctChains returns the sorted set of chain ids present in the store.
-func distinctChains(s *store.Store) ([]string, error) {
-	receipts, err := s.QueryReceipts(store.Query{})
-	if err != nil {
-		return nil, err
-	}
-	seen := make(map[string]struct{})
-	for _, r := range receipts {
-		seen[r.CredentialSubject.Chain.ChainID] = struct{}{}
-	}
-	chains := make([]string, 0, len(seen))
-	for c := range seen {
-		chains = append(chains, c)
-	}
-	sort.Strings(chains)
-	return chains, nil
 }
 
 func writeJSON(stdout, stderr io.Writer, r *receipt.AgentReceipt) int {

@@ -44,7 +44,9 @@ type ReceiptStore interface {
 	Insert(r receipt.AgentReceipt, receiptHash string) error
 	GetByID(id string) (*receipt.AgentReceipt, error)
 	GetChain(chainID string) ([]receipt.AgentReceipt, error)
+	GetByChainSequence(chainID string, sequence int) (*receipt.AgentReceipt, error)
 	GetChainTail(chainID string) (sequence int64, receiptHash string, found bool, err error)
+	DistinctChainIDs() ([]string, error)
 	QueryReceipts(q Query) ([]receipt.AgentReceipt, error)
 	Stats() (Stats, error)
 	VerifyStoredChain(chainID string, publicKeyPEM string) (receipt.ChainVerification, error)
@@ -364,6 +366,49 @@ func (s *Store) GetChain(chainID string) ([]receipt.AgentReceipt, error) {
 	}
 	defer rows.Close()
 	return scanReceipts(rows)
+}
+
+// GetByChainSequence retrieves the single receipt at (chainID, sequence).
+// It returns (nil, nil) when no such receipt exists, mirroring GetByID, so
+// callers distinguish "not found" from an error. The (chain_id, sequence)
+// pair is uniquely indexed, so at most one row matches.
+func (s *Store) GetByChainSequence(chainID string, sequence int) (*receipt.AgentReceipt, error) {
+	var rJSON string
+	err := s.db.QueryRow(
+		"SELECT receipt_json FROM receipts WHERE chain_id = ? AND sequence = ?",
+		chainID, sequence,
+	).Scan(&rJSON)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var r receipt.AgentReceipt
+	if err := json.Unmarshal([]byte(rJSON), &r); err != nil {
+		return nil, fmt.Errorf("corrupt receipt (chain_id=%s seq=%d): %w", chainID, sequence, err)
+	}
+	return &r, nil
+}
+
+// DistinctChainIDs returns the sorted set of chain ids present in the store.
+// It reads only the indexed chain_id column, so it stays cheap as the store
+// grows — callers enumerating chains need not load full receipts.
+func (s *Store) DistinctChainIDs() ([]string, error) {
+	rows, err := s.db.Query("SELECT DISTINCT chain_id FROM receipts ORDER BY chain_id ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var chains []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		chains = append(chains, id)
+	}
+	return chains, rows.Err()
 }
 
 // GetChainTail returns the highest-sequence receipt's sequence and hash for

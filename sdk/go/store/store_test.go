@@ -96,6 +96,103 @@ func TestGetChain(t *testing.T) {
 	}
 }
 
+func TestGetByChainSequence(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	var prevHash *string
+	for i := 1; i <= 3; i++ {
+		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
+		h, _ := receipt.HashReceipt(r)
+		if err := s.Insert(r, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+
+	got, err := s.GetByChainSequence("chain-1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("expected receipt at sequence 2, got nil")
+	}
+	if got.CredentialSubject.Chain.Sequence != 2 {
+		t.Errorf("expected sequence 2, got %d", got.CredentialSubject.Chain.Sequence)
+	}
+}
+
+func TestGetByChainSequence_NotFound(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
+	h, _ := receipt.HashReceipt(r)
+	if err := s.Insert(r, h); err != nil {
+		t.Fatal(err)
+	}
+
+	// Missing sequence in an existing chain.
+	got, err := s.GetByChainSequence("chain-1", 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Error("expected nil for missing sequence")
+	}
+
+	// Unknown chain entirely.
+	got, err = s.GetByChainSequence("no-such-chain", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Error("expected nil for unknown chain")
+	}
+}
+
+func TestDistinctChainIDs(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+
+	// Two chains, "chain-b" written before "chain-a" to confirm sorted output.
+	for _, chainID := range []string{"chain-b", "chain-a"} {
+		var prevHash *string
+		for i := 1; i <= 2; i++ {
+			r := makeSignedReceipt(t, kp, i, chainID, prevHash)
+			h, _ := receipt.HashReceipt(r)
+			if err := s.Insert(r, h); err != nil {
+				t.Fatal(err)
+			}
+			prevHash = &h
+		}
+	}
+
+	chains, err := s.DistinctChainIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"chain-a", "chain-b"}
+	if len(chains) != len(want) {
+		t.Fatalf("got %v, want %v", chains, want)
+	}
+	for i := range want {
+		if chains[i] != want[i] {
+			t.Errorf("chains[%d] = %q, want %q", i, chains[i], want[i])
+		}
+	}
+}
+
+func TestDistinctChainIDs_Empty(t *testing.T) {
+	s := setupStore(t)
+	chains, err := s.DistinctChainIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chains) != 0 {
+		t.Errorf("expected no chains, got %v", chains)
+	}
+}
+
 func TestGetChainTail_Empty(t *testing.T) {
 	s := setupStore(t)
 	seq, hash, found, err := s.GetChainTail("chain-1")
