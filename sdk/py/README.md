@@ -52,8 +52,9 @@ pip install agent-receipts
 > **In-process signing (below) keeps the private key in the calling process.**
 > For the strongest key isolation, run an out-of-process `agent-receipts-daemon`
 > that owns the key and the chain while your app only sends tool-call events to
-> it. If you sign client-side, deliver the signed receipts with `HttpEmitter` /
-> `WalEmitter`. See [Delivering receipts](#delivering-receipts) and the
+> it. If you sign client-side, deliver the signed receipts with `HttpEmitter`
+> (optionally wrapped in `WalEmitter` for at-least-once delivery).
+> See [Delivering receipts](#delivering-receipts) and the
 > [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
 ### Create and sign a receipt
@@ -148,8 +149,9 @@ one sends:
 - **`agent_receipts.emitters`** — delivers the *signed receipts* (`AgentReceipt`)
   you created with the functions above to a remote collector: `HttpEmitter`
   (retrying HTTPS), `CompositeEmitter` (fan-out), `BufferingEmitter` (batching),
-  and `WalEmitter` (write-ahead log for at-least-once delivery, with `replay()`
-  to drain a backlog after the collector recovers). Their `emit()` takes a signed
+  and `WalEmitter` (write-ahead log — wraps an inner emitter such as
+  `HttpEmitter` and adds at-least-once delivery; call `replay()` to drain the
+  backlog after the collector recovers). Their `emit()` takes a signed
   `AgentReceipt`.
 
 `DaemonEmitter` is fire-and-forget: if the daemon is unreachable the event is
