@@ -44,9 +44,7 @@ type ReceiptStore interface {
 	Insert(r receipt.AgentReceipt, receiptHash string) error
 	GetByID(id string) (*receipt.AgentReceipt, error)
 	GetChain(chainID string) ([]receipt.AgentReceipt, error)
-	GetByChainSequence(chainID string, sequence int) (*receipt.AgentReceipt, error)
 	GetChainTail(chainID string) (sequence int64, receiptHash string, found bool, err error)
-	DistinctChainIDs() ([]string, error)
 	QueryReceipts(q Query) ([]receipt.AgentReceipt, error)
 	Stats() (Stats, error)
 	VerifyStoredChain(chainID string, publicKeyPEM string) (receipt.ChainVerification, error)
@@ -382,7 +380,7 @@ func (s *Store) GetByChainSequence(chainID string, sequence int) (*receipt.Agent
 		return nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get receipt (chain_id=%s seq=%d): %w", chainID, sequence, err)
 	}
 	var r receipt.AgentReceipt
 	if err := json.Unmarshal([]byte(rJSON), &r); err != nil {
@@ -397,18 +395,21 @@ func (s *Store) GetByChainSequence(chainID string, sequence int) (*receipt.Agent
 func (s *Store) DistinctChainIDs() ([]string, error) {
 	rows, err := s.db.Query("SELECT DISTINCT chain_id FROM receipts ORDER BY chain_id ASC")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("enumerate chain ids: %w", err)
 	}
 	defer rows.Close()
 	var chains []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan chain id: %w", err)
 		}
 		chains = append(chains, id)
 	}
-	return chains, rows.Err()
+	if err := rows.Err(); err != nil {
+		return chains, fmt.Errorf("iterate chain ids: %w", err)
+	}
+	return chains, nil
 }
 
 // GetChainTail returns the highest-sequence receipt's sequence and hash for
