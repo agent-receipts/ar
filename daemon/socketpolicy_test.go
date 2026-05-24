@@ -139,6 +139,7 @@ func TestCheckSocketPath_RejectsTCPUnconditionally(t *testing.T) {
 		":9000",
 		"[::1]:9000",
 		"tcp://127.0.0.1:9000",
+		"example.com:9000", // non-IP hostname must also be rejected as TCP
 	} {
 		// Even with --unsafe-socket-path, TCP must be refused (ADR-0010).
 		for _, unsafeAllowed := range []bool{false, true} {
@@ -154,7 +155,7 @@ func TestCheckSocketPath_RejectsTCPUnconditionally(t *testing.T) {
 }
 
 func TestLooksLikeTCPAddress(t *testing.T) {
-	tcp := []string{"127.0.0.1:9000", "localhost:9000", ":9000", "[::1]:9000", "tcp://127.0.0.1:9000", "TCP://10.0.0.1:1"}
+	tcp := []string{"127.0.0.1:9000", "localhost:9000", ":9000", "[::1]:9000", "tcp://127.0.0.1:9000", "TCP://10.0.0.1:1", "example.com:9000", "db.internal:5432"}
 	for _, s := range tcp {
 		if !looksLikeTCPAddress(s) {
 			t.Errorf("looksLikeTCPAddress(%q) = false, want true", s)

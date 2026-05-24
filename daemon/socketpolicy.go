@@ -187,12 +187,18 @@ func pathWithin(target, root string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// looksLikeTCPAddress reports whether s is a TCP socket address rather than a
-// Unix-domain path. It matches an explicit tcp/tcp4/tcp6 URL scheme, or a bare
-// host:port with a numeric port whose host is empty, "localhost", or an IP
-// literal (covers ":9000", "127.0.0.1:9000", "[::1]:9000", "localhost:9000").
-// Unix paths contain a path separator and never reach the host:port branch, so
-// a legitimate socket file with a colon in a directory name is not misflagged.
+// looksLikeTCPAddress reports whether s is a TCP-style socket address rather
+// than a Unix-domain path. It matches an explicit tcp/tcp4/tcp6 URL scheme, or
+// any bare host:port with a numeric port and no path separator — regardless of
+// host (covers ":9000", "127.0.0.1:9000", "[::1]:9000", "localhost:9000",
+// "example.com:9000"). The host is deliberately not restricted to loopback: the
+// daemon never speaks TCP, so every host:port form is rejected uniformly rather
+// than only loopback variants, keeping checkSocketPath's "TCP rejected
+// unconditionally" contract honest.
+//
+// A Unix path is anchored by a path separator and short-circuits before the
+// host:port branch, and a real daemon socket is always an absolute path, so
+// this cannot misflag a legitimate configuration.
 func looksLikeTCPAddress(s string) bool {
 	lower := strings.ToLower(s)
 	if strings.HasPrefix(lower, "tcp://") || strings.HasPrefix(lower, "tcp4://") || strings.HasPrefix(lower, "tcp6://") {
@@ -201,17 +207,12 @@ func looksLikeTCPAddress(s string) bool {
 	if strings.ContainsRune(s, '/') {
 		return false
 	}
-	host, port, err := net.SplitHostPort(s)
+	_, port, err := net.SplitHostPort(s)
 	if err != nil {
 		return false
 	}
-	if _, err := strconv.Atoi(port); err != nil {
-		return false
-	}
-	if host == "" || strings.EqualFold(host, "localhost") {
-		return true
-	}
-	return net.ParseIP(host) != nil
+	_, err = strconv.Atoi(port)
+	return err == nil
 }
 
 // warnUnsafeSocketPath emits the startup warning naming an unsafe socket path,
