@@ -1228,6 +1228,13 @@ func TestChainIDBindingRejectsCrossChainSplice(t *testing.T) {
 
 // A single off-chain receipt spliced into the middle (with signatures still
 // valid for its own chain_id) must be rejected solely on chain_id.
+//
+// Isolation note: this test confirms the chain would otherwise verify
+// cleanly; the only failure mode is the chain_id binding check. We re-sign
+// the middle receipt with a different chain_id AND re-link and re-sign the
+// trailing receipt so its previous_receipt_hash points at the middle's new
+// hash — keeping hash linkage valid so the sole invariant violated is
+// chain_id binding (not collateral hash breakage).
 func TestChainIDBindingRejectsSingleMismatchedReceipt(t *testing.T) {
 	kp, _ := GenerateKeyPair()
 	chain := buildChainWithID(t, kp, 3, "chain-A", 1, nil)
@@ -1248,6 +1255,28 @@ func TestChainIDBindingRejectsSingleMismatchedReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	chain[1] = resigned
+
+	// Re-link the trailing receipt to the re-signed middle so hash linkage
+	// stays valid; its chain_id remains "chain-A".
+	middleHash, err := HashReceipt(resigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tail := chain[2]
+	tail.CredentialSubject.Chain.PreviousReceiptHash = &middleHash
+	resignedTail, err := Sign(UnsignedAgentReceipt{
+		Context:           tail.Context,
+		ID:                tail.ID,
+		Type:              tail.Type,
+		Version:           tail.Version,
+		Issuer:            tail.Issuer,
+		IssuanceDate:      tail.IssuanceDate,
+		CredentialSubject: tail.CredentialSubject,
+	}, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain[2] = resignedTail
 
 	result := VerifyChain(chain, kp.PublicKey)
 	if result.Valid {
