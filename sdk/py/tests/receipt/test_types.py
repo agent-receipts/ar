@@ -1,5 +1,8 @@
 """Tests for receipt types and constants."""
 
+import pytest
+from pydantic import ValidationError
+
 from agent_receipts.receipt.hash import hash_receipt
 from agent_receipts.receipt.types import (
     CONTEXT,
@@ -182,6 +185,20 @@ class TestEmitterMetadata:
     def test_default_is_none(self) -> None:
         receipt = make_receipt()
         assert receipt.credentialSubject.action.emitter_metadata is None
+
+    def test_rejects_all_none_construction(self) -> None:
+        # Every field on EmitterMetadata is optional, so a bare ``EmitterMetadata()``
+        # would otherwise serialize to ``{}`` and perturb the canonical hash
+        # (issue #509). The validator must reject this at construction time.
+        with pytest.raises(ValidationError, match="requires at least one non-None"):
+            EmitterMetadata()
+
+    def test_rejects_empty_dict_deserialization(self) -> None:
+        # The deserialization path must also reject ``{}`` so a JSON receipt
+        # carrying ``"emitter_metadata": {}`` cannot be silently rehydrated
+        # into the same hash-perturbing instance the constructor refuses.
+        with pytest.raises(ValidationError, match="requires at least one non-None"):
+            EmitterMetadata.model_validate({})
 
     def test_round_trip_drop_count(self) -> None:
         receipt = make_receipt()

@@ -111,6 +111,32 @@ class EmitterMetadata(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def _check_not_empty(self) -> EmitterMetadata:
+        """Reject all-None construction so ``EmitterMetadata()`` is never silent.
+
+        Every field on this model is optional, so Pydantic happily builds an
+        empty instance. The instance then serializes to ``{}`` and, because
+        ``exclude_none=True`` only strips the inner None, the empty dict
+        survives canonicalization and perturbs the receipt hash (see
+        https://github.com/agent-receipts/ar/issues/509). No legitimate use
+        of empty ``EmitterMetadata`` exists, so we fail fast at construction.
+
+        Fires on both direct construction and ``model_validate`` paths;
+        ``model_construct`` still bypasses by Pydantic design, but that
+        method is an opt-in escape hatch for callers that already promise
+        validity. ``type(self).model_fields`` is the class-level accessor —
+        the instance form ``self.model_fields`` is deprecated in Pydantic
+        v2.11+.
+        """
+        if all(getattr(self, name) is None for name in type(self).model_fields):
+            msg = (
+                "EmitterMetadata requires at least one non-None field; "
+                "omit the field entirely instead of passing an empty instance"
+            )
+            raise ValueError(msg)
+        return self
+
 
 class Action(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
