@@ -421,7 +421,12 @@ func Run(ctx context.Context, cfg Config) error {
 	terminateCtx, terminateCancel := context.WithTimeout(context.Background(), cfg.shutdownDeadline())
 	defer terminateCancel()
 	if err := pp.EmitTerminator(terminateCtx); err != nil {
-		cfg.Logger.Printf("terminator: %v (chain %s will be classified as 'unknown' by verifier)", err, cfg.ChainID)
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			cfg.Logger.Printf("level=warn terminator: deadline expired, chain %s will be classified as 'unknown' by verifier", cfg.ChainID)
+		} else {
+			cfg.Logger.Printf("level=warn terminator: %v (chain %s may be classified as 'unknown' by verifier)", err, cfg.ChainID)
+			return fmt.Errorf("emit terminator: %w", err)
+		}
 	}
 
 	cfg.Logger.Printf("agent-receipts-daemon shutdown complete")
@@ -673,6 +678,9 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.VerificationMethodID == "" {
 		return errors.New("Config.VerificationMethodID is required")
+	}
+	if cfg.ShutdownDeadline < 0 {
+		return fmt.Errorf("Config.ShutdownDeadline must be non-negative; got %v", cfg.ShutdownDeadline)
 	}
 	return nil
 }

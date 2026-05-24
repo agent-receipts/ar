@@ -422,9 +422,9 @@ func TestEmit_ReconnectAfterDaemonRestart(t *testing.T) {
 		receipts, getErr := s.GetChain(d2.cfg.ChainID)
 		s.Close()
 		if getErr == nil && len(receipts) >= 3 {
-			// Filter out daemon-synthesised receipts (events_dropped,
-			// chain_interrupted): a drop counter or graceful-shutdown
-			// terminator can appear before the live post-restart frame.
+			// Filter out daemon-synthesised receipts. d1 uses crash mode
+			// (ShutdownDeadline=1ns) so chain_interrupted never actually
+			// appears here; the filter is defensive for events_dropped.
 			var live []receipt.AgentReceipt
 			for _, r := range receipts[2:] {
 				if r.CredentialSubject.Action.Type != "agent_receipts.events_dropped" &&
