@@ -7,7 +7,7 @@
 [![PyPI](https://img.shields.io/pypi/v/agent-receipts)](https://pypi.org/project/agent-receipts/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![CI](https://github.com/agent-receipts/sdk-py/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-receipts/sdk-py/actions/workflows/ci.yml)
+[![CI](https://github.com/agent-receipts/ar/actions/workflows/sdk-py.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/sdk-py.yml)
 
 ---
 
@@ -48,6 +48,15 @@ pip install agent-receipts
 ```
 
 ## Quick start
+
+> **In-process signing (below) keeps the private key in the calling process.**
+> For the strongest key isolation, run an out-of-process `agent-receipts-daemon`
+> that owns the key and the chain while your app only sends tool-call events to
+> it. If you sign client-side, deliver the signed receipts with `HttpEmitter`
+> (optionally wrapped in `WalEmitter` for at-least-once delivery — requires
+> `HttpEmitter` in its default `"sync"` mode, not `"fire-and-forget"`).
+> See [Delivering receipts](#delivering-receipts) and the
+> [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
 ### Create and sign a receipt
 
@@ -116,6 +125,40 @@ if not result.valid:
 The standardized action taxonomy (action types and risk levels) is defined in the
 [protocol specification](https://github.com/agent-receipts/spec/tree/main/spec/taxonomy).
 Taxonomy classification will be added in a future milestone (M3).
+
+## Delivering receipts
+
+The SDK provides emitters for two distinct delivery models — note **what** each
+one sends:
+
+- **`DaemonEmitter`** — forwards *tool-call events* (not signed receipts) to a
+  local `agent-receipts-daemon` over a Unix socket; the daemon holds the signing
+  key and constructs, signs, and chains the receipt. Fire-and-forget. Its
+  `emit()` takes the event fields, not an `AgentReceipt`:
+
+  ```python
+  from agent_receipts import DaemonEmitter
+
+  with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
+      e.emit(
+          channel="my-app",
+          tool_name="filesystem.file.read",
+          decision="allowed",
+      )
+  ```
+
+- **`agent_receipts.emitters`** — delivers the *signed receipts* (`AgentReceipt`)
+  you created with the functions above to a remote collector: `HttpEmitter`
+  (retrying HTTPS), `CompositeEmitter` (fan-out), `BufferingEmitter` (batching),
+  and `WalEmitter` (write-ahead log — wraps an inner emitter such as
+  `HttpEmitter` and adds at-least-once delivery; call `replay()` to drain the
+  backlog after the collector recovers). Their `emit()` takes a signed
+  `AgentReceipt`.
+
+`DaemonEmitter` is fire-and-forget: if the daemon is unreachable the event is
+dropped (logged at `DEBUG`), so start the daemon before your app. See the
+[Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/) for
+running the daemon and verifying the chain.
 
 ## What is an Agent Receipt?
 

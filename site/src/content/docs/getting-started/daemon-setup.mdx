@@ -67,7 +67,7 @@ The daemon listens on a Unix domain socket. The socket path depends on platform:
 | Linux | `$XDG_RUNTIME_DIR/agentreceipts/events.sock`, falling back to `/run/agentreceipts/events.sock` |
 
 :::caution
-On Linux, if `$XDG_RUNTIME_DIR` is not set, the daemon falls back to `/run/agentreceipts/events.sock`, which requires elevated permissions to create. If you are running as a non-root user without `$XDG_RUNTIME_DIR`, set `AGENTRECEIPTS_SOCKET` to a user-writable path (for example `~/.local/run/agentreceipts/events.sock`) to avoid permission errors.
+On Linux, if `$XDG_RUNTIME_DIR` is not set, the daemon falls back to `/run/agentreceipts/events.sock`, which requires elevated permissions to create. If you are running as a non-root user without `$XDG_RUNTIME_DIR`, and `/run/user/$(id -u)` exists and is owned by you (standard on systemd-based Linux), set it with `export XDG_RUNTIME_DIR=/run/user/$(id -u)` — that path is user-writable and inside the daemon's per-platform safe set. On other init systems that directory may not exist; in that case set `AGENTRECEIPTS_SOCKET` to a path you create manually and pass `--unsafe-socket-path` (a boolean flag that allows the path outside the safe set). Note the daemon **rejects** an `AGENTRECEIPTS_SOCKET` value outside the safe set (`$XDG_RUNTIME_DIR`, `/run`, `/var/run`) unless you also pass `--unsafe-socket-path`, so a path like `~/.local/run/...` will not work on its own (see [issue #538](https://github.com/agent-receipts/ar/issues/538)).
 :::
 
 Start the daemon before launching any agent session. Emitters that cannot reach the socket drop events silently — they do not return an error, but `Emit` may block briefly for the dial timeout (25 ms) plus the write timeout (100 ms) before returning.
@@ -138,28 +138,28 @@ import { Emitter } from "@agnt-rcpt/sdk-ts";
 const e = new Emitter();
 ```
 
-### Python SDK (v0.8.0a2)
+### Python SDK
 
-Install the pre-release:
+Install:
 
 ```bash
-pip install --pre agent-receipts
+pip install agent-receipts
 ```
 
 **Option A: explicit socket path**
 
 ```python
-from agent_receipts import Emitter
+from agent_receipts import DaemonEmitter
 
-e = Emitter(socket_path="/path/to/events.sock")
+e = DaemonEmitter(socket_path="/path/to/events.sock")
 ```
 
 **Option B: via environment variable (`AGENTRECEIPTS_SOCKET`)**
 
 ```python
-from agent_receipts import Emitter
+from agent_receipts import DaemonEmitter
 
-e = Emitter()
+e = DaemonEmitter()
 ```
 
 ### MCP Proxy (v0.8.0-alpha.1)
