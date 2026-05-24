@@ -277,6 +277,52 @@ func TestRun_HelpFlagExitsCleanly(t *testing.T) {
 	}
 }
 
+func TestRun_EnvVarDBPath(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := fixtureDB(t, dir, 2, "chain-1")
+
+	var out, errb bytes.Buffer
+	// No --db flag: the path comes from AGENTRECEIPTS_DB.
+	code := Run([]string{"--json", "1"}, &out, &errb, func(key string) string {
+		if key == "AGENTRECEIPTS_DB" {
+			return dbPath
+		}
+		return ""
+	})
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (stderr=%s)", code, ExitOK, errb.String())
+	}
+	var r receipt.AgentReceipt
+	if err := json.Unmarshal([]byte(out.String()), &r); err != nil {
+		t.Fatalf("JSON output not parseable: %v", err)
+	}
+	if r.CredentialSubject.Chain.Sequence != 1 {
+		t.Errorf("got sequence %d, want 1", r.CredentialSubject.Chain.Sequence)
+	}
+}
+
+func TestRun_FlagDBOverridesEnv(t *testing.T) {
+	realDir := t.TempDir()
+	realDB := fixtureDB(t, realDir, 2, "real-chain")
+	bogusDB := filepath.Join(t.TempDir(), "no-such.db")
+
+	var out, errb bytes.Buffer
+	// --db must win over AGENTRECEIPTS_DB; pointing the env at a missing file
+	// proves the flag value is the one actually opened.
+	code := Run([]string{"--db", realDB, "1"}, &out, &errb, func(key string) string {
+		if key == "AGENTRECEIPTS_DB" {
+			return bogusDB
+		}
+		return ""
+	})
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (stderr=%s)", code, ExitOK, errb.String())
+	}
+	if !strings.Contains(out.String(), "real-chain") {
+		t.Errorf("--db should override the env path\n%s", out.String())
+	}
+}
+
 func TestRun_EnvVarChainID(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := fixtureDB(t, dir, 2, "chain-a", "chain-b")

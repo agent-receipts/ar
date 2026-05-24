@@ -17,6 +17,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"syscall"
 	"text/tabwriter"
 
 	"github.com/agent-receipts/ar/daemon"
@@ -226,7 +227,17 @@ func writeHuman(stdout io.Writer, r *receipt.AgentReceipt) int {
 	row("Signature:", r.Proof.ProofValue)
 	row("Verification method:", r.Proof.VerificationMethod)
 
+	return exitFromFlush(w)
+}
+
+// exitFromFlush maps a tabwriter flush result to an exit code. A broken pipe
+// (e.g. `agent-receipts show ... | head`) is normal CLI behaviour, not a
+// failure, so it exits 0 — matching listcli.
+func exitFromFlush(w *tabwriter.Writer) int {
 	if err := w.Flush(); err != nil {
+		if errors.Is(err, syscall.EPIPE) || errors.Is(err, io.ErrClosedPipe) {
+			return ExitOK
+		}
 		return ExitUsageError
 	}
 	return ExitOK
