@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/agent-receipts/ar/daemon/internal/listcli"
+	"github.com/agent-receipts/ar/daemon/internal/showcli"
 	"github.com/agent-receipts/ar/daemon/internal/verifycli"
 )
 
@@ -15,6 +16,7 @@ const usage = `Usage: agent-receipts <command> [flags]
 
 Commands:
   list     List recent receipts from the store.
+  show     Print the full fields of a single receipt by sequence number.
   verify   Verify a stored chain's signatures and hash links.
 
 Run 'agent-receipts <command> -h' for command-specific flags.
@@ -28,6 +30,8 @@ func main() {
 	switch os.Args[1] {
 	case "list":
 		os.Exit(listcli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
+	case "show":
+		os.Exit(showcli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
 	case "verify":
 		os.Exit(verifycli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
 	case "-h", "--help", "help":

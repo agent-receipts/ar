@@ -366,6 +366,52 @@ func (s *Store) GetChain(chainID string) ([]receipt.AgentReceipt, error) {
 	return scanReceipts(rows)
 }
 
+// GetByChainSequence retrieves the single receipt at (chainID, sequence).
+// It returns (nil, nil) when no such receipt exists, mirroring GetByID, so
+// callers distinguish "not found" from an error. The (chain_id, sequence)
+// pair is uniquely indexed, so at most one row matches.
+func (s *Store) GetByChainSequence(chainID string, sequence int) (*receipt.AgentReceipt, error) {
+	var rJSON string
+	err := s.db.QueryRow(
+		"SELECT receipt_json FROM receipts WHERE chain_id = ? AND sequence = ?",
+		chainID, sequence,
+	).Scan(&rJSON)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get receipt (chain_id=%s seq=%d): %w", chainID, sequence, err)
+	}
+	var r receipt.AgentReceipt
+	if err := json.Unmarshal([]byte(rJSON), &r); err != nil {
+		return nil, fmt.Errorf("corrupt receipt (chain_id=%s seq=%d): %w", chainID, sequence, err)
+	}
+	return &r, nil
+}
+
+// DistinctChainIDs returns the sorted set of chain ids present in the store.
+// It reads only the indexed chain_id column, so it stays cheap as the store
+// grows — callers enumerating chains need not load full receipts.
+func (s *Store) DistinctChainIDs() ([]string, error) {
+	rows, err := s.db.Query("SELECT DISTINCT chain_id FROM receipts ORDER BY chain_id ASC")
+	if err != nil {
+		return nil, fmt.Errorf("enumerate chain ids: %w", err)
+	}
+	defer rows.Close()
+	var chains []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan chain id: %w", err)
+		}
+		chains = append(chains, id)
+	}
+	if err := rows.Err(); err != nil {
+		return chains, fmt.Errorf("iterate chain ids: %w", err)
+	}
+	return chains, nil
+}
+
 // GetChainTail returns the highest-sequence receipt's sequence and hash for
 // chainID. found is false (with zero values for the other fields and err nil)
 // when the chain is empty. The daemon uses this on startup to resume the
