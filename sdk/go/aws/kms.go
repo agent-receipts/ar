@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
@@ -129,20 +129,21 @@ func NewKMSSigner(ctx context.Context, keyID string, opts ...Option) (*KMSSigner
 // It calls kms:Sign with SigningAlgorithm=ED25519_SHA_512 and MessageType=RAW,
 // which is standard (pure) Ed25519 per RFC 8032: KMS performs the SHA-512 hash
 // internally, so the signature verifies with crypto/ed25519.Verify against the
-// public key from GetPublicKey. Any AWS SDK error is returned verbatim so
-// callers can distinguish throttling, access-denied, and key-not-found.
+// public key from GetPublicKey. AWS SDK errors are wrapped with operation
+// context using %w, so callers can still errors.As them to distinguish
+// throttling, access-denied, and key-not-found.
 func (s *KMSSigner) Sign(message []byte) ([]byte, error) {
 	ctx, cancel := s.requestContext()
 	defer cancel()
 
 	out, err := s.client.Sign(ctx, &kms.SignInput{
-		KeyId:            aws.String(s.keyID),
+		KeyId:            awssdk.String(s.keyID),
 		Message:          message,
 		SigningAlgorithm: types.SigningAlgorithmSpecEd25519Sha512,
 		MessageType:      types.MessageTypeRaw,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kms signer: sign: %w", err)
 	}
 	return out.Signature, nil
 }
@@ -152,7 +153,8 @@ func (s *KMSSigner) Sign(message []byte) ([]byte, error) {
 // The first call fetches the key via kms:GetPublicKey, decodes the DER-encoded
 // SPKI that KMS returns, and caches the raw bytes. Subsequent calls return the
 // cached value without contacting AWS. A failed fetch is not cached, so a
-// later call retries. AWS SDK errors are returned verbatim.
+// later call retries. AWS SDK errors are wrapped with operation context using
+// %w (errors.As still reaches the underlying AWS error type).
 //
 // Each call returns a fresh copy of the cached key, so a caller mutating the
 // returned slice cannot corrupt the cache shared with other callers.
@@ -168,10 +170,10 @@ func (s *KMSSigner) GetPublicKey() ([]byte, error) {
 	defer cancel()
 
 	out, err := s.client.GetPublicKey(ctx, &kms.GetPublicKeyInput{
-		KeyId: aws.String(s.keyID),
+		KeyId: awssdk.String(s.keyID),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kms signer: get public key: %w", err)
 	}
 
 	pub, err := x509.ParsePKIXPublicKey(out.PublicKey)

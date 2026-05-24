@@ -1,12 +1,14 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms"
@@ -22,6 +24,7 @@ type mockKMS struct {
 	signHook   func(*kms.SignInput) (*kms.SignOutput, error)
 	getPubHook func(*kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error)
 
+	mu         sync.Mutex // guards signInputs and getPubCall for concurrent callers
 	signInputs []*kms.SignInput
 	getPubCall int
 
@@ -39,7 +42,9 @@ func newMockKMS(t *testing.T) *mockKMS {
 }
 
 func (m *mockKMS) Sign(_ context.Context, in *kms.SignInput, _ ...func(*kms.Options)) (*kms.SignOutput, error) {
+	m.mu.Lock()
 	m.signInputs = append(m.signInputs, in)
+	m.mu.Unlock()
 	if m.signHook != nil {
 		return m.signHook(in)
 	}
@@ -48,7 +53,9 @@ func (m *mockKMS) Sign(_ context.Context, in *kms.SignInput, _ ...func(*kms.Opti
 }
 
 func (m *mockKMS) GetPublicKey(_ context.Context, in *kms.GetPublicKeyInput, _ ...func(*kms.Options)) (*kms.GetPublicKeyOutput, error) {
+	m.mu.Lock()
 	m.getPubCall++
+	m.mu.Unlock()
 	if m.getPubHook != nil {
 		return m.getPubHook(in)
 	}
@@ -133,7 +140,7 @@ func TestGetPublicKeySuccess(t *testing.T) {
 	if len(got) != ed25519.PublicKeySize {
 		t.Fatalf("public key length = %d, want %d", len(got), ed25519.PublicKeySize)
 	}
-	if string(got) != string(m.pub) {
+	if !bytes.Equal(got, m.pub) {
 		t.Fatal("returned public key does not match the KMS key")
 	}
 }
@@ -153,7 +160,7 @@ func TestGetPublicKeyCachedAfterFirstCall(t *testing.T) {
 	if m.getPubCall != 1 {
 		t.Fatalf("expected exactly 1 kms:GetPublicKey call, got %d", m.getPubCall)
 	}
-	if string(first) != string(second) {
+	if !bytes.Equal(first, second) {
 		t.Fatal("cached public key differs from first result")
 	}
 }
@@ -176,7 +183,7 @@ func TestGetPublicKeyReturnsCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second GetPublicKey: %v", err)
 	}
-	if string(second) != string(m.pub) {
+	if !bytes.Equal(second, m.pub) {
 		t.Fatal("cache was corrupted by mutation of a previously returned slice")
 	}
 }
@@ -217,7 +224,7 @@ func TestGetPublicKeyRetriesAfterError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second GetPublicKey: %v", err)
 	}
-	if string(got) != string(m.pub) {
+	if !bytes.Equal(got, m.pub) {
 		t.Fatal("retried public key does not match")
 	}
 }
@@ -239,5 +246,47 @@ func TestGetPublicKeyRejectsNonEd25519(t *testing.T) {
 
 	if _, err := s.GetPublicKey(); err == nil {
 		t.Fatal("expected error for non-Ed25519 key, got nil")
+	}
+}
+
+// KMSSigner is documented as safe for concurrent use. Run many goroutines that
+// mix Sign and first-time GetPublicKey; under -race this exercises the mutex,
+// and the public key must still be fetched from KMS exactly once.
+func TestConcurrentUseFetchesPublicKeyOnce(t *testing.T) {
+	m := newMockKMS(t)
+	s := newTestSigner(t, m)
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			if _, err := s.Sign([]byte("msg")); err != nil {
+				errs <- err
+				return
+			}
+			got, err := s.GetPublicKey()
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !bytes.Equal(got, m.pub) {
+				errs <- errors.New("public key mismatch")
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent call failed: %v", err)
+	}
+
+	m.mu.Lock()
+	calls := m.getPubCall
+	m.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected exactly 1 kms:GetPublicKey call across goroutines, got %d", calls)
 	}
 }

@@ -12,7 +12,7 @@ It ships as a **separate Go module** so the core `sdk/go` package keeps zero
 AWS dependencies. A project that does not import this module never pulls the
 AWS SDK into its dependency closure.
 
-Use it for ephemeral compute (Lambda, Fargate, Cloud Run on EKS) where raw
+Use it for ephemeral compute (Lambda, Fargate, EKS) where raw
 key bytes from env/SSM/Secrets Manager are unacceptable and full CloudHSM /
 PKCS#11 is overkill.
 
@@ -80,9 +80,10 @@ runtime.
 ```go
 ctx := context.Background()
 
+// Imported as awssigner to avoid colliding with github.com/aws/aws-sdk-go-v2/aws.
 // keyID is a key ID, key ARN, alias name (alias/...), or alias ARN.
-signer, err := aws.NewKMSSigner(ctx, "alias/agent-receipts-prod",
-    aws.WithTimeout(10*time.Second))
+signer, err := awssigner.NewKMSSigner(ctx, "alias/agent-receipts-prod",
+    awssigner.WithTimeout(10*time.Second))
 if err != nil {
     log.Fatal(err)
 }
@@ -93,7 +94,8 @@ pub, err := signer.GetPublicKey()              // raw 32-byte Ed25519 public key
 
 `GetPublicKey` contacts KMS only on the first call and caches the result for
 the signer's lifetime; later calls return the cached key. AWS SDK errors from
-`Sign`/`GetPublicKey` are returned verbatim so callers can distinguish
+`Sign`/`GetPublicKey` are wrapped with operation context but preserve the
+underlying error via `%w`, so callers can still `errors.As` them to distinguish
 throttling, access-denied, and key-not-found. The adapter adds **no** retry
 layer of its own — `aws-sdk-go-v2` already retries.
 
