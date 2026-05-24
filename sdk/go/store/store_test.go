@@ -1286,17 +1286,19 @@ func TestGetChainTailReceipt_ChainIsolation(t *testing.T) {
 
 func TestGetChainTailReceipt_CorruptJSON(t *testing.T) {
 	s := setupStore(t)
-	kp := mustKeyPair(t)
 
-	r := makeSignedReceipt(t, kp, 1, "chain-corrupt", nil)
-	h := mustHashReceipt(t, r)
-	// Insert a row with corrupt JSON directly to simulate storage corruption.
-	if err := s.InsertRaw(r, []byte(`{"id":"valid-shell","credentialSubject":{"chain":{"sequence":1,"chainId":"chain-corrupt"}}`+string([]byte{0x00})+`}`), h); err != nil {
-		// If the store rejects it at insert time, skip — the test can't be set up.
-		t.Skipf("store rejected corrupt payload at insert: %v", err)
+	// Bypass InsertRaw validation and write a row with invalid JSON directly
+	// to simulate on-disk corruption reaching GetChainTailReceipt.
+	_, err := s.db.Exec(
+		`INSERT INTO receipts (id, chain_id, sequence, action_type, risk_level, status, timestamp, issuer_id, receipt_hash, receipt_json)
+		 VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		"corrupt-id", "chain-corrupt", 1, "test.action", "low", "success", "2026-01-01T00:00:00Z", "did:test", "deadbeef", `{not valid json`,
+	)
+	if err != nil {
+		t.Fatalf("direct insert: %v", err)
 	}
 
-	_, err := s.GetChainTailReceipt("chain-corrupt")
+	_, err = s.GetChainTailReceipt("chain-corrupt")
 	if err == nil {
 		t.Error("GetChainTailReceipt with corrupt JSON: want error, got nil")
 	}

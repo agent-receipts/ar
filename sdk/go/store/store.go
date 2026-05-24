@@ -45,9 +45,6 @@ type ReceiptStore interface {
 	GetByID(id string) (*receipt.AgentReceipt, error)
 	GetChain(chainID string) ([]receipt.AgentReceipt, error)
 	GetChainTail(chainID string) (sequence int64, receiptHash string, found bool, err error)
-	// GetChainTailReceipt returns the highest-sequence receipt for chainID.
-	// Returns (nil, nil) when the chain has no receipts.
-	GetChainTailReceipt(chainID string) (*receipt.AgentReceipt, error)
 	QueryReceipts(q Query) ([]receipt.AgentReceipt, error)
 	Stats() (Stats, error)
 	VerifyStoredChain(chainID string, publicKeyPEM string) (receipt.ChainVerification, error)

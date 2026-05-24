@@ -86,12 +86,21 @@ type EmitterTool struct {
 	Name   string `json:"name"`
 }
 
+// pipelineStore is store.ReceiptStore extended with GetChainTailReceipt,
+// which is needed by EmitTerminator but is not part of the exported SDK
+// interface to avoid a source-breaking change for external implementers.
+// *store.Store satisfies this interface; test fakes can embed it.
+type pipelineStore interface {
+	store.ReceiptStore
+	GetChainTailReceipt(chainID string) (*receipt.AgentReceipt, error)
+}
+
 // Pipeline holds the daemon-owned dependencies (chain state, signer, store)
 // shared across all incoming frames.
 type Pipeline struct {
 	State    *chain.State
 	Keys     keysource.KeySource
-	Store    store.ReceiptStore
+	Store    pipelineStore
 	IssuerID string // e.g. "did:agent-receipts-daemon:<host>"
 	Now      func() time.Time
 	TraceLog io.Writer            // Optional trace log for testing; nil = silent
@@ -124,7 +133,7 @@ type Pipeline struct {
 
 // New returns a Pipeline. Callers configure IssuerID; Now defaults to
 // time.Now.UTC.
-func New(s *chain.State, ks keysource.KeySource, store store.ReceiptStore, issuerID string) *Pipeline {
+func New(s *chain.State, ks keysource.KeySource, store pipelineStore, issuerID string) *Pipeline {
 	return &Pipeline{
 		State:    s,
 		Keys:     ks,
@@ -628,7 +637,7 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("deadline exceeded before terminator: %w", ctxErr)
 	}
-	if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
+	if dl, ok := ctx.Deadline(); ok && !time.Now().Before(dl) {
 		return fmt.Errorf("deadline exceeded before terminator: %w", context.DeadlineExceeded)
 	}
 
@@ -669,7 +678,7 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("deadline exceeded before store write: %w", ctxErr)
 	}
-	if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
+	if dl, ok := ctx.Deadline(); ok && !time.Now().Before(dl) {
 		return fmt.Errorf("deadline exceeded before store write: %w", context.DeadlineExceeded)
 	}
 
