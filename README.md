@@ -129,13 +129,12 @@ from agent_receipts import (
     create_receipt, generate_key_pair, sign_receipt,
     CreateReceiptInput, Issuer, Principal, Outcome, Chain,
 )
-from agent_receipts.receipt.create import ActionInput
 
 keys = generate_key_pair()
 unsigned = create_receipt(CreateReceiptInput(
     issuer=Issuer(id="did:agent:my-agent"),
     principal=Principal(id="did:user:alice"),
-    action=ActionInput(type="filesystem.file.read", risk_level="low"),
+    action={"type": "filesystem.file.read", "risk_level": "low"},
     outcome=Outcome(status="success"),
     chain=Chain(sequence=1, previous_receipt_hash=None, chain_id="chain_1"),
 ))

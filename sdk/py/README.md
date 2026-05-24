@@ -49,10 +49,11 @@ pip install agent-receipts
 
 ## Quick start
 
-> **In-process signing (below) is for standalone and testing use** — the calling
-> process holds the private key. For production, an out-of-process
-> `agent-receipts-daemon` owns the key and the chain, and SDKs send events to it.
-> See [Delivering receipts](#delivering-receipts) and the
+> **In-process signing (below) keeps the private key in the calling process.**
+> For the strongest key isolation, run an out-of-process `agent-receipts-daemon`
+> that owns the key and the chain while your app only sends tool-call events to
+> it. If you sign client-side, deliver the signed receipts with `HttpEmitter` /
+> `WalEmitter`. See [Delivering receipts](#delivering-receipts) and the
 > [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
 ### Create and sign a receipt
@@ -125,11 +126,13 @@ Taxonomy classification will be added in a future milestone (M3).
 
 ## Delivering receipts
 
-The functions above sign receipts in-process. To deliver them to a collector, the
-SDK provides emitters:
+The SDK provides emitters for two distinct delivery models — note **what** each
+one sends:
 
-- **`DaemonEmitter`** — fire-and-forget delivery to a local `agent-receipts-daemon`
-  over a Unix socket. The daemon owns the signing key and the receipt chain.
+- **`DaemonEmitter`** — forwards *tool-call events* (not signed receipts) to a
+  local `agent-receipts-daemon` over a Unix socket; the daemon holds the signing
+  key and constructs, signs, and chains the receipt. Fire-and-forget. Its
+  `emit()` takes the event fields, not an `AgentReceipt`:
 
   ```python
   from agent_receipts import DaemonEmitter
@@ -142,10 +145,12 @@ SDK provides emitters:
       )
   ```
 
-- **`agent_receipts.emitters`** — delivery to a remote collector: `HttpEmitter`
+- **`agent_receipts.emitters`** — delivers the *signed receipts* (`AgentReceipt`)
+  you created with the functions above to a remote collector: `HttpEmitter`
   (retrying HTTPS), `CompositeEmitter` (fan-out), `BufferingEmitter` (batching),
   and `WalEmitter` (write-ahead log for at-least-once delivery, with `replay()`
-  to drain a backlog after the collector recovers).
+  to drain a backlog after the collector recovers). Their `emit()` takes a signed
+  `AgentReceipt`.
 
 `DaemonEmitter` is fire-and-forget: if the daemon is unreachable the event is
 dropped (logged at `DEBUG`), so start the daemon before your app. See the
