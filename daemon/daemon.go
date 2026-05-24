@@ -360,6 +360,25 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	cfg.Logger.Printf("loaded chain %s, next seq=%d", cfg.ChainID, state.NextSeq())
 
+	// Refuse to start if the chain already has a terminal receipt. Appending
+	// after a terminal receipt produces a chain that fails VerifyChain (spec
+	// §7.3.2). After a graceful shutdown use a new --chain-id or fresh --db.
+	if state.NextSeq() > 1 {
+		tail, tailErr := st.GetChainTailReceipt(cfg.ChainID)
+		if tailErr != nil {
+			return fmt.Errorf("check chain tail: %w", tailErr)
+		}
+		if tail != nil && tail.CredentialSubject.Chain.Terminal != nil && *tail.CredentialSubject.Chain.Terminal {
+			return fmt.Errorf(
+				"chain %q tail (seq %d) is already terminal (chain.status=%q); "+
+					"use a new --chain-id or a fresh --db to start a new chain",
+				cfg.ChainID,
+				tail.CredentialSubject.Chain.Sequence,
+				tail.CredentialSubject.Chain.Status,
+			)
+		}
+	}
+
 	if cfg.ParameterDisclosure {
 		cfg.Logger.Printf("NOTICE: --parameter-disclosure is enabled but currently a no-op.")
 		cfg.Logger.Printf("NOTICE: The legacy plaintext-in-body shape was removed by the v0.3.0")

@@ -516,6 +516,7 @@ func TestResumesChainAfterRestart(t *testing.T) {
 			IssuerID:             "did:agent-receipts-daemon:integration",
 			VerificationMethodID: "did:agent-receipts-daemon:integration#k1",
 			Logger:               log.New(io.Discard, "", 0),
+			ShutdownDeadline:     time.Nanosecond, // crash mode — no terminator written between runs
 		}
 	}
 
@@ -572,17 +573,16 @@ func TestResumesChainAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Shutdown emits an interrupted terminator, so tail is at seq=4 (3 frames + 1 terminator).
-	if tailSeq != 4 {
-		t.Fatalf("after first run, tail seq = %d, want 4", tailSeq)
+	// No terminator (crash mode), so tail stays at seq=3.
+	if tailSeq != 3 {
+		t.Fatalf("after first run, tail seq = %d, want 3", tailSeq)
 	}
 
-	// Second run: 3 more frames land at seq=5..7. Wait for all 7 (4 + 3) before
-	// cancelling so the terminator at seq=8 is written on a fully-settled chain.
-	runOnce(t, 3, 7)
+	// Second run: 3 more frames land at seq=4..6. No terminator between runs, so 3+3=6.
+	runOnce(t, 3, 6)
 
-	// Both terminators (seq=4 and seq=8) are in the store; wait for all 8.
-	receipts := waitForReceiptCount(t, dbPath, "resume-chain", 8, 5*time.Second)
+	// Wait for all 6 receipts.
+	receipts := waitForReceiptCount(t, dbPath, "resume-chain", 6, 5*time.Second)
 	for i, r := range receipts {
 		if r.CredentialSubject.Chain.Sequence != i+1 {
 			t.Errorf("receipt %d: seq = %d, want %d", i, r.CredentialSubject.Chain.Sequence, i+1)

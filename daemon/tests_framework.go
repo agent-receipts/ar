@@ -176,6 +176,117 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 	return fix
 }
 
+// StartDaemonCrash starts a daemon that will not emit a terminal receipt on
+// shutdown — the 1 ns ShutdownDeadline expires before EmitTerminator can
+// write, leaving the chain open for resumption. Use this when testing chain
+// resumption after an unclean shutdown / crash.
+func StartDaemonCrash(t *testing.T) *DaemonFixture {
+	t.Helper()
+
+	sockDir := sockettest.ShortSocketDir(t)
+	dataDir := t.TempDir()
+
+	cfg := Config{
+		SocketPath: filepath.Join(sockDir, "events.sock"),
+		DBPath:     filepath.Join(dataDir, "receipts.db"),
+		KeyPath:    filepath.Join(dataDir, "signing.key"),
+		// ShortSocketDir lives under /tmp to stay within the 104-byte
+		// AF_UNIX sun_path limit on macOS — outside the per-platform safe
+		// set, so opt into the documented escape hatch (issue #538).
+		UnsafeSocketPath:     true,
+		PublicKeyPath:        filepath.Join(dataDir, "signing.key.pub"),
+		ChainID:              "test-chain",
+		IssuerID:             "did:agent-receipts-daemon:test",
+		VerificationMethodID: "did:agent-receipts-daemon:test#k1",
+		Logger:               log.New(io.Discard, "", 0),
+		ShutdownDeadline:     time.Nanosecond,
+	}
+
+	// Generate test key
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	if err := os.WriteFile(cfg.KeyPath, pemBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	pub := priv.Public().(ed25519.PublicKey)
+	pubDER, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
+
+	// Set up trace log for debugging
+	traceBuf := &syncBuffer{}
+	cfg.TraceLog = traceBuf
+
+	// Resolve paths needed by emitter helpers (before goroutines use them)
+	repoRoot := findSDKRoot(t)
+	emitTSPath := findHelperScript(t, "emit_ts.mjs")
+	emitPyPath := findHelperScript(t, "emit_py.py")
+
+	// Start daemon
+	ctx, cancel := context.WithCancel(context.Background())
+	fix := &DaemonFixture{
+		Config:     cfg,
+		PublicKey:  pubPEM,
+		cancel:     cancel,
+		done:       make(chan struct{}),
+		traceBuf:   traceBuf,
+		repoRoot:   repoRoot,
+		emitTSPath: emitTSPath,
+		emitPyPath: emitPyPath,
+	}
+	go func() {
+		fix.daemonErr = Run(ctx, cfg)
+		close(fix.done)
+	}()
+
+	// Wait for socket to be ready (active listener, not just file presence)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		// Check if daemon exited early before trying to connect
+		select {
+		case <-fix.done:
+			t.Fatalf("daemon exited early: %v\ntrace:\n%s", fix.daemonErr, fix.Trace())
+		default:
+		}
+
+		conn, err := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatalf("daemon socket %s did not become ready within 2s", cfg.SocketPath)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Cleanup on test end
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-fix.done:
+			if fix.daemonErr != nil {
+				t.Logf("daemon Run returned: %v", fix.daemonErr)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("daemon did not shut down within 3s")
+		}
+	})
+
+	return fix
+}
+
 // StartDaemonFromConfig starts a daemon with an existing config (e.g., for restart tests).
 // Unlike StartDaemon, this reuses the same DB/key/socket paths instead of generating new ones,
 // allowing a second daemon to resume the same chain from where the first left off.

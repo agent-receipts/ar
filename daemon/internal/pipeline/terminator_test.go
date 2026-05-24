@@ -49,7 +49,10 @@ func TestEmitTerminator_EmitsOnOpenChain(t *testing.T) {
 	if c.PreviousReceiptHash == nil {
 		t.Error("terminator: previous_receipt_hash is nil")
 	}
-	wantHash, _ := receipt.HashReceipt(receipts[0])
+	wantHash, hashErr := receipt.HashReceipt(receipts[0])
+	if hashErr != nil {
+		t.Fatalf("hash receipt[0]: %v", hashErr)
+	}
 	if *c.PreviousReceiptHash != wantHash {
 		t.Errorf("terminator: previous_receipt_hash = %q, want %q", *c.PreviousReceiptHash, wantHash)
 	}

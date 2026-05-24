@@ -101,6 +101,7 @@ func startDaemon(t *testing.T, dir string) *daemonHandle {
 		IssuerID:             "did:agent-receipts-daemon:emitter-test",
 		VerificationMethodID: "did:agent-receipts-daemon:emitter-test#k1",
 		Logger:               log.New(io.Discard, "", 0),
+		ShutdownDeadline:     time.Nanosecond, // crash mode: no terminator on shutdown, so d2 can resume the same chain
 	}
 	if _, err := os.Stat(cfg.KeyPath); os.IsNotExist(err) {
 		writeTestKey(t, cfg.KeyPath)

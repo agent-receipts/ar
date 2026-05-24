@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -300,9 +301,10 @@ func TestTerminatorTimeoutSilent(t *testing.T) {
 	}
 }
 
-// TestNoTerminatorOnAlreadyTerminatedChain verifies that a daemon restarted on
-// a chain whose tail is already an interrupted terminator does not emit a
-// duplicate.
+// TestNoTerminatorOnAlreadyTerminatedChain verifies that a daemon refuses to
+// start on a chain whose tail is already an interrupted terminator. Since the
+// daemon refuses at startup, no duplicate terminator can be written, and the
+// chain stays exactly as it was after the first graceful shutdown.
 func TestNoTerminatorOnAlreadyTerminatedChain(t *testing.T) {
 	sockDir := sockettest.ShortSocketDir(t)
 	dataDir := t.TempDir()
@@ -365,27 +367,97 @@ func TestNoTerminatorOnAlreadyTerminatedChain(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Second run: restart on same DB; tail is already a terminal receipt.
-	// Shut down immediately without emitting any new receipts.
-	cancel2, done2 := runInterruptDaemon(t, mkCfg())
-	shutdownAndWait(t, cancel2, done2)
+	// Second run: daemon must refuse to start because the tail is already terminal.
+	// Run returns immediately with an "already terminal" error — no socket is created.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	done2 := make(chan error, 1)
+	go func() { done2 <- daemon.Run(ctx2, mkCfg()) }()
+
+	select {
+	case err2 := <-done2:
+		if err2 == nil {
+			t.Error("second daemon: expected startup error for terminated chain, got nil")
+		} else if !strings.Contains(err2.Error(), "already terminal") {
+			t.Errorf("second daemon: error = %q, want 'already terminal' in message", err2.Error())
+		}
+	case <-time.After(5 * time.Second):
+		cancel2()
+		t.Fatal("second daemon did not return within 5s")
+	}
 
 	// The chain must still have exactly 2 receipts — no duplicate terminator.
 	st, err = store.Open(mkCfg().DBPath)
 	if err != nil {
-		t.Fatalf("open store after second run: %v", err)
+		t.Fatalf("open store after second run attempt: %v", err)
 	}
 	defer st.Close()
 
 	receiptsAfterSecond, err := st.GetChain(mkCfg().ChainID)
 	if err != nil {
-		t.Fatalf("GetChain after second run: %v", err)
+		t.Fatalf("GetChain after second run attempt: %v", err)
 	}
 	if len(receiptsAfterSecond) != 2 {
-		t.Fatalf("after second run: got %d receipts, want 2 (no duplicate terminator)", len(receiptsAfterSecond))
+		t.Fatalf("after second run attempt: got %d receipts, want 2 (no duplicate terminator)", len(receiptsAfterSecond))
 	}
 
 	assertInterruptedTerminator(t, receiptsAfterSecond, pubPEM, mkCfg().ChainID)
+}
+
+// TestDaemonRefusesTerminatedChain verifies that a daemon refuses to start
+// when the tail of the chain is already a terminal receipt. This prevents
+// new receipts from being appended after a terminal receipt, which would
+// violate spec §7.3.2 (VerifyChain rejects any receipt following a terminal).
+func TestDaemonRefusesTerminatedChain(t *testing.T) {
+	cfg, _ := interruptDaemonCfg(t, "refuse-chain")
+	cancel1, done1 := runInterruptDaemon(t, cfg)
+
+	emitFrame(t, cfg.SocketPath, pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
+		SessionID: "refuse-sess",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "refuse-tool"},
+		Decision:  "allowed",
+	})
+	_ = waitForReceiptCount(t, cfg.DBPath, cfg.ChainID, 1, 5*time.Second)
+
+	// Stop first daemon (writes interrupted terminator).
+	shutdownAndWait(t, cancel1, done1)
+
+	// Wait for socket to become unconnectable before attempting the second start.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		conn, dialErr := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
+		if dialErr != nil {
+			break
+		}
+		conn.Close()
+		if time.Now().After(deadline) {
+			t.Fatal("first daemon socket still listening — cannot start second daemon")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Attempt to start a second daemon on the same terminated chain.
+	cfg2 := cfg
+	cfg2.TraceLog = nil
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	done2 := make(chan error, 1)
+	go func() { done2 <- daemon.Run(ctx2, cfg2) }()
+
+	select {
+	case err := <-done2:
+		if err == nil {
+			t.Error("second daemon startup: expected error for terminated chain, got nil")
+		} else if !strings.Contains(err.Error(), "already terminal") {
+			t.Errorf("second daemon startup: error = %q, want 'already terminal' in message", err.Error())
+		}
+	case <-time.After(5 * time.Second):
+		cancel2()
+		t.Fatal("second daemon did not return within 5s")
+	}
 }
 
 // TestQuiescePropertyNoReceiptAfterTerminator confirms that the interrupted

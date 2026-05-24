@@ -17,7 +17,7 @@ import (
 // chain integrity check.
 func TestResumePrevHashIntegrity(t *testing.T) {
 	// First run: emit 3 frames
-	fix1 := StartDaemon(t)
+	fix1 := StartDaemonCrash(t)
 	for i := 0; i < 3; i++ {
 		if err := fix1.EmitGoFrame(t, "resume-test", "sdk", "test-tool", "", "allowed"); err != nil {
 			t.Fatalf("first run emit %d: %v", i, err)
@@ -80,7 +80,7 @@ func TestResumePrevHashIntegrity(t *testing.T) {
 // DB produces a contiguous chain from the last durable commit onwards.
 func TestResumesChainAfterUncleanShutdown(t *testing.T) {
 	// First run: emit 3 frames, then kill (don't wait for shutdown)
-	fix1 := StartDaemon(t)
+	fix1 := StartDaemonCrash(t)
 	for i := 0; i < 3; i++ {
 		if err := fix1.EmitGoFrame(t, "unclean-test", "sdk", "test-tool", "", "allowed"); err != nil {
 			t.Fatalf("first run emit %d: %v", i, err)
@@ -153,7 +153,7 @@ func TestResumesChainAfterUncleanShutdown(t *testing.T) {
 // sequence gaps or lost frames.
 func TestResumesWithConcurrentEmittersOnRestart(t *testing.T) {
 	// First run: emit 5 frames cleanly
-	fix1 := StartDaemon(t)
+	fix1 := StartDaemonCrash(t)
 	for i := 0; i < 5; i++ {
 		if err := fix1.EmitGoFrame(t, "concurrent-test", "sdk", "test-tool", "", "allowed"); err != nil {
 			t.Fatalf("first run emit %d: %v", i, err)
@@ -200,11 +200,11 @@ func TestResumesWithConcurrentEmittersOnRestart(t *testing.T) {
 		}
 	}
 
-	// Wait for all 21 receipts to land (5 from first run + 1 interrupted terminator
-	// emitted on first-run shutdown + 15 from second run).
-	receipts2 := fix2.WaitForReceiptCount(t, 21, 10*time.Second)
-	if len(receipts2) != 21 {
-		t.Fatalf("second run: expected 21 receipts, got %d\ntrace:\n%s",
+	// Wait for all 20 receipts to land (5 from first run + 15 from second run = 20 total
+	// (no terminator: crash mode)).
+	receipts2 := fix2.WaitForReceiptCount(t, 20, 10*time.Second)
+	if len(receipts2) != 20 {
+		t.Fatalf("second run: expected 20 receipts, got %d\ntrace:\n%s",
 			len(receipts2), fix2.Trace())
 	}
 
