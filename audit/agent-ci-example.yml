@@ -1,0 +1,88 @@
+# Drafted by the Python SDK first-run audit (audit/AUDIT_REPORT.md, Part 3).
+# This is an EXAMPLE of the CI recipe the docs should ship — it is NOT wired
+# into .github/ (repo agent-safety rules forbid touching CI without human
+# review). Copy into .github/workflows/agent.yml and adjust pins to adopt.
+#
+# Shape: stand up the agent-receipts daemon as a background service, emit a
+# receipt from a Python app, then assert the signed chain verifies.
+#
+# Known sharp edge (audit paper-cut #6): GitHub runners usually have
+# $XDG_RUNTIME_DIR unset, so the daemon's per-platform default socket falls
+# back to /run/agentreceipts/events.sock (needs root) and a custom path under
+# $HOME is rejected by the [/run,/var/run] safe-set guard. We therefore pass
+# --unsafe-socket-path with a workspace-local socket. Revisit once issue #538
+# allows user-writable safe paths.
+
+name: agent-receipts e2e
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  audited-run:
+    runs-on: ubuntu-latest
+    env:
+      DAEMON_VERSION: v0.8.0          # keep in lockstep with the SDK you pip-install
+      AR_HOME: ${{ github.workspace }}/.ar
+      AGENTRECEIPTS_SOCKET: ${{ github.workspace }}/.ar/events.sock
+      AGENTRECEIPTS_KEY: ${{ github.workspace }}/.ar/signing.key
+      AGENTRECEIPTS_PUBLIC_KEY: ${{ github.workspace }}/.ar/signing.key.pub
+      AGENTRECEIPTS_DB: ${{ github.workspace }}/.ar/receipts.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"        # daemon requires Go 1.26.1+
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install daemon + verify CLI
+        run: |
+          go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@${DAEMON_VERSION}
+          go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@${DAEMON_VERSION}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Initialise signing key
+        run: |
+          mkdir -p "$AR_HOME"
+          agent-receipts-daemon --init
+
+      - name: Start daemon (background) and wait for the socket
+        run: |
+          # --unsafe-socket-path: workspace socket is outside [/run,/var/run].
+          nohup agent-receipts-daemon --unsafe-socket-path > "$AR_HOME/daemon.log" 2>&1 &
+          for i in $(seq 1 50); do
+            [ -S "$AGENTRECEIPTS_SOCKET" ] && grep -q listening "$AR_HOME/daemon.log" && break
+            sleep 0.2
+          done
+          grep -q listening "$AR_HOME/daemon.log" || { echo "daemon did not start"; cat "$AR_HOME/daemon.log"; exit 1; }
+          cat "$AR_HOME/daemon.log"
+
+      - name: Install SDK and run the app under audit
+        run: |
+          pip install agent-receipts
+          # Replace with your real entrypoint; it should construct
+          # agent_receipts.Emitter() and emit during normal operation.
+          python - <<'PY'
+          from agent_receipts import Emitter
+          with Emitter() as e:   # picks up AGENTRECEIPTS_SOCKET
+              e.emit(channel="ci", tool_name="filesystem.file.read", decision="allowed",
+                     input='{"path":"/etc/hostname"}', output='{"bytes":12}')
+          print("emitted")
+          PY
+
+      - name: Verify the signed chain
+        run: |
+          agent-receipts verify --public-key "$AGENTRECEIPTS_PUBLIC_KEY" | tee verify.out
+          grep -q "VALID" verify.out
+
+      - name: Upload daemon log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-receipts-daemon-log
+          path: ${{ github.workspace }}/.ar/daemon.log
