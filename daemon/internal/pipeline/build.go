@@ -600,7 +600,7 @@ func ptrUint32(v uint32) *uint32 { return &v }
 // ctx should carry a short deadline (~200ms). Deadline/cancel errors are
 // non-fatal — the verifier's "unknown" classification is the documented
 // fallback for chains that never receive a terminator. Store or signing
-// failures are returned unwrapped so the caller can surface them as fatal.
+// failures are returned wrapped so the caller can surface them as fatal.
 func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	// Fast path: no receipts in this chain (fresh store or first-ever run).
 	if p.State.NextSeq() == 1 {
@@ -634,6 +634,10 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 
 	alloc := p.State.Allocate()
 	defer alloc.Rollback()
+
+	if alloc.Sequence > int64(math.MaxInt) {
+		return fmt.Errorf("chain sequence %d exceeds int range on this platform (max %d)", alloc.Sequence, math.MaxInt)
+	}
 
 	now := p.Now().Format(time.RFC3339)
 	signed, hash, err := p.signAndHash(receipt.CreateInput{

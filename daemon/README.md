@@ -138,7 +138,7 @@ On SIGTERM or SIGINT the daemon performs a three-phase shutdown:
 
 1. **Stop accepting** — the IPC socket listener closes immediately. New emitter connections are refused from this point.
 2. **Drain** — Active handler goroutines that have already started reading their frame run to completion; connections not yet fully accepted or partially read are closed. No new receipts can enter the chain after this step.
-3. **Terminate** — for each chain that has at least one receipt and no terminal receipt yet, the daemon emits a terminal receipt with `chain.terminal: true` and `chain.status: "interrupted"`. This receipt is signed with the daemon's key and persisted to the store before the process exits, so verifiers can later classify the chain as `interrupted` rather than `unknown`.
+3. **Terminate** — if the configured chain (`--chain-id`) has at least one receipt and no terminal receipt yet, the daemon emits a terminal receipt with `chain.terminal: true` and `chain.status: "interrupted"`. This receipt is signed with the daemon's key and persisted to the store before the process exits, so verifiers can later classify the chain as `interrupted` rather than `unknown`. (The daemon owns one chain per process; multi-chain support is future work.)
 
 The total deadline for step 3 is `--shutdown-deadline` (default `200ms`). If the deadline expires before the terminator is written, the daemon logs a `level=warn` line (`terminator: deadline expired, chain … will be classified as 'unknown' by verifier`) and exits cleanly — the verifier's `unknown` classification (spec §7.3.3) is the documented fallback for chains whose terminator could not be written in time. Store I/O or signing failures during terminator emission are surfaced as a non-zero exit code.
 
