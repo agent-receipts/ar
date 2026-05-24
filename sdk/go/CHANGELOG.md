@@ -9,19 +9,33 @@ This file starts at 0.6.0; earlier releases are recorded only in git history.
 A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
-## [Unreleased]
+## [0.13.0] - 2026-05-24
 
 ### Breaking Changes
 
-- **`PeerCredential.UID` and `PeerCredential.GID` are now `*uint32`** ([#511](https://github.com/agent-receipts/ar/issues/511)). Callers that read these fields directly must dereference the pointer and guard against `nil` (nil = platform has no POSIX UID concept).
+- **`PeerCredential.UID` and `PeerCredential.GID` are now `*uint32`** ([#511](https://github.com/agent-receipts/ar/issues/511)). The previous `uint32` with `omitempty` silently dropped UID=0 / GID=0 (root), making a root-emitted receipt indistinguishable from a Windows receipt where UIDs have no meaning. A nil pointer now means "no POSIX UID concept"; a non-nil pointer to zero correctly serialises as `"uid":0`. Cross-SDK test vector `peerCredentialRootReceipt` added to `v030_vectors.json` to pin the zero-value wire form. Callers that read these fields directly must dereference the pointer and guard against `nil`.
 
-### Fixed
+### Added
 
-- **`PeerCredential.UID` and `PeerCredential.GID` now use `*uint32`** ([#511](https://github.com/agent-receipts/ar/issues/511)). The previous `uint32` with `omitempty` silently dropped UID=0 / GID=0 (root), making a root-emitted receipt indistinguishable from a Windows receipt where UIDs have no meaning. A nil pointer now means "no POSIX UID concept"; a non-nil pointer to zero correctly serialises as `"uid":0`. Cross-SDK test vector `peerCredentialRootReceipt` added to `v030_vectors.json` to pin the zero-value wire form.
+- **`action.IdempotencyKey` field** ([#565](https://github.com/agent-receipts/ar/pull/565)) — optional string that ties a retried tool call to its logical operation. Part of spec v0.4.0 (ADR-0019 §S5). Chain verifiers surface duplicate `idempotency_key` values as non-fatal warnings on `ChainVerification.Warnings` (retries are legitimate; only a human reviewer can decide intent). `Version` constant bumped from `"0.3.0"` to `"0.4.0"`.
+- **Write-ahead log for at-least-once delivery** ([#567](https://github.com/agent-receipts/ar/pull/567)) — new `emitters.WalEmitter` wraps any `Emitter`, records each receipt in a WAL before delivery, and clears the entry only on collector acknowledgement (201/409). Ships two backends: a durable file-backed WAL for long-lived compute (replayed on restart) and an in-memory WAL for ephemeral compute (drained on shutdown via a deadline-bounded flush). Implements ADR-0020 at-least-once guarantee.
+- **AWS KMS adapter** ([#578](https://github.com/agent-receipts/ar/pull/578)) — new `sdk/go/aws` module provides `KMSSigner`, an `ADR-0018 Signer` backed by AWS KMS. Signing delegates to `kms:Sign`; the signer never holds private key material. The public key is fetched once via `kms:GetPublicKey` and cached. Uses `SigningAlgorithm=ED25519_SHA_512` with `MessageType=RAW` (pure Ed25519 per RFC 8032), matching AWS's ECC_NIST_EDWARDS25519 key type added in November 2025.
+- **`store.Exists(id string) (bool, error)`** ([#583](https://github.com/agent-receipts/ar/pull/583)) — cheap presence check backed by `SELECT 1 … LIMIT 1`, avoiding the full `receipt_json` decode that `GetByID` pays. Use this on hot paths (e.g., collector duplicate detection) where only a boolean answer is needed.
+
+### Security
+
+- **Safe socket path enforcement** ([#579](https://github.com/agent-receipts/ar/pull/579), closes [#538](https://github.com/agent-receipts/ar/issues/538)) — `emitter.New()` now validates the socket path before connecting. TCP addresses are rejected unconditionally (ADR-0010 § IPC transport). Paths are canonicalised with `filepath.EvalSymlinks` before comparison so a symlink escaping the safe set is judged by its real target.
+
+## [0.12.1] - 2026-05-23
+
+### Added
+
+- **`emitters` package** ([#548](https://github.com/agent-receipts/ar/pull/548)) — new package implements ADR-0020 Step 1: an `Emitter` interface that takes a signed `AgentReceipt` and delivers it to a remote endpoint, plus four implementations: `HttpEmitter` (posts to a collector URL), `CompositeEmitter` (fan-out), `BufferingEmitter` (batches with a flush interval), and `InMemoryEmitter` (test double).
+- **`store.InsertRaw(r, rawJSON, hash)`** ([#537](https://github.com/agent-receipts/ar/pull/537)) — persists a receipt using the verbatim wire bytes. The struct fields populate the indexed columns; `rawJSON` is stored verbatim in `receipt_json` so an auditor can re-canonicalise and verify the agent's signature against the exact bytes the agent signed over. Intended for HTTP collectors and other external receipt receivers. `Insert` (the existing hot-path used by the daemon) is unchanged.
 
 ### Changed
 
-- **`emitter.DefaultSocketPath()` macOS default is now HOME-based** ([#545](https://github.com/agent-receipts/ar/issues/545)). macOS resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. TMPDIR is not inherited by GUI-spawned subprocesses (e.g., MCP servers launched by Claude Desktop), which broke the daemon ↔ emitter handshake silently. HOME is preserved across every supported spawn context, so both sides of the IPC now resolve to the same path regardless of how they were started. Linux defaults are unchanged. AGENTRECEIPTS_SOCKET continues to take precedence — users who relied on TMPDIR redirection on macOS should switch to it.
+- **`emitter.DefaultSocketPath()` macOS default is now HOME-based** ([#545](https://github.com/agent-receipts/ar/issues/545)). macOS resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. TMPDIR is not inherited by GUI-spawned subprocesses (e.g., MCP servers launched by Claude Desktop), which broke the daemon ↔ emitter handshake silently. HOME is preserved across every supported spawn context. Linux defaults are unchanged. `AGENTRECEIPTS_SOCKET` continues to take precedence.
 - **Platform-specific socket resolution split into build-tagged files** (`socketpath_darwin.go`, `socketpath_linux.go`, `socketpath_other.go`). The public `DefaultSocketPath()` API is unchanged.
 
 ## [0.11.0] - 2026-05-22
@@ -39,7 +53,7 @@ First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#
 ### Added
 
 - **`EncryptDisclosure` / `DecryptDisclosure` / `GenerateForensicKeyPair`** ([#468](https://github.com/agent-receipts/ar/pull/468)) — RFC 9180 HPKE base-mode helpers (DHKEM(X25519) + HKDF-SHA256 + AES-256-GCM) via `cloudflare/circl`.
-- **`Action.PeerCredential` struct** — typed OS-attested peer process metadata. Field widths match POSIX (`int32` for PID, `uint32` for UID/GID; amended to `*uint32` in [#511](https://github.com/agent-receipts/ar/issues/511) — see Unreleased).
+- **`Action.PeerCredential` struct** — typed OS-attested peer process metadata. Field widths match POSIX (`int32` for PID, `uint32` for UID/GID; amended to `*uint32` in [0.13.0] — see [#511](https://github.com/agent-receipts/ar/issues/511)).
 - **`Action.EmitterMetadata` struct** — daemon-observed emitter-side metadata, currently `DropCount`.
 - **Cross-SDK live-emit invariant test** ([#515](https://github.com/agent-receipts/ar/pull/515)).
 
