@@ -13,10 +13,16 @@ The core test (`test_in_process_happy_path`, `test_two_receipt_chain`) needs
 nothing but `pip install agent-receipts` — no env vars, no daemon, no key
 files. This is the flow the Python SDK README's Quick Start documents.
 
-`test_emitter_roundtrip_against_live_daemon` exercises the collector path. It
-is SKIPPED unless AGENTRECEIPTS_SOCKET points at a *running* agent-receipts
-daemon, because the daemon is a separately-built Go binary the SDK does not
-ship. See audit/AUDIT_REPORT.md (Part 2) for how to stand one up.
+`test_daemon_emitter_roundtrip_against_live_daemon` exercises the local collector
+path. It is SKIPPED unless AGENTRECEIPTS_SOCKET points at a *running*
+agent-receipts daemon, because the daemon is a separately-built Go binary the SDK
+does not ship. See audit/AUDIT_REPORT.md (Part 2) for how to stand one up.
+
+Re-audit note (2026-05-24): targets sdk/py >= 0.10.0. The socket emitter was
+renamed `Emitter` -> `DaemonEmitter` (ADR-0020); the top-level `Emitter` name is
+now an un-instantiable Protocol. `test_wal_emitter_retains_on_failure` codifies
+the v0.10.0 WAL fix; `test_emitter_protocol_runtime_checkable_footgun` pins the
+DaemonEmitter/Protocol mismatch. See AUDIT_REPORT.md "Re-audit delta".
 """
 
 from __future__ import annotations
@@ -114,19 +120,19 @@ def _daemon_is_live(path: str) -> bool:
     not _daemon_is_live(os.environ.get("AGENTRECEIPTS_SOCKET", "")),
     reason="no live daemon at AGENTRECEIPTS_SOCKET; see AUDIT_REPORT.md Part 2",
 )
-def test_emitter_roundtrip_against_live_daemon():
-    """Collector path: emit one event to a running daemon (fire-and-forget).
+def test_daemon_emitter_roundtrip_against_live_daemon():
+    """Local collector path: emit one event to a running daemon (fire-and-forget).
 
-    The emit contract is fire-and-forget: a successful emit returns None and
-    raises nothing. Verifying the receipt actually landed requires the
-    `agent-receipts verify` CLI against the daemon's DB (out of band) — the
-    SDK gives the caller no return value to assert on. That asymmetry is
-    logged as a paper-cut in the audit report.
+    v0.10.0: the socket emitter is `DaemonEmitter` (was `Emitter` in 0.9.0).
+    The emit contract is still fire-and-forget: a successful emit returns None
+    and raises nothing. Confirming the receipt landed needs `agent-receipts
+    verify`/`show` against the daemon DB (out of band) — the SDK gives no return
+    value to assert on. That asymmetry is logged as a paper-cut in the report.
     """
-    from agent_receipts import Emitter
+    from agent_receipts import DaemonEmitter
 
     socket_path = os.environ["AGENTRECEIPTS_SOCKET"]
-    with Emitter(socket_path=socket_path, session_id="audit-e2e") as e:
+    with DaemonEmitter(socket_path=socket_path, session_id="audit-e2e") as e:
         assert e.session_id == "audit-e2e"
         ret = e.emit(
             channel="py-sdk",
@@ -138,13 +144,80 @@ def test_emitter_roundtrip_against_live_daemon():
         assert ret is None  # fire-and-forget, no ack
 
 
-def test_emitter_no_daemon_is_silent_drop(tmp_path):
-    """First-run-without-daemon contract: emit drops silently, never raises."""
-    from agent_receipts import Emitter
+def test_daemon_emitter_no_daemon_is_silent_drop(tmp_path):
+    """Local-path first-run-without-daemon: emit drops silently, never raises.
+
+    STILL TRUE in v0.10.0 — the WAL fix does NOT cover this path (see
+    test_wal_emitter_cannot_wrap_daemon_emitter).
+    """
+    from agent_receipts import DaemonEmitter
 
     dead_socket = str(tmp_path / "nope.sock")
-    with Emitter(socket_path=dead_socket, session_id="audit-drop") as e:
+    with DaemonEmitter(socket_path=dead_socket, session_id="audit-drop") as e:
         # No daemon listening -> returns None, raises nothing, retains nothing.
         assert (
             e.emit(channel="py-sdk", tool_name="x.y", decision="allowed") is None
         )
+
+
+def test_top_level_emitter_is_now_a_protocol():
+    """v0.10.0 breaking rename: `agent_receipts.Emitter` is a Protocol now.
+
+    0.9.0 code `Emitter(socket_path=...)` raises a confusing TypeError. This
+    pins the regression so the report's claim stays honest across versions.
+    """
+    from agent_receipts import Emitter
+
+    assert getattr(Emitter, "_is_protocol", False) is True
+    with pytest.raises(TypeError, match="Protocols cannot be instantiated"):
+        Emitter(socket_path="/tmp/whatever.sock")  # type: ignore[call-arg]
+
+
+def _signed_receipt():
+    keys = generate_key_pair()
+    return _sign_at(keys, sequence=1, previous_hash=None)
+
+
+def test_wal_emitter_retains_on_failure_and_replays(tmp_path):
+    """v0.10.0 WAL fix (#567): durable at-least-once for the HTTP/Protocol path.
+
+    Contrasts with the DaemonEmitter silent-drop: a failed delivery is RETAINED
+    in the WAL and replayed once the collector recovers — no silent loss.
+    """
+    from agent_receipts.emitters import FileWal, InMemoryEmitter, WalEmitter
+
+    class _FailingEmitter:
+        def emit(self, receipt):  # noqa: ANN001
+            raise RuntimeError("collector down")
+
+    wal_dir = str(tmp_path / "wal")
+    receipt = _signed_receipt()
+
+    # Collector down: emit surfaces the error AND retains the receipt.
+    down = WalEmitter(inner=_FailingEmitter(), wal=FileWal(wal_dir))
+    with pytest.raises(RuntimeError):
+        down.emit(receipt)
+    assert down.pending() == 1  # 0.9.0 would have lost this silently
+
+    # Collector recovers: a fresh WalEmitter over the same dir replays the backlog.
+    sink = InMemoryEmitter()
+    up = WalEmitter(inner=sink, wal=FileWal(wal_dir))
+    result = up.replay()
+    assert result.delivered == 1
+    assert result.remaining == 0
+    assert up.pending() == 0
+
+
+def test_wal_emitter_cannot_wrap_daemon_emitter(tmp_path):
+    """Footgun: DaemonEmitter passes the runtime_checkable isinstance but its
+    emit() signature is incompatible, so the WAL cannot protect the local path.
+    """
+    from agent_receipts import DaemonEmitter
+    from agent_receipts.emitters import Emitter, FileWal, WalEmitter
+
+    d = DaemonEmitter(socket_path=str(tmp_path / "x.sock"))
+    # Structural isinstance is a FALSE positive — emit() arity differs.
+    assert isinstance(d, Emitter) is True
+    wrapped = WalEmitter(inner=d, wal=FileWal(str(tmp_path / "wal")))
+    with pytest.raises(TypeError):
+        wrapped.emit(_signed_receipt())

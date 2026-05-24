@@ -23,7 +23,7 @@ jobs:
   audited-run:
     runs-on: ubuntu-latest
     env:
-      DAEMON_VERSION: v0.8.0          # keep in lockstep with the SDK you pip-install
+      DAEMON_VERSION: v0.13.0         # keep in lockstep with the SDK you pip-install (sdk/py 0.10.0)
       AR_HOME: ${{ github.workspace }}/.ar
       AGENTRECEIPTS_SOCKET: ${{ github.workspace }}/.ar/events.sock
       AGENTRECEIPTS_KEY: ${{ github.workspace }}/.ar/signing.key
@@ -68,8 +68,9 @@ jobs:
           # Replace with your real entrypoint; it should construct
           # agent_receipts.Emitter() and emit during normal operation.
           python - <<'PY'
-          from agent_receipts import Emitter
-          with Emitter() as e:   # picks up AGENTRECEIPTS_SOCKET
+          # v0.10.0: socket emitter is DaemonEmitter (was Emitter in 0.9.0).
+          from agent_receipts import DaemonEmitter
+          with DaemonEmitter() as e:   # picks up AGENTRECEIPTS_SOCKET
               e.emit(channel="ci", tool_name="filesystem.file.read", decision="allowed",
                      input='{"path":"/etc/hostname"}', output='{"bytes":12}')
           print("emitted")

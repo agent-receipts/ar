@@ -1,5 +1,87 @@
 # Agent Receipts — Python SDK first-run audit
 
+> **Re-audit delta — 2026-05-24 (post-weekend release).** Re-ran the full
+> scenario after the weekend releases (sdk/py **v0.10.0**, daemon **v0.13.0**,
+> mcp-proxy v0.12.0). The original report (below the delta) was against PyPI
+> `0.9.0`; this delta records what changed. Evidence: `audit/test_first_run_e2e.py`
+> now has **7 tests** (6 pass + 1 daemon round-trip that skips without a live
+> daemon) and pins the regressions below.
+
+## Re-audit delta
+
+### Fixed / improved
+
+- **#8 (silent data loss) — FIXED for the remote/HTTP path.** v0.10.0 ships a
+  whole `agent_receipts.emitters` package: `HttpEmitter` (retrying HTTPS
+  delivery), `CompositeEmitter`, `BufferingEmitter`, `InMemoryEmitter`, and
+  crucially **`WalEmitter`** (`FileWal`/`MemoryWal`, `replay()`, `flush()`).
+  Verified: a failed delivery now *raises and is retained* in the WAL
+  (`pending()==1`) and `replay()` drains it (`delivered=1, remaining=0`) once the
+  collector recovers — the opposite of 0.9.0's silent drop. Good fix.
+- **macOS socket default moved off `$TMPDIR`** (#545) to
+  `$XDG_DATA_HOME/agent-receipts/events.sock`, fixing the GUI-subprocess silent
+  mismatch and bringing the macOS default inside the daemon's safe set.
+- **New confirmation aids:** daemon v0.13.0 adds `agent-receipts show <seq>`
+  (verified — prints receipt fields) and an `interrupted` terminal receipt on
+  SIGTERM/SIGINT. Helps #7, though still CLI-only and not surfaced to Python users.
+- **`Action.idempotency_key`** added (spec v0.4.0); `EmitterMetadata()` empty
+  construction now raises (#509).
+
+### Still open (unchanged by the release)
+
+- **#1 root README `Receipt.create(...)` snippet — STILL BROKEN.** No `Receipt`
+  class exists; README last touched in #496, not this weekend.
+- **#2 / #3 PyPI README — STILL silent on the emitter story, now WORSE.** The
+  README still documents only in-process create/sign and never mentions the
+  emitter — and there is now an entire new `emitters` package it doesn't cover.
+- **#4 stale `agent-receipts/sdk-py` CI badge — STILL present.**
+- **#6 socket-guard vs docs contradiction — STILL present on Linux.** daemon #579
+  keeps the Linux safe set at `$XDG_RUNTIME_DIR, /run, /var/run`; daemon-setup
+  still recommends `~/.local/run/...` for non-root users, which that guard
+  rejects. (macOS improved via #545.) I again needed `--unsafe-socket-path`.
+- **#9 no CI recipe — STILL none** in the docs.
+- **Local-path silent drop — STILL present.** `DaemonEmitter` (the renamed socket
+  emitter) is unchanged fire-and-forget: daemon-down emit returns `None`, no
+  retain, no signal. The WAL fix does **not** cover this path (see below).
+
+### Newly broken / new paper-cuts
+
+- **[HIGH] Breaking rename not flagged as breaking.** The socket emitter was
+  renamed `Emitter` → **`DaemonEmitter`** (ADR-0020) and the top-level `Emitter`
+  name now points to an un-instantiable **Protocol**. 0.9.0 code
+  `Emitter(socket_path=...)` now dies with `TypeError: Protocols cannot be
+  instantiated`. The sdk/py v0.10.0 CHANGELOG lists only the `PeerCredential`
+  uid/gid change under *Breaking Changes* — this rename is buried under *Added*.
+- **[HIGH] daemon-setup docs are now wrong against the shipped SDK.** The Python
+  section still shows `from agent_receipts import Emitter; Emitter(socket_path=…)`
+  (now broken) and still says *"Python SDK (v0.8.0a2) … `pip install --pre`"*. It
+  should say `DaemonEmitter` and a current stable version.
+- **[HIGH] PyPI publish lags the release.** sdk/py v0.10.0 is tagged/CHANGELOG'd
+  in the repo (#588), but `pip install --upgrade agent-receipts` still serves
+  **0.9.0**. A fresh adopter today gets the old build, with READMEs/docs that
+  don't match either version. Confirm the `publish-py` workflow actually ran.
+- **[MED] `runtime_checkable` Protocol false-positive footgun.** The new `Emitter`
+  Protocol is `runtime_checkable`, so `isinstance(DaemonEmitter(), Emitter)` is
+  `True` — but their `emit()` signatures differ (`emit(*, channel, tool_name,
+  decision, …)` vs `emit(receipt)`). So `WalEmitter(inner=DaemonEmitter()).emit(r)`
+  passes every type check and then crashes at runtime (`emit() takes 1 positional
+  argument but 2 were given`). Net effect: **the local daemon socket path cannot
+  be made durable via the WAL**, and the two abstractions silently mis-fit.
+- **[MED] The headline v0.10.0 feature is undocumented.** No user-facing page
+  shows `HttpEmitter`/`WalEmitter`/`CompositeEmitter` usage; how a Python app is
+  now meant to deliver to a *local* daemon (socket) vs a *remote* collector
+  (HTTP) is left for the reader to reverse-engineer from the package.
+
+### Re-audit verdict
+
+The WAL gap I flagged hardest (#8) is genuinely addressed for remote delivery —
+good. But the release **regressed the first-run experience**: the one symbol an
+adopter reaches for (`Emitter`) changed meaning, every emitter example in the
+docs is now broken, and PyPI still serves the prior version. Net first-run is
+*worse* than last week until the docs + PyPI publish catch up.
+
+---
+
 **Auditor stance:** senior Python dev, never seen this repo, time-boxed to ~30 min,
 deciding whether to adopt.
 **Environment:** fresh `python -m venv /tmp/ar-audit-venv`, Python 3.11.15, all
