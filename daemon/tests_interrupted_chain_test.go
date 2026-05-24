@@ -245,7 +245,7 @@ func TestEmptyChainShutdownClean(t *testing.T) {
 func TestTerminatorTimeoutSilent(t *testing.T) {
 	cfg, _ := interruptDaemonCfg(t, "timeout-chain")
 	// 1ns deadline expires before the terminator is built.
-	cfg.ShutdownDeadline = 1
+	cfg.ShutdownDeadline = time.Nanosecond
 
 	cancel, done := runInterruptDaemon(t, cfg)
 

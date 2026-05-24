@@ -597,9 +597,10 @@ func ptrUint32(v uint32) *uint32 { return &v }
 // It is called once, synchronously, after the IPC listener has shut down and
 // all in-flight frames have been processed — the chain state mutex is free.
 //
-// ctx should carry a short deadline (~200ms). A non-nil return is informational
-// and logged by the caller; the verifier's "unknown" classification is the
-// documented fallback for chains that never receive a terminator.
+// ctx should carry a short deadline (~200ms). Deadline/cancel errors are
+// non-fatal — the verifier's "unknown" classification is the documented
+// fallback for chains that never receive a terminator. Store or signing
+// failures are returned unwrapped so the caller can surface them as fatal.
 func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	// Fast path: no receipts in this chain (fresh store or first-ever run).
 	if p.State.NextSeq() == 1 {
@@ -622,9 +623,12 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	}
 
 	// Respect the caller's deadline before touching shared state.
-	// Check wall clock too: timer goroutines can lag, making ctx.Err() alone
-	// unreliable for sub-millisecond deadlines.
-	if dl, ok := ctx.Deadline(); (ok && time.Now().After(dl)) || ctx.Err() != nil {
+	// Prefer ctx.Err() when set; fall back to a wall-clock check because timer
+	// goroutines can lag, making ctx.Err() alone unreliable for sub-ms deadlines.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("deadline exceeded before terminator: %w", ctxErr)
+	}
+	if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
 		return fmt.Errorf("deadline exceeded before terminator: %w", context.DeadlineExceeded)
 	}
 
@@ -658,7 +662,10 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	}
 
 	// Check deadline again before the store write.
-	if dl, ok := ctx.Deadline(); (ok && time.Now().After(dl)) || ctx.Err() != nil {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("deadline exceeded before store write: %w", ctxErr)
+	}
+	if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
 		return fmt.Errorf("deadline exceeded before store write: %w", context.DeadlineExceeded)
 	}
 

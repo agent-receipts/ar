@@ -120,10 +120,8 @@ func TestEmitTerminator_ExpiredContext(t *testing.T) {
 		t.Fatalf("Process: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
-	// Ensure the deadline has passed.
-	time.Sleep(5 * time.Millisecond)
 
 	err := p.EmitTerminator(ctx)
 	if err == nil {
