@@ -213,6 +213,30 @@ func TestServer_PostReceipt_400TrailingData(t *testing.T) {
 	}
 }
 
+func TestServer_PostReceipt_400TrailingCloseBracket(t *testing.T) {
+	// Regression: json.Decoder.More() returns false when the next
+	// non-whitespace byte is ']' or '}', so a naive More-based trailing-data
+	// guard accepts `{...receipt...} ]`. The Decode-until-io.EOF check
+	// rejects it correctly.
+	h, store := newTestHandler(t)
+	r := signedTestReceipt("urn:receipt:srv:trailing-bracket")
+	encoded, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := append(encoded, []byte(` ]`)...)
+	rec := postReceipt(t, h, body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "exactly one") {
+		t.Fatalf("body %q does not mention the trailing-data check", rec.Body.String())
+	}
+	if store.Len() != 0 {
+		t.Fatalf("store mutated on 400: %d entries", store.Len())
+	}
+}
+
 func TestServer_PostReceipt_400MissingFields(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -38,9 +38,9 @@ func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 func (s *SQLiteStore) Insert(r receipt.AgentReceipt, rawJSON []byte, receiptHash string) error {
 	// Cheap path: if the id already exists, return ErrDuplicate without
 	// attempting an INSERT. Handles the common HttpEmitter-retry case.
-	if existing, err := s.inner.GetByID(r.ID); err != nil {
+	if exists, err := s.inner.Exists(r.ID); err != nil {
 		return fmt.Errorf("lookup existing receipt: %w", err)
-	} else if existing != nil {
+	} else if exists {
 		return ErrDuplicate
 	}
 
@@ -60,7 +60,7 @@ func (s *SQLiteStore) Insert(r receipt.AgentReceipt, rawJSON []byte, receiptHash
 		if isPrimaryKeyViolation(err) {
 			return ErrDuplicate
 		}
-		if collided, lookupErr := s.inner.GetByID(r.ID); lookupErr == nil && collided != nil {
+		if exists, lookupErr := s.inner.Exists(r.ID); lookupErr == nil && exists {
 			return ErrDuplicate
 		}
 		return fmt.Errorf("insert receipt: %w", err)
@@ -83,11 +83,11 @@ func isPrimaryKeyViolation(err error) bool {
 }
 
 func (s *SQLiteStore) Exists(id string) (bool, error) {
-	r, err := s.inner.GetByID(id)
+	ok, err := s.inner.Exists(id)
 	if err != nil {
 		return false, fmt.Errorf("lookup receipt: %w", err)
 	}
-	return r != nil, nil
+	return ok, nil
 }
 
 func (s *SQLiteStore) Close() error {

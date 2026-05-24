@@ -156,14 +156,23 @@ func (h *receiptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ar receipt.AgentReceipt
 	dec := json.NewDecoder(bytes.NewReader(rawBody))
 	if err := dec.Decode(&ar); err != nil {
+		// encoding/json's error text leaks internal Go struct field names
+		// and types ("cannot unmarshal X into Go struct field
+		// AgentReceipt.foo of type Y"), so the wire body stays generic;
+		// the detailed error is preserved in the structured log.
 		h.log.Warn("receipt rejected: malformed json", slog.Any("err", err))
-		writeError(w, http.StatusBadRequest, "malformed receipt: invalid JSON")
+		writeError(w, http.StatusBadRequest, "malformed receipt")
 		return
 	}
 	// Reject trailing data after the receipt. A second JSON value in the
 	// body almost always indicates a client bug; better to surface it than
-	// silently store the first one.
-	if dec.More() {
+	// silently store the first one. Decoder.More() is unreliable at the
+	// top level (it returns false when the next non-whitespace byte is `]`
+	// or `}`, so `{...} ]` would slip past), so attempt a second Decode and
+	// require io.EOF — anything else (a parsed value, a syntax error,
+	// stray bytes) means the body wasn't a single JSON object.
+	var trailing json.RawMessage
+	if err := dec.Decode(&trailing); err != io.EOF {
 		writeError(w, http.StatusBadRequest, "request body must contain exactly one JSON object")
 		return
 	}
