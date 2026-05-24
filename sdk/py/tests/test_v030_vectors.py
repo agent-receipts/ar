@@ -11,8 +11,11 @@ values for the v0.3.0 cross-SDK test vectors at
 - ``peerCredentialEmitterMetadataReceipt`` — receipt exercising the new
   daemon-attested typed fields ``action.peer_credential`` and
   ``action.emitter_metadata.drop_count``.
+- ``peerCredentialRootReceipt`` — receipt with ``peer_credential.uid=0`` and
+  ``gid=0`` (root). Pins that zero values are present on the wire as
+  ``"uid":0`` rather than being dropped — fixes issue #511.
 
-If either hash diverges, the Python SDK has a wire-format incompatibility
+If any hash diverges, the Python SDK has a wire-format incompatibility
 with Go (#468/#499) and TS (#472/#503) — almost always a Pydantic
 serialization / alias / omit-when-None issue.
 """
@@ -66,5 +69,20 @@ class TestV030Vectors:
         vectors = _load_vectors()
         public_key = vectors["keys"]["publicKey"]
         section = vectors["peerCredentialEmitterMetadataReceipt"]
+        receipt = AgentReceipt.model_validate(section["receipt"])
+        assert verify_receipt(receipt, public_key) is True
+
+    def test_root_receipt_hash_matches(self) -> None:
+        """peer_credential uid=0/gid=0 (root) receipt hashes identically."""
+        vectors = _load_vectors()
+        section = vectors["peerCredentialRootReceipt"]
+        receipt = AgentReceipt.model_validate(section["receipt"])
+        assert hash_receipt(receipt) == section["expectedReceiptHash"]
+
+    def test_root_receipt_signature_verifies(self) -> None:
+        """Go-signed root peer_credential receipt verifies under the Python SDK."""
+        vectors = _load_vectors()
+        public_key = vectors["keys"]["publicKey"]
+        section = vectors["peerCredentialRootReceipt"]
         receipt = AgentReceipt.model_validate(section["receipt"])
         assert verify_receipt(receipt, public_key) is True

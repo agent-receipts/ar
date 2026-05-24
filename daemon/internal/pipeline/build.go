@@ -428,13 +428,7 @@ func (p *Pipeline) buildAndSign(
 	// daemon vouches for these values via signature; they are present only on
 	// receipts emitted through the daemon and absent on direct-SDK emissions
 	// (where the SDK has no privileged channel to attest peer identity).
-	peerCred := &receipt.PeerCredential{
-		Platform: peer.Platform,
-		PID:      peer.PID,
-		UID:      peer.UID,
-		GID:      peer.GID,
-		ExePath:  peer.ExePath,
-	}
+	peerCred := buildPeerCred(peer)
 
 	// Risk derives from the taxonomy. Daemon-constructed action types like
 	// "mcp_proxy.github.list_repos" do not match any built-in entry, so
@@ -554,17 +548,11 @@ func (p *Pipeline) buildAndSignDropReceipt(
 		},
 		Principal: receipt.Principal{ID: "did:user:unknown"},
 		Action: receipt.Action{
-			Type:      actionTypeEventsDropped,
-			ToolName:  "events_dropped",
-			RiskLevel: receipt.RiskLow,
-			Timestamp: now,
-			PeerCredential: &receipt.PeerCredential{
-				Platform: peer.Platform,
-				PID:      peer.PID,
-				UID:      peer.UID,
-				GID:      peer.GID,
-				ExePath:  peer.ExePath,
-			},
+			Type:           actionTypeEventsDropped,
+			ToolName:       "events_dropped",
+			RiskLevel:      receipt.RiskLow,
+			Timestamp:      now,
+			PeerCredential: buildPeerCred(peer),
 			EmitterMetadata: &receipt.EmitterMetadata{
 				DropCount: dropCount,
 			},
@@ -577,6 +565,27 @@ func (p *Pipeline) buildAndSignDropReceipt(
 		},
 	}, now)
 }
+
+// buildPeerCred converts a socket.PeerCred into a receipt.PeerCredential. UID
+// and GID use pointer semantics so root (uid=0 / gid=0) serialises as
+// `"uid":0` rather than being silently dropped by omitempty. On platforms with
+// no POSIX UID/GID concept (anything other than linux/darwin today), both
+// fields are left nil — the absent-field semantics the spec prescribes for
+// Windows and similar platforms.
+func buildPeerCred(peer socket.PeerCred) *receipt.PeerCredential {
+	pc := &receipt.PeerCredential{
+		Platform: peer.Platform,
+		PID:      peer.PID,
+		ExePath:  peer.ExePath,
+	}
+	if peer.Platform == "linux" || peer.Platform == "darwin" {
+		pc.UID = ptrUint32(peer.UID)
+		pc.GID = ptrUint32(peer.GID)
+	}
+	return pc
+}
+
+func ptrUint32(v uint32) *uint32 { return &v }
 
 // signAndHash builds, signs, and hashes one receipt. It is the common tail
 // shared by buildAndSign and buildAndSignDropReceipt — both construct a

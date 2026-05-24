@@ -62,6 +62,12 @@ type v030File struct {
 		ExpectedReceiptHash string          `json:"expectedReceiptHash"`
 		ExpectedValid       bool            `json:"expectedValid"`
 	} `json:"peerCredentialEmitterMetadataReceipt"`
+	RootCred struct {
+		Description         string          `json:"description"`
+		Receipt             json.RawMessage `json:"receipt"`
+		ExpectedReceiptHash string          `json:"expectedReceiptHash"`
+		ExpectedValid       bool            `json:"expectedValid"`
+	} `json:"peerCredentialRootReceipt"`
 }
 
 func loadV030(t *testing.T) v030File {
@@ -93,6 +99,7 @@ func TestV030VectorsValidateAgainstSchema(t *testing.T) {
 	}{
 		{"parametersDisclosureEnvelopeReceipt", f.Envelope.Receipt},
 		{"peerCredentialEmitterMetadataReceipt", f.DaemonAttested.Receipt},
+		{"peerCredentialRootReceipt", f.RootCred.Receipt},
 	}
 
 	for _, c := range cases {
@@ -128,6 +135,7 @@ func TestV030ReceiptHashAndSignature(t *testing.T) {
 	}{
 		{"parametersDisclosureEnvelopeReceipt", f.Envelope.Receipt, f.Envelope.ExpectedReceiptHash},
 		{"peerCredentialEmitterMetadataReceipt", f.DaemonAttested.Receipt, f.DaemonAttested.ExpectedReceiptHash},
+		{"peerCredentialRootReceipt", f.RootCred.Receipt, f.RootCred.ExpectedReceiptHash},
 	}
 
 	for _, c := range cases {

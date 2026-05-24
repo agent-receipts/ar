@@ -11,6 +11,14 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`PeerCredential.UID` and `PeerCredential.GID` are now `*uint32`** ([#511](https://github.com/agent-receipts/ar/issues/511)). Callers that read these fields directly must dereference the pointer and guard against `nil` (nil = platform has no POSIX UID concept).
+
+### Fixed
+
+- **`PeerCredential.UID` and `PeerCredential.GID` now use `*uint32`** ([#511](https://github.com/agent-receipts/ar/issues/511)). The previous `uint32` with `omitempty` silently dropped UID=0 / GID=0 (root), making a root-emitted receipt indistinguishable from a Windows receipt where UIDs have no meaning. A nil pointer now means "no POSIX UID concept"; a non-nil pointer to zero correctly serialises as `"uid":0`. Cross-SDK test vector `peerCredentialRootReceipt` added to `v030_vectors.json` to pin the zero-value wire form.
+
 ### Changed
 
 - **`emitter.DefaultSocketPath()` macOS default is now HOME-based** ([#545](https://github.com/agent-receipts/ar/issues/545)). macOS resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. TMPDIR is not inherited by GUI-spawned subprocesses (e.g., MCP servers launched by Claude Desktop), which broke the daemon ↔ emitter handshake silently. HOME is preserved across every supported spawn context, so both sides of the IPC now resolve to the same path regardless of how they were started. Linux defaults are unchanged. AGENTRECEIPTS_SOCKET continues to take precedence — users who relied on TMPDIR redirection on macOS should switch to it.
@@ -31,7 +39,7 @@ First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#
 ### Added
 
 - **`EncryptDisclosure` / `DecryptDisclosure` / `GenerateForensicKeyPair`** ([#468](https://github.com/agent-receipts/ar/pull/468)) — RFC 9180 HPKE base-mode helpers (DHKEM(X25519) + HKDF-SHA256 + AES-256-GCM) via `cloudflare/circl`.
-- **`Action.PeerCredential` struct** — typed OS-attested peer process metadata. Field widths match POSIX (`int32` for PID, `uint32` for UID/GID).
+- **`Action.PeerCredential` struct** — typed OS-attested peer process metadata. Field widths match POSIX (`int32` for PID, `uint32` for UID/GID; amended to `*uint32` in [#511](https://github.com/agent-receipts/ar/issues/511) — see Unreleased).
 - **`Action.EmitterMetadata` struct** — daemon-observed emitter-side metadata, currently `DropCount`.
 - **Cross-SDK live-emit invariant test** ([#515](https://github.com/agent-receipts/ar/pull/515)).
 
@@ -39,10 +47,6 @@ First pre-release of the v0.3.0 spec migration (ADR-0012 Phase A). Tracked in [#
 
 - **`Version` constant bumped from `"0.2.0"` to `"0.3.0"`** ([#515](https://github.com/agent-receipts/ar/pull/515)).
 - Legacy v0.2.x flat-map `parameters_disclosure` receipts no longer round-trip through `receipt.AgentReceipt`. Verifiers ingesting legacy receipts must use `map[string]any` — pattern in `sdk/go/receipt/canonicalization_vectors_test.go::TestParametersDisclosureReceipt`.
-
-### Known issues
-
-- `PeerCredential.UID` and `PeerCredential.GID` are `uint32` with `omitempty`, silently dropping UID=0 / GID=0 (root). Tracked in [#511](https://github.com/agent-receipts/ar/issues/511).
 
 ## [0.10.0] - 2026-05-19
 

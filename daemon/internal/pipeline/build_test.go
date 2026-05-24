@@ -79,6 +79,66 @@ func sampleFrame(t *testing.T) socket.Frame {
 	}
 }
 
+// TestBuildPeerCred covers the pointer-semantics of buildPeerCred: POSIX
+// platforms must set UID/GID to non-nil pointers (including for zero/root),
+// and non-POSIX platforms must leave both nil.
+func TestBuildPeerCred(t *testing.T) {
+	cases := []struct {
+		name     string
+		peer     socket.PeerCred
+		wantUID  *uint32
+		wantGID  *uint32
+		wantNil  bool
+	}{
+		{
+			name:    "linux non-root",
+			peer:    socket.PeerCred{Platform: "linux", PID: 42, UID: 1000, GID: 1000},
+			wantUID: ptrUint32(1000),
+			wantGID: ptrUint32(1000),
+		},
+		{
+			name:    "linux root (uid=0 must not be dropped)",
+			peer:    socket.PeerCred{Platform: "linux", PID: 1, UID: 0, GID: 0},
+			wantUID: ptrUint32(0),
+			wantGID: ptrUint32(0),
+		},
+		{
+			name:    "darwin",
+			peer:    socket.PeerCred{Platform: "darwin", PID: 99, UID: 501, GID: 20},
+			wantUID: ptrUint32(501),
+			wantGID: ptrUint32(20),
+		},
+		{
+			name:    "non-POSIX platform (no UID concept)",
+			peer:    socket.PeerCred{Platform: "windows", PID: 7, UID: 0, GID: 0},
+			wantNil: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pc := buildPeerCred(tc.peer)
+			if pc == nil {
+				t.Fatal("buildPeerCred returned nil")
+			}
+			if tc.wantNil {
+				if pc.UID != nil {
+					t.Errorf("UID = %v, want nil on non-POSIX platform", pc.UID)
+				}
+				if pc.GID != nil {
+					t.Errorf("GID = %v, want nil on non-POSIX platform", pc.GID)
+				}
+				return
+			}
+			if pc.UID == nil || *pc.UID != *tc.wantUID {
+				t.Errorf("UID = %v, want %d", pc.UID, *tc.wantUID)
+			}
+			if pc.GID == nil || *pc.GID != *tc.wantGID {
+				t.Errorf("GID = %v, want %d", pc.GID, *tc.wantGID)
+			}
+		})
+	}
+}
+
 func TestProcess_BuildsSignedReceipt(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)
@@ -114,7 +174,7 @@ func TestProcess_BuildsSignedReceipt(t *testing.T) {
 	if pc == nil {
 		t.Fatal("PeerCredential nil; daemon must record OS-attested peer cred on every live receipt")
 	}
-	if pc.Platform != "linux" || pc.PID != 4242 || pc.UID != 1000 {
+	if pc.Platform != "linux" || pc.PID != 4242 || pc.UID == nil || *pc.UID != 1000 {
 		t.Errorf("peer attestation not recorded: %#v", pc)
 	}
 	if pc.ExePath != "/usr/bin/mcp-proxy" {
