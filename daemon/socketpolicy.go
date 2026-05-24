@@ -104,13 +104,26 @@ func allowedSocketRoots() []string {
 // (e.g. $XDG_RUNTIME_DIR/agentreceipts → /tmp/x) is judged by its real target,
 // and so a root that is itself a symlink (e.g. /var/run → /run on Linux) still
 // matches a socket placed via the other name.
+//
+// Fails closed: if the candidate path cannot be canonicalized (a non-ENOENT
+// EvalSymlinks error such as EACCES on a component, or a symlink loop), it is
+// treated as unsafe. Otherwise an unresolvable component could mask a symlink
+// escaping the safe set. A root that cannot be canonicalized is skipped rather
+// than matched.
 func isSocketPathSafe(socketPath string) bool {
-	canon := canonicalizePath(socketPath)
+	canon, err := canonicalizePath(socketPath)
+	if err != nil {
+		return false
+	}
 	for _, root := range allowedSocketRoots() {
 		if root == "" || !filepath.IsAbs(root) {
 			continue
 		}
-		if pathWithin(canon, canonicalizePath(root)) {
+		canonRoot, err := canonicalizePath(root)
+		if err != nil {
+			continue
+		}
+		if pathWithin(canon, canonRoot) {
 			return true
 		}
 	}
@@ -121,11 +134,16 @@ func isSocketPathSafe(socketPath string) bool {
 // file itself does not exist at validation time (the listener creates it), and
 // its parent dir may not exist yet either, so EvalSymlinks cannot run on the
 // full path. We resolve the longest existing ancestor and re-append the
-// not-yet-created tail. On a non-ENOENT EvalSymlinks error (e.g. EACCES on a
-// directory we cannot traverse) we fall back to the cleaned absolute path
-// rather than guessing — a path we cannot resolve is treated as-is, and the
-// containment check then decides safe/unsafe on that literal form.
-func canonicalizePath(path string) string {
+// not-yet-created tail (which cannot itself be a symlink, since it does not
+// exist).
+//
+// A non-ENOENT EvalSymlinks error — EACCES on a directory we cannot traverse,
+// or ELOOP from a symlink cycle — is returned to the caller, which fails closed
+// (treats the path as unsafe). We deliberately do not fall back to the literal
+// unresolved path: doing so would let an unresolvable component hide a symlink
+// pointing out of the safe set, contradicting "reject invalid inputs at trust
+// boundaries, do not silently degrade".
+func canonicalizePath(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = filepath.Clean(path)
@@ -136,16 +154,20 @@ func canonicalizePath(path string) string {
 		resolved, err := filepath.EvalSymlinks(cur)
 		if err == nil {
 			if remainder == "" {
-				return resolved
+				return resolved, nil
 			}
-			return filepath.Join(resolved, remainder)
+			return filepath.Join(resolved, remainder), nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
-			return abs
+			return "", fmt.Errorf("canonicalize %q: %w", path, err)
 		}
 		parent := filepath.Dir(cur)
 		if parent == cur {
-			return abs
+			// Walked to the filesystem root without resolving any existing
+			// ancestor (only reachable if even "/" is reported missing, which
+			// does not happen in practice). abs has no resolvable symlink
+			// component in this case, so it is safe to return as-is.
+			return abs, nil
 		}
 		remainder = filepath.Join(filepath.Base(cur), remainder)
 		cur = parent

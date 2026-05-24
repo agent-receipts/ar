@@ -189,6 +189,31 @@ func TestCheckSocketPath_SymlinkOutOfSafeSet(t *testing.T) {
 	}
 }
 
+// TestCheckSocketPath_SymlinkLoopFailsClosed pins the fail-closed contract: a
+// path the daemon cannot canonicalize (here a symlink cycle, which yields ELOOP
+// rather than ENOENT) must be treated as unsafe, even though its apparent
+// location is under a safe root. A previous version fell back to the literal
+// unresolved path and would have judged this safe.
+func TestCheckSocketPath_SymlinkLoopFailsClosed(t *testing.T) {
+	safeRoot := setupSocketEnv(t)
+	loopA := filepath.Join(safeRoot, "loopA")
+	loopB := filepath.Join(safeRoot, "loopB")
+	if err := os.Symlink(loopB, loopA); err != nil {
+		t.Fatalf("symlink loopA: %v", err)
+	}
+	if err := os.Symlink(loopA, loopB); err != nil {
+		t.Fatalf("symlink loopB: %v", err)
+	}
+	p := filepath.Join(loopA, "events.sock")
+	unsafe, err := checkSocketPath(p, false)
+	if err == nil {
+		t.Fatalf("unresolvable path %q (symlink loop) was accepted; must fail closed", p)
+	}
+	if unsafe {
+		t.Error("unsafe=true should not accompany a refusal error")
+	}
+}
+
 func TestWarnUnsafeSocketPath_StartupAndPeriodic(t *testing.T) {
 	var buf policyLogBuffer
 	logger := log.New(&buf, "", 0)
