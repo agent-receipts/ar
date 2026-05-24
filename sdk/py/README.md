@@ -53,7 +53,8 @@ pip install agent-receipts
 > For the strongest key isolation, run an out-of-process `agent-receipts-daemon`
 > that owns the key and the chain while your app only sends tool-call events to
 > it. If you sign client-side, deliver the signed receipts with `HttpEmitter`
-> (optionally wrapped in `WalEmitter` for at-least-once delivery).
+> (optionally wrapped in `WalEmitter` for at-least-once delivery — requires
+> `HttpEmitter` in its default `"sync"` mode, not `"fire-and-forget"`).
 > See [Delivering receipts](#delivering-receipts) and the
 > [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
