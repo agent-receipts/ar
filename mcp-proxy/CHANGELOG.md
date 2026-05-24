@@ -15,8 +15,8 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Added
 
-- **Refuse unsafe socket paths absent `--unsafe-socket-path`** ([#579](https://github.com/agent-receipts/ar/pull/579), closes [#538](https://github.com/agent-receipts/ar/issues/538)) — the proxy now validates the socket path before connecting. TCP addresses are rejected unconditionally. Paths outside the per-platform safe set are rejected unless `--unsafe-socket-path` is also passed. Paths are canonicalized with `filepath.EvalSymlinks` before comparison.
-- **`action.idempotency_key` auto-populated from JSON-RPC request id** ([#565](https://github.com/agent-receipts/ar/pull/565)) — the proxy now stamps `idempotency_key` from the `id` field of the wrapped JSON-RPC request (capped at 256 bytes). Requires daemon v0.13.0 and spec v0.4.0.
+- **Daemon enforces safe socket paths** ([#579](https://github.com/agent-receipts/ar/pull/579), closes [#538](https://github.com/agent-receipts/ar/issues/538)) — daemon v0.13.0 now rejects socket path overrides outside the per-platform safe set at startup (requires `--unsafe-socket-path` to override) and unconditionally rejects TCP addresses. If the proxy's `--socket` / `AGENTRECEIPTS_SOCKET` setting violates these rules, the daemon will refuse to start and the proxy will be unable to deliver receipts.
+- **`action.idempotency_key` forwarded from JSON-RPC request id** ([#565](https://github.com/agent-receipts/ar/pull/565)) — the proxy now forwards the `id` field of the wrapped JSON-RPC request as `idempotency_key` in the emitter frame. The daemon enforces a 256-byte limit. Requires daemon v0.13.0 and spec v0.4.0.
 
 ### Changed
 
@@ -31,13 +31,13 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Dependencies
 
-- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.12.1` (HttpEmitter + Emitter interface, macOS socket path default — no proxy behaviour change).
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.12.1` (HttpEmitter + Emitter interface; changes default `--socket` path on macOS — no proxy code changes).
 
 ## [0.11.0] - 2026-05-22
 
 ### Dependencies
 
-- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.11.0` and `github.com/agent-receipts/ar/daemon` to `v0.12.0` (v0.3.0 spec migration — no proxy behaviour change).
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.11.0` and `github.com/agent-receipts/ar/daemon` to `v0.12.0` (v0.3.0 spec migration: HPKE disclosure envelope, PeerCredential, EmitterMetadata — no proxy code changes).
 
 ## [0.10.0] - 2026-05-19
 
