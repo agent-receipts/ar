@@ -7,9 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-24
+
 ### Changed
 
-- **macOS default socket path moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/ar/issues/545)). Inherited from the SDK's updated `emitter.DefaultSocketPath`: the hook now resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. Avoids the silent path mismatch that occurred whenever the hook was spawned by a process that did not propagate TMPDIR (e.g., a GUI host) while the daemon kept the launchd per-user temp dir. Operators on macOS should restart any long-running daemon so the new default applies on both ends.
+- **macOS default socket path moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/ar/issues/545)) — inherited from the SDK's updated `emitter.DefaultSocketPath`: the hook now resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. Avoids the silent path mismatch when the hook is spawned by a process that does not propagate TMPDIR (e.g., a GUI host). Operators on macOS should restart the daemon so both sides resolve to the same path.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.13.0` (PeerCredential `*uint32`, WalEmitter, AWS KMS adapter, `store.Exists`, safe socket path enforcement, idempotency_key).
+
+## [0.11.1] - 2026-05-23
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.12.1` (HttpEmitter + Emitter interface, macOS socket path default).
+
+## [0.11.0] - 2026-05-22
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.11.0` (v0.3.0 spec migration: HPKE disclosure envelope, PeerCredential, EmitterMetadata — no hook behaviour change).
 
 ## [0.10.0] - 2026-05-16
 
