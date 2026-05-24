@@ -19,6 +19,24 @@ func setupStore(t *testing.T) *Store {
 	return s
 }
 
+func mustKeyPair(t *testing.T) receipt.KeyPair {
+	t.Helper()
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair: %v", err)
+	}
+	return kp
+}
+
+func mustHashReceipt(t *testing.T, r receipt.AgentReceipt) string {
+	t.Helper()
+	h, err := receipt.HashReceipt(r)
+	if err != nil {
+		t.Fatalf("hash receipt: %v", err)
+	}
+	return h
+}
+
 func makeSignedReceipt(t *testing.T, kp receipt.KeyPair, seq int, chainID string, prevHash *string) receipt.AgentReceipt {
 	t.Helper()
 	unsigned := receipt.Create(receipt.CreateInput{
@@ -37,9 +55,9 @@ func makeSignedReceipt(t *testing.T, kp receipt.KeyPair, seq int, chainID string
 
 func TestInsertAndGetByID(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 
 	if err := s.Insert(r, h); err != nil {
 		t.Fatal(err)
@@ -70,9 +88,9 @@ func TestGetByIDNotFound(t *testing.T) {
 
 func TestExists(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 	if err := s.Insert(r, h); err != nil {
 		t.Fatal(err)
 	}
@@ -109,12 +127,12 @@ func TestExistsAfterClose(t *testing.T) {
 
 func TestGetChain(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	var prevHash *string
 	for i := 1; i <= 3; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h := mustHashReceipt(t, r)
 		if err := s.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}
@@ -137,12 +155,12 @@ func TestGetChain(t *testing.T) {
 
 func TestGetByChainSequence(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	var prevHash *string
 	for i := 1; i <= 3; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h := mustHashReceipt(t, r)
 		if err := s.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}
@@ -163,9 +181,9 @@ func TestGetByChainSequence(t *testing.T) {
 
 func TestGetByChainSequence_NotFound(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 	if err := s.Insert(r, h); err != nil {
 		t.Fatal(err)
 	}
@@ -191,14 +209,14 @@ func TestGetByChainSequence_NotFound(t *testing.T) {
 
 func TestDistinctChainIDs(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	// Two chains, "chain-b" written before "chain-a" to confirm sorted output.
 	for _, chainID := range []string{"chain-b", "chain-a"} {
 		var prevHash *string
 		for i := 1; i <= 2; i++ {
 			r := makeSignedReceipt(t, kp, i, chainID, prevHash)
-			h, _ := receipt.HashReceipt(r)
+			h := mustHashReceipt(t, r)
 			if err := s.Insert(r, h); err != nil {
 				t.Fatal(err)
 			}
@@ -248,9 +266,9 @@ func TestGetChainTail_Empty(t *testing.T) {
 
 func TestGetChainTail_SingleRow(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 	if err := s.Insert(r, h); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +290,7 @@ func TestGetChainTail_SingleRow(t *testing.T) {
 
 func TestGetChainTail_HighestSequence(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	// Insert 1..5 in non-monotonic order to confirm the query orders by sequence,
 	// not insertion order.
@@ -280,7 +298,7 @@ func TestGetChainTail_HighestSequence(t *testing.T) {
 	hashes := make(map[int]string, len(insertOrder))
 	for _, seq := range insertOrder {
 		r := makeSignedReceipt(t, kp, seq, "chain-1", nil)
-		h, _ := receipt.HashReceipt(r)
+		h := mustHashReceipt(t, r)
 		if err := s.Insert(r, h); err != nil {
 			t.Fatalf("insert seq=%d: %v", seq, err)
 		}
@@ -304,15 +322,15 @@ func TestGetChainTail_HighestSequence(t *testing.T) {
 
 func TestGetChainTail_MultiChainIsolation(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	rA := makeSignedReceipt(t, kp, 7, "chain-A", nil)
-	hA, _ := receipt.HashReceipt(rA)
+	hA := mustHashReceipt(t, rA)
 	if err := s.Insert(rA, hA); err != nil {
 		t.Fatal(err)
 	}
 	rB := makeSignedReceipt(t, kp, 2, "chain-B", nil)
-	hB, _ := receipt.HashReceipt(rB)
+	hB := mustHashReceipt(t, rB)
 	if err := s.Insert(rB, hB); err != nil {
 		t.Fatal(err)
 	}
@@ -344,10 +362,10 @@ func TestGetChainTail_MultiChainIsolation(t *testing.T) {
 
 func TestQueryReceipts(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 	s.Insert(r, h)
 
 	chainID := "chain-1"
@@ -371,11 +389,11 @@ func TestQueryReceipts(t *testing.T) {
 
 func TestStats(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	for i := 1; i <= 3; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", nil)
-		h, _ := receipt.HashReceipt(r)
+		h := mustHashReceipt(t, r)
 		s.Insert(r, h)
 	}
 
@@ -393,9 +411,9 @@ func TestStats(t *testing.T) {
 
 func TestInsertDuplicateReceiptID(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 
 	if err := s.Insert(r, h); err != nil {
 		t.Fatal(err)
@@ -408,17 +426,17 @@ func TestInsertDuplicateReceiptID(t *testing.T) {
 
 func TestInsertDuplicateChainSequence(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	r1 := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h1, _ := receipt.HashReceipt(r1)
+	h1 := mustHashReceipt(t, r1)
 	if err := s.Insert(r1, h1); err != nil {
 		t.Fatal(err)
 	}
 
 	// Different receipt (new ID) but same chain_id + sequence.
 	r2 := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h2, _ := receipt.HashReceipt(r2)
+	h2 := mustHashReceipt(t, r2)
 	err := s.Insert(r2, h2)
 	if err == nil {
 		t.Fatal("expected error on duplicate chain_id + sequence")
@@ -427,7 +445,7 @@ func TestInsertDuplicateChainSequence(t *testing.T) {
 
 func TestQueryReceiptsOrdering(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	// Insert three receipts with timestamps a few seconds apart by
 	// stamping them post-Create (Create sets the Action.Timestamp to now).
@@ -452,7 +470,7 @@ func TestQueryReceiptsOrdering(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		h, _ := receipt.HashReceipt(signed)
+		h := mustHashReceipt(t, signed)
 		if err := s.Insert(signed, h); err != nil {
 			t.Fatal(err)
 		}
@@ -485,7 +503,7 @@ func TestQueryReceiptsOrdering(t *testing.T) {
 
 func TestQueryReceiptsNoDefaultLimit(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	// A small batch here proves the integration path; the real regression guard
 	// for the removed 10k cap is TestBuildQueryReceiptsSQLNoLimit in
@@ -493,7 +511,7 @@ func TestQueryReceiptsNoDefaultLimit(t *testing.T) {
 	const n = 5
 	for i := 1; i <= n; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", nil)
-		h, _ := receipt.HashReceipt(r)
+		h := mustHashReceipt(t, r)
 		if err := s.Insert(r, h); err != nil {
 			t.Fatalf("insert %d: %v", i, err)
 		}
@@ -521,7 +539,7 @@ func TestQueryReceiptsNoDefaultLimit(t *testing.T) {
 
 func TestQueryReceiptsDescSequenceTiebreaker(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	// Two receipts share the same timestamp but differ in sequence.
 	// With NewestFirst the one with the higher sequence must come first.
@@ -542,7 +560,7 @@ func TestQueryReceiptsDescSequenceTiebreaker(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		h, _ := receipt.HashReceipt(signed)
+		h := mustHashReceipt(t, signed)
 		if err := s.Insert(signed, h); err != nil {
 			t.Fatal(err)
 		}
@@ -565,7 +583,7 @@ func TestQueryReceiptsDescSequenceTiebreaker(t *testing.T) {
 
 func TestQueryReceiptsAscSequenceTiebreaker(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	sharedTS := "2024-06-01T12:00:00Z"
 	for _, seq := range []int{2, 1} { // insert in reverse to confirm ordering is by SQL not insertion
@@ -584,7 +602,7 @@ func TestQueryReceiptsAscSequenceTiebreaker(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		h, _ := receipt.HashReceipt(signed)
+		h := mustHashReceipt(t, signed)
 		if err := s.Insert(signed, h); err != nil {
 			t.Fatal(err)
 		}
@@ -607,11 +625,11 @@ func TestQueryReceiptsAscSequenceTiebreaker(t *testing.T) {
 
 func TestQueryReceiptsCombinedFilters(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	// Insert a receipt we can filter on.
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 	s.Insert(r, h)
 
 	actionType := "filesystem.file.read"
@@ -876,11 +894,11 @@ func TestOpenReadOnlyVerifiesExistingChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	var prevHash *string
 	for i := 1; i <= 3; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h := mustHashReceipt(t, r)
 		if err := rw.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}
@@ -926,9 +944,9 @@ func TestOpenReadOnlyRejectsWrites(t *testing.T) {
 	}
 	t.Cleanup(func() { ro.Close() })
 
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 	// We deliberately don't pin a specific SQLite error string here — the
 	// driver's wording around read-only rejection has shifted between
 	// modernc.org/sqlite versions, and the behaviour we actually care about
@@ -948,11 +966,11 @@ func TestOpenReadOnlyConcurrentWithWriter(t *testing.T) {
 	}
 	t.Cleanup(func() { rw.Close() })
 
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	var prevHash *string
 	for i := 1; i <= 2; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h := mustHashReceipt(t, r)
 		if err := rw.Insert(r, h); err != nil {
 			t.Fatal(err)
 		}
@@ -988,12 +1006,12 @@ func TestOpenReadOnlyRejectsMemoryAndEmpty(t *testing.T) {
 
 func TestVerifyStoredChain(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 
 	var prevHash *string
 	for i := 1; i <= 3; i++ {
 		r := makeSignedReceipt(t, kp, i, "chain-1", prevHash)
-		h, _ := receipt.HashReceipt(r)
+		h := mustHashReceipt(t, r)
 		s.Insert(r, h)
 		prevHash = &h
 	}
@@ -1016,7 +1034,7 @@ func TestInsertRaw_PreservesUnknownFields(t *testing.T) {
 	// behaviour by injecting an unknown field into the raw bytes and
 	// asserting it survives the store round-trip.
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-raw", nil)
 
 	rJSON, err := json.Marshal(r)
@@ -1057,7 +1075,10 @@ func TestInsertRaw_PreservesUnknownFields(t *testing.T) {
 	if err := s.db.QueryRow("SELECT receipt_hash FROM receipts WHERE id = ?", r.ID).Scan(&storedHash); err != nil {
 		t.Fatalf("select stored hash: %v", err)
 	}
-	want, _ := receipt.HashRawReceipt([]byte(stored))
+	want, err := receipt.HashRawReceipt([]byte(stored))
+	if err != nil {
+		t.Fatalf("hash raw receipt: %v", err)
+	}
 	if storedHash != want {
 		t.Fatalf("stored receipt_hash = %s; HashRawReceipt(stored bytes) = %s; want equal", storedHash, want)
 	}
@@ -1070,9 +1091,9 @@ func TestInsertRaw_RejectsMismatchedID(t *testing.T) {
 	// a different ID — silent corruption that is lethal at audit time.
 	// InsertRaw must refuse the insert.
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-mismatch", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 
 	err := s.InsertRaw(r, []byte(`{"id":"different","raw":"bytes"}`), h)
 	if err == nil {
@@ -1095,9 +1116,9 @@ func TestInsertRaw_AcceptsRawWithoutID(t *testing.T) {
 	// reflects r.ID and GetByID still works by struct id. This documents
 	// the boundary of validateRawReceipt's checks.
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-noid", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 
 	raw := []byte(`{"raw":"without-id-field"}`)
 	if err := s.InsertRaw(r, raw, h); err != nil {
@@ -1120,9 +1141,9 @@ func TestInsertRaw_RejectsMismatchedChainOrSequence(t *testing.T) {
 	// the UNIQUE index on the indexed columns cannot catch. InsertRaw must
 	// reject both mismatch modes.
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 7, "chain-honest", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 
 	cases := []struct {
 		name string
@@ -1160,9 +1181,9 @@ func TestInsertRaw_RejectsMismatchedChainOrSequence(t *testing.T) {
 
 func TestInsertRaw_RejectsInvalidPayloads(t *testing.T) {
 	s := setupStore(t)
-	kp, _ := receipt.GenerateKeyPair()
+	kp := mustKeyPair(t)
 	r := makeSignedReceipt(t, kp, 1, "chain-bad", nil)
-	h, _ := receipt.HashReceipt(r)
+	h := mustHashReceipt(t, r)
 
 	cases := []struct {
 		name string
