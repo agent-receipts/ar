@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump `github.com/agent-receipts/ar/sdk/go` to `v0.13.0` (PeerCredential `*uint32`, WalEmitter, AWS KMS adapter, `store.Exists`, safe socket path enforcement, idempotency_key).
 
-## [0.11.1] - 2026-05-22
+## [0.11.1] - 2026-05-23
 
 ### Dependencies
 
