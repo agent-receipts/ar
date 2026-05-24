@@ -8,9 +8,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from agent_receipts.receipt.chain import verify_chain
-from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
+from agent_receipts.receipt.hash import (
+    _strip_optional_nulls,
+    canonicalize,
+    hash_receipt,
+    sha256,
+)
 from agent_receipts.receipt.signing import generate_key_pair, verify_receipt
 from agent_receipts.receipt.types import AgentReceipt
 
@@ -144,7 +150,8 @@ class TestV020Vectors:
 
         vectors = _load_v020_vectors()
         public_key_pem = vectors["keys"]["publicKey"]
-        receipt = dict(vectors["parametersDisclosureReceipt"]["receipt"])
+        section = vectors["parametersDisclosureReceipt"]
+        receipt: dict[str, Any] = dict(section["receipt"])
 
         proof = receipt.pop("proof")
         proof_value = proof["proofValue"]
@@ -153,7 +160,18 @@ class TestV020Vectors:
         sig_b64 += "=" * ((4 - len(sig_b64) % 4) % 4)
         signature = base64.urlsafe_b64decode(sig_b64)
 
-        canonical = canonicalize(receipt).encode("utf-8")
+        # Mirror verify_receipt: strip null optional fields (ADR-0009 Rule 2)
+        # and re-insert the required-nullable previous_receipt_hash, so the
+        # canonical bytes match what the production verify path would feed
+        # into Ed25519. Without this, a future v0.2.x vector with an explicit
+        # null on any optional field would diverge silently.
+        stripped: dict[str, Any] = _strip_optional_nulls(receipt)
+        cs: dict[str, Any] = stripped.setdefault("credentialSubject", {})
+        chain: dict[str, Any] = cs.setdefault("chain", {})
+        if "previous_receipt_hash" not in chain:
+            chain["previous_receipt_hash"] = None
+
+        canonical = canonicalize(stripped).encode("utf-8")
         key = load_pem_public_key(public_key_pem.encode("ascii"))
         assert isinstance(key, Ed25519PublicKey)
         verified = True
