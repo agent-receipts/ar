@@ -155,7 +155,7 @@ func main() {
     }
     sig, err := signer.Sign([]byte(canonical))
     if err != nil {
-        log.Fatal(err) // raw AWS error: throttling / access-denied / not-found
+        log.Fatal(err) // wrapped AWS error; errors.As reaches throttling / access-denied / not-found
     }
     signed := receipt.AgentReceipt{
         Context:           unsigned.Context,
