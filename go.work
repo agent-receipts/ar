@@ -7,4 +7,5 @@ use (
 	./hook
 	./mcp-proxy
 	./sdk/go
+	./sdk/go/aws
 )
