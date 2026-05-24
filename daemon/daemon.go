@@ -31,6 +31,12 @@ type Config struct {
 	// SocketPath is the Unix-domain socket the daemon listens on.
 	SocketPath string
 
+	// UnsafeSocketPath permits a SocketPath outside the per-platform safe set
+	// (see checkSocketPath). When false (the default), Run refuses to start on
+	// an unsafe explicit override; when true, Run starts and warns periodically.
+	// Set from --unsafe-socket-path. TCP addresses are rejected regardless.
+	UnsafeSocketPath bool
+
 	// DBPath is the SQLite receipt-store path.
 	DBPath string
 
@@ -284,6 +290,25 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if err := validateConfig(&cfg); err != nil {
 		return err
+	}
+
+	// Enforce the safe-socket-location policy (issue #538) on the resolved
+	// path — default or explicit override — before binding. A TCP address or
+	// an unsafe override without --unsafe-socket-path refuses to start here;
+	// an unsafe override with the flag starts but warns on a 60s cadence for
+	// the daemon's lifetime.
+	unsafeSocket, err := checkSocketPath(cfg.SocketPath, cfg.UnsafeSocketPath)
+	if err != nil {
+		return err
+	}
+	if unsafeSocket {
+		// Bind the warning goroutine to a context cancelled when Run returns,
+		// not to the caller's ctx. A later startup error returns from Run
+		// without the caller necessarily cancelling ctx; without this the
+		// warning loop would outlive the failed start and keep logging.
+		warnCtx, cancelWarn := context.WithCancel(ctx)
+		defer cancelWarn()
+		go warnUnsafeSocketPath(warnCtx, cfg.Logger, cfg.SocketPath, unsafeSocketWarnInterval)
 	}
 
 	// Apply a restrictive process umask BEFORE opening the SQLite store so any

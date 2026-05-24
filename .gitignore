@@ -10,3 +10,6 @@ go.work.sum
 *.db
 *.db-shm
 *.db-wal
+
+# Built daemon binary (output of `go build ./cmd/agent-receipts-daemon`)
+/daemon/agent-receipts-daemon

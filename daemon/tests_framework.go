@@ -57,13 +57,13 @@ func (b *syncBuffer) String() string {
 // reader observing a closed done can read daemonErr without further
 // synchronisation.
 type DaemonFixture struct {
-	Config    Config
-	PublicKey string // PEM-encoded public key
-	cancel    func()
-	done      chan struct{} // closed when daemon Run returns
-	daemonErr error         // result of Run; read only after done is closed
-	traceBuf  *syncBuffer
-	repoRoot  string
+	Config     Config
+	PublicKey  string // PEM-encoded public key
+	cancel     func()
+	done       chan struct{} // closed when daemon Run returns
+	daemonErr  error         // result of Run; read only after done is closed
+	traceBuf   *syncBuffer
+	repoRoot   string
 	emitTSPath string
 	emitPyPath string
 }
@@ -77,9 +77,13 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 	dataDir := t.TempDir()
 
 	cfg := Config{
-		SocketPath:           filepath.Join(sockDir, "events.sock"),
-		DBPath:               filepath.Join(dataDir, "receipts.db"),
-		KeyPath:              filepath.Join(dataDir, "signing.key"),
+		SocketPath: filepath.Join(sockDir, "events.sock"),
+		DBPath:     filepath.Join(dataDir, "receipts.db"),
+		KeyPath:    filepath.Join(dataDir, "signing.key"),
+		// ShortSocketDir lives under /tmp to stay within the 104-byte
+		// AF_UNIX sun_path limit on macOS — outside the per-platform safe
+		// set, so opt into the documented escape hatch (issue #538).
+		UnsafeSocketPath:     true,
 		PublicKeyPath:        filepath.Join(dataDir, "signing.key.pub"),
 		ChainID:              "test-chain",
 		IssuerID:             "did:agent-receipts-daemon:test",

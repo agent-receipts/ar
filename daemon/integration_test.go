@@ -124,9 +124,13 @@ func startDaemon(t *testing.T) (cfg daemon.Config, pubPEM string, cancel func())
 	sockDir := sockettest.ShortSocketDir(t)
 	dataDir := t.TempDir()
 	cfg = daemon.Config{
-		SocketPath:           filepath.Join(sockDir, "events.sock"),
-		DBPath:               filepath.Join(dataDir, "receipts.db"),
-		KeyPath:              filepath.Join(dataDir, "signing.key"),
+		SocketPath: filepath.Join(sockDir, "events.sock"),
+		DBPath:     filepath.Join(dataDir, "receipts.db"),
+		KeyPath:    filepath.Join(dataDir, "signing.key"),
+		// ShortSocketDir lives under /tmp to stay within the 104-byte
+		// AF_UNIX sun_path limit on macOS — outside the per-platform safe
+		// set, so opt into the documented escape hatch (issue #538).
+		UnsafeSocketPath:     true,
 		PublicKeyPath:        filepath.Join(dataDir, "signing.key.pub"),
 		ChainID:              "it-chain",
 		IssuerID:             "did:agent-receipts-daemon:integration",
@@ -432,6 +436,7 @@ func TestShutdownWithIdleClient(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := daemon.Config{
 		SocketPath:           filepath.Join(sockDir, "events.sock"),
+		UnsafeSocketPath:     true, // /tmp ShortSocketDir is outside the safe set (issue #538)
 		DBPath:               filepath.Join(dataDir, "receipts.db"),
 		KeyPath:              filepath.Join(dataDir, "signing.key"),
 		ChainID:              "idle",
@@ -500,6 +505,7 @@ func TestResumesChainAfterRestart(t *testing.T) {
 	mkCfg := func() daemon.Config {
 		return daemon.Config{
 			SocketPath:           socketPath,
+			UnsafeSocketPath:     true, // /tmp ShortSocketDir is outside the safe set (issue #538)
 			DBPath:               dbPath,
 			KeyPath:              keyPath,
 			ChainID:              "resume-chain",
@@ -636,6 +642,7 @@ func TestVerifyCLIWithDaemonStopped(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := daemon.Config{
 		SocketPath:           filepath.Join(sockDir, "events.sock"),
+		UnsafeSocketPath:     true, // /tmp ShortSocketDir is outside the safe set (issue #538)
 		DBPath:               filepath.Join(dataDir, "receipts.db"),
 		KeyPath:              filepath.Join(dataDir, "signing.key"),
 		PublicKeyPath:        filepath.Join(dataDir, "signing.key.pub"),

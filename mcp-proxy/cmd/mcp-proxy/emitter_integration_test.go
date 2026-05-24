@@ -75,7 +75,11 @@ type testDaemonHandle struct {
 func startTestDaemon(t *testing.T, dir string) *testDaemonHandle {
 	t.Helper()
 	cfg := daemon.Config{
-		SocketPath:           filepath.Join(dir, "events.sock"),
+		SocketPath: filepath.Join(dir, "events.sock"),
+		// shortSocketDirEmitter lives under /tmp to stay within the 104-byte
+		// AF_UNIX sun_path limit on macOS — outside the daemon's per-platform
+		// safe set, so opt into the documented escape hatch (issue #538).
+		UnsafeSocketPath:     true,
 		DBPath:               filepath.Join(dir, "receipts.db"),
 		KeyPath:              filepath.Join(dir, "signing.key"),
 		PublicKeyPath:        filepath.Join(dir, "signing.key.pub"),
