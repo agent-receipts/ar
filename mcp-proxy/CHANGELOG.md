@@ -11,9 +11,33 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-24
+
+### Added
+
+- **Daemon enforces safe socket paths** ([#579](https://github.com/agent-receipts/ar/pull/579), closes [#538](https://github.com/agent-receipts/ar/issues/538)) — daemon v0.13.0 now rejects socket path overrides outside the per-platform safe set at startup (requires `--unsafe-socket-path` to override) and unconditionally rejects TCP addresses. If the proxy's `--socket` / `AGENTRECEIPTS_SOCKET` setting violates these rules, the daemon will refuse to start and the proxy will be unable to deliver receipts.
+- **`action.idempotency_key` forwarded from JSON-RPC request id** ([#565](https://github.com/agent-receipts/ar/pull/565)) — the proxy now forwards the `id` field of the wrapped JSON-RPC request as `idempotency_key` in the emitter frame. The daemon enforces a 256-byte limit. Requires daemon v0.13.0 and spec v0.4.0.
+
 ### Changed
 
-- **macOS `--socket` default moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/ar/issues/545)). The default is now `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`), inherited from the SDK's updated `emitter.DefaultSocketPath`. The previous TMPDIR-based default produced a silent receipt-loss mismatch whenever the proxy was spawned without TMPDIR (typical for MCP servers launched by GUI hosts such as Claude Desktop) while the daemon kept the per-user temp dir. Operators upgrading on macOS must restart both processes; anyone relying on TMPDIR redirection should switch to `AGENTRECEIPTS_SOCKET=…` (or pass `--socket=…` explicitly).
+- **macOS `--socket` default moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/ar/issues/545)) — the default is now `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`), inherited from the SDK's updated `emitter.DefaultSocketPath`. The previous TMPDIR-based default produced a silent receipt-loss mismatch when the proxy was spawned without TMPDIR (typical for MCP servers launched by GUI hosts such as Claude Desktop). Operators upgrading on macOS must restart both the proxy and daemon; anyone relying on TMPDIR redirection should switch to `AGENTRECEIPTS_SOCKET=…`.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.13.0`.
+- Bump `github.com/agent-receipts/ar/daemon` to `v0.13.0`.
+
+## [0.11.1] - 2026-05-23
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.12.1` (HttpEmitter + Emitter interface; changes default `--socket` path on macOS — no proxy code changes).
+
+## [0.11.0] - 2026-05-22
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.11.0` and `github.com/agent-receipts/ar/daemon` to `v0.12.0` (v0.3.0 spec migration: HPKE disclosure envelope, PeerCredential, EmitterMetadata — no proxy code changes).
 
 ## [0.10.0] - 2026-05-19
 
