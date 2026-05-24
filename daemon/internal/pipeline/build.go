@@ -622,8 +622,10 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	}
 
 	// Respect the caller's deadline before touching shared state.
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("deadline exceeded before terminator: %w", err)
+	// Check wall clock too: timer goroutines can lag, making ctx.Err() alone
+	// unreliable for sub-millisecond deadlines.
+	if dl, ok := ctx.Deadline(); (ok && time.Now().After(dl)) || ctx.Err() != nil {
+		return fmt.Errorf("deadline exceeded before terminator: %w", context.DeadlineExceeded)
 	}
 
 	alloc := p.State.Allocate()
@@ -656,8 +658,8 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	}
 
 	// Check deadline again before the store write.
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("deadline exceeded before store write: %w", err)
+	if dl, ok := ctx.Deadline(); (ok && time.Now().After(dl)) || ctx.Err() != nil {
+		return fmt.Errorf("deadline exceeded before store write: %w", context.DeadlineExceeded)
 	}
 
 	if err := p.Store.Insert(signed, hash); err != nil {

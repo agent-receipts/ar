@@ -142,6 +142,8 @@ On SIGTERM or SIGINT the daemon performs a three-phase shutdown:
 
 The total deadline for step 3 is `--shutdown-deadline` (default `200ms`). If the deadline expires before the terminator is written, the daemon logs a `level=warn` line (`terminator: deadline expired, chain … will be classified as 'unknown' by verifier`) and exits cleanly — the verifier's `unknown` classification (spec §7.3.3) is the documented fallback for chains whose terminator could not be written in time. Store I/O or signing failures during terminator emission are surfaced as a non-zero exit code.
 
+Once a terminal receipt has been written, the daemon will refuse to start again against the same `--chain-id` and `--db`; use a new `--chain-id` or a fresh `--db` for subsequent runs.
+
 **Crash case (SIGKILL / OOM kill):** the daemon cannot write anything. Chains left without a terminal receipt are classified as `unknown` by the verifier. This is by design — spec §7.3.3 documents `unknown` as the recourse for chains the daemon never sees again.
 
 **TTL semantics (v1):** there is no idle-chain TTL in v1. The daemon emits `interrupted` for every open chain at shutdown time, regardless of how long ago the last receipt was written. Over-emitting `interrupted` for a long-idle chain is the lesser failure mode compared to designing TTL semantics under shutdown pressure. Follow-up issue tracked separately.
