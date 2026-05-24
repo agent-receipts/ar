@@ -192,6 +192,26 @@ func main() {
 > belongs in core, not this adapter (which must not modify core per #575), and
 > is tracked as a follow-up.
 
+## Limitations
+
+- **Use a key ARN (or key ID) for production signing, not an alias.**
+  `GetPublicKey` caches the public key on first use, but `Sign` always targets
+  the live `keyID`. If `keyID` is an *alias* and the alias is repointed to a
+  different key during the signer's lifetime, signatures are produced under the
+  new key while the cached/published public key is the old one — so receipts
+  fail verification. This fails closed (verifiers reject; no forged receipt is
+  accepted), but a key ARN avoids the divergence entirely. Aliases remain fine
+  for dev and for resolving the key once at startup.
+
+- **Receipts must canonicalize to ≤ 4096 bytes.** `kms:Sign` with
+  `MessageType=RAW` caps the message at 4096 bytes, and pure Ed25519
+  (`ED25519_SHA_512`) cannot use the `DIGEST` pre-hash path. A receipt whose
+  canonical form exceeds 4 KB — typically from large `parameters_disclosure`
+  envelopes or long prompt previews — cannot be signed by this adapter, even
+  though the core SDK signs arbitrary-length bytes locally. The call fails
+  loudly with an AWS error (the audit gap is visible, never silent); keep
+  disclosed payloads hashed rather than inlined to stay under the limit.
+
 ## Integration test
 
 `integration_test.go` exercises a real KMS key and is **skipped unless**

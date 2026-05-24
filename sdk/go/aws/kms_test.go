@@ -158,6 +158,29 @@ func TestGetPublicKeyCachedAfterFirstCall(t *testing.T) {
 	}
 }
 
+// Mutating the slice returned by GetPublicKey must not corrupt the cached key
+// other callers see.
+func TestGetPublicKeyReturnsCopy(t *testing.T) {
+	m := newMockKMS(t)
+	s := newTestSigner(t, m)
+
+	first, err := s.GetPublicKey()
+	if err != nil {
+		t.Fatalf("first GetPublicKey: %v", err)
+	}
+	for i := range first {
+		first[i] ^= 0xff // scribble over the returned slice
+	}
+
+	second, err := s.GetPublicKey()
+	if err != nil {
+		t.Fatalf("second GetPublicKey: %v", err)
+	}
+	if string(second) != string(m.pub) {
+		t.Fatal("cache was corrupted by mutation of a previously returned slice")
+	}
+}
+
 func TestGetPublicKeyErrorPassThrough(t *testing.T) {
 	sentinel := errors.New("NotFoundException: key does not exist")
 	m := newMockKMS(t)

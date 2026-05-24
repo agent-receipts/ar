@@ -11,6 +11,7 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/x509"
@@ -152,12 +153,15 @@ func (s *KMSSigner) Sign(message []byte) ([]byte, error) {
 // SPKI that KMS returns, and caches the raw bytes. Subsequent calls return the
 // cached value without contacting AWS. A failed fetch is not cached, so a
 // later call retries. AWS SDK errors are returned verbatim.
+//
+// Each call returns a fresh copy of the cached key, so a caller mutating the
+// returned slice cannot corrupt the cache shared with other callers.
 func (s *KMSSigner) GetPublicKey() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.pubKey != nil {
-		return s.pubKey, nil
+		return bytes.Clone(s.pubKey), nil
 	}
 
 	ctx, cancel := s.requestContext()
@@ -180,7 +184,7 @@ func (s *KMSSigner) GetPublicKey() ([]byte, error) {
 	}
 
 	s.pubKey = edPub
-	return s.pubKey, nil
+	return bytes.Clone(s.pubKey), nil
 }
 
 // requestContext derives the context for a single AWS request from the
