@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -41,6 +42,10 @@ const SupportedFrameVersion = "1"
 // events_dropped receipt. The "agent_receipts" namespace identifies the daemon
 // as the source rather than a user-facing tool channel.
 const actionTypeEventsDropped = "agent_receipts.events_dropped"
+
+// actionTypeChainInterrupted is the action type for the daemon-synthesised
+// terminal receipt emitted on SIGTERM/SIGINT when open chains exist.
+const actionTypeChainInterrupted = "agent_receipts.chain_interrupted"
 
 // EmitterFrame is the JSON payload emitters send. Mirrors ADR-0010 §"Schema
 // split". Fields the emitter does not populate are zero/empty; the daemon
@@ -586,6 +591,82 @@ func buildPeerCred(peer socket.PeerCred) *receipt.PeerCredential {
 }
 
 func ptrUint32(v uint32) *uint32 { return &v }
+
+// EmitTerminator emits an interrupted-chain terminal receipt for the current
+// chain if the chain has at least one receipt and is not already terminated.
+// It is called once, synchronously, after the IPC listener has shut down and
+// all in-flight frames have been processed — the chain state mutex is free.
+//
+// ctx should carry a short deadline (~200ms). A non-nil return is informational
+// and logged by the caller; the verifier's "unknown" classification is the
+// documented fallback for chains that never receive a terminator.
+func (p *Pipeline) EmitTerminator(ctx context.Context) error {
+	// Fast path: no receipts in this chain (fresh store or first-ever run).
+	if p.State.NextSeq() == 1 {
+		return nil
+	}
+
+	// Check whether the chain's tail is already a terminal receipt. This
+	// covers the cross-restart case where a previous daemon run emitted an
+	// interrupted terminator that is now the tail.
+	chainID := p.State.ChainID()
+	tail, err := p.Store.GetChainTailReceipt(chainID)
+	if err != nil {
+		return fmt.Errorf("check chain tail: %w", err)
+	}
+	if tail == nil {
+		return nil
+	}
+	if tail.CredentialSubject.Chain.Terminal != nil && *tail.CredentialSubject.Chain.Terminal {
+		return nil
+	}
+
+	// Respect the caller's deadline before touching shared state.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("deadline exceeded before terminator: %w", err)
+	}
+
+	alloc := p.State.Allocate()
+	defer alloc.Rollback()
+
+	now := p.Now().Format(time.RFC3339)
+	signed, hash, err := p.signAndHash(receipt.CreateInput{
+		Issuer: receipt.Issuer{
+			ID:   p.IssuerID,
+			Type: "AgentReceiptsDaemon",
+		},
+		Principal: receipt.Principal{ID: "did:user:unknown"},
+		Action: receipt.Action{
+			Type:      actionTypeChainInterrupted,
+			ToolName:  "chain_interrupted",
+			RiskLevel: receipt.RiskLow,
+			Timestamp: now,
+		},
+		Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
+		Chain: receipt.Chain{
+			Sequence:            int(alloc.Sequence),
+			PreviousReceiptHash: alloc.PrevHash,
+			ChainID:             chainID,
+		},
+		Terminal:          true,
+		TerminationStatus: receipt.ChainStatusInterrupted,
+	}, now)
+	if err != nil {
+		return fmt.Errorf("build terminator: %w", err)
+	}
+
+	// Check deadline again before the store write.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("deadline exceeded before store write: %w", err)
+	}
+
+	if err := p.Store.Insert(signed, hash); err != nil {
+		return fmt.Errorf("insert terminator: %w", err)
+	}
+
+	alloc.Commit(hash)
+	return nil
+}
 
 // signAndHash builds, signs, and hashes one receipt. It is the common tail
 // shared by buildAndSign and buildAndSignDropReceipt — both construct a

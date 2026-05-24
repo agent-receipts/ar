@@ -67,6 +67,7 @@ agent-receipts-daemon \
 | `--issuer-id` | `AGENTRECEIPTS_ISSUER_ID` | `did:agent-receipts-daemon:local` |
 | `--public-key` | `AGENTRECEIPTS_PUBLIC_KEY` | `<--key>.pub` |
 | `--verification-method` | `AGENTRECEIPTS_VERIFICATION_METHOD` | `did:agent-receipts-daemon:local#k1` |
+| `--shutdown-deadline` | — | `200ms` — time budget for emitting interrupted-chain terminators on SIGTERM/SIGINT (see [Graceful shutdown](#graceful-shutdown)). |
 
 The signing key file must be a PKCS#8-encoded Ed25519 private key (the format
 `receipt.GenerateKeyPair()` in `sdk/go` produces) with permissions no looser
@@ -130,6 +131,20 @@ ownership/grouping is a packaging concern (Homebrew / launchd / systemd) and
 not something the daemon assigns at runtime. If the directory already exists
 the daemon does not modify its mode, so operator-managed permissions are
 preserved.
+
+## Graceful shutdown
+
+On SIGTERM or SIGINT the daemon performs a three-phase shutdown:
+
+1. **Stop accepting** — the IPC socket listener closes immediately. New emitter connections are refused from this point.
+2. **Drain** — any in-flight frames that arrived before the socket closed are processed to completion. No new receipts can enter the chain after this step.
+3. **Terminate** — for each chain that has at least one receipt and no terminal receipt yet, the daemon emits a terminal receipt with `chain.terminal: true` and `chain.status: "interrupted"`. This receipt is signed with the daemon's key and persisted to the store before the process exits, so verifiers can later classify the chain as `interrupted` rather than `unknown`.
+
+The total deadline for step 3 is `--shutdown-deadline` (default `200ms`). If the deadline expires before the terminator is written, the daemon logs a warning and exits cleanly — the verifier's `unknown` classification (spec §7.3.3) is the documented fallback for chains the daemon never terminates. Per-chain timeouts are silent by design.
+
+**Crash case (SIGKILL / OOM kill):** the daemon cannot write anything. Chains left without a terminal receipt are classified as `unknown` by the verifier. This is by design — spec §7.3.3 documents `unknown` as the recourse for chains the daemon never sees again.
+
+**TTL semantics (v1):** there is no idle-chain TTL in v1. The daemon emits `interrupted` for every open chain at shutdown time, regardless of how long ago the last receipt was written. Over-emitting `interrupted` for a long-idle chain is the lesser failure mode compared to designing TTL semantics under shutdown pressure. Follow-up issue tracked separately.
 
 ## Read interface: `agent-receipts verify`
 

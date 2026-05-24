@@ -45,6 +45,9 @@ type ReceiptStore interface {
 	GetByID(id string) (*receipt.AgentReceipt, error)
 	GetChain(chainID string) ([]receipt.AgentReceipt, error)
 	GetChainTail(chainID string) (sequence int64, receiptHash string, found bool, err error)
+	// GetChainTailReceipt returns the highest-sequence receipt for chainID.
+	// Returns (nil, nil) when the chain has no receipts.
+	GetChainTailReceipt(chainID string) (*receipt.AgentReceipt, error)
 	QueryReceipts(q Query) ([]receipt.AgentReceipt, error)
 	Stats() (Stats, error)
 	VerifyStoredChain(chainID string, publicKeyPEM string) (receipt.ChainVerification, error)
@@ -444,6 +447,27 @@ func (s *Store) GetChainTail(chainID string) (sequence int64, receiptHash string
 		return 0, "", false, fmt.Errorf("get chain tail (chain_id=%s): %w", chainID, scanErr)
 	}
 	return sequence, receiptHash, true, nil
+}
+
+// GetChainTailReceipt returns the highest-sequence receipt for chainID.
+// Returns (nil, nil) when the chain has no receipts.
+func (s *Store) GetChainTailReceipt(chainID string) (*receipt.AgentReceipt, error) {
+	var rJSON string
+	err := s.db.QueryRow(
+		"SELECT receipt_json FROM receipts WHERE chain_id = ? ORDER BY sequence DESC LIMIT 1",
+		chainID,
+	).Scan(&rJSON)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get chain tail receipt (chain_id=%s): %w", chainID, err)
+	}
+	var r receipt.AgentReceipt
+	if err := json.Unmarshal([]byte(rJSON), &r); err != nil {
+		return nil, fmt.Errorf("corrupt receipt at chain tail (chain_id=%s): %w", chainID, err)
+	}
+	return &r, nil
 }
 
 // QueryReceipts retrieves receipts matching the given filters.

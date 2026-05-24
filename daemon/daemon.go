@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"time"
 
 	"github.com/agent-receipts/ar/daemon/internal/chain"
 	"github.com/agent-receipts/ar/daemon/internal/keysource"
@@ -83,6 +84,10 @@ type Config struct {
 	//     - name: my-secret
 	//       pattern: 'MY_SECRET_[A-Z0-9]+'
 	RedactPatternsPath string
+
+	// ShutdownDeadline is the total time budget for emitting interrupted-chain
+	// terminators on SIGTERM/SIGINT. Defaults to 200ms when zero.
+	ShutdownDeadline time.Duration
 }
 
 // DefaultSocketPath returns the per-OS default socket path. Phase 1 resolves
@@ -389,8 +394,27 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := ln.Serve(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
+
+	// The listener is closed and all in-flight handlers have exited.
+	// Emit interrupted-chain terminators for any open chains before the
+	// deferred st.Close() commits the WAL. Use a fresh context — the caller's
+	// ctx is already cancelled.
+	terminateCtx, terminateCancel := context.WithTimeout(context.Background(), cfg.shutdownDeadline())
+	defer terminateCancel()
+	if err := pp.EmitTerminator(terminateCtx); err != nil {
+		cfg.Logger.Printf("terminator: %v (chain %s will be classified as 'unknown' by verifier)", err, cfg.ChainID)
+	}
+
 	cfg.Logger.Printf("agent-receipts-daemon shutdown complete")
 	return nil
+}
+
+// shutdownDeadline returns the configured shutdown deadline, or 200ms if unset.
+func (cfg Config) shutdownDeadline() time.Duration {
+	if cfg.ShutdownDeadline > 0 {
+		return cfg.ShutdownDeadline
+	}
+	return 200 * time.Millisecond
 }
 
 // allowedDBPerm is the maximum permission set the daemon will allow on the

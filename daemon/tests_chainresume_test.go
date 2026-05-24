@@ -200,10 +200,11 @@ func TestResumesWithConcurrentEmittersOnRestart(t *testing.T) {
 		}
 	}
 
-	// Wait for all 20 receipts to land
-	receipts2 := fix2.WaitForReceiptCount(t, 20, 10*time.Second)
-	if len(receipts2) != 20 {
-		t.Fatalf("second run: expected 20 receipts, got %d\ntrace:\n%s",
+	// Wait for all 21 receipts to land (5 from first run + 1 interrupted terminator
+	// emitted on first-run shutdown + 15 from second run).
+	receipts2 := fix2.WaitForReceiptCount(t, 21, 10*time.Second)
+	if len(receipts2) != 21 {
+		t.Fatalf("second run: expected 21 receipts, got %d\ntrace:\n%s",
 			len(receipts2), fix2.Trace())
 	}
 

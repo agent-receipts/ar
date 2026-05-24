@@ -572,13 +572,17 @@ func TestResumesChainAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tailSeq != 3 {
-		t.Fatalf("after first run, tail seq = %d, want 3", tailSeq)
+	// Shutdown emits an interrupted terminator, so tail is at seq=4 (3 frames + 1 terminator).
+	if tailSeq != 4 {
+		t.Fatalf("after first run, tail seq = %d, want 4", tailSeq)
 	}
 
-	runOnce(t, 3, 6)
+	// Second run: 3 more frames land at seq=5..7. Wait for all 7 (4 + 3) before
+	// cancelling so the terminator at seq=8 is written on a fully-settled chain.
+	runOnce(t, 3, 7)
 
-	receipts := waitForReceiptCount(t, dbPath, "resume-chain", 6, 5*time.Second)
+	// Both terminators (seq=4 and seq=8) are in the store; wait for all 8.
+	receipts := waitForReceiptCount(t, dbPath, "resume-chain", 8, 5*time.Second)
 	for i, r := range receipts {
 		if r.CredentialSubject.Chain.Sequence != i+1 {
 			t.Errorf("receipt %d: seq = %d, want %d", i, r.CredentialSubject.Chain.Sequence, i+1)
@@ -712,7 +716,8 @@ func TestVerifyCLIWithDaemonStopped(t *testing.T) {
 	if code != verifycli.ExitOK {
 		t.Fatalf("verify with daemon stopped: exit = %d, want %d (stdout=%q stderr=%q)", code, verifycli.ExitOK, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), fmt.Sprintf("Chain %s: VALID (%d receipts)", cfg.ChainID, frames)) {
+	// Shutdown emits an interrupted terminator, so the chain has frames+1 receipts.
+	if !strings.Contains(stdout.String(), fmt.Sprintf("Chain %s: VALID (%d receipts)", cfg.ChainID, frames+1)) {
 		t.Errorf("stdout = %q, expected VALID + count line", stdout.String())
 	}
 }

@@ -64,6 +64,7 @@ func main() {
 	flag.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
 	flag.BoolVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "No-op as of v0.3.0 envelope migration (ADR-0012 amendment); plaintext-in-body shape removed. Encrypted disclosure pending in #280. (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
 	flag.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults) (env: AGENTRECEIPTS_REDACT_PATTERNS)")
+	flag.DurationVar(&cfg.ShutdownDeadline, "shutdown-deadline", 0, "Time budget for emitting interrupted-chain terminators on SIGTERM/SIGINT (default: 200ms)")
 	flag.Parse()
 
 	if *showVersion {
