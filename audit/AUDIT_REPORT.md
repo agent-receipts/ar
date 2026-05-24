@@ -56,10 +56,12 @@
   section still shows `from agent_receipts import Emitter; Emitter(socket_path=…)`
   (now broken) and still says *"Python SDK (v0.8.0a2) … `pip install --pre`"*. It
   should say `DaemonEmitter` and a current stable version.
-- **[HIGH] PyPI publish lags the release.** sdk/py v0.10.0 is tagged/CHANGELOG'd
-  in the repo (#588), but `pip install --upgrade agent-receipts` still serves
-  **0.9.0**. A fresh adopter today gets the old build, with READMEs/docs that
-  don't match either version. Confirm the `publish-py` workflow actually ran.
+- **[RESOLVED] PyPI publish now live.** Initially v0.10.0 was tagged in the repo
+  (#588) but PyPI still served 0.9.0; this was published shortly after and
+  verified — a fresh `pip install agent-receipts` now resolves to **0.10.0** by
+  default. (The earlier 0.9.0 reading was a stale local pip cache, not PyPI.)
+  Note this *sharpens* the doc findings below: every adopter now gets the build
+  on which the documented `Emitter(socket_path=…)` call raises.
 - **[MED] `runtime_checkable` Protocol false-positive footgun.** The new `Emitter`
   Protocol is `runtime_checkable`, so `isinstance(DaemonEmitter(), Emitter)` is
   `True` — but their `emit()` signatures differ (`emit(*, channel, tool_name,
@@ -76,9 +78,9 @@
 
 The WAL gap I flagged hardest (#8) is genuinely addressed for remote delivery —
 good. But the release **regressed the first-run experience**: the one symbol an
-adopter reaches for (`Emitter`) changed meaning, every emitter example in the
-docs is now broken, and PyPI still serves the prior version. Net first-run is
-*worse* than last week until the docs + PyPI publish catch up.
+adopter reaches for (`Emitter`) changed meaning and every emitter example in the
+docs is now broken. With 0.10.0 now live on PyPI, that breakage is live-facing —
+the docs must be corrected to `DaemonEmitter` before the daemon path is usable.
 
 ---
 
