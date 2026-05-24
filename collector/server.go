@@ -166,8 +166,13 @@ func (h *receiptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Reject trailing data after the receipt. A second JSON value in the
 	// body almost always indicates a client bug; better to surface it than
-	// silently store the first one.
-	if dec.More() {
+	// silently store the first one. Decoder.More() is unreliable at the
+	// top level (it returns false when the next non-whitespace byte is `]`
+	// or `}`, so `{...} ]` would slip past), so attempt a second Decode and
+	// require io.EOF — anything else (a parsed value, a syntax error,
+	// stray bytes) means the body wasn't a single JSON object.
+	var trailing json.RawMessage
+	if err := dec.Decode(&trailing); err != io.EOF {
 		writeError(w, http.StatusBadRequest, "request body must contain exactly one JSON object")
 		return
 	}
