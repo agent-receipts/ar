@@ -1,12 +1,9 @@
 name: Publish SDK (TypeScript) to npm
 
 on:
-  release:
-    # `prereleased` covers alpha/beta tags (e.g. sdk-ts-v0.9.0-alpha.1);
-    # `published` covers stable releases. GitHub fires only one of the two
-    # per release creation depending on the prerelease flag, so we need
-    # both listed to publish every release shape we tag.
-    types: [published, prereleased]
+  # Manual escape hatch — dispatch from `main` publishes whatever version
+  # package.json currently has. Normal releases go through release-sdk-ts.yml
+  # which publishes inline (see #521 for why the two-step pipeline was broken).
   workflow_dispatch:
 
 permissions:
@@ -19,18 +16,13 @@ defaults:
 
 jobs:
   publish:
-    # Tag-triggered releases: any sdk-ts-v* tag. Manual dispatch: only from
-    # `main` — dispatch from a feature branch could publish unreviewed code
-    # to npm under whatever package.json version that branch has.
-    if: |
-      startsWith(github.ref_name, 'sdk-ts-v') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    # Only allow dispatch from main — dispatching from a feature branch could
+    # publish unreviewed code to npm.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
 
       - run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
@@ -42,30 +34,12 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - run: pnpm install --frozen-lockfile
-
-      - name: Verify release tag matches package.json version
-        if: github.event_name == 'release'
-        run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION="${GITHUB_REF_NAME#sdk-ts-v}"
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Release tag sdk-ts-v${TAG_VERSION} does not match package.json version ${PKG_VERSION}"
-            exit 1
-          fi
-
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
 
       # Pre-release versions go to a non-default dist-tag so they don't
-      # clobber `latest` for users on the stable line. Two-phase logic:
-      #   1. Strip SemVer build metadata (after '+'); if a '-' remains
-      #      anywhere in the core version, this is a pre-release.
-      #   2. Extract a leading [A-Za-z]+ identifier from the pre-release
-      #      portion (lowercased). Falls back to `prerelease` if the
-      #      identifier is purely numeric or otherwise unparseable —
-      #      never falls through to `latest`, which would defeat the
-      #      whole purpose.
+      # clobber `latest` for users on the stable line.
       - name: Determine npm dist-tag
         id: dist_tag
         shell: bash
