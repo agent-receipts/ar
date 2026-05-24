@@ -302,7 +302,13 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	if unsafeSocket {
-		go warnUnsafeSocketPath(ctx, cfg.Logger, cfg.SocketPath, unsafeSocketWarnInterval)
+		// Bind the warning goroutine to a context cancelled when Run returns,
+		// not to the caller's ctx. A later startup error returns from Run
+		// without the caller necessarily cancelling ctx; without this the
+		// warning loop would outlive the failed start and keep logging.
+		warnCtx, cancelWarn := context.WithCancel(ctx)
+		defer cancelWarn()
+		go warnUnsafeSocketPath(warnCtx, cfg.Logger, cfg.SocketPath, unsafeSocketWarnInterval)
 	}
 
 	// Apply a restrictive process umask BEFORE opening the SQLite store so any

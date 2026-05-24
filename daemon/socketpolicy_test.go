@@ -40,10 +40,14 @@ func (s *policyLogBuffer) Reset() {
 }
 
 // setupSocketEnv pins every environment variable that allowedSocketRoots and
-// DefaultSocketPath consult to test-controlled temp dirs, none of which is
-// /tmp, so the safe set is deterministic across hosts. It also clears
-// AGENTRECEIPTS_SOCKET so DefaultSocketPath resolves the platform default.
-// Returns the per-platform directory a safe explicit override may live under.
+// DefaultSocketPath consult to unique, test-controlled temp dirs, so the safe
+// set is deterministic and host-independent rather than relying on whatever
+// $XDG_RUNTIME_DIR / $TMPDIR the runner happens to set. (On Unix t.TempDir()
+// itself usually lives under /tmp, but each is a distinct subdirectory, so the
+// unsafeRoot path below — a different /tmp subdir — is never inside a safe
+// root.) It also clears AGENTRECEIPTS_SOCKET so DefaultSocketPath resolves the
+// platform default. Returns the per-platform directory a safe explicit override
+// may live under.
 func setupSocketEnv(t *testing.T) (safeRoot string) {
 	t.Helper()
 	t.Setenv("AGENTRECEIPTS_SOCKET", "")
@@ -67,8 +71,9 @@ func setupSocketEnv(t *testing.T) (safeRoot string) {
 func unsafeRoot(t *testing.T) string {
 	t.Helper()
 	// /tmp is shared, world-traversable, and swept — the canonical unsafe
-	// location from the issue's originating incident. setupSocketEnv steers
-	// every safe root away from /tmp, so this is reliably rejected.
+	// location from the issue's originating incident. setupSocketEnv pins the
+	// safe roots to distinct temp subdirectories, so this sibling /tmp path is
+	// never inside one and is reliably rejected.
 	return filepath.Join("/tmp", "agent-receipts-538-"+t.Name())
 }
 
