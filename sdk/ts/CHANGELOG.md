@@ -24,7 +24,7 @@ Implements spec v0.4.0 (`action.idempotency_key`), the ADR-0020 emitter interfac
 
 - **`Emitter` interface** ([#548](https://github.com/agent-receipts/ar/pull/548)) — new top-level interface accepted by all emitter consumers. Takes a signed `AgentReceipt` and returns `Promise<void>`. Implement it to supply custom delivery backends.
 - **`HttpEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — posts receipts to an HTTP endpoint. Implements `Emitter`.
-- **`CompositeEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — fans out to multiple `Emitter` instances in parallel. Implements `Emitter`.
+- **`CompositeEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — fans out to multiple `Emitter` instances sequentially; always attempts every child and collects failures. Implements `Emitter`.
 - **`BufferingEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — accumulates receipts and flushes in configurable batches. Implements `Emitter`.
 - **`InMemoryEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — holds receipts in memory; useful for testing. Implements `Emitter`.
 - **`WalEmitter`** ([#567](https://github.com/agent-receipts/ar/pull/567)) — wraps any `Emitter` and records each receipt in a write-ahead log before delivery, providing at-least-once delivery guarantees. Supports file-backed (durable) and in-memory backends (ADR-0020).
