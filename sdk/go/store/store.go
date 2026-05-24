@@ -446,6 +446,27 @@ func (s *Store) GetChainTail(chainID string) (sequence int64, receiptHash string
 	return sequence, receiptHash, true, nil
 }
 
+// GetChainTailReceipt returns the highest-sequence receipt for chainID.
+// Returns (nil, nil) when the chain has no receipts.
+func (s *Store) GetChainTailReceipt(chainID string) (*receipt.AgentReceipt, error) {
+	var rJSON string
+	err := s.db.QueryRow(
+		"SELECT receipt_json FROM receipts WHERE chain_id = ? ORDER BY sequence DESC LIMIT 1",
+		chainID,
+	).Scan(&rJSON)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get chain tail receipt (chain_id=%s): %w", chainID, err)
+	}
+	var r receipt.AgentReceipt
+	if err := json.Unmarshal([]byte(rJSON), &r); err != nil {
+		return nil, fmt.Errorf("corrupt receipt at chain tail (chain_id=%s): %w", chainID, err)
+	}
+	return &r, nil
+}
+
 // QueryReceipts retrieves receipts matching the given filters.
 func (s *Store) QueryReceipts(q Query) ([]receipt.AgentReceipt, error) {
 	query, args := buildQueryReceiptsSQL(q)

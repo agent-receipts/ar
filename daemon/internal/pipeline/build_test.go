@@ -1074,9 +1074,9 @@ func TestProcess_ParameterDisclosureFlagIsNoOp(t *testing.T) {
 	}
 }
 
-// failOnNthInsert wraps a ReceiptStore and returns an error on the Nth Insert.
+// failOnNthInsert wraps a pipelineStore and returns an error on the Nth Insert.
 type failOnNthInsert struct {
-	store.ReceiptStore
+	pipelineStore
 	n       int
 	callNum int
 }
@@ -1086,7 +1086,7 @@ func (f *failOnNthInsert) Insert(r receipt.AgentReceipt, hash string) error {
 	if f.callNum == f.n {
 		return fmt.Errorf("simulated store insert failure on call %d", f.n)
 	}
-	return f.ReceiptStore.Insert(r, hash)
+	return f.pipelineStore.Insert(r, hash)
 }
 
 // TestProcess_DropCountSyntheticFailureLiveReceiptPersists verifies that when
@@ -1098,7 +1098,7 @@ func TestProcess_DropCountSyntheticFailureLiveReceiptPersists(t *testing.T) {
 	ks := newTestKeySource(t)
 	underlying := newTestStore(t)
 	// Fail only the first Insert (the synthetic receipt); the second (live) must succeed.
-	st := &failOnNthInsert{ReceiptStore: underlying, n: 1}
+	st := &failOnNthInsert{pipelineStore: underlying, n: 1}
 
 	state := chain.New("chain-1")
 	p := New(state, ks, st, "did:agent-receipts-daemon:test")

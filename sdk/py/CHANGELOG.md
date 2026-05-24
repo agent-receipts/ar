@@ -11,9 +11,37 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-24
+
+### Breaking Changes
+
+- **`PeerCredential.uid` and `PeerCredential.gid` are now `Optional[int]`** ([#580](https://github.com/agent-receipts/ar/pull/580)). Previously typed as `int` (defaulting to `0` when absent), they are now `int | None` to align with the Go SDK's `*uint32`. This disambiguates UID/GID 0 (root) from "platform does not report UIDs" — callers that relied on a zero default must update to explicit `None` checks.
+
+### Added
+
+- **`Emitter` protocol and implementations** ([#548](https://github.com/agent-receipts/ar/pull/548)). New `agent_receipts.emitters` package (ADR-0020 step 1) exposing:
+  - `Emitter` — a `runtime_checkable` Protocol for signed-receipt delivery.
+  - `HttpEmitter` — synchronous and fire-and-forget HTTPS delivery with exponential-backoff retry, configurable auth (`BearerAuth`, `ApiKeyAuth`, `MtlsAuth`, `NoAuth`), and `cancel_event` support for graceful shutdown.
+  - `CompositeEmitter` — fan-out to multiple emitters; always attempts every child, collects failures into `CompositeEmitError`.
+  - `BufferingEmitter` — batches receipts and flushes on size or explicit call; raises `BufferingFlushError` for partial failures.
+  - `InMemoryEmitter` — in-process accumulator for testing.
+- **`WalEmitter` (WAL for at-least-once delivery)** ([#567](https://github.com/agent-receipts/ar/pull/567)). Wraps any `Emitter`; records each receipt in a write-ahead log before delivery and clears the entry on acknowledgement. Two backends:
+  - `FileWal` — durable file-backed WAL for long-lived compute; atomic writes (fsync + rename), survives process restart.
+  - `MemoryWal` — in-process WAL for ephemeral compute (Lambda, Cloud Run, Fargate).
+  - `WalEmitter.replay()` drains a crash backlog at startup; `WalEmitter.flush(deadline_ms)` drains on graceful shutdown.
+- **`Action.idempotency_key`** (`Optional[str]`, min length 1) ([#565](https://github.com/agent-receipts/ar/pull/565)). Stable identifier for a logical operation so auditors can distinguish legitimate retries from duplicate emissions. Spec v0.4.0 field (see spec §7.3.6 and ADR-0019 §S5). `RECEIPT_VERSION` constant updated to `"0.4.0"`.
+
 ### Changed
 
 - **`default_socket_path()` macOS default is now HOME-based** ([#545](https://github.com/agent-receipts/ar/issues/545)). macOS resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. TMPDIR is not inherited by GUI-spawned Python processes (e.g., MCP servers launched by Claude Desktop), which broke the daemon ↔ emitter handshake silently. The Go and TypeScript SDKs ship the same resolution so every emitter and the daemon agree on a single path per user. `AGENTRECEIPTS_SOCKET` continues to take precedence; users who relied on TMPDIR redirection should switch to it.
+
+### Fixed
+
+- **`EmitterMetadata()` with no arguments now raises `ValueError`** ([#509](https://github.com/agent-receipts/ar/issues/509)). All-`None` construction was silently accepted; the empty object serialised to `{}` and perturbed the receipt hash. The model now validates that at least one field is set.
+
+### Tests
+
+- Strip null optionals in the v0.2.0 cross-language verify path ([#584](https://github.com/agent-receipts/ar/pull/584)). Test-only; no API change.
 
 ## [0.9.0] - 2026-05-22
 

@@ -68,9 +68,27 @@ type DaemonFixture struct {
 	emitPyPath string
 }
 
-// StartDaemon starts a test daemon and returns a fixture with cleanup.
-// The fixture will be cleaned up automatically via t.Cleanup.
+// StartDaemon starts a test daemon with a graceful shutdown deadline and
+// returns a fixture with cleanup. The fixture will be cleaned up automatically
+// via t.Cleanup.
 func StartDaemon(t *testing.T) *DaemonFixture {
+	t.Helper()
+	return startDaemonFixture(t, 0)
+}
+
+// StartDaemonCrash starts a daemon that will not emit a terminal receipt on
+// shutdown — the 1 ns ShutdownDeadline expires before EmitTerminator can
+// write, leaving the chain open for resumption. Use this when testing chain
+// resumption after an unclean shutdown / crash.
+func StartDaemonCrash(t *testing.T) *DaemonFixture {
+	t.Helper()
+	return startDaemonFixture(t, time.Nanosecond)
+}
+
+// startDaemonFixture creates a fresh daemon with its own temp directories and
+// a generated signing key. shutdownDeadline is passed directly to Config; 0
+// uses the daemon's built-in default (200 ms), 1 ns simulates a crash.
+func startDaemonFixture(t *testing.T, shutdownDeadline time.Duration) *DaemonFixture {
 	t.Helper()
 
 	sockDir := sockettest.ShortSocketDir(t)
@@ -89,6 +107,7 @@ func StartDaemon(t *testing.T) *DaemonFixture {
 		IssuerID:             "did:agent-receipts-daemon:test",
 		VerificationMethodID: "did:agent-receipts-daemon:test#k1",
 		Logger:               log.New(io.Discard, "", 0),
+		ShutdownDeadline:     shutdownDeadline,
 	}
 
 	// Generate test key

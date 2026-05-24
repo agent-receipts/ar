@@ -101,6 +101,7 @@ func startDaemon(t *testing.T, dir string) *daemonHandle {
 		IssuerID:             "did:agent-receipts-daemon:emitter-test",
 		VerificationMethodID: "did:agent-receipts-daemon:emitter-test#k1",
 		Logger:               log.New(io.Discard, "", 0),
+		ShutdownDeadline:     time.Nanosecond, // crash mode: no terminator on shutdown, so d2 can resume the same chain
 	}
 	if _, err := os.Stat(cfg.KeyPath); os.IsNotExist(err) {
 		writeTestKey(t, cfg.KeyPath)
@@ -421,13 +422,13 @@ func TestEmit_ReconnectAfterDaemonRestart(t *testing.T) {
 		receipts, getErr := s.GetChain(d2.cfg.ChainID)
 		s.Close()
 		if getErr == nil && len(receipts) >= 3 {
-			// Filter out daemon-synthesised events_dropped receipts: a
-			// positive drop counter on the first post-restart frame causes
-			// the daemon to prepend a synthetic receipt before the live one,
-			// so receipts[2:] may start with it.
+			// Filter out daemon-synthesised receipts. d1 uses crash mode
+			// (ShutdownDeadline=1ns) so chain_interrupted never actually
+			// appears here; the filter is defensive for events_dropped.
 			var live []receipt.AgentReceipt
 			for _, r := range receipts[2:] {
-				if r.CredentialSubject.Action.Type != "agent_receipts.events_dropped" {
+				if r.CredentialSubject.Action.Type != "agent_receipts.events_dropped" &&
+					r.CredentialSubject.Action.Type != "agent_receipts.chain_interrupted" {
 					live = append(live, r)
 				}
 			}

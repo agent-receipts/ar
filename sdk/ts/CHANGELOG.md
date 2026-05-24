@@ -11,8 +11,28 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-24
+
+Implements spec v0.4.0 (`action.idempotency_key`), the ADR-0020 emitter interface redesign (WAL, HTTP, composite, in-memory), and aligns `peer_credential` uid/gid types with the Go SDK. Two breaking changes.
+
+### Breaking Changes
+
+- **`Emitter` class renamed to `DaemonEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)). The existing `Emitter` class (Unix-socket fire-and-forget emitter) is now exported as `DaemonEmitter`. The name `Emitter` is now the new interface (see Added). Update all import sites: `import { DaemonEmitter } from "@agnt-rcpt/sdk-ts"`.
+- **`peer_credential.uid` and `peer_credential.gid` are now `number | undefined`** ([#580](https://github.com/agent-receipts/ar/pull/580)). Previously typed as `number`, they are now optional to align with the Go SDK's `*uint32` — UID=0 (root) is a valid identity and must be distinguishable from "no UID concept on this platform". Code that assumed these fields are always present must add a presence check.
+
+### Added
+
+- **`Emitter` interface** ([#548](https://github.com/agent-receipts/ar/pull/548)) — new top-level interface accepted by all emitter consumers. Takes a signed `AgentReceipt` and returns `Promise<void>`. Implement it to supply custom delivery backends.
+- **`HttpEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — posts receipts to an HTTP endpoint. Implements `Emitter`.
+- **`CompositeEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — fans out to multiple `Emitter` instances sequentially; always attempts every child and collects failures. Implements `Emitter`.
+- **`BufferingEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — accumulates receipts and flushes in configurable batches. Implements `Emitter`.
+- **`InMemoryEmitter`** ([#548](https://github.com/agent-receipts/ar/pull/548)) — holds receipts in memory; useful for testing. Implements `Emitter`.
+- **`WalEmitter`** ([#567](https://github.com/agent-receipts/ar/pull/567)) — wraps any `Emitter` and records each receipt in a write-ahead log before delivery, providing at-least-once delivery guarantees. Supports file-backed (durable) and in-memory backends (ADR-0020).
+- **`Action.idempotency_key`** ([#565](https://github.com/agent-receipts/ar/pull/565)) — optional string field for deduplication. Chain verifiers surface duplicate values as non-fatal warnings. Part of spec v0.4.0.
+
 ### Changed
 
+- **`VERSION` constant bumped to `"0.4.0"`** ([#565](https://github.com/agent-receipts/ar/pull/565)) — receipts emitted via `createReceipt()` now stamp the v0.4.0 schema label.
 - **`defaultSocketPath()` macOS default is now HOME-based** ([#545](https://github.com/agent-receipts/ar/issues/545)). macOS resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. TMPDIR is not inherited by GUI-spawned Node processes (e.g., MCP servers launched by Claude Desktop), which broke the daemon ↔ emitter handshake silently. The Go and Python SDKs ship the same resolution so every emitter and the daemon agree on a single path per user. AGENTRECEIPTS_SOCKET continues to take precedence; users who relied on TMPDIR redirection should switch to it.
 
 ## [0.9.0] - 2026-05-22

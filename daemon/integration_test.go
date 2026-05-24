@@ -516,6 +516,7 @@ func TestResumesChainAfterRestart(t *testing.T) {
 			IssuerID:             "did:agent-receipts-daemon:integration",
 			VerificationMethodID: "did:agent-receipts-daemon:integration#k1",
 			Logger:               log.New(io.Discard, "", 0),
+			ShutdownDeadline:     time.Nanosecond, // crash mode — no terminator written between runs
 		}
 	}
 
@@ -572,12 +573,15 @@ func TestResumesChainAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No terminator (crash mode), so tail stays at seq=3.
 	if tailSeq != 3 {
 		t.Fatalf("after first run, tail seq = %d, want 3", tailSeq)
 	}
 
+	// Second run: 3 more frames land at seq=4..6. No terminator between runs, so 3+3=6.
 	runOnce(t, 3, 6)
 
+	// Wait for all 6 receipts.
 	receipts := waitForReceiptCount(t, dbPath, "resume-chain", 6, 5*time.Second)
 	for i, r := range receipts {
 		if r.CredentialSubject.Chain.Sequence != i+1 {
@@ -712,7 +716,8 @@ func TestVerifyCLIWithDaemonStopped(t *testing.T) {
 	if code != verifycli.ExitOK {
 		t.Fatalf("verify with daemon stopped: exit = %d, want %d (stdout=%q stderr=%q)", code, verifycli.ExitOK, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), fmt.Sprintf("Chain %s: VALID (%d receipts)", cfg.ChainID, frames)) {
+	// Shutdown emits an interrupted terminator, so the chain has frames+1 receipts.
+	if !strings.Contains(stdout.String(), fmt.Sprintf("Chain %s: VALID (%d receipts)", cfg.ChainID, frames+1)) {
 		t.Errorf("stdout = %q, expected VALID + count line", stdout.String())
 	}
 }
