@@ -62,14 +62,26 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	// exactly one, otherwise require the operator to disambiguate.
 	chainID := fs.String("chain-id", envLookup("AGENTRECEIPTS_CHAIN_ID"), "Chain id to read from (env: AGENTRECEIPTS_CHAIN_ID); required only when the store holds more than one chain")
 	asJSON := fs.Bool("json", false, "Output the raw receipt JSON instead of human-readable text")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return ExitOK
+	// flag.Parse stops at the first non-flag token, so a positional <seq>
+	// placed before a flag (e.g. the documented `show 42 --json`) would hide
+	// that flag. Parse in a loop, peeling off one positional per pass, so the
+	// <seq> argument and flags may appear in any order.
+	var rest []string
+	remaining := args
+	for {
+		if err := fs.Parse(remaining); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return ExitOK
+			}
+			return ExitUsageError
 		}
-		return ExitUsageError
+		if fs.NArg() == 0 {
+			break
+		}
+		rest = append(rest, fs.Arg(0))
+		remaining = fs.Args()[1:]
 	}
 
-	rest := fs.Args()
 	if len(rest) == 0 {
 		fmt.Fprintln(stderr, "agent-receipts show: missing <seq> argument (the chain sequence number, 1-indexed)")
 		return ExitUsageError

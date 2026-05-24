@@ -130,6 +130,28 @@ func TestRun_JSONOutputIsSingleReceipt(t *testing.T) {
 	}
 }
 
+func TestRun_FlagsAfterSeqAreParsed(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := fixtureDB(t, dir, 3, "chain-a", "chain-b")
+
+	// Flags placed after the positional <seq> (the documented ordering) must
+	// still be honoured: --json controls output and --chain-id disambiguates.
+	code, stdout, stderr := runOnce(t, []string{"--db", dbPath, "3", "--json", "--chain-id", "chain-b"})
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (stderr=%s)", code, ExitOK, stderr)
+	}
+	var r receipt.AgentReceipt
+	if err := json.Unmarshal([]byte(stdout), &r); err != nil {
+		t.Fatalf("expected JSON output (--json after <seq> not parsed?): %v (stdout=%q)", err, stdout)
+	}
+	if r.CredentialSubject.Chain.Sequence != 3 {
+		t.Errorf("got sequence %d, want 3", r.CredentialSubject.Chain.Sequence)
+	}
+	if r.CredentialSubject.Chain.ChainID != "chain-b" {
+		t.Errorf("got chain %q, want chain-b (--chain-id after <seq> not parsed?)", r.CredentialSubject.Chain.ChainID)
+	}
+}
+
 func TestRun_ReceiptNotFound(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := fixtureDB(t, dir, 2, "chain-1")
