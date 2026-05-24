@@ -16,6 +16,7 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 ### Breaking Changes
 
 - **`PeerCredential.uid` and `PeerCredential.gid` are now `Optional[int]`** ([#580](https://github.com/agent-receipts/ar/pull/580)). Previously typed as `int` (defaulting to `0` when absent), they are now `int | None` to align with the Go SDK's `*uint32`. This disambiguates UID/GID 0 (root) from "platform does not report UIDs" — callers that relied on a zero default must update to explicit `None` checks.
+- **Top-level `Emitter` is now the delivery Protocol, not the daemon socket client** ([#548](https://github.com/agent-receipts/ar/pull/548)). The pre-0.10 Unix-socket emitter is now `DaemonEmitter`; `agent_receipts.Emitter` is a `runtime_checkable` Protocol and cannot be instantiated. Code that did `from agent_receipts import Emitter` / `Emitter(socket_path=...)` now raises `TypeError: Protocols cannot be instantiated`. Migration: use `from agent_receipts import DaemonEmitter` and `DaemonEmitter(socket_path=...)`.
 
 ### Added
 

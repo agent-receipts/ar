@@ -125,11 +125,24 @@ pip install agent-receipts
 ```
 
 ```python
-from agent_receipts import Receipt
+from agent_receipts import (
+    create_receipt, generate_key_pair, sign_receipt,
+    CreateReceiptInput, Issuer, Principal, Outcome, Chain,
+)
+from agent_receipts.receipt.create import ActionInput
 
-receipt = Receipt.create(action="tool_call", payload=payload)
-signed = receipt.sign(private_key)
+keys = generate_key_pair()
+unsigned = create_receipt(CreateReceiptInput(
+    issuer=Issuer(id="did:agent:my-agent"),
+    principal=Principal(id="did:user:alice"),
+    action=ActionInput(type="filesystem.file.read", risk_level="low"),
+    outcome=Outcome(status="success"),
+    chain=Chain(sequence=1, previous_receipt_hash=None, chain_id="chain_1"),
+))
+signed = sign_receipt(unsigned, keys.private_key, "did:agent:my-agent#key-1")
 ```
+
+See the [Python SDK README](sdk/py/README.md) for the full quick start and daemon delivery.
 
 ## Contributing
 

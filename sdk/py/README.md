@@ -7,7 +7,7 @@
 [![PyPI](https://img.shields.io/pypi/v/agent-receipts)](https://pypi.org/project/agent-receipts/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![CI](https://github.com/agent-receipts/sdk-py/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-receipts/sdk-py/actions/workflows/ci.yml)
+[![CI](https://github.com/agent-receipts/ar/actions/workflows/sdk-py.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/sdk-py.yml)
 
 ---
 
@@ -48,6 +48,12 @@ pip install agent-receipts
 ```
 
 ## Quick start
+
+> **In-process signing (below) is for standalone and testing use** — the calling
+> process holds the private key. For production, an out-of-process
+> `agent-receipts-daemon` owns the key and the chain, and SDKs send events to it.
+> See [Delivering receipts](#delivering-receipts) and the
+> [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
 ### Create and sign a receipt
 
@@ -116,6 +122,35 @@ if not result.valid:
 The standardized action taxonomy (action types and risk levels) is defined in the
 [protocol specification](https://github.com/agent-receipts/spec/tree/main/spec/taxonomy).
 Taxonomy classification will be added in a future milestone (M3).
+
+## Delivering receipts
+
+The functions above sign receipts in-process. To deliver them to a collector, the
+SDK provides emitters:
+
+- **`DaemonEmitter`** — fire-and-forget delivery to a local `agent-receipts-daemon`
+  over a Unix socket. The daemon owns the signing key and the receipt chain.
+
+  ```python
+  from agent_receipts import DaemonEmitter
+
+  with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
+      e.emit(
+          channel="my-app",
+          tool_name="filesystem.file.read",
+          decision="allowed",
+      )
+  ```
+
+- **`agent_receipts.emitters`** — delivery to a remote collector: `HttpEmitter`
+  (retrying HTTPS), `CompositeEmitter` (fan-out), `BufferingEmitter` (batching),
+  and `WalEmitter` (write-ahead log for at-least-once delivery, with `replay()`
+  to drain a backlog after the collector recovers).
+
+`DaemonEmitter` is fire-and-forget: if the daemon is unreachable the event is
+dropped (logged at `DEBUG`), so start the daemon before your app. See the
+[Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/) for
+running the daemon and verifying the chain.
 
 ## What is an Agent Receipt?
 
