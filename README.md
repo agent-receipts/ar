@@ -99,10 +99,17 @@ go get github.com/agent-receipts/ar/sdk/go
 ```
 
 ```go
-import receipt "github.com/agent-receipts/ar/sdk/go/receipt"
+import "github.com/agent-receipts/ar/sdk/go/receipt"
 
-r, _ := receipt.New(receipt.WithAction("tool_call", payload))
-signed, _ := r.Sign(privateKey)
+keys, _ := receipt.GenerateKeyPair()
+unsigned := receipt.Create(receipt.CreateInput{
+    Issuer:    receipt.Issuer{ID: "did:agent:my-agent"},
+    Principal: receipt.Principal{ID: "did:user:alice"},
+    Action:    receipt.Action{Type: "filesystem.file.read", RiskLevel: receipt.RiskLow},
+    Outcome:   receipt.Outcome{Status: receipt.StatusSuccess},
+    Chain:     receipt.Chain{Sequence: 1, ChainID: "chain_1"},
+})
+signed, _ := receipt.Sign(unsigned, keys.PrivateKey, "did:agent:my-agent#key-1")
 ```
 
 ### TypeScript
@@ -112,10 +119,21 @@ npm install @agnt-rcpt/sdk-ts
 ```
 
 ```typescript
-import { Receipt } from "@agnt-rcpt/sdk-ts";
+import {
+  createReceipt,
+  generateKeyPair,
+  signReceipt,
+} from "@agnt-rcpt/sdk-ts";
 
-const receipt = await Receipt.create({ action: "tool_call", payload });
-const signed = await receipt.sign(privateKey);
+const keys = generateKeyPair();
+const unsigned = createReceipt({
+  issuer: { id: "did:agent:my-agent" },
+  principal: { id: "did:user:alice" },
+  action: { type: "filesystem.file.read", risk_level: "low" },
+  outcome: { status: "success" },
+  chain: { sequence: 1, previous_receipt_hash: null, chain_id: "chain_1" },
+});
+const signed = signReceipt(unsigned, keys.privateKey, "did:agent:my-agent#key-1");
 ```
 
 ### Python
