@@ -10,6 +10,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
@@ -78,6 +79,13 @@ func newTestSigner(t *testing.T, m *mockKMS) *KMSSigner {
 func TestNewKMSSignerEmptyKeyID(t *testing.T) {
 	if _, err := NewKMSSigner(context.Background(), "", WithClient(newMockKMS(t))); err == nil {
 		t.Fatal("expected error for empty keyID, got nil")
+	}
+}
+
+func TestNewKMSSignerRejectsNegativeTimeout(t *testing.T) {
+	_, err := NewKMSSigner(context.Background(), testKeyID, WithClient(newMockKMS(t)), WithTimeout(-time.Second))
+	if err == nil {
+		t.Fatal("expected error for negative timeout, got nil")
 	}
 }
 

@@ -94,9 +94,9 @@ func WithTimeout(d time.Duration) Option {
 // ctx governs credential resolution here and, for the signer's lifetime, every
 // subsequent Sign and GetPublicKey request. Pass a long-lived context (for
 // example context.Background()) for a long-lived signer and use WithTimeout to
-// bound individual requests. Credentials come from the ambient AWS SDK
-// credential chain (instance role, IRSA, environment, shared profile); this
-// adapter never accepts static credentials.
+// bound individual requests. Credentials come from the AWS SDK's default
+// credential provider chain (instance role, IRSA, environment variables,
+// shared profile); the adapter exposes no API for passing credentials directly.
 func NewKMSSigner(ctx context.Context, keyID string, opts ...Option) (*KMSSigner, error) {
 	if keyID == "" {
 		return nil, errors.New("kms signer: keyID must not be empty")
@@ -105,6 +105,9 @@ func NewKMSSigner(ctx context.Context, keyID string, opts ...Option) (*KMSSigner
 	var o options
 	for _, opt := range opts {
 		opt(&o)
+	}
+	if o.timeout < 0 {
+		return nil, fmt.Errorf("kms signer: timeout must not be negative, got %s", o.timeout)
 	}
 
 	client := o.client
@@ -183,6 +186,9 @@ func (s *KMSSigner) GetPublicKey() ([]byte, error) {
 	edPub, ok := pub.(ed25519.PublicKey)
 	if !ok {
 		return nil, fmt.Errorf("kms signer: key %s is not Ed25519 (got %T); use an ECC_NIST_EDWARDS25519 KMS key", s.keyID, pub)
+	}
+	if len(edPub) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("kms signer: key %s returned a %d-byte public key, want %d", s.keyID, len(edPub), ed25519.PublicKeySize)
 	}
 
 	s.pubKey = edPub

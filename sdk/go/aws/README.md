@@ -22,9 +22,9 @@ PKCS#11 is overkill.
 go get github.com/agent-receipts/ar/sdk/go/aws
 ```
 
-Requires Go 1.26+. Authentication uses the ambient AWS SDK credential chain
-(instance role, IRSA, environment, shared profile) — the adapter never accepts
-static credentials.
+Requires Go 1.26+. Authentication uses the AWS SDK's default credential
+provider chain (instance role, IRSA, environment variables, shared profile);
+the adapter exposes no API for passing credentials directly.
 
 ## Provisioning an Ed25519 KMS key
 
