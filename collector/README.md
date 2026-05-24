@@ -53,10 +53,17 @@ Structural validation only. The collector returns 400 when:
   `credentialSubject.action.type`, or `proof.proofValue`
 - The body contains more than one JSON object
 
-Unknown JSON fields are accepted and persisted verbatim. ADR-0020 makes the
-collector a forward-compat sink: a future SDK shipping a new field MUST NOT
-require every collector to upgrade first. Anything that parses and has the
-four minimal fields above is accepted regardless of signature validity.
+This list is the deliberate minimum, not an oversight. Full JSON-schema
+conformance, signature verification, taxonomy correctness, and chain
+linkage are the auditor's responsibility — not the collector's. The
+collector's contract under ADR-0020 is "store what arrived, idempotently";
+anything stricter would couple SDK upgrades to collector upgrades and
+defeat the forward-compat-sink design.
+
+Unknown JSON fields are accepted and persisted verbatim. A future SDK
+shipping a new field MUST NOT require every collector to upgrade first.
+Anything that parses and has the four minimal fields above is accepted
+regardless of signature validity.
 
 Wire bytes are stored verbatim, not a re-marshal of the Go struct, so an
 auditor can later re-canonicalise and verify the agent's signature against

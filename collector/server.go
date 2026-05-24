@@ -156,8 +156,12 @@ func (h *receiptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ar receipt.AgentReceipt
 	dec := json.NewDecoder(bytes.NewReader(rawBody))
 	if err := dec.Decode(&ar); err != nil {
+		// encoding/json's error text leaks internal Go struct field names
+		// and types ("cannot unmarshal X into Go struct field
+		// AgentReceipt.foo of type Y"), so the wire body stays generic;
+		// the detailed error is preserved in the structured log.
 		h.log.Warn("receipt rejected: malformed json", slog.Any("err", err))
-		writeError(w, http.StatusBadRequest, "malformed receipt: invalid JSON")
+		writeError(w, http.StatusBadRequest, "malformed receipt")
 		return
 	}
 	// Reject trailing data after the receipt. A second JSON value in the

@@ -353,6 +353,22 @@ func (s *Store) GetByID(id string) (*receipt.AgentReceipt, error) {
 	return &r, nil
 }
 
+// Exists reports whether a receipt with the given id is present without
+// loading or unmarshalling the receipt body. Hot-path callers that only need
+// a presence check (duplicate detection on insert, /healthz reachability
+// probes) should prefer this over GetByID, which pays the full JSON decode.
+func (s *Store) Exists(id string) (bool, error) {
+	var one int
+	err := s.db.QueryRow("SELECT 1 FROM receipts WHERE id = ? LIMIT 1", id).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("exists (id=%s): %w", id, err)
+	}
+	return true, nil
+}
+
 // GetChain retrieves all receipts in a chain, ordered by sequence.
 func (s *Store) GetChain(chainID string) ([]receipt.AgentReceipt, error) {
 	rows, err := s.db.Query(

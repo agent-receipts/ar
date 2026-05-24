@@ -68,6 +68,45 @@ func TestGetByIDNotFound(t *testing.T) {
 	}
 }
 
+func TestExists(t *testing.T) {
+	s := setupStore(t)
+	kp, _ := receipt.GenerateKeyPair()
+	r := makeSignedReceipt(t, kp, 1, "chain-1", nil)
+	h, _ := receipt.HashReceipt(r)
+	if err := s.Insert(r, h); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := s.Exists(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Error("expected Exists to report present receipt as true")
+	}
+
+	ok, err = s.Exists("urn:never:inserted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("expected Exists to report absent receipt as false")
+	}
+}
+
+func TestExistsAfterClose(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if _, err := s.Exists("anything"); err == nil {
+		t.Error("expected Exists to surface an error on a closed store")
+	}
+}
+
 func TestGetChain(t *testing.T) {
 	s := setupStore(t)
 	kp, _ := receipt.GenerateKeyPair()
