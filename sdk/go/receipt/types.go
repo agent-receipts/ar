@@ -90,15 +90,16 @@ type ActionTarget struct {
 // receipt.
 //
 // Field widths follow POSIX: PID is int32 (signed pid_t, -1 is a valid
-// sentinel); UID/GID are uint32 (unsigned uid_t/gid_t). UID, GID, and ExePath
-// are POSIX-only or best-effort and use omitempty so non-POSIX daemons can
-// omit them.
+// sentinel); UID/GID are *uint32 (pointer so that uid=0 / gid=0 — the root
+// identity — serialise as `"uid":0` rather than absent). A nil pointer means
+// the platform has no UID/GID concept (e.g. Windows); ExePath uses omitempty
+// for the same reason.
 type PeerCredential struct {
-	Platform string `json:"platform"`
-	PID      int32  `json:"pid"`
-	UID      uint32 `json:"uid,omitempty"`
-	GID      uint32 `json:"gid,omitempty"`
-	ExePath  string `json:"exe_path,omitempty"`
+	Platform string  `json:"platform"`
+	PID      int32   `json:"pid"`
+	UID      *uint32 `json:"uid,omitempty"`
+	GID      *uint32 `json:"gid,omitempty"`
+	ExePath  string  `json:"exe_path,omitempty"`
 }
 
 // EmitterMetadata holds daemon-observed emitter-side metadata (ADR-0010).

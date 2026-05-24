@@ -415,6 +415,7 @@ type v030Vectors struct {
 	Keys           keysSection                  `json:"keys"`
 	Envelope       envelopeReceiptSection       `json:"parametersDisclosureEnvelopeReceipt"`
 	DaemonAttested daemonAttestedReceiptSection `json:"peerCredentialEmitterMetadataReceipt"`
+	RootCred       daemonAttestedReceiptSection `json:"peerCredentialRootReceipt"`
 }
 
 type envelopeReceiptSection struct {
@@ -525,6 +526,45 @@ func generateV030Vectors(keys keysSection) error {
 		return fmt.Errorf("daemon-attested receipt: %w", err)
 	}
 
+	// --- peer_credential root receipt (uid=0, gid=0) ---
+	// Exercises the *uint32 fix for issue #511: root process identity (UID 0)
+	// must serialise as `"uid":0` in all three SDKs, not be silently dropped by
+	// omitempty.
+	rootUnsigned := map[string]any{
+		"@context":     []any{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"},
+		"id":           "urn:receipt:030e0030-0000-4030-a030-000000000003",
+		"type":         []any{"VerifiableCredential", "AgentReceipt"},
+		"version":      "0.3.0",
+		"issuer":       map[string]any{"id": "did:agent:test"},
+		"issuanceDate": fixedTimestamp,
+		"credentialSubject": map[string]any{
+			"principal": map[string]any{"id": "did:user:test"},
+			"action": map[string]any{
+				"id":         "act_030e0030-0000-4030-a030-000000000003",
+				"type":       "system.command.execute",
+				"risk_level": "high",
+				"peer_credential": map[string]any{
+					"platform": "linux",
+					"pid":      1,
+					"uid":      0,
+					"gid":      0,
+					"exe_path": "/sbin/init",
+				},
+				"timestamp": fixedTimestamp,
+			},
+			"outcome": map[string]any{"status": "success"},
+			"chain": map[string]any{
+				"sequence":              1,
+				"previous_receipt_hash": nil,
+				"chain_id":              "chain_v030_root_test",
+			},
+		},
+	}
+	rootSigned, rootHash, err := signAndHashMap(rootUnsigned, keys, fixedTimestamp)
+	if err != nil {
+		return fmt.Errorf("root peer-cred receipt: %w", err)
+	}
+
 	out := v030Vectors{
 		Comment: "Cross-SDK v0.3.0 test vectors: pins (a) the HPKE envelope shape of action.parameters_disclosure (ADR-0012 amendment 2026-05-18, spec PR #496) and (b) the daemon-attested action.peer_credential / action.emitter_metadata fields (ADR-0010). All three SDKs MUST verify the signatures and reproduce expectedReceiptHash byte-for-byte. Envelope bytes come from spec/test-vectors/disclosure-envelope/vectors.json vector-1 (RFC 9180 §A.1.1 ikmE encrypting to RFC 7748 §6.1 Alice).",
 		Version: "0.3.0",
@@ -540,6 +580,12 @@ func generateV030Vectors(keys keysSection) error {
 			Description:         "Signed v0.3.0 receipt exercising the daemon-attested typed fields: action.peer_credential (linux POSIX peer metadata) and action.emitter_metadata.drop_count (synthetic events_dropped semantics per ADR-0010).",
 			Receipt:             daemonSigned,
 			ExpectedReceiptHash: daemonHash,
+			ExpectedValid:       true,
+		},
+		RootCred: daemonAttestedReceiptSection{
+			Description:         "Signed v0.3.0 receipt with peer_credential.uid=0 and gid=0 (root). Pins that the zero value is present on the wire (`\"uid\":0`) and not silently dropped by omitempty — fixes issue #511.",
+			Receipt:             rootSigned,
+			ExpectedReceiptHash: rootHash,
 			ExpectedValid:       true,
 		},
 	}

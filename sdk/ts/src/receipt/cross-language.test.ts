@@ -121,6 +121,7 @@ interface V030Vectors {
 	keys: { publicKey: string; privateKey: string };
 	parametersDisclosureEnvelopeReceipt: V030VectorEntry;
 	peerCredentialEmitterMetadataReceipt: V030VectorEntry;
+	peerCredentialRootReceipt: V030VectorEntry;
 }
 
 function loadV030Vectors(): V030Vectors {
@@ -366,6 +367,20 @@ describe("cross-language: v0.3.0 vectors", () => {
 				v.peerCredentialEmitterMetadataReceipt.receipt,
 				v.keys.publicKey,
 			),
+		).toBe(true);
+	});
+
+	it("peer_credential root receipt (uid=0) hash matches pin", () => {
+		const v = loadV030Vectors();
+		expect(hashReceipt(v.peerCredentialRootReceipt.receipt)).toBe(
+			v.peerCredentialRootReceipt.expectedReceiptHash,
+		);
+	});
+
+	it("peer_credential root receipt (uid=0) verifies with shared key", () => {
+		const v = loadV030Vectors();
+		expect(
+			verifyReceipt(v.peerCredentialRootReceipt.receipt, v.keys.publicKey),
 		).toBe(true);
 	});
 });

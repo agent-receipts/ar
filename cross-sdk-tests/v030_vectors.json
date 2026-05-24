@@ -120,5 +120,59 @@
     },
     "expectedReceiptHash": "sha256:fa9a68dd07b63999ab27252b7da0e9fa7d004ef385ba80c3bc43ff8cc4d53420",
     "expectedValid": true
+  },
+  "peerCredentialRootReceipt": {
+    "description": "Signed v0.3.0 receipt with peer_credential.uid=0 and gid=0 (root). Pins that the zero value is present on the wire (`\"uid\":0`) and not silently dropped by omitempty — fixes issue #511.",
+    "receipt": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://agentreceipts.ai/context/v1"
+      ],
+      "credentialSubject": {
+        "action": {
+          "id": "act_030e0030-0000-4030-a030-000000000003",
+          "peer_credential": {
+            "exe_path": "/sbin/init",
+            "gid": 0,
+            "pid": 1,
+            "platform": "linux",
+            "uid": 0
+          },
+          "risk_level": "high",
+          "timestamp": "2026-05-21T00:00:00Z",
+          "type": "system.command.execute"
+        },
+        "chain": {
+          "chain_id": "chain_v030_root_test",
+          "previous_receipt_hash": null,
+          "sequence": 1
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "principal": {
+          "id": "did:user:test"
+        }
+      },
+      "id": "urn:receipt:030e0030-0000-4030-a030-000000000003",
+      "issuanceDate": "2026-05-21T00:00:00Z",
+      "issuer": {
+        "id": "did:agent:test"
+      },
+      "proof": {
+        "created": "2026-05-21T00:00:00Z",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "ugcXVEWlRGvNuxDRMJxqaTGeK05e-PhMdA2FUnNyEFfMF20jNvW65FOqWbKvqcyE2pPFpfz_OsEHAY9SLTkQUAg",
+        "type": "Ed25519Signature2020",
+        "verificationMethod": "did:agent:test#key-1"
+      },
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.3.0"
+    },
+    "expectedReceiptHash": "sha256:cf09160414fdea640fbc1350c9b469b4649de5d2d074d31db1975f2c4def69bb",
+    "expectedValid": true
   }
 }

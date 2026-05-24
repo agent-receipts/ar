@@ -318,9 +318,13 @@ func TestPeerCredCaptured(t *testing.T) {
 	if pc.PID != wantPID {
 		t.Errorf("peer_credential.pid = %d, want %d (OS-attested pid of test process)", pc.PID, wantPID)
 	}
-	wantUID := uint32(os.Getuid())
-	if pc.UID != wantUID {
-		t.Errorf("peer_credential.uid = %d, want %d", pc.UID, wantUID)
+	wantUID := uint32(os.Geteuid())
+	if pc.UID == nil || *pc.UID != wantUID {
+		t.Errorf("peer_credential.uid = %v, want %d", pc.UID, wantUID)
+	}
+	wantGID := uint32(os.Getegid())
+	if pc.GID == nil || *pc.GID != wantGID {
+		t.Errorf("peer_credential.gid = %v, want %d", pc.GID, wantGID)
 	}
 
 	switch pc.Platform {
