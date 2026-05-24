@@ -196,9 +196,14 @@ func pathWithin(target, root string) bool {
 // than only loopback variants, keeping checkSocketPath's "TCP rejected
 // unconditionally" contract honest.
 //
-// A Unix path is anchored by a path separator and short-circuits before the
-// host:port branch, and a real daemon socket is always an absolute path, so
-// this cannot misflag a legitimate configuration.
+// A Unix path containing a path separator short-circuits before the host:port
+// branch. The only Unix path that could reach that branch is a bare relative
+// filename, with no separator, that happens to be host:port-shaped with a
+// numeric port (e.g. "foo:9000"). That is not a real daemon socket
+// configuration — sockets are configured as absolute paths — so treating such
+// a value as TCP is acceptable rather than a misflag of a legitimate config.
+// (validateConfig does not enforce absoluteness; this is a statement about how
+// the daemon is configured in practice, not an invariant.)
 func looksLikeTCPAddress(s string) bool {
 	lower := strings.ToLower(s)
 	if strings.HasPrefix(lower, "tcp://") || strings.HasPrefix(lower, "tcp4://") || strings.HasPrefix(lower, "tcp6://") {
