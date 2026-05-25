@@ -31,6 +31,12 @@ go get github.com/agent-receipts/sdk-go
 
 ## Quick start
 
+> **Not for production.** This pattern keeps the signing key inside the agent
+> process. Anyone with code execution in the agent can forge receipts. For real
+> deployments, use the
+> [daemon-mediated path](https://agentreceipts.ai/getting-started/daemon-setup/),
+> where the daemon owns the key and your app only sends events over a socket.
+
 ```go
 package main
 

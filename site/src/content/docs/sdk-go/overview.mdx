@@ -23,6 +23,10 @@ The Go SDK provides tools for creating, signing, and verifying Agent Receipts in
 
 ## Quick example
 
+:::caution[Not for production]
+This pattern keeps the signing key inside the agent process. Anyone with code execution in the agent can forge receipts. For real deployments, use the [daemon-mediated path](/getting-started/daemon-setup/), where the daemon owns the key and your app only sends events over a socket.
+:::
+
 ```go
 package main
 

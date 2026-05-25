@@ -49,14 +49,15 @@ pip install agent-receipts
 
 ## Quick start
 
-> **In-process signing (below) keeps the private key in the calling process.**
-> For the strongest key isolation, run an out-of-process `agent-receipts-daemon`
-> that owns the key and the chain while your app only sends tool-call events to
-> it. If you sign client-side, deliver the signed receipts with `HttpEmitter`
-> (optionally wrapped in `WalEmitter` for at-least-once delivery — requires
-> `HttpEmitter` in its default `"sync"` mode, not `"fire-and-forget"`).
-> See [Delivering receipts](#delivering-receipts) and the
-> [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
+> **Not for production.** The in-process signing below keeps the signing key
+> inside the agent process. Anyone with code execution in the agent can forge
+> receipts. For real deployments, use the daemon-mediated path: run an
+> out-of-process `agent-receipts-daemon` that owns the key and the chain while
+> your app only sends tool-call events to it. If you sign client-side, deliver
+> the signed receipts with `HttpEmitter` (optionally wrapped in `WalEmitter` for
+> at-least-once delivery — requires `HttpEmitter` in its default `"sync"` mode,
+> not `"fire-and-forget"`). See [Delivering receipts](#delivering-receipts) and
+> the [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
 ### Create and sign a receipt
 
