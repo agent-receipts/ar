@@ -267,6 +267,41 @@
           "@type": "xsd:string"
         }
       }
+    },
+
+    "keyRotation": {
+      "@id": "ar:keyRotation",
+      "@context": {
+        "@protected": true,
+        "event_type": {
+          "@id": "ar:rotation_event_type",
+          "@type": "xsd:string"
+        },
+        "new_public_key": {
+          "@id": "ar:new_public_key",
+          "@type": "xsd:string"
+        },
+        "old_key_fingerprint": {
+          "@id": "ar:old_key_fingerprint",
+          "@type": "xsd:string"
+        },
+        "new_key_fingerprint": {
+          "@id": "ar:new_key_fingerprint",
+          "@type": "xsd:string"
+        },
+        "old_algorithm": {
+          "@id": "ar:old_algorithm",
+          "@type": "xsd:string"
+        },
+        "new_algorithm": {
+          "@id": "ar:new_algorithm",
+          "@type": "xsd:string"
+        },
+        "signed_with": {
+          "@id": "ar:rotation_signed_with",
+          "@type": "xsd:string"
+        }
+      }
     }
   }
 }
