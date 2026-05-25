@@ -1,8 +1,8 @@
-# Agent Receipt Protocol — Specification v0.1
+# Agent Receipt Protocol — Specification v0.4.0
 
 > **Status:** Draft
-> **Version:** 0.1.0
-> **Date:** 31 March 2026
+> **Version:** 0.4.0
+> **Date:** 2026-05-23
 > **License:** MIT
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
