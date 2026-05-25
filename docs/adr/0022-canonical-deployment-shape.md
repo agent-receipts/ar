@@ -70,9 +70,9 @@ Adding a startup warning when in-process signing is used outside a tutorial cont
 
 Filed as separate issues, blocked on the PR that merges this ADR. Each is labeled `adr-followup`.
 
-- Rewrite site Quick Start (`getting-started/quick-start.mdx`) to drive against the daemon, with TypeScript / Python / Go sections matching the corrected READMEs.
-- Audit all README and site `.mdx` surfaces for in-process signing snippets without the "Not for production" note; add the note where missing.
-- Reposition the Go SDK README's collector-leading examples to lead with the daemon path; collector example moves to an "Enterprise / multi-host" section.
+- Rewrite site Quick Start (`getting-started/quick-start.mdx`) to drive against the daemon, with TypeScript / Python / Go sections matching the corrected READMEs. (#616)
+- Audit all README and site `.mdx` surfaces for in-process signing snippets without the "Not for production" note; add the note where missing. (#617)
+- Reposition the Go SDK README's collector-leading examples to lead with the daemon path; collector example moves to an "Enterprise / multi-host" section. (#618)
 
 ---
 
