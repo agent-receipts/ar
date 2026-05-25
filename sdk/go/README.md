@@ -49,7 +49,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/agent-receipts/sdk-go/emitter"
+	"github.com/agent-receipts/ar/sdk/go/emitter"
 )
 
 func main() {
@@ -169,8 +169,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/agent-receipts/sdk-go/emitters"
-	"github.com/agent-receipts/sdk-go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/emitters"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 )
 
 func deliver(signed receipt.AgentReceipt) {
