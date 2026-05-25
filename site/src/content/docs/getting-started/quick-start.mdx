@@ -85,8 +85,9 @@ AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
-overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY` when starting the daemon, use
-those same values here.
+started the daemon with a non-default chain id (`AGENTRECEIPTS_CHAIN_ID` / `--chain-id`)
+or overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY`, pass those same values
+here — otherwise `verify` reads the `default` chain at the default paths.
 
 ## TypeScript
 
@@ -96,7 +97,7 @@ Install `agent-receipts-daemon` (see [Daemon Setup](/getting-started/daemon-setu
 for your platform), then the TypeScript SDK:
 
 ```bash
-npm install @agnt-rcpt/sdk-ts@alpha
+npm install @agnt-rcpt/sdk-ts
 ```
 
 ### 2. Start the daemon
@@ -118,16 +119,22 @@ and chains the receipt. It is fire-and-forget — start the daemon before your a
 ```typescript
 import { DaemonEmitter } from "@agnt-rcpt/sdk-ts";
 
-const e = new DaemonEmitter();  // uses AGENTRECEIPTS_SOCKET or the per-OS default
+async function main() {
+  const e = new DaemonEmitter();  // uses AGENTRECEIPTS_SOCKET or the per-OS default
+  try {
+    // emit() returns an Error for caller-bug events (bad shape), null otherwise
+    const err = await e.emit({
+      channel: "my-app",
+      tool: { name: "filesystem.file.read" },
+      decision: "allowed",
+    });
+    if (err) throw err;
+  } finally {
+    e.close();
+  }
+}
 
-const err = await e.emit({
-  channel: "my-app",
-  tool: { name: "filesystem.file.read" },
-  decision: "allowed",
-});
-if (err) throw err;  // emit() returns an Error for caller-bug events, null otherwise
-
-e.close();
+main();
 ```
 
 ### 4. Verify
@@ -142,8 +149,9 @@ AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
-overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY` when starting the daemon, use
-those same values here.
+started the daemon with a non-default chain id (`AGENTRECEIPTS_CHAIN_ID` / `--chain-id`)
+or overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY`, pass those same values
+here — otherwise `verify` reads the `default` chain at the default paths.
 
 ## Go
 
@@ -188,7 +196,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer e.Close()
+	defer func() { _ = e.Close() }()
 
 	if err := e.Emit(context.Background(), emitter.Event{
 		Channel:  "my-app",
@@ -212,8 +220,9 @@ AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
-overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY` when starting the daemon, use
-those same values here.
+started the daemon with a non-default chain id (`AGENTRECEIPTS_CHAIN_ID` / `--chain-id`)
+or overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY`, pass those same values
+here — otherwise `verify` reads the `default` chain at the default paths.
 
 ## Appendix: in-process signing (tutorial and testing only)
 
