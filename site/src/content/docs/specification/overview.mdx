@@ -5,16 +5,14 @@ description: Design principles and core concepts of the Agent Receipt Protocol.
 
 import { Aside, Badge } from "@astrojs/starlight/components";
 
-<Badge text="v0.3.0" variant="note" /> <Badge text="Draft" variant="caution" />
+<Badge text="v0.4.0" variant="note" /> <Badge text="Draft" variant="caution" />
 
 The Agent Receipt Protocol defines a standard format for cryptographically signed records of AI agent actions. This page covers the design principles and core concepts. For the full specification, see the [spec source on GitHub](https://github.com/agent-receipts/ar/tree/main/spec).
 
-<Aside type="note" title="What's new in v0.3.0">
-- W3C VC credential type renamed from `AIActionReceipt` to `AgentReceipt`. Schema file renamed to `agent-receipt.schema.json`.
-- `parameters_disclosure` widened to accept either the legacy flat-map shape (v0.2.x) or an HPKE asymmetric encryption envelope (ADR-0012).
-- `credentialSubject.action.peer_credential` — OS-attested peer process metadata captured by the daemon (`platform`, `pid`, optional `uid`/`gid`/`exe_path`). Daemon-attested, not agent-claimed.
-- `credentialSubject.action.emitter_metadata` — daemon-observed emitter-side metadata (currently `drop_count` for synthetic events_dropped receipts).
-- `version` field now accepts `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, or `"0.3.0"`. Verifiers MUST accept all four. See the [full changelog](https://github.com/agent-receipts/ar/blob/main/spec/CHANGELOG.md).
+<Aside type="note" title="What's new in v0.4.0">
+- `credentialSubject.action.idempotency_key` — optional stable identifier for the logical operation an action represents (e.g. a request ID). When an agent retries a tool call, the SDK or MCP proxy stamps the same key on every receipt for that operation, so verifiers can tell a legitimate retry from a duplicated emission. The MCP proxy populates it automatically from the wrapped JSON-RPC request `id`.
+- Verifier rule (spec §7.3.6): two or more receipts in a chain sharing a non-empty `idempotency_key` are surfaced as a **warning**, never a verification failure — retries are legitimate.
+- `version` field now accepts `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, `"0.3.0"`, or `"0.4.0"`. Verifiers MUST accept all five; new receipts SHOULD use `"0.4.0"`. See the [full changelog](https://github.com/agent-receipts/ar/blob/main/spec/CHANGELOG.md).
 </Aside>
 
 ## Design principles
@@ -109,11 +107,24 @@ The agent (or agent platform) that performed the action and produced the receipt
 
 ## Relationship to existing work
 
+Agent Receipts builds on established standards and sits alongside a growing set of agent-audit and provenance projects. The tables below separate the normative ancestry the protocol is built on from the adjacent projects working the same problem. For the always-current view of the wider space, see the [agent security tooling landscape](/ecosystem/landscape/).
+
+### Normative ancestry
+
+| Standard | Relationship |
+|---|---|
+| **W3C Verifiable Credentials Data Model 2.0** | The envelope Agent Receipts is built on — this protocol is a profile of W3C VC for the agent-action use case. |
+| **RFC 8785 (JSON Canonicalization Scheme)** | Used to derive the canonical form that is hashed and signed; chosen specifically so the protocol relies on no novel cryptographic primitives. |
+| **W3C Decentralized Identifiers (DIDs)** | The identifier scheme for agent and principal identities; receipts express the issuer and principal as DIDs or URIs. |
+
+### Adjacent projects
+
 | Project | Relationship |
 |---|---|
-| **C2PA / Content Credentials** | Inspiration. Extends signed provenance from media assets to agent actions. |
-| **W3C Verifiable Credentials** | Agent Receipts are W3C VCs using Data Model 2.0 as the envelope. |
-| **W3C DIDs** | Agent and principal identities are expressed as DIDs. |
-| **Grantex** | Complementary. Grantex handles authorization; Agent Receipts handle audit. (Early-stage IETF draft — not yet widely adopted.) |
-| **AgentStamp** | Overlapping in audit trail. AgentStamp is narrower (trust verification only). (Research proposal — no public implementation.) |
-| **MolTrust** | Complementary. Could serve as the identity layer for agent DIDs. (Research proposal — no public implementation.) |
+| **IETF `draft-sharif-agent-audit-trail`** | Independent IETF Internet-Draft that converged on RFC 8785 + SHA-256 hash chaining. Agent Receipts differs by using a W3C VC envelope rather than a bespoke signed-JSON format, and by specifying an out-of-agent signing model rather than in-agent self-signing. |
+| **W3C AIVS Community Group** | Early-stage W3C Community Group also working on agent audit primitives, session-grained rather than action-grained. |
+| **Pipelock EvidenceReceipt** | Hash-chained JSONL evidence log produced by the Pipelock agent firewall; the same envelope-as-infrastructure thesis at a different layer (egress firewall vs. audit issuer). |
+| **Microsoft Agent Governance Toolkit (AGT)** | Application-middleware governance framework with in-process Merkle-chained audit; it audits inside the same trust boundary as the agent, where Agent Receipts audits from outside it. |
+| **Asqav** | The closest functional analog; uses ML-DSA-65 (quantum-safe) signing rather than Ed25519, and in-SDK signing rather than daemon-separated. |
+| **nono** | Append-only Merkle tree the agent cannot reach; closest to Agent Receipts on the out-of-agent property, differing by anchoring records in a Sigstore/Rekor transparency log rather than a W3C VC envelope. |
+| **InALign** | Hybrid local/cloud product with bundled risk analysis; product-shaped where Agent Receipts is protocol-shaped. |
