@@ -4,8 +4,6 @@
 
 Accepted
 
-Date: 2026-05-25
-
 ## Context
 
 The project has three documented signing modes across its SDKs and docs surfaces:
@@ -16,7 +14,7 @@ The project has three documented signing modes across its SDKs and docs surfaces
 
 The spec opens with the position that signing keys SHOULD live outside the trust boundary of the audited component (§7.2 of v0.4.0: "the signing key SHOULD reside in a process separate from the agent, proxy, and SDK being audited"). The audit-integrity guarantee the project markets depends on this property. In-process signing satisfies "the receipt is signed" but does not satisfy "the receipt is signed by something the audited component cannot impersonate."
 
-Despite this, the README-leading quick-start path on most SDK surfaces has historically been in-process signing, because it has no external dependencies and the simplest first-run experience. The Python README pre-PR #593 led with in-process. The site Quick Start (per SITE-P3, still unfixed) still teaches in-process signing as the recommended path, contradicting the homepage which describes in-process as the insecure posture.
+Despite this, the README-leading quick-start path on most SDK surfaces has historically been in-process signing, because it has no external dependencies and the simplest first-run experience. The Python README pre-PR #593 led with in-process. The site Quick Start still teaches in-process signing as the recommended path — the audit finding labeled **SITE-P3** (from the Quick Start / site synthesis cited under Inputs in #614), still unfixed — contradicting the homepage which describes in-process as the insecure posture.
 
 This ADR records which mode is canonical and how the non-canonical modes are positioned across documentation surfaces.
 
@@ -34,7 +32,9 @@ In-process signing remains a supported mode of the SDKs. It is documented as a l
 
 Every documentation surface that shows the in-process pattern MUST include an explicit note, immediately adjacent to the code, that reads (or substantively equivalent):
 
-> **Not for production.** This pattern keeps the signing key inside the agent process. Anyone with code execution in the agent can forge receipts. For real deployments, use the daemon-mediated path documented at [link].
+> **Not for production.** This pattern keeps the signing key inside the agent process. Anyone with code execution in the agent can forge receipts. For real deployments, use the daemon-mediated path.
+
+In the rendered note, "daemon-mediated path" links to that surface's concrete target for the daemon-mediated setup documentation — the daemon Quick Start section on the site, or [`daemon/README.md`](../../daemon/README.md) in the repo. This ADR deliberately does not fix a single URL: the correct link form differs per surface, and wiring the per-surface links is the job of the spawned doc issues (#616, #617).
 
 The note is non-negotiable. Surfaces that omit it are out of compliance with this ADR.
 
