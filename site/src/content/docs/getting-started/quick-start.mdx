@@ -4,7 +4,7 @@ description: Emit and verify your first Agent Receipt through the agent-receipts
 ---
 
 This guide walks you through emitting and verifying your first Agent Receipt with the
-TypeScript, Python, or Go SDK.
+Python, TypeScript, or Go SDK.
 
 Agent Receipts are signed by a separate `agent-receipts-daemon` process, not by your
 application. Your code sends tool-call *events* over a local Unix socket; the daemon
@@ -120,11 +120,12 @@ import { DaemonEmitter } from "@agnt-rcpt/sdk-ts";
 
 const e = new DaemonEmitter();  // uses AGENTRECEIPTS_SOCKET or the per-OS default
 
-await e.emit({
+const err = await e.emit({
   channel: "my-app",
   tool: { name: "filesystem.file.read" },
   decision: "allowed",
 });
+if (err) throw err;  // emit() returns an Error for caller-bug events, null otherwise
 
 e.close();
 ```
@@ -231,7 +232,6 @@ from agent_receipts import (
     CreateReceiptInput,
     create_receipt,
     generate_key_pair,
-    hash_receipt,
     sign_receipt,
     verify_receipt,
 )
@@ -257,7 +257,6 @@ unsigned = create_receipt(
 )
 
 receipt = sign_receipt(unsigned, keys.private_key, "did:agent:my-agent#key-1")
-receipt_hash = hash_receipt(receipt)
 
 valid = verify_receipt(receipt, keys.public_key)
 print(f"Signature valid: {valid}")  # True
