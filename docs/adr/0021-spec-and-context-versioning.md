@@ -42,7 +42,9 @@ This ADR records the decision to operate a spec release pipeline that makes
 the spec text's promise true, and specifies the versioning model for both
 the spec and the JSON-LD context.
 
-## Decisions
+## Decision
+
+The seven sub-decisions D1–D7 below collectively constitute the decision.
 
 ### D1. Spec is versioned per file, in the repo, under `spec/`
 
@@ -112,7 +114,9 @@ that:
 1. Verifies `spec/v<X.Y.Z>/spec.md` exists in the repo.
 2. Renders the spec markdown to a site page at
    `site/src/content/docs/spec/v<X.Y.Z>.mdx`.
-3. Updates `spec/latest/` alias to point at the new version.
+3. Updates the site `/spec/latest/` alias (redirect) to point at the new
+   version. This is the public URL alias only; no `spec/latest/` directory
+   exists in the repo.
 4. Updates the `/spec/` index page to list the new version.
 5. Validates that every `@context` URL referenced in the new spec resolves
    on the live site (fail-build if not).
@@ -179,8 +183,8 @@ versions and points to the version that resolves the defect.
   deploy. This converts a class of correctness bug into a CI failure.
 - The repo gains a `spec/v<X.Y.Z>/` directory per release and a
   `spec/context/v<N>/` directory per context version. The legacy living-file
-  path is removed. Contributors editing the current draft do so against
-  `spec/latest/` working copy conventions established by the backfill issue.
+  path is removed. The repo holds no `spec/latest/` directory; "latest" is
+  a site-only alias.
 - Spec and context versions evolve independently. A spec-only release (e.g.
   a clarification that does not change JSON-LD terms) ships with no context
   bump. A context bump (rare, term-level changes only) is independent of
