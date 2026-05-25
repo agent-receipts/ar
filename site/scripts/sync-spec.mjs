@@ -144,3 +144,42 @@ writeFileSync(join(outDir, "index.md"), indexLines.join("\n"));
 console.log(
   `sync-spec: wrote ${versions.length} version page(s) (${versions.join(", ")}); current = ${latest}`,
 );
+
+// --- JSON-LD context publishing ---------------------------------------
+//
+// Every Agent Receipt's @context array references
+// https://agentreceipts.ai/context/v<N> (no extension, no trailing slash).
+// Per ADR-0021 D3 each context version is published at its permanent URL.
+//
+// Static-asset publishing: copy spec/context/v<N>/context.jsonld into
+// site/public/context/v<N>. Astro serves site/public/* verbatim from the
+// site root, so a file at site/public/context/v1 lands at /context/v1.
+// The file has no extension to match the URL receipts already reference;
+// JSON-LD validators parse on content, not MIME.
+
+const CONTEXT_VERSION_RE = /^v(\d+)$/;
+const contextSrcRoot = join(specRoot, "context");
+const contextOutRoot = join(repoRoot, "site", "public", "context");
+
+if (existsSync(contextSrcRoot)) {
+  const contextVersions = readdirSync(contextSrcRoot, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && CONTEXT_VERSION_RE.test(d.name))
+    .map((d) => d.name)
+    .filter((v) =>
+      existsSync(join(contextSrcRoot, v, "context.jsonld")),
+    )
+    .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+
+  if (existsSync(contextOutRoot)) rmSync(contextOutRoot, { recursive: true });
+  if (contextVersions.length > 0) {
+    mkdirSync(contextOutRoot, { recursive: true });
+    for (const v of contextVersions) {
+      const src = join(contextSrcRoot, v, "context.jsonld");
+      const dst = join(contextOutRoot, v);
+      writeFileSync(dst, readFileSync(src, "utf8"));
+    }
+    console.log(
+      `sync-spec: published ${contextVersions.length} JSON-LD context(s) (${contextVersions.join(", ")}) to /context/`,
+    );
+  }
+}
