@@ -34,6 +34,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0018](0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md) | Signer Abstraction and Cloud-Agnostic KeyProvider Design | Accepted |
 | [ADR-0019](0019-protocol-integrity-gaps-and-mitigations.md) | Protocol Integrity Gaps and Mitigations | Proposed |
 | [ADR-0020](0020-emitter-abstraction-and-remote-receipt-delivery.md) | Emitter Abstraction and Remote Receipt Delivery | Accepted |
+| [ADR-0021](0021-spec-and-context-versioning.md) | Spec and JSON-LD Context Versioning, with Permanent Per-Version URLs | Accepted |
 
 ## References
 
