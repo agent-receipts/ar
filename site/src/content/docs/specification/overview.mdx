@@ -126,5 +126,5 @@ Agent Receipts builds on established standards and sits alongside a growing set 
 | **Pipelock EvidenceReceipt** | Hash-chained JSONL evidence log produced by the Pipelock agent firewall; the same envelope-as-infrastructure thesis at a different layer (egress firewall vs. audit issuer). |
 | **Microsoft Agent Governance Toolkit (AGT)** | Application-middleware governance framework with in-process Merkle-chained audit; it audits inside the same trust boundary as the agent, where Agent Receipts audits from outside it. |
 | **Asqav** | The closest functional analog; uses ML-DSA-65 (quantum-safe) signing rather than Ed25519, and in-SDK signing rather than daemon-separated. |
-| **nono** | Append-only Merkle tree the agent cannot reach; closest to Agent Receipts on the out-of-agent property, differing by using in-toto/DSSE attestation rather than a W3C VC envelope. |
+| **nono** | Append-only Merkle tree the agent cannot reach; closest to Agent Receipts on the out-of-agent property, differing by anchoring records in a Sigstore/Rekor transparency log rather than a W3C VC envelope. |
 | **InALign** | Hybrid local/cloud product with bundled risk analysis; product-shaped where Agent Receipts is protocol-shaped. |
