@@ -92,6 +92,12 @@ mcp-proxy verify --key pub.pem <chain-id>
 
 ## SDK quick start
 
+> **Not for production.** The snippets below keep the signing key inside the
+> agent process. Anyone with code execution in the agent can forge receipts. For
+> real deployments, use the
+> [daemon-mediated path](https://agentreceipts.ai/getting-started/daemon-setup/),
+> where the daemon owns the key and your app only sends events over a socket.
+
 ### Go
 
 ```bash
