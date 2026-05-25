@@ -1,18 +1,23 @@
 ---
 title: Quick Start
-description: Create, sign, and verify your first Agent Receipt.
+description: Emit and verify your first Agent Receipt through the agent-receipts daemon.
 ---
 
-This guide walks you through creating, signing, and verifying an Agent Receipt using either the TypeScript or Python SDK.
+This guide walks you through emitting and verifying your first Agent Receipt with the
+TypeScript, Python, or Go SDK.
 
-:::caution[Not for production]
-The examples below use the direct SDK signing API, which keeps the signing key inside the agent process. Anyone with code execution in the agent can forge receipts. For real deployments, use the [daemon-mediated path](/getting-started/daemon-setup/), where the daemon owns the key and your app only sends events over a socket.
-:::
+Agent Receipts are signed by a separate `agent-receipts-daemon` process, not by your
+application. Your code sends tool-call *events* over a local Unix socket; the daemon
+holds the Ed25519 signing key, builds the receipt, signs it, and appends it to the
+hash-chained store. The signing key never enters your process — so the audit trail
+holds up even if the agent is compromised. This is the canonical deployment shape
+([ADR-0022](https://github.com/agent-receipts/ar/blob/main/docs/adr/0022-canonical-deployment-shape.md)),
+and it is the first thing you should reach for.
 
 ```mermaid
 graph LR
-  subgraph sdk["SDK (this guide)"]
-    A[Your app code] -- "SDK API call" --> S[Agent Receipts SDK]
+  subgraph app["Your app (this guide)"]
+    A[Your app code] -- "emit event" --> S[Agent Receipts SDK]
   end
   subgraph proxy["MCP Proxy"]
     P[mcp-proxy] -- "wraps" --> M[MCP Server]
@@ -24,92 +29,201 @@ graph LR
     O[OpenClaw gateway] -- "hooks" --> T[Tools]
   end
   S & P & H & O -- "Unix socket" --> D[agent-receipts-daemon]
-  D --> DB[(receipts.db)]
+  D -- "signs + stores" --> DB[(receipts.db)]
 ```
 
-## TypeScript
-
-### 1. Install
-
-```bash
-npm install @agnt-rcpt/sdk-ts
-```
-
-### 2. Create and sign a receipt
-
-:::caution[Not for production]
-This pattern keeps the signing key inside the agent process. Anyone with code execution in the agent can forge receipts. For real deployments, use the [daemon-mediated path](/getting-started/daemon-setup/).
-:::
-
-```typescript
-import {
-  createReceipt,
-  generateKeyPair,
-  signReceipt,
-  hashReceipt,
-} from "@agnt-rcpt/sdk-ts";
-
-const keys = generateKeyPair();
-
-const unsigned = createReceipt({
-  issuer: { id: "did:agent:my-agent" },
-  principal: { id: "did:user:alice" },
-  action: {
-    type: "filesystem.file.read",
-    risk_level: "low",
-    target: { system: "local", resource: "/docs/report.md" },
-  },
-  outcome: { status: "success" },
-  chain: {
-    sequence: 1,
-    previous_receipt_hash: null,
-    chain_id: "chain_session-1",
-  },
-});
-
-const receipt = signReceipt(unsigned, keys.privateKey, "did:agent:my-agent#key-1");
-const hash = hashReceipt(receipt);
-
-console.log(receipt.id);  // urn:receipt:<uuid>
-console.log(hash);        // sha256:<hex>
-```
-
-### 3. Store and query
-
-```typescript
-import { openStore } from "@agnt-rcpt/sdk-ts";
-
-const store = openStore("receipts.db");
-store.insert(receipt, hash);
-
-const chain = store.getChain("chain_session-1");
-console.log(`Chain has ${chain.length} receipt(s)`);
-
-store.close();
-```
-
-### 4. Verify a chain
-
-```typescript
-import { verifyChain } from "@agnt-rcpt/sdk-ts";
-
-const result = verifyChain(chain, keys.publicKey);
-console.log(result.valid);   // true
-console.log(result.length);  // number of receipts verified
-```
+Each SDK section below follows the same shape: **Install → Start the daemon →
+Emit a receipt → Verify.** Pick your language and work top to bottom.
 
 ## Python
 
 ### 1. Install
 
+Install `agent-receipts-daemon` (see [Daemon Setup](/getting-started/daemon-setup/)
+for your platform), then the Python SDK:
+
 ```bash
 pip install agent-receipts
 ```
 
-### 2. Create and sign a receipt
+### 2. Start the daemon
 
-:::caution[Not for production]
-This pattern keeps the signing key inside the agent process. Anyone with code execution in the agent can forge receipts. For real deployments, use the [daemon-mediated path](/getting-started/daemon-setup/).
+Generate the signing key once, then run the daemon. It listens on the per-OS default
+socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths and
+service installation.
+
+```bash
+agent-receipts-daemon --init   # one-time: creates the signing key
+agent-receipts-daemon          # start the daemon (leave it running)
+```
+
+### 3. Emit a receipt
+
+`DaemonEmitter` forwards the tool-call event to the daemon, which constructs, signs,
+and chains the receipt. It is fire-and-forget — start the daemon before your app.
+
+```python
+from agent_receipts import DaemonEmitter
+
+with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
+    e.emit(
+        channel="my-app",
+        tool_name="filesystem.file.read",
+        decision="allowed",
+    )
+```
+
+### 4. Verify
+
+`agent-receipts verify` reads the database directly and confirms hash linkage and
+signatures — the daemon does not need to be running.
+
+```bash
+AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
+  agent-receipts verify \
+  --public-key ~/.local/share/agent-receipts/signing.key.pub
+```
+
+A successful run prints the chain length and confirms the signatures are intact. If you
+overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY` when starting the daemon, use
+those same values here.
+
+## TypeScript
+
+### 1. Install
+
+Install `agent-receipts-daemon` (see [Daemon Setup](/getting-started/daemon-setup/)
+for your platform), then the TypeScript SDK:
+
+```bash
+npm install @agnt-rcpt/sdk-ts@alpha
+```
+
+### 2. Start the daemon
+
+Generate the signing key once, then run the daemon. It listens on the per-OS default
+socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths and
+service installation.
+
+```bash
+agent-receipts-daemon --init   # one-time: creates the signing key
+agent-receipts-daemon          # start the daemon (leave it running)
+```
+
+### 3. Emit a receipt
+
+`DaemonEmitter` forwards the tool-call event to the daemon, which constructs, signs,
+and chains the receipt. It is fire-and-forget — start the daemon before your app.
+
+```typescript
+import { DaemonEmitter } from "@agnt-rcpt/sdk-ts";
+
+const e = new DaemonEmitter();  // uses AGENTRECEIPTS_SOCKET or the per-OS default
+
+await e.emit({
+  channel: "my-app",
+  tool: { name: "filesystem.file.read" },
+  decision: "allowed",
+});
+
+e.close();
+```
+
+### 4. Verify
+
+`agent-receipts verify` reads the database directly and confirms hash linkage and
+signatures — the daemon does not need to be running.
+
+```bash
+AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
+  agent-receipts verify \
+  --public-key ~/.local/share/agent-receipts/signing.key.pub
+```
+
+A successful run prints the chain length and confirms the signatures are intact. If you
+overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY` when starting the daemon, use
+those same values here.
+
+## Go
+
+### 1. Install
+
+Install `agent-receipts-daemon` (see [Daemon Setup](/getting-started/daemon-setup/)
+for your platform), then the Go SDK:
+
+```bash
+go get github.com/agent-receipts/ar/sdk/go
+```
+
+### 2. Start the daemon
+
+Generate the signing key once, then run the daemon. It listens on the per-OS default
+socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths and
+service installation.
+
+```bash
+agent-receipts-daemon --init   # one-time: creates the signing key
+agent-receipts-daemon          # start the daemon (leave it running)
+```
+
+### 3. Emit a receipt
+
+`NewDaemon` returns an emitter that forwards the tool-call event to the daemon, which
+constructs, signs, and chains the receipt. It is fire-and-forget — start the daemon
+before your app.
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/agent-receipts/ar/sdk/go/emitter"
+)
+
+func main() {
+	e, err := emitter.NewDaemon() // uses AGENTRECEIPTS_SOCKET or the per-OS default
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer e.Close()
+
+	if err := e.Emit(context.Background(), emitter.Event{
+		Channel:  "my-app",
+		Tool:     emitter.Tool{Name: "filesystem.file.read"},
+		Decision: "allowed",
+	}); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### 4. Verify
+
+`agent-receipts verify` reads the database directly and confirms hash linkage and
+signatures — the daemon does not need to be running.
+
+```bash
+AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
+  agent-receipts verify \
+  --public-key ~/.local/share/agent-receipts/signing.key.pub
+```
+
+A successful run prints the chain length and confirms the signatures are intact. If you
+overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY` when starting the daemon, use
+those same values here.
+
+## Appendix: in-process signing (tutorial and testing only)
+
+The SDKs can also create and sign a receipt entirely in your process, with no daemon.
+This is useful for learning the receipt API and for unit tests that should not depend
+on a running daemon.
+
+:::danger[Not for production]
+This pattern keeps the signing key inside the agent process. Anyone with code execution
+in the agent can forge receipts. For real deployments, use the daemon-mediated path
+shown above (see also [Daemon Setup](/getting-started/daemon-setup/)).
 :::
 
 ```python
@@ -119,6 +233,7 @@ from agent_receipts import (
     generate_key_pair,
     hash_receipt,
     sign_receipt,
+    verify_receipt,
 )
 
 keys = generate_key_pair()
@@ -143,22 +258,20 @@ unsigned = create_receipt(
 
 receipt = sign_receipt(unsigned, keys.private_key, "did:agent:my-agent#key-1")
 receipt_hash = hash_receipt(receipt)
+
+valid = verify_receipt(receipt, keys.public_key)
+print(f"Signature valid: {valid}")  # True
 ```
 
-### 3. Verify a chain
-
-```python
-from agent_receipts import verify_chain
-
-receipts = [receipt]  # or load from storage
-result = verify_chain(receipts, keys.public_key)
-print(result.valid)   # True
-print(result.length)  # number of receipts verified
-```
+The equivalent TypeScript and Go signing APIs are documented in each SDK README
+([TypeScript](https://github.com/agent-receipts/ar/tree/main/sdk/ts),
+[Go](https://github.com/agent-receipts/ar/tree/main/sdk/go)). The same
+"not for production" caveat applies to all of them.
 
 ## Next steps
 
 - Read the [Introduction](/) for background on the protocol
+- Follow [Daemon Setup](/getting-started/daemon-setup/) for install, socket paths, and running the daemon as a service
 - See the [Agent Receipt Schema](/specification/agent-receipt-schema/) for the full receipt structure
 - Explore the [Action Taxonomy](/specification/action-taxonomy/) to understand action types and risk levels
 - Set up `agent-receipts-hook` to capture native tool calls — see [Hook: Claude Code](/hook/claude-code/)
