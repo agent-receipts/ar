@@ -5,6 +5,9 @@
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "scripts": {
+    "sync-spec": "node scripts/sync-spec.mjs",
+    "predev": "node scripts/sync-spec.mjs",
+    "prebuild": "node scripts/sync-spec.mjs",
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",

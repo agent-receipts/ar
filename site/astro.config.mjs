@@ -84,6 +84,13 @@ export default defineConfig({
           ],
         },
         {
+          label: "Spec (full text)",
+          items: [
+            { label: "All versions", slug: "spec" },
+            { label: "v0.4.0 (current)", slug: "spec/v0.4.0" },
+          ],
+        },
+        {
           label: "Go SDK",
           items: [
             { label: "Overview", slug: "sdk-go/overview" },
