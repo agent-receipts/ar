@@ -15,8 +15,26 @@ import {
   existsSync,
   rmSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, posix } from "node:path";
 import { fileURLToPath } from "node:url";
+
+const GITHUB_BLOB = "https://github.com/agent-receipts/ar/blob/main";
+
+// Rewrite repo-relative markdown links to absolute GitHub URLs so the
+// rendered site can resolve them. The source spec uses relative paths
+// like `../schema/foo.json` that resolve fine inside the repo, but
+// `/spec/v0.4.0/` on the site has no sibling `schema/` or `taxonomy/`
+// routes — those artifacts are not (and per ADR-0021 shouldn't be)
+// re-served under the spec page tree. GitHub is the canonical viewer
+// for the artifact files; pointing there keeps a single source of
+// truth.
+function rewriteRelativeLinks(body, version) {
+  const baseDir = `spec/${version}`;
+  return body.replace(/\]\((\.{1,2}\/[^)\s#]+)(#[^)]*)?\)/g, (m, rel, anchor) => {
+    const repoPath = posix.normalize(`${baseDir}/${rel}`);
+    return `](${GITHUB_BLOB}/${repoPath}${anchor || ""})`;
+  });
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -65,7 +83,8 @@ for (const v of versions) {
   // Strip a leading H1 if present — Starlight already renders the page
   // title from frontmatter, so leaving the spec's own H1 in place would
   // produce two stacked headings.
-  const body = readFileSync(src, "utf8").replace(/^#\s+.+\n+/, "");
+  const raw = readFileSync(src, "utf8").replace(/^#\s+.+\n+/, "");
+  const body = rewriteRelativeLinks(raw, v);
   // Force the route slug to preserve the dots in the semver — Starlight's
   // default slug derivation strips them ("v0.4.0" → "v040"), but ADR-0021
   // D2 commits to /spec/v<X.Y.Z>/ as the literal canonical URL.
