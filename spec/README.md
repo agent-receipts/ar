@@ -5,7 +5,7 @@
 ### An open protocol for cryptographically signed, tamper-evident records of AI agent actions
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Status: Draft](https://img.shields.io/badge/Status-Draft_v0.1-orange.svg)](spec/agent-receipt-spec-v0.1.md)
+[![Status: Draft](https://img.shields.io/badge/Status-Draft_v0.4.0-orange.svg)](v0.4.0/spec.md)
 
 ---
 
@@ -64,7 +64,7 @@ The protocol is designed for receipts to travel — publishing to a shared ledge
 
 | Document | Description |
 |:---|:---|
-| [spec/agent-receipt-spec-v0.1.md](spec/agent-receipt-spec-v0.1.md) | Protocol specification (Draft v0.1) |
+| [v0.4.0/spec.md](v0.4.0/spec.md) | Protocol specification (Draft v0.4.0; latest) |
 | [schema/agent-receipt.schema.json](schema/agent-receipt.schema.json) | JSON Schema for receipts (Draft 2020-12) |
 | [spec/taxonomy/action-types.json](spec/taxonomy/action-types.json) | Canonical action type definitions |
 | [schema/taxonomy.schema.json](schema/taxonomy.schema.json) | JSON Schema for the taxonomy |
@@ -137,7 +137,7 @@ The canonical definitions live in [`spec/taxonomy/action-types.json`](spec/taxon
 
 ## Contributing
 
-The most valuable contributions right now aren't code — they're domain expertise. If you work in a regulated industry deploying AI agents, [open an issue](https://github.com/agent-receipts/spec/issues) or comment on the [spec](spec/agent-receipt-spec-v0.1.md).
+The most valuable contributions right now aren't code — they're domain expertise. If you work in a regulated industry deploying AI agents, [open an issue](https://github.com/agent-receipts/spec/issues) or comment on the [spec](v0.4.0/spec.md).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 

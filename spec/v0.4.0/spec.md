@@ -1,8 +1,8 @@
-# Agent Receipt Protocol — Specification v0.1
+# Agent Receipt Protocol — Specification v0.4.0
 
 > **Status:** Draft
-> **Version:** 0.1.0
-> **Date:** 31 March 2026
+> **Version:** 0.4.0
+> **Date:** 2026-05-23
 > **License:** MIT
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
@@ -318,7 +318,7 @@ The schema encodes all required/optional field constraints, enum values, hash fo
 
 Hierarchical action types, organized by domain. Risk levels are defaults — implementations may override based on context.
 
-A canonical machine-readable taxonomy is defined in [`spec/taxonomy/action-types.json`](./taxonomy/action-types.json). Implementations SHOULD treat the JSON taxonomy as authoritative for type names and default risk levels. The tables below are illustrative; if discrepancies arise, the JSON file is the source of truth. Future versions of the taxonomy MAY include parameter schemas for each action type to support deterministic `parameters_hash` verification (see §9.9).
+A canonical machine-readable taxonomy is defined in [`spec/taxonomy/action-types.json`](../spec/taxonomy/action-types.json). Implementations SHOULD treat the JSON taxonomy as authoritative for type names and default risk levels. The tables below are illustrative; if discrepancies arise, the JSON file is the source of truth. Future versions of the taxonomy MAY include parameter schemas for each action type to support deterministic `parameters_hash` verification (see §9.9).
 
 ### 5.1 Filesystem
 
