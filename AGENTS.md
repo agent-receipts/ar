@@ -29,6 +29,10 @@ Each subdirectory has its own AGENTS.md with project-specific details.
 | site | TypeScript | — | `pnpm build` |
 | spec | — | — | JSON schema validation |
 
+## Operational state
+
+Operational state lives at `docs/operations/current.md`. Read this first when starting a session. Update it when nodes change state.
+
 ## Conventions
 
 - All changes go through pull requests — never push directly to main
