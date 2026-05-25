@@ -24,8 +24,7 @@
 
     "name": "https://schema.org/name",
     "operator": {
-      "@id": "ar:operator",
-      "@type": "@id"
+      "@id": "ar:operator"
     },
     "model": {
       "@id": "ar:model",
@@ -37,8 +36,7 @@
     },
 
     "principal": {
-      "@id": "ar:principal",
-      "@type": "@id"
+      "@id": "ar:principal"
     },
 
     "action": {
@@ -239,8 +237,7 @@
           "@type": "@id"
         },
         "delegator": {
-          "@id": "ar:delegator",
-          "@type": "@id"
+          "@id": "ar:delegator"
         }
       }
     },
