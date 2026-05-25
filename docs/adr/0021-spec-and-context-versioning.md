@@ -6,14 +6,15 @@ Proposed
 
 ## Context
 
-The Agent Receipts spec text promises permanent per-version URLs
-("subsequent versions will be published at distinct, permanent URLs; this URL
-is frozen at v0.2.1 and will not change"). The project does not currently
-honor that promise. The JSON-LD `@context` URL embedded in every receipt
-produced by the SDKs (`https://agentreceipts.ai/context/v1`) returns 404 —
-every receipt currently in existence references a context document that does
-not resolve. The W3C VC data model the receipt envelope is built on
-(ADR-0003) requires `@context` URLs to resolve.
+Five spec versions have shipped (v0.1.0 through v0.4.0, latest 2026-05-23)
+but no canonical per-version URL is published on the live site for any of
+them — `https://agentreceipts.ai/spec/v0.4.0/` and equivalents return 404.
+More consequentially, the JSON-LD `@context` URL embedded in every receipt
+produced by the SDKs (`https://agentreceipts.ai/context/v1`) also returns
+404, so every receipt currently in existence references a context document
+that does not resolve. The W3C VC data model the receipt envelope is built
+on (ADR-0003) requires `@context` URLs to resolve; the live correctness
+issue is therefore receipt-level, not just docs-level.
 
 The living-spec file `spec/spec/agent-receipt-spec-v0.1.md` has frontmatter
 claiming `Version: 0.1.0` but contains features released as recently as
