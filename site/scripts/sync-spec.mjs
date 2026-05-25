@@ -39,13 +39,19 @@ function semverCompare(a, b) {
   return 0;
 }
 
+// A version is only considered released — and only appears in the index,
+// the per-version routes, and the `latest` computation — if its spec.md
+// exists. A bare directory without spec.md is treated as in-flight or a
+// mistake and is ignored, so we never publish links to pages we haven't
+// generated.
 const versions = readdirSync(specRoot, { withFileTypes: true })
   .filter((d) => d.isDirectory() && VERSION_RE.test(d.name))
   .map((d) => d.name)
+  .filter((v) => existsSync(join(specRoot, v, "spec.md")))
   .sort(semverCompare);
 
 if (versions.length === 0) {
-  console.error("sync-spec: no spec/v<X.Y.Z>/ directories found");
+  console.error("sync-spec: no spec/v<X.Y.Z>/spec.md files found");
   process.exit(1);
 }
 
@@ -56,18 +62,18 @@ const latest = versions[versions.length - 1];
 
 for (const v of versions) {
   const src = join(specRoot, v, "spec.md");
-  if (!existsSync(src)) {
-    console.warn(`sync-spec: ${v}/spec.md missing, skipping`);
-    continue;
-  }
   // Strip a leading H1 if present — Starlight already renders the page
   // title from frontmatter, so leaving the spec's own H1 in place would
   // produce two stacked headings.
   const body = readFileSync(src, "utf8").replace(/^#\s+.+\n+/, "");
+  // Force the route slug to preserve the dots in the semver — Starlight's
+  // default slug derivation strips them ("v0.4.0" → "v040"), but ADR-0021
+  // D2 commits to /spec/v<X.Y.Z>/ as the literal canonical URL.
   const front = [
     "---",
     `title: Agent Receipts Protocol — Specification ${v}`,
     `description: Full text of the Agent Receipts Protocol Specification at ${v}.`,
+    `slug: spec/${v}`,
     "---",
     "",
     "",
