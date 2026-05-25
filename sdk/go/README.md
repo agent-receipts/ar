@@ -2,10 +2,10 @@
 
 # sdk-go
 
-### Go SDK for the Action Receipts protocol
+### Go SDK for the Agent Receipts protocol
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 
 **Cryptographically signed audit trails for AI agent actions.**
 
@@ -26,7 +26,7 @@ go get github.com/agent-receipts/sdk-go
 | Package | Description |
 |---------|-------------|
 | `emitter` | Daemon-socket client: forwards tool-call events to a local `agent-receipts-daemon`, which holds the signing key and constructs, signs, and chains the receipt |
-| `receipt` | Create, sign (Ed25519), verify, and hash-chain Action Receipts (W3C Verifiable Credentials) |
+| `receipt` | Create, sign (Ed25519), verify, and hash-chain Agent Receipts (W3C Verifiable Credentials) |
 | `taxonomy` | Built-in action type registry (15 types), tool call classification, custom mappings |
 | `store` | SQLite-backed receipt persistence, query, stats, and chain verification |
 | `emitters` | Signed-receipt delivery to a remote collector (`HttpEmitter`, `CompositeEmitter`, `BufferingEmitter`, `WALEmitter`) |
