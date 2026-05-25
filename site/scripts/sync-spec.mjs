@@ -100,6 +100,29 @@ for (const v of versions) {
   writeFileSync(join(outDir, `${v}.md`), front + body);
 }
 
+// /spec/latest/ — the mutable alias from ADR-0021 D2. Implemented as a
+// meta-refresh redirect page so the URL bar reflects the actual version
+// the reader lands on (auditors should be citing /spec/v<X.Y.Z>/, not
+// /spec/latest/). No-JS / pre-redirect users still see a plain link.
+const latestPage = [
+  "---",
+  `title: Agent Receipts Protocol — Specification (latest)`,
+  `description: Mutable alias for the current released spec version (${latest}).`,
+  `slug: spec/latest`,
+  "head:",
+  "  - tag: meta",
+  "    attrs:",
+  "      http-equiv: refresh",
+  `      content: "0; url=/spec/${latest}/"`,
+  "---",
+  "",
+  `Redirecting to the latest released spec version, [${latest}](/spec/${latest}/).`,
+  "",
+  `If you are citing the spec, please use the [permanent per-version URL](/spec/${latest}/) directly rather than this alias.`,
+  "",
+].join("\n");
+writeFileSync(join(outDir, "latest.md"), latestPage);
+
 const indexLines = [
   "---",
   "title: Agent Receipts Protocol — Spec Versions",
