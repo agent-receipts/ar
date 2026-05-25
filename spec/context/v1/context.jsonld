@@ -45,8 +45,14 @@
       "@id": "ar:action",
       "@context": {
         "@protected": true,
-        "id": "@id",
-        "type": "@type",
+        "id": {
+          "@id": "ar:action_id",
+          "@type": "xsd:string"
+        },
+        "type": {
+          "@id": "ar:action_type",
+          "@type": "xsd:string"
+        },
         "risk_level": {
           "@id": "ar:risk_level",
           "@type": "xsd:string"
