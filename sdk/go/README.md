@@ -74,7 +74,7 @@ func main() {
 }
 ```
 
-By default `emitter.Emit` surfaces transport failure (ADR-0023): if the daemon
+By default `emitter.Emit` surfaces transport failure (ADR-0024): if the daemon
 is unreachable it logs at debug level and returns a non-nil error wrapping
 `emitter.ErrTransport` rather than dropping silently, so start the daemon before
 your app. The call stays non-blocking (bounded by the dial + write timeout).

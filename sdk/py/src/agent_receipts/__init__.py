@@ -32,7 +32,11 @@ from agent_receipts.receipt.chain import (
     ReceiptVerification,
     verify_chain,
 )
-from agent_receipts.receipt.create import CreateReceiptInput, create_receipt
+from agent_receipts.receipt.create import (
+    ActionInput,
+    CreateReceiptInput,
+    create_receipt,
+)
 from agent_receipts.receipt.disclosure import (
     DisclosureEnvelope,
     DisclosureRecipient,
@@ -139,6 +143,7 @@ __all__ = [
     "CONTEXT",
     "CREDENTIAL_TYPE",
     # Creation
+    "ActionInput",
     "CreateReceiptInput",
     "create_receipt",
     "createReceipt",

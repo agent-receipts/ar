@@ -898,7 +898,7 @@ func TestEmit_DropCounterRestoredOnWriteFailure(t *testing.T) {
 }
 
 // TestEmit_DialFailure_SurfacesError asserts the default emit failure contract
-// (ADR-0023): Emit returns a non-nil error when the daemon socket is missing,
+// (ADR-0024): Emit returns a non-nil error when the daemon socket is missing,
 // rather than silently returning nil.
 func TestEmit_DialFailure_SurfacesError(t *testing.T) {
 	dir := shortSocketDir(t)
@@ -917,7 +917,7 @@ func TestEmit_DialFailure_SurfacesError(t *testing.T) {
 		Decision: "allowed",
 	})
 	if err == nil {
-		t.Error("Emit returned nil; want error on dial failure (ADR-0023)")
+		t.Error("Emit returned nil; want error on dial failure (ADR-0024)")
 	}
 }
 
@@ -958,7 +958,7 @@ func TestEmit_WriteFailure_SurfacesError(t *testing.T) {
 		Decision: "allowed",
 	})
 	if err == nil {
-		t.Error("Emit returned nil; want error on write failure (ADR-0023)")
+		t.Error("Emit returned nil; want error on write failure (ADR-0024)")
 	}
 }
 

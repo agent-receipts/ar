@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Emit failure contract conformance cases (ADR-0023). Each SDK test MUST load this file, iterate every case, run it against its own DaemonEmitter (default mode, no listener on the socket), map the emit outcome to an outcome_category, and assert it equals `expect`. The iteration MUST fail on any case `name` it does not handle, so adding a case here breaks any SDK that has not implemented it.",
+  "description": "Emit failure contract conformance cases (ADR-0024). Each SDK test MUST load this file, iterate every case, run it against its own DaemonEmitter (default mode, no listener on the socket), map the emit outcome to an outcome_category, and assert it equals `expect`. The iteration MUST fail on any case `name` it does not handle, so adding a case here breaks any SDK that has not implemented it.",
   "outcome_categories": {
     "transport_error": "emit surfaced a transport failure that a retry or durability wrapper may recover (Go: errors.Is(err, ErrTransport); Python: a transport exception type; TS: a rejected Promise / returned Error tagged as transport)",
     "caller_error": "emit surfaced a caller-bug error, distinguishable from transport_error, that a retry cannot fix (invalid event, closed emitter, oversized frame)",

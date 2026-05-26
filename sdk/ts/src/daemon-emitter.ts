@@ -11,7 +11,7 @@
  * calls cannot interleave bytes on the same socket connection.
  *
  * Failure model: emit() MUST NOT block the agent on the daemon, and it MUST
- * surface transport failure (ADR-0023). When the socket is unreachable (daemon
+ * surface transport failure (ADR-0024). When the socket is unreachable (daemon
  * not started, socket file missing, broken connection) emit() logs a
  * debug-level drop and resolves with an `EmitTransportError` within
  * milliseconds — distinct from the plain `Error` returned for caller bugs
@@ -44,7 +44,7 @@ const VALID_DECISIONS = new Set(["allowed", "denied", "pending"]);
 /**
  * Returned by {@link DaemonEmitter.emit} when the daemon transport fails — a
  * dial failure (daemon not running, socket missing), write failure, or write
- * timeout (ADR-0023). Distinct from the plain `Error` returned for caller bugs
+ * timeout (ADR-0024). Distinct from the plain `Error` returned for caller bugs
  * (invalid event, closed emitter), so callers can check
  * `err instanceof EmitTransportError` to retry only recoverable transport
  * failures. Returned as null only when the emitter is constructed with
@@ -110,7 +110,7 @@ export interface DaemonEmitterOptions {
 	 */
 	debugLog?: (message: string, attrs: Record<string, string>) => void;
 	/**
-	 * Opt out of the emit failure contract (ADR-0023). When true, emit()
+	 * Opt out of the emit failure contract (ADR-0024). When true, emit()
 	 * resolves with null on transport failure instead of an
 	 * `EmitTransportError`. Use only when the caller knowingly accepts
 	 * silently dropped events; the default surfaces failures so audit-critical
@@ -305,7 +305,7 @@ export class DaemonEmitter {
 
 	/**
 	 * Build the return value for a transport failure: an `EmitTransportError`
-	 * by default (ADR-0023), or null when constructed with `bestEffort: true`.
+	 * by default (ADR-0024), or null when constructed with `bestEffort: true`.
 	 */
 	private transportFailure(message: string): Error | null {
 		return this.bestEffort ? null : new EmitTransportError(message);
@@ -313,7 +313,7 @@ export class DaemonEmitter {
 
 	/**
 	 * Emit sends one event to the daemon. On success resolves with null. By
-	 * default (ADR-0023) it resolves with an `EmitTransportError` when the
+	 * default (ADR-0024) it resolves with an `EmitTransportError` when the
 	 * daemon is unreachable: dial and write failures are logged at debug level
 	 * and the conn is reset for re-dial on the next emit(). Construct with
 	 * `bestEffort: true` to resolve with null on transport failure instead.

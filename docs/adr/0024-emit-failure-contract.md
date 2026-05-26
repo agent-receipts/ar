@@ -1,4 +1,4 @@
-# ADR-0023: Emit Failure Contract
+# ADR-0024: Emit Failure Contract
 
 ## Status
 
@@ -183,7 +183,7 @@ this alone. Proposed wording to carry into that release:
 > **Emit failure visibility.** The protocol's integrity guarantee assumes that
 > the absence of a receipt is detectable. A conformant SDK emitter MUST surface
 > transport failure to its caller rather than dropping events silently (see
-> ADR-0023). Durability across process crashes is an opt-in concern (a WAL
+> ADR-0024). Durability across process crashes is an opt-in concern (a WAL
 > emitter) layered above this base obligation.
 
 Consequence: the issue's "spec text documents the contract" acceptance box
@@ -211,7 +211,7 @@ case list — not three hand-written copies — is the single source of truth fo
   ```json
   {
     "version": 1,
-    "description": "Emit failure contract (ADR-0023). Each SDK test MUST load this file, iterate every case, and fail on any case whose name it does not handle.",
+    "description": "Emit failure contract (ADR-0024). Each SDK test MUST load this file, iterate every case, and fail on any case whose name it does not handle.",
     "outcome_categories": {
       "transport_error": "emit surfaced a transport failure (Go: non-nil error; Python: raised exception; TS: rejected Promise / returned Error)",
       "caller_error": "emit surfaced a caller-bug error, distinguishable from transport_error",

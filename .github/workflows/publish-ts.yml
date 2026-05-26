@@ -1,36 +1,27 @@
 name: Publish SDK (TypeScript) to npm
 
 on:
-  release:
-    # `prereleased` covers alpha/beta tags (e.g. sdk-ts-v0.9.0-alpha.1);
-    # `published` covers stable releases. GitHub fires only one of the two
-    # per release creation depending on the prerelease flag, so we need
-    # both listed to publish every release shape we tag.
-    types: [published, prereleased]
+  # Manual escape hatch — dispatch from `main` to verify the build is clean.
+  # This workflow cannot publish to npm: the npm trusted publisher is configured
+  # for release-sdk-ts.yml, not this file. To publish manually, either push a
+  # sdk-ts-v* tag (triggers release-sdk-ts.yml) or temporarily re-add this
+  # workflow as a trusted publisher at https://www.npmjs.com/package/@agnt-rcpt/sdk-ts.
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
 
 defaults:
   run:
     working-directory: sdk/ts
 
 jobs:
-  publish:
-    # Tag-triggered releases: any sdk-ts-v* tag. Manual dispatch: only from
-    # `main` — dispatch from a feature branch could publish unreviewed code
-    # to npm under whatever package.json version that branch has.
-    if: |
-      startsWith(github.ref_name, 'sdk-ts-v') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+  verify:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
 
       - run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
@@ -39,71 +30,8 @@ jobs:
           node-version: "24"
           cache: "pnpm"
           cache-dependency-path: sdk/ts/pnpm-lock.yaml
-          registry-url: "https://registry.npmjs.org"
 
       - run: pnpm install --frozen-lockfile
-
-      - name: Verify release tag matches package.json version
-        if: github.event_name == 'release'
-        run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION="${GITHUB_REF_NAME#sdk-ts-v}"
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Release tag sdk-ts-v${TAG_VERSION} does not match package.json version ${PKG_VERSION}"
-            exit 1
-          fi
-
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
-
-      # Pre-release versions go to a non-default dist-tag so they don't
-      # clobber `latest` for users on the stable line. Two-phase logic:
-      #   1. Strip SemVer build metadata (after '+'); if a '-' remains
-      #      anywhere in the core version, this is a pre-release.
-      #   2. Extract a leading [A-Za-z]+ identifier from the pre-release
-      #      portion (lowercased). Falls back to `prerelease` if the
-      #      identifier is purely numeric or otherwise unparseable —
-      #      never falls through to `latest`, which would defeat the
-      #      whole purpose.
-      - name: Determine npm dist-tag
-        id: dist_tag
-        shell: bash
-        run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          CORE="${PKG_VERSION%%+*}"
-          if [[ "$CORE" == *-* ]]; then
-            PRE="${CORE#*-}"
-            if [[ "$PRE" =~ ^([A-Za-z]+) ]]; then
-              TAG_NAME="${BASH_REMATCH[1],,}"
-            else
-              TAG_NAME="prerelease"
-            fi
-            echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish to npm
-        run: npm publish --access public --provenance --tag ${{ steps.dist_tag.outputs.tag }}
-
-  # Release-blocking gate: the just-published npm package must satisfy the code
-  # snippets in the READMEs. Runs after publish so the version is live on npm;
-  # a drifted snippet turns the release red. (Pre-publish gating isn't possible
-  # here — "published" mode needs the artifact to already exist on the registry.)
-  readme-snippets:
-    needs: publish
-    if: |
-      startsWith(github.ref_name, 'sdk-ts-v') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: "24"
-      - name: Verify published README snippets type-check
-        run: python3 scripts/readme_snippets/check.py --lang ts --source published README.md sdk/ts/README.md
