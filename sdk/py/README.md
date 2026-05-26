@@ -50,7 +50,8 @@ pip install agent-receipts
 ```
 
 Receipts are signed by a separate `agent-receipts-daemon` process, which also
-ships the `agent-receipts` verify CLI. Install it for your platform — see the
+ships the `agent-receipts` CLI (including the `verify` command). Install it for
+your platform — see the
 [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
 ## Quick start
@@ -136,8 +137,8 @@ enterprise / multi-host shape, not the first-run path — the daemon above is wh
 most adopters want.
 
 `agent_receipts.emitters` (re-exported at the package top level) provides the
-building blocks, all delivering signed `AgentReceipt` values (the ones you create
-with `sign_receipt` — see the [in-process appendix](#appendix-in-process-signing-tutorial-and-testing-only)):
+building blocks below, all delivering signed `AgentReceipt` values — the receipts
+you sign with `sign_receipt`, shown in the [in-process appendix](#appendix-in-process-signing-tutorial-and-testing-only):
 
 - **`HttpEmitter`** — POSTs each receipt to the collector with retry + backoff.
   Default `"sync"` mode waits for the collector ack (`201`, or `409` for a
