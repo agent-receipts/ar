@@ -1,7 +1,11 @@
 """Python SDK for the Agent Receipts protocol."""
 
 from agent_receipts._version import VERSION
-from agent_receipts.daemon_emitter import DaemonEmitter, default_socket_path
+from agent_receipts.daemon_emitter import (
+    DaemonEmitter,
+    EmitTransportError,
+    default_socket_path,
+)
 from agent_receipts.emitters import (
     ApiKeyAuth,
     BearerAuth,
@@ -150,6 +154,7 @@ __all__ = [
     "generateForensicKeyPair",
     # DaemonEmitter (ADR-0010 daemon client; ADR-0020 step 1 rename)
     "DaemonEmitter",
+    "EmitTransportError",
     "default_socket_path",
     # Emitter abstraction (ADR-0020) — signed-receipt delivery
     "ApiKeyAuth",

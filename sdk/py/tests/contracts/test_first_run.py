@@ -133,18 +133,27 @@ def test_daemon_emitter_roundtrip_against_live_daemon():
         assert ret is None
 
 
-def test_daemon_emitter_no_daemon_is_silent_drop(tmp_path):
-    """Local-path first-run-without-daemon: emit drops silently, never raises.
+def test_daemon_emitter_no_daemon_surfaces_transport_error(tmp_path):
+    """First-run-without-daemon: emit raises EmitTransportError (ADR-0023).
 
-    Pins v0.10.0 current behaviour. #599 (emit-failure-contract) may decide
-    that emit MUST surface transport failure as a raised error — when that
-    decision lands, flip this test to assert the new contract.
+    The emit failure contract (#599) requires transport failure to surface
+    rather than drop silently. best_effort=True opts back into the old
+    loss-tolerant behaviour for callers that knowingly accept dropped events.
     """
-    from agent_receipts import DaemonEmitter
+    from agent_receipts import DaemonEmitter, EmitTransportError
 
     dead_socket = str(tmp_path / "nope.sock")
     with DaemonEmitter(socket_path=dead_socket, session_id="contracts-drop") as e:
-        assert e.emit(channel="py-sdk", tool_name="x.y", decision="allowed") is None
+        with pytest.raises(EmitTransportError):
+            e.emit(channel="py-sdk", tool_name="x.y", decision="allowed")
+
+    with DaemonEmitter(
+        socket_path=dead_socket, session_id="contracts-drop", best_effort=True
+    ) as best_effort:
+        assert (
+            best_effort.emit(channel="py-sdk", tool_name="x.y", decision="allowed")
+            is None
+        )
 
 
 def test_top_level_emitter_is_now_a_protocol():

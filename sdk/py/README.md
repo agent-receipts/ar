@@ -136,8 +136,9 @@ one sends:
 
 - **`DaemonEmitter`** — forwards *tool-call events* (not signed receipts) to a
   local `agent-receipts-daemon` over a Unix socket; the daemon holds the signing
-  key and constructs, signs, and chains the receipt. Fire-and-forget. Its
-  `emit()` takes the event fields, not an `AgentReceipt`:
+  key and constructs, signs, and chains the receipt. Non-blocking, but surfaces
+  transport failure (see below). Its `emit()` takes the event fields, not an
+  `AgentReceipt`:
 
   ```python
   from agent_receipts import DaemonEmitter
@@ -158,10 +159,13 @@ one sends:
   backlog after the collector recovers). Their `emit()` takes a signed
   `AgentReceipt`.
 
-`DaemonEmitter` is fire-and-forget: if the daemon is unreachable the event is
-dropped (logged at `DEBUG`), so start the daemon before your app. See the
-[Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/) for
-running the daemon and verifying the chain.
+By default `DaemonEmitter.emit()` surfaces transport failure (ADR-0023): if the
+daemon is unreachable it logs at `DEBUG` and raises `EmitTransportError` rather
+than dropping silently, so start the daemon before your app. The call stays
+non-blocking (bounded by the dial + write timeout). Pass `best_effort=True` to
+opt into loss-tolerant emission (`emit()` returns `None` on transport failure).
+See the [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/)
+for running the daemon and verifying the chain.
 
 ## What is an Agent Receipt?
 

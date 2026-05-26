@@ -22,7 +22,11 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from agent_receipts.daemon_emitter import DaemonEmitter, default_socket_path
+from agent_receipts.daemon_emitter import (
+    DaemonEmitter,
+    EmitTransportError,
+    default_socket_path,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -410,11 +414,36 @@ class TestDaemonEmitterValidation:
             )
 
 
-class TestFireAndForgetWhenDaemonDown:
-    """Emit must return quickly and not raise when the daemon is absent."""
+class TestSurfacesTransportFailureByDefault:
+    """ADR-0023: emit raises EmitTransportError when the daemon is absent,
+    without blocking the caller longer than the dial/write budget."""
+
+    def test_raises_quickly_on_dial_failure(self) -> None:
+        e = DaemonEmitter(socket_path="/tmp/no-such-daemon-py-test.sock")
+        start = time.monotonic()
+        with pytest.raises(EmitTransportError):
+            e.emit(channel="sdk", tool_name="noop", decision="allowed")
+        elapsed = time.monotonic() - start
+        assert elapsed < 0.050, f"emit blocked for {elapsed:.3f}s, want <50ms"
+        e.close()
+
+    def test_transport_error_distinct_from_caller_bug(self) -> None:
+        e = DaemonEmitter(socket_path="/tmp/no-such-daemon-py-test.sock")
+        # Caller bug raises ValueError before any dial — distinguishable from
+        # the transport failure raised once the dial is attempted.
+        with pytest.raises(ValueError, match="invalid decision"):
+            e.emit(channel="sdk", tool_name="noop", decision="maybe")
+        assert not isinstance(ValueError(), EmitTransportError)
+        e.close()
+
+
+class TestBestEffortWhenDaemonDown:
+    """best_effort=True opts out of the contract: emit returns None quickly."""
 
     def test_returns_none_quickly(self) -> None:
-        e = DaemonEmitter(socket_path="/tmp/no-such-daemon-py-test.sock")
+        e = DaemonEmitter(
+            socket_path="/tmp/no-such-daemon-py-test.sock", best_effort=True
+        )
         start = time.monotonic()
         result = e.emit(channel="sdk", tool_name="noop", decision="allowed")
         elapsed = time.monotonic() - start
@@ -423,7 +452,9 @@ class TestFireAndForgetWhenDaemonDown:
         e.close()
 
     def test_multiple_emits_all_return_none(self) -> None:
-        e = DaemonEmitter(socket_path="/tmp/no-such-daemon-py-test.sock")
+        e = DaemonEmitter(
+            socket_path="/tmp/no-such-daemon-py-test.sock", best_effort=True
+        )
         for _ in range(5):
             result = e.emit(channel="sdk", tool_name="noop", decision="allowed")
             assert result is None

@@ -137,13 +137,26 @@ This is a **breaking behavioural change** for existing Go callers that rely on
 the silent default and for all Python and TypeScript daemon-emitter callers. It
 is intentional and is the entire point of the closure.
 
-### 3. PY-P4 resolution
+### 3. PY-P4 is decoupled from PY-P9 by this decision
 
-The Python `Emitter` Protocol is redefined so that it captures the real arity
-of `DaemonEmitter.emit`, allowing a WAL emitter to wrap the daemon emitter. The
-exact Protocol shape is Python-SDK implementation detail tracked in the spawned
-Python issue; this ADR only requires that the shape be made wrappable as a
-precondition for PY-P9.
+The issue framed PY-P4 (the `Emitter` Protocol does not capture
+`DaemonEmitter.emit`'s arity, so a WAL emitter cannot wrap the daemon path) as a
+*blocking prerequisite* for closing PY-P9. That framing assumed the fix for the
+silent drop was to retrofit the WAL durability path onto `DaemonEmitter`.
+
+This ADR's § 1 decision dissolves that dependency. The base obligation is
+"surface the failure," and durability is a *separate, opt-in* concern. Closing
+PY-P9 therefore needs only that `DaemonEmitter.emit` raise on transport failure
+— it does **not** need the WAL to wrap the daemon path.
+
+PY-P4 itself is a real but distinct item that stays with ADR-0020 step 2: the
+`Emitter` Protocol and the WAL deal exclusively in signed `AgentReceipt`s, while
+`DaemonEmitter` forwards *unsigned* tool-call frames and deliberately does not
+implement the Protocol (ADR-0020 § "Migration"). Making the daemon path
+WAL-wrappable requires the daemon to learn to ingest signed receipts (step 2),
+not a redefinition of the Protocol to swallow the unsigned-frame arity — that
+would fight ADR-0020's deliberate separation. PY-P4 is consequently **not** part
+of this closure; it is tracked with step-2 durability work.
 
 ### 4. Where the contract is published
 
@@ -283,9 +296,10 @@ tracked here rather than as separate GitHub issues.
 2. [x] Add `cross-sdk-tests/emit_failure_vectors.json` (the shared case list)
    plus the data-driven Go conformance test that loads and iterates it (§ 5,
    A′).
-3. [ ] **Python: fix PY-P4** (Protocol arity) — prerequisite.
-4. [ ] Python: raise on transport failure in `DaemonEmitter.emit`; pass the
-   vector.
+3. [—] **PY-P4** (Protocol arity / WAL-wraps-daemon) — *not part of this
+   closure*; decoupled by § 1 and moved to ADR-0020 step-2 durability work (§ 3).
+4. [x] Python: raise `EmitTransportError` on transport failure in
+   `DaemonEmitter.emit`, add `best_effort` opt-out; pass the vector.
 5. [x] Go: flip the default so `Emit` returns a non-nil error on socket failure
    (`ErrTransport`-tagged), add `WithBestEffort` opt-out, retract the "drops
    silently" wording in `daemon-setup.mdx`.
@@ -300,7 +314,7 @@ tracked here rather than as separate GitHub issues.
 - [ ] *(spec)* Spec text documents the contract — deferred to the next spec
   version cut by § 4; binding via this ADR + the vector until then.
 - [ ] A conformance vector asserts emit-without-daemon surfaces error in each
-  SDK — vector added (§ 5); Go lane green; Python/TS pending (items 4/6).
-- [ ] All three SDKs pass the vector — Go done; Python/TS pending.
+  SDK — vector added (§ 5); Go and Python lanes green; TS pending (item 6).
+- [ ] All three SDKs pass the vector — Go and Python done; TS pending.
 - [x] `daemon-setup.mdx` no longer documents silent drop as expected.
 - [ ] "Choosing an emitter" page describes the WAL wrapping pattern — item 7.
