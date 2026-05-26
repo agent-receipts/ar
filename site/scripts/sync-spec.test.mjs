@@ -49,7 +49,7 @@ test("rewriteRelativeLinks preserves anchors and normalizes ..", () => {
   );
 });
 
-test("rewriteRelativeLinks leaves absolute links untouched", () => {
+test("rewriteRelativeLinks rewrites relative links but leaves absolute URLs untouched", () => {
   const out = rewriteRelativeLinks(
     "[home](https://agentreceipts.ai) and [rel](./x.json)",
     "v0.4.0",

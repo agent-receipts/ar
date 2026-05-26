@@ -249,7 +249,9 @@ function publishContexts() {
 
 // Run the publishing pipeline only when invoked directly (predev / prebuild /
 // `pnpm sync-spec`). Importing this module — e.g. from the unit tests — must
-// not touch the filesystem or shell out to git.
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// not touch the filesystem or shell out to git. argv[1] is absent in some
+// invocation modes (e.g. `node --eval` that imports this), so guard it before
+// pathToFileURL, which would otherwise throw on undefined.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
