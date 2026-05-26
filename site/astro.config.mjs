@@ -185,6 +185,10 @@ export default defineConfig({
               label: "Agent Security Tooling Landscape — April 2026",
               slug: "blog/agent-security-tooling-landscape-april-2026",
             },
+            {
+              label: "Native Tool Calls in the Audit Trail",
+              slug: "blog/hooks-native-tool-audit",
+            },
           ],
         },
       ],

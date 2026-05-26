@@ -247,7 +247,7 @@ agent-receipts-hook [--format=<name>]
 |---|---|
 | `--format` | Force a specific input format (default: auto-detected from environment variables). Currently supported: `claude-code`. |
 
-**Exit behaviour:** Always exits 0. Emit failures (daemon not running, socket missing, malformed frame) are dropped silently — the hook never blocks the agent.
+**Exit behaviour:** The hook never blocks the agent — the tool call has already completed by the time `PostToolUse` fires. Stdin/format issues exit 0 silently (unreadable stdin, unrecognised runtime). Emit failures (daemon unreachable, parse error, socket write timeout) exit 1 with a message on stderr so the operator can surface a missing-receipt event out-of-band. The in-chain audit gap from a daemon-down event is still silent by design — see [ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md) — but the hook itself is loud about its own failures.
 
 **Auto-detection:** When `--format` is omitted, the binary inspects environment variables to identify the calling runtime. `CLAUDE_SESSION_ID` set → `claude-code` format.
 
