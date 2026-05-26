@@ -115,7 +115,18 @@ default paths.
 
 The standardized action taxonomy (action types and risk levels) is defined in the
 [protocol specification](https://github.com/agent-receipts/spec/tree/main/spec/taxonomy).
-Taxonomy classification will be added in a future milestone (M3).
+The SDK ships classification helpers: `classify_tool_call` maps a tool name to an
+action type and risk level using your mappings, `load_taxonomy_config` loads those
+mappings from a JSON config (`{ "mappings": [...] }`), and `resolve_action_type`
+looks up a single action type's metadata.
+
+```python
+from agent_receipts import classify_tool_call, load_taxonomy_config
+
+mappings = load_taxonomy_config("taxonomy.json")
+result = classify_tool_call("read_file", mappings)
+print(result.action_type, result.risk_level)
+```
 
 ## Delivering receipts to a remote collector
 
