@@ -3,6 +3,12 @@ name: Site
 on:
   push:
     branches: [main]
+    # spec-v<X.Y.Z> tag pushes are the release signal for a spec version
+    # (ADR-0021 D4): tagging rebuilds the site so /spec/v<X.Y.Z>/ goes live
+    # with cross-references pinned to that tag. Path filters do not apply to
+    # tag pushes, so this fires regardless of which files the tagged commit
+    # touched.
+    tags: ["spec-v*"]
     paths: [site/**, spec/**]
   pull_request:
     branches: [main]
@@ -27,6 +33,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # sync-spec.mjs reads spec-v<X.Y.Z> tags to decide which versions
+          # are released; the default fetch-depth: 1 checkout omits tags.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -38,6 +48,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Test build scripts
+        run: pnpm test
 
       - name: Install Playwright Chromium (for mermaid rendering)
         run: pnpm exec playwright install --with-deps chromium
