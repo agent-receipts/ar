@@ -166,11 +166,13 @@ from agent_receipts import (
     WalEmitter,
 )
 
+# Construct once at startup, then drain anything a previous crash left behind.
+http = HttpEmitter(HttpEmitterConfig(endpoint="https://collector.example/receipts"))
+emitter = WalEmitter(inner=http, wal=FileWal("/var/lib/my-app/wal"))
+emitter.replay()
+
 
 def deliver(receipt: AgentReceipt) -> None:
-    http = HttpEmitter(HttpEmitterConfig(endpoint="https://collector.example/receipts"))
-    emitter = WalEmitter(inner=http, wal=FileWal("/var/lib/my-app/wal"))
-    emitter.replay()       # drain anything a previous crash left behind
     emitter.emit(receipt)  # at-least-once: retained in the WAL until acked
 ```
 
