@@ -202,6 +202,28 @@ def test_go_noncanonical_imports_accepts_canonical() -> None:
     assert extract.go_noncanonical_imports(code) == []
 
 
+def test_single_aliased_import_preserved() -> None:
+    text = '```go\nimport rcpt "github.com/agent-receipts/ar/sdk/go/receipt"\n\nrcpt.GenerateKeyPair()\n```\n'
+    (unit,) = extract.build_units("R.md", text, "go")
+    assert 'rcpt "github.com/agent-receipts/ar/sdk/go/receipt"' in unit.code
+
+
+def test_import_block_preserves_alias_and_blank() -> None:
+    text = """
+```go
+import (
+	_ "github.com/agent-receipts/ar/sdk/go/receipt"
+	st "github.com/agent-receipts/ar/sdk/go/store"
+)
+
+st.Open("x")
+```
+"""
+    (unit,) = extract.build_units("R.md", text, "go")
+    assert '_ "github.com/agent-receipts/ar/sdk/go/receipt"' in unit.code
+    assert 'st "github.com/agent-receipts/ar/sdk/go/store"' in unit.code
+
+
 def test_go_continues_is_rejected_loudly() -> None:
     text = """
 ```go

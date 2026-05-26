@@ -40,6 +40,7 @@ import extract  # noqa: E402
 GO_MODULE = "github.com/agent-receipts/ar/sdk/go"
 TS_PACKAGE = "@agnt-rcpt/sdk-ts"
 PY_PACKAGE = "agent-receipts"
+MYPY_VERSION = "mypy==2.1.0"
 
 
 def _run(cmd: list[str], cwd: str, env: dict[str, str] | None = None, retries: int = 0) -> int:
@@ -144,6 +145,14 @@ def check_go(units: list[extract.Unit], source: str, version: str | None, repo_r
 # --------------------------------------------------------------------------- #
 
 
+def _read_ts_dev_deps(repo_root: str) -> dict[str, str]:
+    try:
+        with open(os.path.join(repo_root, "sdk/ts/package.json"), encoding="utf-8") as fh:
+            return json.load(fh).get("devDependencies", {})
+    except (OSError, ValueError):
+        return {}
+
+
 def check_ts(units: list[extract.Unit], source: str, version: str | None, repo_root: str, workdir: str) -> int:
     if not units:
         print("  no TypeScript units to check")
@@ -154,12 +163,19 @@ def check_ts(units: list[extract.Unit], source: str, version: str | None, repo_r
     else:
         dep = version
 
+    # Type-check with the same typescript / @types/node the SDK is built with,
+    # so the gate matches the published .d.ts (newer TS type features included)
+    # instead of an arbitrary pinned major.
+    sdk_dev = _read_ts_dev_deps(repo_root)
     package_json = {
         "name": "readme-snippets",
         "private": True,
         "type": "module",
         "dependencies": {TS_PACKAGE: dep},
-        "devDependencies": {"typescript": "^5", "@types/node": "^22"},
+        "devDependencies": {
+            "typescript": sdk_dev.get("typescript", "^5"),
+            "@types/node": sdk_dev.get("@types/node", "^22"),
+        },
     }
     with open(os.path.join(workdir, "package.json"), "w", encoding="utf-8") as fh:
         json.dump(package_json, fh, indent=2)
@@ -212,8 +228,9 @@ def check_py(units: list[extract.Unit], source: str, version: str | None, repo_r
     if _run([sys.executable, "-m", "venv", venv], cwd=workdir) != 0:
         return 1
     py = os.path.join(venv, "bin", "python")
-    pip_install = [py, "-m", "pip", "install", "--quiet", "--upgrade", "pip", "mypy"]
-    if _run(pip_install, cwd=workdir) != 0:
+    # Pin mypy so the gate is deterministic — a behaviour change in a future
+    # release shouldn't silently start failing (or passing) snippet checks.
+    if _run([py, "-m", "pip", "install", "--quiet", MYPY_VERSION], cwd=workdir) != 0:
         return 1
 
     if source == "local":
@@ -260,7 +277,14 @@ def main(argv: list[str] | None = None) -> int:
 
     repo_root = os.path.abspath(args.repo_root)
     readmes = [os.path.join(repo_root, r) if not os.path.isabs(r) else r for r in args.readmes]
-    readmes = [r for r in readmes if os.path.exists(r)]
+    missing = [r for r in readmes if not os.path.exists(r)]
+    if missing:
+        # Fail loudly rather than silently disable the gate — a path typo or a
+        # renamed README must not quietly pass as "nothing to check".
+        print("ERROR: README path(s) not found:")
+        for r in missing:
+            print(f"  {r}")
+        return 2
 
     print(f"Checking {args.lang} snippets ({args.source}) in:")
     units = _collect_units(readmes, args.lang)

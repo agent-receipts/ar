@@ -208,7 +208,10 @@ def _render(lang: str, chain: list[Block]) -> str:
 # so the wrapper can suppress "declared and not used" for bare Go snippets.
 _GO_SHORT_DECL_RE = re.compile(r"^(?P<names>[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*:=")
 _GO_VAR_DECL_RE = re.compile(r"^var\s+(?P<name>[A-Za-z_]\w*)")
-_GO_SINGLE_IMPORT_RE = re.compile(r'^import\s+(?:[\w.]+\s+)?"(?P<path>[^"]+)"\s*$')
+# A single-line import: captures the whole spec after `import ` (the optional
+# alias / blank identifier plus the quoted path), so it round-trips verbatim.
+_GO_SINGLE_IMPORT_RE = re.compile(r'^import\s+(?P<spec>(?:[\w.]+\s+|_\s+)?"[^"]+")\s*$')
+_GO_IMPORT_BLOCK_OPEN_RE = re.compile(r"^import\s*\(\s*$")
 
 
 GO_SNIPPET_PACKAGE = "snippet"
@@ -236,27 +239,29 @@ def _render_go(code: str) -> str:
         )
         return rewritten + "\n"
 
+    # Each entry is a full import spec, kept verbatim so aliases (`foo "pkg"`),
+    # blank imports (`_ "pkg"`), and inline comments survive the rewrite.
     imports: list[str] = []
     body: list[str] = []
     lines = code.splitlines()
     i = 0
     while i < len(lines):
-        line = lines[i]
-        single = _GO_SINGLE_IMPORT_RE.match(line.strip())
+        stripped = lines[i].strip()
+        single = _GO_SINGLE_IMPORT_RE.match(stripped)
         if single:
-            imports.append(single.group("path"))
+            imports.append(single.group("spec").strip())
             i += 1
             continue
-        if re.match(r"^import\s*\(", line.strip()):
+        if _GO_IMPORT_BLOCK_OPEN_RE.match(stripped):
             i += 1
-            while i < len(lines) and ")" not in lines[i]:
-                path = lines[i].strip().strip('"')
-                if path:
-                    imports.append(path)
+            while i < len(lines) and lines[i].strip() != ")":
+                spec = lines[i].strip()
+                if spec:
+                    imports.append(spec)
                 i += 1
             i += 1  # skip the closing ")"
             continue
-        body.append(line)
+        body.append(lines[i])
         i += 1
 
     declared: list[str] = []
@@ -276,8 +281,8 @@ def _render_go(code: str) -> str:
     out: list[str] = [f"package {GO_SNIPPET_PACKAGE}", ""]
     if imports:
         out.append("import (")
-        for path in imports:
-            out.append(f'\t"{path}"')
+        for spec in imports:
+            out.append(f"\t{spec}")
         out.append(")")
         out.append("")
     out.append("func run() {")
