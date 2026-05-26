@@ -76,7 +76,7 @@ To run as a persistent service on macOS, use the launchd plist available at [`da
 
 ## Connect your emitters
 
-Point each SDK or plugin at the daemon socket. On macOS and Linux, all components resolve a platform default socket path automatically (see the table above). Set `AGENTRECEIPTS_SOCKET` to override that default. Other platforms have no platform default, but `AGENTRECEIPTS_SOCKET` (or the SDK's explicit socket-path option) still supplies one; `NewDaemon()` only errors when neither is provided.
+Point each SDK or plugin at the daemon socket. On macOS and Linux, all components resolve a platform default socket path automatically (see the table above). Set `AGENTRECEIPTS_SOCKET` to override that default. Other platforms have no platform default, but `AGENTRECEIPTS_SOCKET` (or the SDK's explicit socket-path option, e.g. Go's `WithSocketPath`) still supplies one; the emitter constructor only errors when neither is provided.
 
 There is no in-process fallback: if the daemon is unreachable, events are dropped silently (see [Start](#start) for timeout details).
 
@@ -245,6 +245,8 @@ pgrep agent-receipts-daemon
 ls -la ~/.local/share/agent-receipts/events.sock             # macOS (default fallback)
 ls -la "${XDG_RUNTIME_DIR:-/run}/agentreceipts/events.sock"  # Linux
 ```
+
+If you've set `AGENTRECEIPTS_SOCKET` or an absolute `XDG_DATA_HOME`, check that path instead. The macOS example above assumes the default fallback location.
 
 **Socket path mismatch.**
 If you start the daemon and an emitter on different socket paths, events are dropped. Set `AGENTRECEIPTS_SOCKET` to the same value in the daemon's environment and each emitter's environment, or rely on the platform default by not setting it in either.
