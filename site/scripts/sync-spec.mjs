@@ -115,6 +115,13 @@ function main() {
     .filter((v) => released.has(v))
     .sort(semverCompare);
 
+  // Clear any previously generated pages up front, before deciding what to
+  // write. This holds the "publish nothing" safe failure mode even when the
+  // version set is empty (no release tags, shallow clone, or git
+  // unavailable): a stale page from an earlier run must never survive into
+  // the build, since a wrongly-pinned page is worse than a missing one.
+  if (existsSync(outDir)) rmSync(outDir, { recursive: true });
+
   if (versions.length === 0) {
     console.warn(
       "sync-spec: no released spec versions found — a spec/v<X.Y.Z>/ directory " +
@@ -129,7 +136,6 @@ function main() {
 }
 
 function writeSpecPages(versions) {
-  if (existsSync(outDir)) rmSync(outDir, { recursive: true });
   mkdirSync(outDir, { recursive: true });
 
   const latest = versions[versions.length - 1];
