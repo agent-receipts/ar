@@ -8,7 +8,7 @@ Accepted
 
 The Go SDK is currently reachable via two distinct module paths:
 
-1. **`github.com/agent-receipts/ar/sdk/go`** — the monorepo path. This is where the SDK actively develops (current version `v0.13.0`); the site's installation docs use this path; the collector and other Go components share the same monorepo.
+1. **`github.com/agent-receipts/ar/sdk/go`** — the monorepo path. This is where the SDK is actively developed (current version `v0.13.0`); the site's installation docs use this path; the collector and other Go components share the same monorepo.
 2. **`github.com/agent-receipts/sdk-go`** — a standalone module path. This was the historical canonical path. The last published tag is `v0.1.0`. It contains `receipt`, `store`, and `taxonomy` packages but no `emitters`, no `aws` KMS adapter, no collector — it is 12 versions behind and missing the majority of current functionality. The `sdk/go` README in the monorepo still uses this import path.
 
 A new Go evaluator hitting the project's front door runs `go get github.com/agent-receipts/sdk-go` per the README, resolves the stale module, compiles a hello-world against it, and either gets confused by the missing `emitters` package or assumes that is the complete SDK. The site, meanwhile, uses the monorepo path. The two surfaces disagree.
@@ -21,7 +21,7 @@ The Go ecosystem's module-path mechanics make this a binary decision: a Go modul
 
 ### D1. The canonical Go module path is `github.com/agent-receipts/ar/sdk/go`
 
-All Go consumers of the Agent Receipts SDK use the monorepo import path. The README, the site, every example, every documentation reference, and every SDK release tag uses this path going forward.
+All Go consumers of the Agent Receipts SDK use the monorepo import path. The README, the site, every example, every documentation reference, and every SDK release tag use this path going forward.
 
 Reasoning: the monorepo is where development actively happens, where releases are cut from, where the collector and other Go components share build infrastructure, and where the SDK's current version corresponds to the project's overall surface area. The standalone module has been stale for 12 versions; promoting it to canonical now means moving the active development *to* it, which is the opposite of where the project's investment is going.
 
