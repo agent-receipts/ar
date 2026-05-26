@@ -15,7 +15,7 @@ import {
   existsSync,
   rmSync,
 } from "node:fs";
-import { join, dirname, posix } from "node:path";
+import { join, dirname, posix, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
@@ -251,7 +251,8 @@ function publishContexts() {
 // `pnpm sync-spec`). Importing this module — e.g. from the unit tests — must
 // not touch the filesystem or shell out to git. argv[1] is absent in some
 // invocation modes (e.g. `node --eval` that imports this), so guard it before
-// pathToFileURL, which would otherwise throw on undefined.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// pathToFileURL. resolve() ensures a relative argv[1] (e.g. `node scripts/sync-spec.mjs`)
+// is converted to an absolute path before pathToFileURL, which requires one.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main();
 }
