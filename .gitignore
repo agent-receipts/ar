@@ -16,5 +16,6 @@ __pycache__/
 # Built binaries
 /agent-receipts
 /bin/
+/daemon/bin/
 /daemon/agent-receipts-daemon
 /daemon/bin/
