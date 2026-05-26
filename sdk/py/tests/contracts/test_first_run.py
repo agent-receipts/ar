@@ -148,15 +148,16 @@ def test_daemon_emitter_no_daemon_is_silent_drop(tmp_path):
 
 
 def test_top_level_emitter_is_now_a_protocol():
-    """v0.10.0 breaking rename: `agent_receipts.Emitter` is a Protocol now.
+    """v0.10.0 breaking rename: `agent_receipts.Emitter` cannot be instantiated.
 
-    0.9.0 code `Emitter(socket_path=...)` raises TypeError. Pins the rename so
-    the breaking-change posture stays honest across versions.
+    0.9.0 code `Emitter(socket_path=...)` now raises TypeError because Emitter
+    is a Protocol. Asserts the behavioural contract — that instantiation
+    raises — without pinning private `typing` internals or exact error
+    messages, both of which can drift across Python versions.
     """
     from agent_receipts import Emitter
 
-    assert getattr(Emitter, "_is_protocol", False) is True
-    with pytest.raises(TypeError, match="Protocols cannot be instantiated"):
+    with pytest.raises(TypeError):
         Emitter(socket_path="/tmp/whatever.sock")  # type: ignore[call-arg]
 
 
