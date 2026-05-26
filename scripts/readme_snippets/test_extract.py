@@ -202,6 +202,28 @@ def test_go_noncanonical_imports_accepts_canonical() -> None:
     assert extract.go_noncanonical_imports(code) == []
 
 
+def test_go_continues_is_rejected_loudly() -> None:
+    text = """
+```go
+package main
+import "github.com/agent-receipts/ar/sdk/go/receipt"
+func main() { _ = receipt.GenerateKeyPair }
+```
+
+<!-- snippet-check: continues -->
+```go
+import "github.com/agent-receipts/ar/sdk/go/store"
+_ = store.Open
+```
+"""
+    try:
+        extract.build_units("R.md", text, "go")
+    except ValueError as exc:
+        assert "continues" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for chained Go snippets")
+
+
 def _run_all() -> int:
     failures = 0
     for name, fn in sorted(globals().items()):

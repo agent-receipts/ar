@@ -192,8 +192,14 @@ def _safe_label(label: str) -> str:
 
 def _render(lang: str, chain: list[Block]) -> str:
     if lang == "go":
-        # Go blocks are never chained (each README block is a standalone
-        # program or a bare statement snippet), so render the single block.
+        # Go blocks are standalone (a full program or a bare statement snippet);
+        # concatenating two would not compile. Fail loudly rather than silently
+        # drop the tail of a chain, which would leave a snippet unchecked.
+        if len(chain) > 1:
+            srcs = ", ".join(f"line {b.line}" for b in chain)
+            raise ValueError(
+                f"Go snippets cannot use 'continues' ({srcs}); each must be standalone"
+            )
         return _render_go(chain[0].code)
     return "\n\n".join(b.code for b in chain)
 
