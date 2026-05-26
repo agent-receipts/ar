@@ -27,6 +27,7 @@ import socket
 import pytest
 
 from agent_receipts import (
+    ActionInput,
     Chain,
     CreateReceiptInput,
     Issuer,
@@ -39,7 +40,6 @@ from agent_receipts import (
     verify_chain,
     verify_receipt,
 )
-from agent_receipts.receipt.create import ActionInput
 
 KEY_ID = "did:agent:my-agent#key-1"
 

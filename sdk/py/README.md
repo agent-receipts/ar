@@ -43,37 +43,168 @@ The protocol is designed for receipts to travel — publishing to a shared ledge
 
 ## Install
 
+The Python SDK is on PyPI:
+
 ```sh
 pip install agent-receipts
 ```
 
+Receipts are signed by a separate `agent-receipts-daemon` process, which also
+ships the `agent-receipts` CLI (including the `verify` command). Install it on
+Linux or macOS (Windows is not supported yet) — see the
+[Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
+
 ## Quick start
 
-> **Not for production.** The in-process signing below keeps the signing key
-> inside the agent process. Anyone with code execution in the agent can forge
-> receipts. For real deployments, use the daemon-mediated path: run an
-> out-of-process `agent-receipts-daemon` that owns the key and the chain while
-> your app only sends tool-call events to it. If you sign client-side, deliver
-> the signed receipts with `HttpEmitter` (optionally wrapped in `WalEmitter` for
-> at-least-once delivery — requires `HttpEmitter` in its default `"sync"` mode,
-> not `"fire-and-forget"`). See [Delivering receipts](#delivering-receipts) and
-> the [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
+Agent Receipts are signed by a separate `agent-receipts-daemon` process, not by
+your application. Your code sends tool-call *events* over a local Unix socket;
+the daemon holds the Ed25519 signing key, builds the receipt, signs it, and
+appends it to the hash-chained store. The signing key never enters your process —
+so the audit trail holds up even if the agent is compromised. This is the
+canonical deployment shape
+([ADR-0022](https://github.com/agent-receipts/ar/blob/main/docs/adr/0022-canonical-deployment-shape.md))
+and the first thing you should reach for. To learn the receipt API without a
+daemon, see [the in-process appendix](#appendix-in-process-signing-tutorial-and-testing-only).
+
+### 1. Start the daemon
+
+Generate the signing key once, then run the daemon. It listens on the per-OS
+default socket — see the
+[Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/) for
+socket paths and running it as a service.
+
+```sh
+agent-receipts-daemon --init   # one-time: creates the signing key
+agent-receipts-daemon          # start the daemon (leave it running)
+```
+
+### 2. Emit a receipt
+
+`DaemonEmitter` forwards the tool-call event to the daemon, which constructs,
+signs, and chains the receipt. It is fire-and-forget — start the daemon before
+your app, since an unreachable daemon drops the event (logged at `DEBUG`).
+
+```python
+from agent_receipts import DaemonEmitter
+
+with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
+    e.emit(
+        channel="my-app",
+        tool_name="filesystem.file.read",
+        decision="allowed",
+    )
+```
+
+### 3. Verify
+
+`agent-receipts verify` reads the database directly and confirms hash linkage and
+signatures — the daemon does not need to be running.
+
+```sh
+AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
+  agent-receipts verify \
+  --public-key ~/.local/share/agent-receipts/signing.key.pub
+```
+
+A successful run prints the chain length and confirms the signatures are intact.
+If you started the daemon with a non-default chain id (`AGENTRECEIPTS_CHAIN_ID` /
+`--chain-id`) or overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY`, pass
+those same values here — otherwise `verify` reads the `default` chain at the
+default paths.
+
+### Action taxonomy
+
+The standardized action taxonomy (action types and risk levels) is defined in the
+[protocol specification](https://github.com/agent-receipts/spec/tree/main/spec/taxonomy).
+The SDK ships classification helpers: `classify_tool_call` maps a tool name to an
+action type and risk level using your mappings, `load_taxonomy_config` loads those
+mappings from a JSON config (`{ "mappings": [...] }`), and `resolve_action_type`
+looks up a single action type's metadata.
+
+```python
+from agent_receipts import classify_tool_call, load_taxonomy_config
+
+mappings = load_taxonomy_config("taxonomy.json")
+result = classify_tool_call("read_file", mappings)
+print(result.action_type, result.risk_level)
+```
+
+## Delivering receipts to a remote collector
+
+When the agent host and the receipt-storage host differ, sign receipts
+client-side and POST them to an `agent-receipts-collector` over HTTPS. This is an
+enterprise / multi-host shape, not the first-run path — the daemon above is what
+most adopters want.
+
+`agent_receipts.emitters` (re-exported at the package top level) provides the
+building blocks below, all delivering signed `AgentReceipt` values — the receipts
+you sign with `sign_receipt`, shown in the [in-process appendix](#appendix-in-process-signing-tutorial-and-testing-only):
+
+- **`HttpEmitter`** — POSTs each receipt to the collector with retry + backoff.
+  Default `"sync"` mode waits for the collector ack (`201`, or `409` for a
+  duplicate id); `"fire-and-forget"` schedules the POST on a background thread and
+  never raises to the caller (call `drain()` before shutdown for a best-effort
+  flush).
+- **`WalEmitter`** — wraps a *synchronous* inner emitter (`HttpEmitter` in its
+  default `"sync"` mode — `"fire-and-forget"` returns before the POST lands, so
+  the WAL entry is cleared prematurely and the guarantee is lost) with a
+  write-ahead log for at-least-once delivery. Each receipt is recorded *before*
+  delivery and cleared only on ack, so a failed delivery is
+  **retained and re-sent** — by `replay()` (call once at startup to drain a
+  backlog a previous crash left behind) or `flush(deadline_ms)` (bounded
+  best-effort drain on shutdown). Use `FileWal` for long-lived compute (survives
+  restart) and `MemoryWal` for ephemeral compute (Lambda, Cloud Run).
+- **`CompositeEmitter`** (fan-out), **`BufferingEmitter`** (batching), and
+  **`InMemoryEmitter`** (testing) round out the set.
+
+```python
+from agent_receipts import (
+    AgentReceipt,
+    FileWal,
+    HttpEmitter,
+    HttpEmitterConfig,
+    WalEmitter,
+)
+
+# Construct once at startup, then drain anything a previous crash left behind.
+http = HttpEmitter(HttpEmitterConfig(endpoint="https://collector.example/receipts"))
+emitter = WalEmitter(inner=http, wal=FileWal("/var/lib/my-app/wal"))
+emitter.replay()
+
+
+def deliver(receipt: AgentReceipt) -> None:
+    emitter.emit(receipt)  # at-least-once: retained in the WAL until acked
+```
+
+Confirm receipts landed with `agent-receipts verify` (above) against the
+collector's store.
+
+## Appendix: in-process signing (tutorial and testing only)
+
+The SDK can also create and sign a receipt entirely in your process, with no
+daemon. This is useful for learning the receipt API and for unit tests that
+should not depend on a running daemon.
+
+> **Not for production.** This pattern keeps the signing key inside the agent
+> process. Anyone with code execution in the agent can forge receipts. For real
+> deployments, use the [daemon-mediated path](#quick-start) shown above (see also
+> the [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/)).
 
 ### Create and sign a receipt
 
 ```python
 from agent_receipts import (
+    ActionInput,
+    Chain,
+    CreateReceiptInput,
+    Issuer,
+    Outcome,
+    Principal,
     create_receipt,
     generate_key_pair,
     hash_receipt,
     sign_receipt,
-    CreateReceiptInput,
-    Chain,
-    Issuer,
-    Outcome,
-    Principal,
 )
-from agent_receipts.receipt.create import ActionInput
 
 # Generate an Ed25519 key pair
 keys = generate_key_pair()
@@ -99,21 +230,14 @@ receipt = sign_receipt(unsigned, keys.private_key, "did:agent:my-agent#key-1")
 receipt_hash = hash_receipt(receipt)
 ```
 
-### Verify a receipt
+### Verify a receipt and chain
 
 <!-- snippet-check: continues -->
 ```python
-from agent_receipts import verify_receipt
+from agent_receipts import verify_chain, verify_receipt
 
 valid = verify_receipt(receipt, keys.public_key)
 print(f"Signature valid: {valid}")  # True
-```
-
-### Verify a chain
-
-<!-- snippet-check: continues -->
-```python
-from agent_receipts import verify_chain
 
 # Verify a list of receipts (e.g. [receipt] from the example above)
 result = verify_chain([receipt], keys.public_key)
@@ -122,46 +246,6 @@ print(f"Receipts verified: {result.length}")
 if not result.valid:
     print(f"Broken at index: {result.broken_at}")
 ```
-
-### Action taxonomy
-
-The standardized action taxonomy (action types and risk levels) is defined in the
-[protocol specification](https://github.com/agent-receipts/spec/tree/main/spec/taxonomy).
-Taxonomy classification will be added in a future milestone (M3).
-
-## Delivering receipts
-
-The SDK provides emitters for two distinct delivery models — note **what** each
-one sends:
-
-- **`DaemonEmitter`** — forwards *tool-call events* (not signed receipts) to a
-  local `agent-receipts-daemon` over a Unix socket; the daemon holds the signing
-  key and constructs, signs, and chains the receipt. Fire-and-forget. Its
-  `emit()` takes the event fields, not an `AgentReceipt`:
-
-  ```python
-  from agent_receipts import DaemonEmitter
-
-  with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
-      e.emit(
-          channel="my-app",
-          tool_name="filesystem.file.read",
-          decision="allowed",
-      )
-  ```
-
-- **`agent_receipts.emitters`** — delivers the *signed receipts* (`AgentReceipt`)
-  you created with the functions above to a remote collector: `HttpEmitter`
-  (retrying HTTPS), `CompositeEmitter` (fan-out), `BufferingEmitter` (batching),
-  and `WalEmitter` (write-ahead log — wraps an inner emitter such as
-  `HttpEmitter` and adds at-least-once delivery; call `replay()` to drain the
-  backlog after the collector recovers). Their `emit()` takes a signed
-  `AgentReceipt`.
-
-`DaemonEmitter` is fire-and-forget: if the daemon is unreachable the event is
-dropped (logged at `DEBUG`), so start the daemon before your app. See the
-[Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/) for
-running the daemon and verifying the chain.
 
 ## What is an Agent Receipt?
 
@@ -182,6 +266,8 @@ A [W3C Verifiable Credential](https://www.w3.org/TR/vc-data-model-2.0/) signed w
 
 ```python
 from agent_receipts import (
+    ActionInput,          # Action fields for CreateReceiptInput
+    CreateReceiptInput,   # Input bundle for create_receipt
     create_receipt,       # Build an unsigned receipt from input fields
     generate_key_pair,    # Ed25519 key pair (PEM-encoded)
     sign_receipt,         # Sign with Ed25519Signature2020 proof
@@ -284,11 +370,14 @@ uv run pyright             # type check
 
 ## Ecosystem
 
-| Repository | Description |
+| Component | Description |
 |:---|:---|
+| [agent-receipts/ar](https://github.com/agent-receipts/ar) | Monorepo: spec, SDKs, daemon, MCP proxy, hook |
+| **[Python SDK](https://github.com/agent-receipts/ar/tree/main/sdk/py)** (this package) | [PyPI](https://pypi.org/project/agent-receipts/) |
+| [TypeScript SDK](https://github.com/agent-receipts/ar/tree/main/sdk/ts) | [npm](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts) |
+| [Go SDK](https://github.com/agent-receipts/ar/tree/main/sdk/go) | `go get github.com/agent-receipts/ar/sdk/go` |
+| [agent-receipts-daemon](https://github.com/agent-receipts/ar/tree/main/daemon) | Out-of-process signer + `agent-receipts` verify CLI (canonical deployment) |
 | [agent-receipts/spec](https://github.com/agent-receipts/spec) | Protocol specification, JSON Schemas, canonical taxonomy |
-| [agent-receipts/sdk-ts](https://github.com/agent-receipts/ar/tree/main/sdk/ts) | TypeScript SDK ([npm](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts)) |
-| **agent-receipts/sdk-py** (this package) | Python SDK |
 | [ojongerius/attest](https://github.com/ojongerius/attest) | MCP proxy + CLI (reference implementation) |
 
 ## License
