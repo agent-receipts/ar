@@ -50,8 +50,8 @@ pip install agent-receipts
 ```
 
 Receipts are signed by a separate `agent-receipts-daemon` process, which also
-ships the `agent-receipts` CLI (including the `verify` command). Install it for
-your platform — see the
+ships the `agent-receipts` CLI (including the `verify` command). Install it on
+Linux or macOS (Windows is not supported yet) — see the
 [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
 ## Quick start
