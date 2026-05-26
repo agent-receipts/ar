@@ -85,3 +85,20 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --access public --provenance --tag ${{ steps.dist_tag.outputs.tag }}
+
+  # Release-blocking gate: the just-published npm package must satisfy the code
+  # snippets in the READMEs. Runs after publish so the version is live on npm;
+  # a drifted snippet turns the release red.
+  readme-snippets:
+    needs: release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+      - name: Verify published README snippets type-check
+        run: python3 scripts/readme_snippets/check.py --lang ts --source published README.md sdk/ts/README.md
