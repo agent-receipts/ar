@@ -69,6 +69,20 @@ def test_unknown_directive_ignored() -> None:
     assert block.directive is None
 
 
+def test_unknown_directive_clears_pending_directive() -> None:
+    # A valid directive followed by an invalid snippet-check comment must not
+    # leak the valid one onto the next fence.
+    text = """
+<!-- snippet-check: continues -->
+<!-- snippet-check: bogus -->
+```python
+from agent_receipts import x
+```
+"""
+    (block,) = extract.parse_blocks(text)
+    assert block.directive is None
+
+
 def test_only_sdk_importing_blocks_selected() -> None:
     text = """
 ```python

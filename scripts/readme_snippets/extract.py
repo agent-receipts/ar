@@ -90,8 +90,9 @@ def parse_blocks(text: str) -> list[Block]:
         directive_match = _DIRECTIVE_RE.search(line)
         if directive_match:
             value = directive_match.group("directive").lower()
-            if value in _VALID_DIRECTIVES:
-                pending_directive = value
+            # An unrecognised snippet-check comment breaks any pending directive
+            # rather than letting it leak onto the next fence.
+            pending_directive = value if value in _VALID_DIRECTIVES else None
             i += 1
             continue
 

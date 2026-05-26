@@ -116,7 +116,7 @@ def check_go(units: list[extract.Unit], source: str, version: str | None, repo_r
         return 1
 
     network_retries = 4 if source == "published" else 0
-    go_mod = ["module readme-snippets\n", "go 1.26.1\n"]
+    go_mod = ["module example.com/readme-snippets\n", "go 1.26.1\n"]
     if source == "local":
         sdk_path = os.path.join(repo_root, "sdk", "go")
         # Throwaway module — a local replace here is fine and never published
@@ -145,6 +145,12 @@ def check_go(units: list[extract.Unit], source: str, version: str | None, repo_r
 # --------------------------------------------------------------------------- #
 
 
+def _exact_version(spec: str) -> str:
+    """Strip a leading ^ / ~ range so the temp project pins an exact version."""
+    spec = spec.strip()
+    return spec[1:] if spec[:1] in "^~" else spec
+
+
 def _read_ts_dev_deps(repo_root: str) -> dict[str, str]:
     try:
         with open(os.path.join(repo_root, "sdk/ts/package.json"), encoding="utf-8") as fh:
@@ -165,7 +171,8 @@ def check_ts(units: list[extract.Unit], source: str, version: str | None, repo_r
 
     # Type-check with the same typescript / @types/node the SDK is built with,
     # so the gate matches the published .d.ts (newer TS type features included)
-    # instead of an arbitrary pinned major.
+    # instead of an arbitrary major. Pin to exact versions (strip the ^/~ range)
+    # so resolution is deterministic and doesn't drift with registry state.
     sdk_dev = _read_ts_dev_deps(repo_root)
     package_json = {
         "name": "readme-snippets",
@@ -173,8 +180,8 @@ def check_ts(units: list[extract.Unit], source: str, version: str | None, repo_r
         "type": "module",
         "dependencies": {TS_PACKAGE: dep},
         "devDependencies": {
-            "typescript": sdk_dev.get("typescript", "^5"),
-            "@types/node": sdk_dev.get("@types/node", "^22"),
+            "typescript": _exact_version(sdk_dev.get("typescript", "5")),
+            "@types/node": _exact_version(sdk_dev.get("@types/node", "22")),
         },
     }
     with open(os.path.join(workdir, "package.json"), "w", encoding="utf-8") as fh:
