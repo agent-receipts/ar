@@ -16,7 +16,7 @@ import {
   rmSync,
 } from "node:fs";
 import { join, dirname, posix } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 const GITHUB_BLOB = "https://github.com/agent-receipts/ar/blob";
@@ -34,7 +34,7 @@ const GITHUB_BLOB = "https://github.com/agent-receipts/ar/blob";
 // `main`: a permanent per-version page must reference the schema and
 // taxonomy as they were at that release, so a later spec release can't
 // retroactively change what an older page links to (ADR-0021 D2).
-function rewriteRelativeLinks(body, version) {
+export function rewriteRelativeLinks(body, version) {
   const baseDir = `spec/${version}`;
   const ref = `spec-${version}`;
   return body.replace(/\]\((\.{1,2}\/[^)\s#]+)(#[^)]*)?\)/g, (m, rel, anchor) => {
@@ -71,6 +71,20 @@ function semverCompare(a, b) {
 // fetch-depth: 0 (or fetch-tags: true). If git is unavailable we return an
 // empty set rather than crash — nothing publishes, which is the safe
 // failure mode (a missing page is recoverable; a wrongly-pinned one is not).
+// Parse the output of `git tag -l` into the set of released version names
+// ("v0.4.0", …). Only exact spec-v<X.Y.Z> tags count: prerelease tags
+// (spec-v0.4.0-rc1) and other artifacts (context-v1) have no matching
+// spec/v<X.Y.Z>/ directory and must not gate publishing. Kept pure (no git
+// call) so it is unit-testable.
+export function parseReleasedTags(tagOutput) {
+  const released = new Set();
+  for (const line of tagOutput.split("\n")) {
+    const m = line.trim().match(/^spec-(v\d+\.\d+\.\d+)$/);
+    if (m) released.add(m[1]);
+  }
+  return released;
+}
+
 function releasedVersions() {
   let out;
   try {
@@ -82,12 +96,7 @@ function releasedVersions() {
     console.error(`sync-spec: unable to read git tags: ${err.message}`);
     return new Set();
   }
-  const released = new Set();
-  for (const line of out.split("\n")) {
-    const m = line.trim().match(/^spec-(v\d+\.\d+\.\d+)$/);
-    if (m) released.add(m[1]);
-  }
-  return released;
+  return parseReleasedTags(out);
 }
 
 // A version is published — appearing in the index, the per-version routes,
@@ -97,22 +106,26 @@ function releasedVersions() {
 // in-flight (drafted on a feature branch, or merged ahead of its release
 // tag). Either case is silently ignored, so we never publish a page — or a
 // link to one — before the version is actually released.
-const released = releasedVersions();
-const versions = readdirSync(specRoot, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && VERSION_RE.test(d.name))
-  .map((d) => d.name)
-  .filter((v) => existsSync(join(specRoot, v, "spec.md")))
-  .filter((v) => released.has(v))
-  .sort(semverCompare);
+function main() {
+  const released = releasedVersions();
+  const versions = readdirSync(specRoot, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && VERSION_RE.test(d.name))
+    .map((d) => d.name)
+    .filter((v) => existsSync(join(specRoot, v, "spec.md")))
+    .filter((v) => released.has(v))
+    .sort(semverCompare);
 
-if (versions.length === 0) {
-  console.warn(
-    "sync-spec: no released spec versions found — a spec/v<X.Y.Z>/ directory " +
-      "publishes only once a matching spec-v<X.Y.Z> git tag exists; " +
-      "skipping /spec/ page generation",
-  );
-} else {
-  writeSpecPages(versions);
+  if (versions.length === 0) {
+    console.warn(
+      "sync-spec: no released spec versions found — a spec/v<X.Y.Z>/ directory " +
+        "publishes only once a matching spec-v<X.Y.Z> git tag exists; " +
+        "skipping /spec/ page generation",
+    );
+  } else {
+    writeSpecPages(versions);
+  }
+
+  publishContexts();
 }
 
 function writeSpecPages(versions) {
@@ -201,17 +214,17 @@ function writeSpecPages(versions) {
 // The file has no extension to match the URL receipts already reference;
 // JSON-LD validators parse on content, not MIME.
 
-const CONTEXT_VERSION_RE = /^v(\d+)$/;
-const contextSrcRoot = join(specRoot, "context");
-const contextOutRoot = join(repoRoot, "site", "public", "context");
+function publishContexts() {
+  const CONTEXT_VERSION_RE = /^v(\d+)$/;
+  const contextSrcRoot = join(specRoot, "context");
+  const contextOutRoot = join(repoRoot, "site", "public", "context");
 
-if (existsSync(contextSrcRoot)) {
+  if (!existsSync(contextSrcRoot)) return;
+
   const contextVersions = readdirSync(contextSrcRoot, { withFileTypes: true })
     .filter((d) => d.isDirectory() && CONTEXT_VERSION_RE.test(d.name))
     .map((d) => d.name)
-    .filter((v) =>
-      existsSync(join(contextSrcRoot, v, "context.jsonld")),
-    )
+    .filter((v) => existsSync(join(contextSrcRoot, v, "context.jsonld")))
     .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
 
   if (existsSync(contextOutRoot)) rmSync(contextOutRoot, { recursive: true });
@@ -226,4 +239,11 @@ if (existsSync(contextSrcRoot)) {
       `sync-spec: published ${contextVersions.length} JSON-LD context(s) (${contextVersions.join(", ")}) to /context/`,
     );
   }
+}
+
+// Run the publishing pipeline only when invoked directly (predev / prebuild /
+// `pnpm sync-spec`). Importing this module — e.g. from the unit tests — must
+// not touch the filesystem or shell out to git.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
 }

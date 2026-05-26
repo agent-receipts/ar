@@ -6,6 +6,7 @@
   "packageManager": "pnpm@9.15.9",
   "scripts": {
     "sync-spec": "node scripts/sync-spec.mjs",
+    "test": "node --test 'scripts/**/*.test.mjs'",
     "predev": "node scripts/sync-spec.mjs",
     "prebuild": "node scripts/sync-spec.mjs",
     "dev": "astro dev",
