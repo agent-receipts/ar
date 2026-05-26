@@ -12,12 +12,18 @@
 // dialTimeout) cannot stall sibling Emit calls past their fire-and-forget
 // budget; only the framed write itself holds the lock.
 //
-// Failure model: Emit MUST NOT block the agent on the daemon. When the
-// socket is unreachable (daemon not started, socket file missing, broken
-// connection) Emit logs a debug-level drop via the configured slog.Logger
-// and returns nil within milliseconds. Per ADR-0010 §"Permissions and
-// trust", a drop with the daemon NOT running is silent by design — there
-// is no daemon to record the gap.
+// Failure model: Emit MUST NOT block the agent on the daemon, and it MUST NOT
+// hide a transport failure it observed. When the socket is unreachable (daemon
+// not started, socket file missing, broken connection) Emit logs a debug-level
+// drop via the configured slog.Logger and returns a non-nil error within
+// milliseconds — per ADR-0023, a known transport failure is surfaced to the
+// caller, never silently swallowed. "Non-blocking" and "silent" are distinct:
+// Emit stays bounded by dialTimeout + writeTimeout while still reporting the
+// outcome. WithBestEffort opts back into loss-tolerant emission (Emit returns
+// nil on transport failure) for callers that knowingly accept dropped events.
+// The in-chain events_dropped marker still requires a live daemon to record it
+// (ADR-0010); ADR-0023 adds the caller-visible signal that holds even when no
+// daemon exists.
 //
 // Drop counter: every failed send (dial timeout, write timeout, broken
 // connection) increments an atomic counter. On the next successful send the
@@ -75,6 +81,13 @@ const dialTimeout = 25 * time.Millisecond
 // pathological case (full kernel send buffer, frozen daemon) appears.
 const writeTimeout = 100 * time.Millisecond
 
+// ErrTransport marks an error returned by Emit as a transport-layer failure
+// (dial, write, or write-deadline expiry) surfaced per ADR-0023. Callers use
+// errors.Is(err, ErrTransport) to distinguish a transport failure — which a
+// retry or a durability wrapper (WAL) may recover — from a caller-bug error
+// (invalid event, closed emitter, oversized frame) that a retry cannot fix.
+var ErrTransport = errors.New("emitter: transport failure")
+
 // Tool identifies the tool the agent invoked. Server is optional — SDK
 // channels often have no server qualifier — and produces an action.type
 // of "channel.name" rather than "channel.server.name".
@@ -116,11 +129,11 @@ type Event struct {
 type Option func(*config)
 
 type config struct {
-	socketPath   string
-	sessionID    string
-	logger       *slog.Logger
-	strictErrors bool
-	defaults     Identity
+	socketPath string
+	sessionID  string
+	logger     *slog.Logger
+	bestEffort bool
+	defaults   Identity
 }
 
 // Identity holds issuer/operator fields that the Emitter stamps on every
@@ -163,16 +176,18 @@ func WithLogger(l *slog.Logger) Option {
 	return func(c *config) { c.logger = l }
 }
 
-// WithStrictErrors makes Emit return dial and write failures as errors
-// instead of silently dropping them. The default fire-and-forget behaviour
-// (returning nil on transient I/O failures) is preserved for all callers
-// that do not pass this option, so it is a non-breaking addition.
+// WithBestEffort opts out of the default emit failure contract (ADR-0023):
+// Emit returns nil on dial and write failures instead of surfacing them as
+// errors. Use only when the caller knowingly accepts silently dropped events
+// — a high-throughput, loss-tolerant path where receipt completeness is not
+// required. The default (without this option) surfaces transport failure, so
+// audit-critical callers get the safe behaviour without opting in.
 //
-// Use this option when the caller must know whether the event reached the
-// daemon — for example, a hook binary that should exit non-zero when the
-// daemon is unreachable so the agent runtime surfaces the failure.
-func WithStrictErrors() Option {
-	return func(c *config) { c.strictErrors = true }
+// Drops are still logged at debug level and still increment the drop counter,
+// so a live daemon can record the gap as a synthetic events_dropped receipt on
+// the next successful send.
+func WithBestEffort() Option {
+	return func(c *config) { c.bestEffort = true }
 }
 
 // WithIdentity sets default issuer/operator fields that are stamped on every
@@ -198,11 +213,11 @@ type DaemonEmitter struct {
 	// Uses atomic.Int64 so concurrent logDrop calls never corrupt state.
 	dropCount atomic.Int64
 
-	socketPath   string
-	sessionID    string
-	logger       *slog.Logger
-	strictErrors bool
-	defaults     Identity
+	socketPath string
+	sessionID  string
+	logger     *slog.Logger
+	bestEffort bool
+	defaults   Identity
 
 	mu     sync.Mutex
 	conn   net.Conn
@@ -235,11 +250,11 @@ func NewDaemon(opts ...Option) (*DaemonEmitter, error) {
 		cfg.logger = slog.Default()
 	}
 	return &DaemonEmitter{
-		socketPath:   cfg.socketPath,
-		sessionID:    cfg.sessionID,
-		logger:       cfg.logger,
-		strictErrors: cfg.strictErrors,
-		defaults:     cfg.defaults,
+		socketPath: cfg.socketPath,
+		sessionID:  cfg.sessionID,
+		logger:     cfg.logger,
+		bestEffort: cfg.bestEffort,
+		defaults:   cfg.defaults,
 	}, nil
 }
 
@@ -274,12 +289,14 @@ type frameTool struct {
 	Name   string `json:"name"`
 }
 
-// Emit sends one event to the daemon. Returns nil even when the daemon
-// is unreachable: dial and write failures are logged at debug level and
-// the conn is reset for re-dial on the next Emit. Returns an error for
-// caller bugs (Emitter closed, oversized frame, invalid event fields,
-// malformed Input/Output JSON — situations a retry could not fix) or
-// when ctx is already cancelled on entry or is cancelled while dialling.
+// Emit sends one event to the daemon. By default (ADR-0023) it surfaces
+// transport failure: when the daemon is unreachable a dial or write failure is
+// logged at debug level, the conn is reset for re-dial on the next Emit, and a
+// non-nil error is returned. WithBestEffort opts out, returning nil on those
+// transport failures. Emit also returns an error for caller bugs (Emitter
+// closed, oversized frame, invalid event fields, malformed Input/Output JSON —
+// situations a retry could not fix) or when ctx is already cancelled on entry
+// or is cancelled while dialling; those are unaffected by WithBestEffort.
 func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -424,10 +441,10 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 			}
 			e.dropCount.Add(pendingDrops)
 			e.logDrop(ctx, "dial", err)
-			if e.strictErrors {
-				return fmt.Errorf("emitter: dial %s: %w", e.socketPath, err)
+			if e.bestEffort {
+				return nil
 			}
-			return nil
+			return fmt.Errorf("%w: dial %s: %w", ErrTransport, e.socketPath, err)
 		}
 		// Install with a check-and-set: if a sibling Emit dialled and
 		// installed first while we were dialling, prefer the established
@@ -476,10 +493,10 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		e.dropCount.Add(pendingDrops)
 		siblingErr := errors.New("connection reset by sibling Emit")
 		e.logDrop(ctx, "write", siblingErr)
-		if e.strictErrors {
-			return fmt.Errorf("emitter: write: %w", siblingErr)
+		if e.bestEffort {
+			return nil
 		}
-		return nil
+		return fmt.Errorf("%w: write: %w", ErrTransport, siblingErr)
 	}
 	if err := e.writeFrame(ctx, conn, body); err != nil {
 		// A failed write almost always means the daemon went away. Drop
@@ -495,10 +512,10 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		e.dropCount.Add(pendingDrops)
 		e.logDrop(ctx, "write", err)
 		_ = conn.Close()
-		if e.strictErrors {
-			return fmt.Errorf("emitter: write frame: %w", err)
+		if e.bestEffort {
+			return nil
 		}
-		return nil
+		return fmt.Errorf("%w: write frame: %w", ErrTransport, err)
 	}
 	e.mu.Unlock()
 	return nil

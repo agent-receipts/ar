@@ -275,20 +275,23 @@ case list — not three hand-written copies — is the single source of truth fo
 
 ### Spawned follow-up work (not in this ADR's diff)
 
-These are the mechanical, farmable issues the closure unblocks once this ADR is
-ratified:
+These are the mechanical, farmable follow-ups the closure unblocks. Progress is
+tracked here rather than as separate GitHub issues.
 
-1. Carry the normative spec line (§ 4) into the next spec version cut — not a
-   release on its own; requires explicit human approval to touch `spec/`.
-2. Add `cross-sdk-tests/emit_failure_vectors.json` (the shared case list) plus
-   the data-driven Go conformance test that loads and iterates it (§ 5, A′).
-3. **Python: fix PY-P4** (Protocol arity) — prerequisite.
-4. Python: raise on transport failure in `DaemonEmitter.emit`; pass the vector.
-5. Go: flip the default so `Emit` returns a non-nil error on socket failure;
-   retract the "drops silently" wording in `daemon-setup.mdx`.
-6. TypeScript: surface transport failure from `DaemonEmitter.emit`; pass the
+1. [ ] Carry the normative spec line (§ 4) into the next spec version cut — not
+   a release on its own; requires explicit human approval to touch `spec/`.
+2. [x] Add `cross-sdk-tests/emit_failure_vectors.json` (the shared case list)
+   plus the data-driven Go conformance test that loads and iterates it (§ 5,
+   A′).
+3. [ ] **Python: fix PY-P4** (Protocol arity) — prerequisite.
+4. [ ] Python: raise on transport failure in `DaemonEmitter.emit`; pass the
    vector.
-7. Update the "Choosing an emitter" docs page (if it exists by then) to
+5. [x] Go: flip the default so `Emit` returns a non-nil error on socket failure
+   (`ErrTransport`-tagged), add `WithBestEffort` opt-out, retract the "drops
+   silently" wording in `daemon-setup.mdx`.
+6. [ ] TypeScript: surface transport failure from `DaemonEmitter.emit`; pass the
+   vector.
+7. [ ] Update the "Choosing an emitter" docs page (if it exists by then) to
    document the failure contract and the WAL wrapping pattern.
 
 ## Acceptance (from issue #599)
@@ -297,9 +300,7 @@ ratified:
 - [ ] *(spec)* Spec text documents the contract — deferred to the next spec
   version cut by § 4; binding via this ADR + the vector until then.
 - [ ] A conformance vector asserts emit-without-daemon surfaces error in each
-  SDK — design in § 5; implementation is spawned issue 2/4/6.
-- [ ] All three SDKs pass the vector — spawned issues.
-- [ ] `daemon-setup.mdx` no longer documents silent drop as expected — spawned
-  issue 5.
-- [ ] "Choosing an emitter" page describes the WAL wrapping pattern — spawned
-  issue 7.
+  SDK — vector added (§ 5); Go lane green; Python/TS pending (items 4/6).
+- [ ] All three SDKs pass the vector — Go done; Python/TS pending.
+- [x] `daemon-setup.mdx` no longer documents silent drop as expected.
+- [ ] "Choosing an emitter" page describes the WAL wrapping pattern — item 7.

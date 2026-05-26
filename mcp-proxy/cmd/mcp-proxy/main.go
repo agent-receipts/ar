@@ -145,8 +145,8 @@ func serve() {
 	noteLegacyAuditDB()
 
 	// Wire the daemon emitter (ADR-0010). The daemon is the sole receipt writer;
-	// the proxy is a thin emitter. WithStrictErrors() makes Emit return an error
-	// when the daemon is unreachable, which propagates to the handler as a log
+	// the proxy is a thin emitter. Emit surfaces transport failure by default
+	// (ADR-0023), so an unreachable daemon propagates to the handler as a log
 	// line. An empty --socket is still accepted for backward compatibility with
 	// installations that have not yet deployed the daemon.
 	var em *emitter.DaemonEmitter
@@ -155,7 +155,6 @@ func serve() {
 		em, initErr = emitter.NewDaemon(
 			emitter.WithSocketPath(sp),
 			emitter.WithSessionID(sessionID),
-			emitter.WithStrictErrors(),
 			emitter.WithIdentity(emitter.Identity{
 				IssuerName:   id.IssuerName,
 				IssuerModel:  id.IssuerModel,

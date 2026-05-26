@@ -267,11 +267,11 @@ func StartDaemonFromConfig(t *testing.T, cfg Config, pubPEM string) *DaemonFixtu
 // EmitGoFrame emits a frame using the Go SDK's emitter.
 // Returns an error if the operation fails, allowing safe use from goroutines.
 //
-// Uses WithStrictErrors so transient dial/write failures surface as test
-// errors instead of silent drops — tests rely on at-least-once delivery,
-// not the production fire-and-forget contract. A single retry on dial
-// failure absorbs the macOS-under-race case where the 25ms dial budget
-// occasionally exceeds the runner's scheduler latency.
+// Emit surfaces dial/write failures as errors by default (ADR-0023), so
+// transient failures show up as test errors instead of silent drops — tests
+// rely on at-least-once delivery. A single retry on dial failure absorbs the
+// macOS-under-race case where the 25ms dial budget occasionally exceeds the
+// runner's scheduler latency.
 func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, toolName, toolServer, decision string) error {
 	t.Helper()
 
@@ -279,7 +279,6 @@ func (f *DaemonFixture) EmitGoFrame(t *testing.T, sessionID, channel string, too
 		emitter.WithSocketPath(f.Config.SocketPath),
 		emitter.WithSessionID(sessionID),
 		emitter.WithLogger(slog.Default()),
-		emitter.WithStrictErrors(),
 	)
 	if err != nil {
 		return fmt.Errorf("create emitter: %w", err)
