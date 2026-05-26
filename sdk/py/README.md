@@ -133,9 +133,11 @@ with `sign_receipt` — see the [in-process appendix](#appendix-in-process-signi
   duplicate id); `"fire-and-forget"` schedules the POST on a background thread and
   never raises to the caller (call `drain()` before shutdown for a best-effort
   flush).
-- **`WalEmitter`** — wraps an inner emitter (typically `HttpEmitter` in `"sync"`
-  mode) with a write-ahead log for at-least-once delivery. Each receipt is
-  recorded *before* delivery and cleared only on ack, so a failed delivery is
+- **`WalEmitter`** — wraps a *synchronous* inner emitter (`HttpEmitter` in its
+  default `"sync"` mode — `"fire-and-forget"` returns before the POST lands, so
+  the WAL entry is cleared prematurely and the guarantee is lost) with a
+  write-ahead log for at-least-once delivery. Each receipt is recorded *before*
+  delivery and cleared only on ack, so a failed delivery is
   **retained and re-sent** — by `replay()` (call once at startup to drain a
   backlog a previous crash left behind) or `flush(deadline_ms)` (bounded
   best-effort drain on shutdown). Use `FileWal` for long-lived compute (survives
