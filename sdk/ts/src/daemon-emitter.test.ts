@@ -21,6 +21,7 @@ import {
 	DaemonEmitter,
 	defaultSocketPath,
 	type EmitEvent,
+	EmitTransportError,
 	MAX_FRAME_SIZE,
 	resolveSocketPath,
 	type SocketPathDeps,
@@ -426,8 +427,8 @@ describe("DaemonEmitter — session_id stability", () => {
 	});
 });
 
-describe("DaemonEmitter — fire-and-forget when daemon is down", () => {
-	it("returns null quickly when no daemon is listening", async () => {
+describe("DaemonEmitter — surfaces transport failure when daemon is down", () => {
+	it("resolves with EmitTransportError quickly when no daemon is listening", async () => {
 		const sockPath = tempSockPath("down");
 		const emitter = new DaemonEmitter({ socketPath: sockPath });
 
@@ -435,9 +436,43 @@ describe("DaemonEmitter — fire-and-forget when daemon is down", () => {
 		const err = await emitter.emit(GOOD_EVENT);
 		const elapsed = Date.now() - start;
 
-		expect(err).toBeNull();
+		expect(err).toBeInstanceOf(EmitTransportError);
 		// Must return within 50ms (dial timeout is 25ms + overhead).
 		expect(elapsed).toBeLessThan(150);
+
+		emitter.close();
+	});
+
+	it("resolves with null under bestEffort when no daemon is listening", async () => {
+		const sockPath = tempSockPath("down-best-effort");
+		const emitter = new DaemonEmitter({
+			socketPath: sockPath,
+			bestEffort: true,
+		});
+
+		const start = Date.now();
+		const err = await emitter.emit(GOOD_EVENT);
+		const elapsed = Date.now() - start;
+
+		expect(err).toBeNull();
+		expect(elapsed).toBeLessThan(150);
+
+		emitter.close();
+	});
+
+	it("transport failure is distinct from a caller-bug Error", async () => {
+		const sockPath = tempSockPath("down-distinct");
+		const emitter = new DaemonEmitter({ socketPath: sockPath });
+
+		const callerBug = await emitter.emit({
+			...GOOD_EVENT,
+			decision: "nope" as never,
+		});
+		expect(callerBug).toBeInstanceOf(Error);
+		expect(callerBug).not.toBeInstanceOf(EmitTransportError);
+
+		const transport = await emitter.emit(GOOD_EVENT);
+		expect(transport).toBeInstanceOf(EmitTransportError);
 
 		emitter.close();
 	});
@@ -472,10 +507,11 @@ describe("DaemonEmitter — reconnect after daemon restart", () => {
 		await waitFor(async () => (await server1.frames()).length > 0);
 		expect(await server1.frames()).toHaveLength(1);
 
-		// Stop server1 and emit — connection is broken, drop silently.
+		// Stop server1 and emit — connection is broken, re-dial fails (no
+		// server), so the transport failure surfaces (ADR-0023).
 		await server1.stop();
 		const errAfterStop = await emitter.emit(GOOD_EVENT);
-		expect(errAfterStop).toBeNull();
+		expect(errAfterStop).toBeInstanceOf(EmitTransportError);
 
 		// Restart on the same socket path, then emit again — should re-dial.
 		const server2 = startEchoServer(sockPath);

@@ -303,8 +303,8 @@ tracked here rather than as separate GitHub issues.
 5. [x] Go: flip the default so `Emit` returns a non-nil error on socket failure
    (`ErrTransport`-tagged), add `WithBestEffort` opt-out, retract the "drops
    silently" wording in `daemon-setup.mdx`.
-6. [ ] TypeScript: surface transport failure from `DaemonEmitter.emit`; pass the
-   vector.
+6. [x] TypeScript: resolve with `EmitTransportError` on transport failure from
+   `DaemonEmitter.emit`, add `bestEffort` opt-out; pass the vector.
 7. [ ] Update the "Choosing an emitter" docs page (if it exists by then) to
    document the failure contract and the WAL wrapping pattern.
 
@@ -313,8 +313,8 @@ tracked here rather than as separate GitHub issues.
 - [x] *(design)* Contract text documents the emit failure contract — § 1.
 - [ ] *(spec)* Spec text documents the contract — deferred to the next spec
   version cut by § 4; binding via this ADR + the vector until then.
-- [ ] A conformance vector asserts emit-without-daemon surfaces error in each
-  SDK — vector added (§ 5); Go and Python lanes green; TS pending (item 6).
-- [ ] All three SDKs pass the vector — Go and Python done; TS pending.
+- [x] A conformance vector asserts emit-without-daemon surfaces error in each
+  SDK — vector added (§ 5); Go, Python, and TypeScript lanes green.
+- [x] All three SDKs pass the vector — Go, Python, and TypeScript done.
 - [x] `daemon-setup.mdx` no longer documents silent drop as expected.
 - [ ] "Choosing an emitter" page describes the WAL wrapping pattern — item 7.

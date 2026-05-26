@@ -4,6 +4,7 @@ export {
 	defaultSocketPath,
 	type EmitEvent,
 	type EmitTool,
+	EmitTransportError,
 	MAX_FRAME_SIZE,
 	SUPPORTED_FRAME_VERSION,
 } from "./daemon-emitter.js";
