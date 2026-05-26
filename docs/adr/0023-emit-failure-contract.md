@@ -2,13 +2,12 @@
 
 ## Status
 
-Proposed
+Accepted
 
-> Draft for review under issue #599 (Closure 2). This ADR records the
-> protocol-level decision only. The per-SDK implementation, the conformance
-> vector, and the documentation edits are mechanical follow-through tracked as
-> the spawned issues listed under *Consequences*, and are deliberately **not**
-> part of this ADR's diff.
+> Ratified under issue #599 (Closure 2). This ADR records the protocol-level
+> decision only. The per-SDK implementation, the conformance vector, and the
+> documentation edits are mechanical follow-through tracked as the checklist
+> under *Consequences*, and are deliberately **not** part of this ADR's diff.
 
 ## Context
 
