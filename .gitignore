@@ -13,5 +13,8 @@ __pycache__/
 *.db-shm
 *.db-wal
 
-# Built daemon binary (output of `go build ./cmd/agent-receipts-daemon`)
+# Built binaries
+/agent-receipts
+/bin/
 /daemon/agent-receipts-daemon
+/daemon/bin/
