@@ -146,23 +146,37 @@ exact Protocol shape is Python-SDK implementation detail tracked in the spawned
 Python issue; this ADR only requires that the shape be made wrappable as a
 precondition for PY-P9.
 
-### 4. Proposed normative spec text
+### 4. Where the contract is published
 
-The receipt-data-model spec (`spec/v0.4.0/spec.md`) describes receipts, not the
-emitter transport layer, so the contract's normative home is this ADR plus the
-conformance vector. If the maintainers want a pointer from the spec body, the
-minimal addition is a single non-normative note in the design-principles area
-referencing this ADR; the proposed wording is:
+The binding requirement lives in **this ADR plus the conformance vector** (§5).
+It is deliberately **not** added to `spec/v0.4.0/spec.md` now, for two reasons:
 
-> **Emit failure visibility (non-normative).** The protocol's integrity
-> guarantee assumes that the absence of a receipt is detectable. SDK emitters
-> therefore MUST surface transport failure to their caller rather than dropping
-> events silently; see ADR-0023. Durability across crashes is an opt-in
-> (WAL) concern layered above this base obligation.
+1. **Scope.** `spec.md` is the receipt *data model* — the W3C VC envelope,
+   taxonomy, and chain verification. It does not touch a single receipt field;
+   it constrains SDK *runtime* behaviour. Emitter/transport semantics have
+   always lived in ADRs (0010, 0020), which is where an implementer already
+   looks for them.
+2. **Immutability cost.** Per ADR-0021 §D1, every released spec version from
+   v0.4.0 onward is an immutable file: "editorial corrections to a released
+   version are not made in place; they are made by releasing a new version with
+   a CHANGELOG." v0.4.0 is released (2026-05-23, permanent URL). So *any* edit
+   to `spec.md` — even a one-line non-normative note — forces cutting a new spec
+   version. Driving a spec release purely to mention an SDK runtime obligation
+   is the tail wagging the dog.
 
-Whether this note lands in `spec/` is a maintainer call (spec changes require
-explicit human approval); the binding requirement lives here and in the
-conformance vector regardless.
+**Plan:** fold a normative line into the spec at the **next spec version cut**
+that happens for a real data-model reason, rather than cutting a release for
+this alone. Proposed wording to carry into that release:
+
+> **Emit failure visibility.** The protocol's integrity guarantee assumes that
+> the absence of a receipt is detectable. A conformant SDK emitter MUST surface
+> transport failure to its caller rather than dropping events silently (see
+> ADR-0023). Durability across process crashes is an opt-in concern (a WAL
+> emitter) layered above this base obligation.
+
+Consequence: the issue's "spec text documents the contract" acceptance box
+stays unchecked until that next cut. The obligation is binding before then via
+the ADR and the CI-gating conformance vector.
 
 ### 5. Conformance vector design
 
@@ -172,48 +186,65 @@ result. The emit failure contract cannot be expressed that way — it is a
 **behavioural** contract about what an emit call returns when the transport is
 absent. It needs a new kind of conformance artifact.
 
-**Shape: a shared behavioural test specification, implemented per SDK.**
+**Shape: a shared, machine-readable case list that every SDK test is required
+to load and iterate.** This mirrors the existing cross-SDK convention (each SDK
+loads the same `*_vectors.json`), but instead of asserting a canonicalisation
+result, each SDK maps the emit outcome to a declared *outcome category*. The
+case list — not three hand-written copies — is the single source of truth for
+*which* cases exist, so a case cannot silently go unimplemented in one SDK.
 
 - A new fixture `cross-sdk-tests/emit_failure_vectors.json` declares the
-  scenarios and the required outcome, language-agnostically. Proposed shape:
+  scenarios and the required outcome category. Proposed shape:
 
   ```json
   {
     "version": 1,
-    "description": "Emit failure contract (ADR-0023). Each SDK implements these as native tests against its own DaemonEmitter.",
+    "description": "Emit failure contract (ADR-0023). Each SDK test MUST load this file, iterate every case, and fail on any case whose name it does not handle.",
+    "outcome_categories": {
+      "transport_error": "emit surfaced a transport failure (Go: non-nil error; Python: raised exception; TS: rejected Promise / returned Error)",
+      "caller_error": "emit surfaced a caller-bug error, distinguishable from transport_error",
+      "success": "emit reported success"
+    },
     "cases": [
       {
         "name": "dial_failure_unreachable_socket",
         "setup": "Construct DaemonEmitter with a socket path that has no listener.",
         "action": "emit one well-formed event/receipt",
-        "expect": "surface_transport_error",
-        "must_not": "return success/None/null/nil"
+        "expect": "transport_error"
       },
       {
-        "name": "caller_bug_still_distinguishable",
+        "name": "caller_bug_invalid_decision",
         "setup": "Construct DaemonEmitter with a socket path that has no listener.",
         "action": "emit with an invalid decision value",
-        "expect": "surface_caller_error",
-        "note": "Caller-bug errors remain distinguishable from transport errors so callers can choose to retry only transport failures."
+        "expect": "caller_error",
+        "note": "Caller-bug errors MUST stay distinguishable from transport_error so callers can choose to retry only transport failures."
       }
     ]
   }
   ```
 
-  (`emit_failure_vectors.json` is a *specification* the SDK tests read or mirror;
-  it is not parsed into a receipt. The Go cross-sdk-tests module can load it
-  directly; Python and TS mirror the same case list in their own test suites.)
+- **Enforcement (A′).** Each SDK's test loads `emit_failure_vectors.json`,
+  iterates the `cases` array, runs each against its own `DaemonEmitter`, maps
+  the native result to an outcome category, and asserts it equals `expect`. The
+  iteration MUST fail loudly on any case `name` it does not recognise — that is
+  what makes adding a case to the JSON break any SDK that has not implemented
+  it, closing the drift gap of three independently maintained copies. The
+  per-language *assertion* (what counts as a surfaced error) is necessarily
+  native, since the contract is behavioural; the *case set and expected
+  categories* are shared and data-driven.
 
-- Each SDK adds a native test that, with no daemon listening on the configured
-  socket, asserts emit surfaces a transport error (Go: non-nil `error`; Python:
-  raised exception; TS: rejected Promise / returned `Error`). The test must also
-  assert that a caller-bug input (e.g. invalid decision) surfaces a *distinct,
-  distinguishable* error, so the two classes are not collapsed.
+- The Go cross-sdk-tests module can load the fixture directly. Python and TS
+  load the same file from their own suites (path relative to the repo root, as
+  the existing cross-language tests already do).
 
 - "All three SDKs pass the vector" (issue acceptance) is satisfied when each
-  SDK's native test is green in its own CI lane. No new cross-process harness is
-  required; spinning up and tearing down a real daemon socket from a polyglot
-  harness would add far more surface than the contract needs.
+  SDK's data-driven test is green in its own CI lane. No polyglot live-daemon
+  harness is introduced: "no daemon" simply means dialling a path with no
+  listener, and the hard part — mapping that dial failure to the language's
+  error channel — is irreducibly per-language, so a cross-process harness would
+  share almost none of the real work while adding orchestration and flakiness.
+  A live harness is held in reserve only if SDKs later diverge on error
+  *taxonomy* in a way category-level coverage cannot catch.
 
 ### 6. Records superseded / amended
 
@@ -248,9 +279,10 @@ absent. It needs a new kind of conformance artifact.
 These are the mechanical, farmable issues the closure unblocks once this ADR is
 ratified:
 
-1. Spec note (if maintainers want it) per § 4 — requires explicit human
-   approval to touch `spec/`.
-2. Add `cross-sdk-tests/emit_failure_vectors.json` and the Go conformance test.
+1. Carry the normative spec line (§ 4) into the next spec version cut — not a
+   release on its own; requires explicit human approval to touch `spec/`.
+2. Add `cross-sdk-tests/emit_failure_vectors.json` (the shared case list) plus
+   the data-driven Go conformance test that loads and iterates it (§ 5, A′).
 3. **Python: fix PY-P4** (Protocol arity) — prerequisite.
 4. Python: raise on transport failure in `DaemonEmitter.emit`; pass the vector.
 5. Go: flip the default so `Emit` returns a non-nil error on socket failure;
@@ -263,6 +295,8 @@ ratified:
 ## Acceptance (from issue #599)
 
 - [x] *(design)* Contract text documents the emit failure contract — § 1.
+- [ ] *(spec)* Spec text documents the contract — deferred to the next spec
+  version cut by § 4; binding via this ADR + the vector until then.
 - [ ] A conformance vector asserts emit-without-daemon surfaces error in each
   SDK — design in § 5; implementation is spawned issue 2/4/6.
 - [ ] All three SDKs pass the vector — spawned issues.
