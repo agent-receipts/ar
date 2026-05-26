@@ -76,7 +76,7 @@ To run as a persistent service on macOS, use the launchd plist available at [`da
 
 ## Connect your emitters
 
-Point each SDK or plugin at the daemon socket. On macOS and Linux, all components resolve a platform default socket path automatically (see the table above). Set `AGENTRECEIPTS_SOCKET` to override that default on those platforms. On other platforms the Go SDK does not consult `AGENTRECEIPTS_SOCKET` — callers must pass an explicit `WithSocketPath` option; `NewDaemon()` returns an error if no socket path is provided.
+Point each SDK or plugin at the daemon socket. On macOS and Linux, all components resolve a platform default socket path automatically (see the table above). Set `AGENTRECEIPTS_SOCKET` to override that default. Other platforms have no platform default, but `AGENTRECEIPTS_SOCKET` (or the SDK's explicit socket-path option) still supplies one; `NewDaemon()` only errors when neither is provided.
 
 There is no in-process fallback: if the daemon is unreachable, events are dropped silently (see [Start](#start) for timeout details).
 
@@ -242,8 +242,8 @@ The most common cause is that the daemon is not running when the emitter starts.
 
 ```bash
 pgrep agent-receipts-daemon
-ls -la "${XDG_DATA_HOME:-$HOME/.local/share}/agent-receipts/events.sock"  # macOS
-ls -la "${XDG_RUNTIME_DIR:-/run}/agentreceipts/events.sock"               # Linux
+ls -la ~/.local/share/agent-receipts/events.sock             # macOS (default fallback)
+ls -la "${XDG_RUNTIME_DIR:-/run}/agentreceipts/events.sock"  # Linux
 ```
 
 **Socket path mismatch.**
