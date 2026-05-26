@@ -88,6 +88,7 @@ const hash = hashReceipt(receipt);
 
 ### Store and query
 
+<!-- snippet-check: continues -->
 ```typescript
 import { openStore } from "@agnt-rcpt/sdk-ts";
 
@@ -108,6 +109,7 @@ store.close();
 
 ### Verify a chain
 
+<!-- snippet-check: skip -->
 ```typescript
 import { verifyChain, verifyStoredChain } from "@agnt-rcpt/sdk-ts";
 

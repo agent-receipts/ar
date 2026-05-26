@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""Compile / type-check the SDK code snippets embedded in the user-facing READMEs.
+
+Three failure classes this guards against, all of which have shipped before
+(see #593, #594): a snippet calls an API that never existed, imports a wrong
+module path, or drifts behind a published rename.
+
+Usage:
+    check.py --lang {go,ts,py} --source {local,published} [--version X.Y.Z]
+             [--repo-root .] [--workdir DIR] README.md [more/README.md ...]
+
+Source modes:
+    local      Build snippets against the in-tree SDK. Used on PRs so a snippet
+               and the API it documents are verified against the same commit
+               (and new, unreleased APIs are allowed).
+    published  Build against the released artifact at --version (default: read
+               from the manifest). Used at release time to catch a README that
+               has drifted from what users will actually `pip install` /
+               `npm install` / `go get`.
+
+Only the extraction/assembly logic is unit tested (see test_extract.py); this
+module is the IO + subprocess driver and is exercised end-to-end by CI.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import extract  # noqa: E402
+
+GO_MODULE = "github.com/agent-receipts/ar/sdk/go"
+TS_PACKAGE = "@agnt-rcpt/sdk-ts"
+PY_PACKAGE = "agent-receipts"
+
+
+def _run(cmd: list[str], cwd: str, env: dict[str, str] | None = None, retries: int = 0) -> int:
+    full_env = {**os.environ, **(env or {})}
+    for attempt in range(retries + 1):
+        print(f"  $ {' '.join(cmd)}  (cwd={cwd})", flush=True)
+        proc = subprocess.run(cmd, cwd=cwd, env=full_env)
+        if proc.returncode == 0 or attempt == retries:
+            return proc.returncode
+        wait = 2 ** (attempt + 1)
+        print(f"  command failed (rc={proc.returncode}); retrying in {wait}s", flush=True)
+        time.sleep(wait)
+    return proc.returncode
+
+
+def _collect_units(readmes: list[str], lang: str) -> list[extract.Unit]:
+    units: list[extract.Unit] = []
+    for path in readmes:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        found = extract.build_units(path, text, lang)
+        units.extend(found)
+        print(f"  {path}: {len(found)} {lang} unit(s)")
+    return units
+
+
+# --------------------------------------------------------------------------- #
+# Version resolution
+# --------------------------------------------------------------------------- #
+
+
+def _resolve_version(lang: str, repo_root: str, override: str | None) -> str:
+    if override:
+        return override
+    if lang == "ts":
+        with open(os.path.join(repo_root, "sdk/ts/package.json"), encoding="utf-8") as fh:
+            return json.load(fh)["version"]
+    if lang == "py":
+        import re
+
+        with open(os.path.join(repo_root, "sdk/py/pyproject.toml"), encoding="utf-8") as fh:
+            for line in fh:
+                m = re.match(r'\s*version\s*=\s*"([^"]+)"', line)
+                if m:
+                    return m.group(1)
+        raise SystemExit("could not read version from sdk/py/pyproject.toml")
+    raise SystemExit(
+        "--version is required for Go published-mode checks (read it from the release tag)"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Go
+# --------------------------------------------------------------------------- #
+
+
+def check_go(units: list[extract.Unit], source: str, version: str | None, repo_root: str, workdir: str) -> int:
+    if not units:
+        print("  no Go units to check")
+        return 0
+
+    noncanonical = False
+    for unit in units:
+        bad = extract.go_noncanonical_imports(unit.code)
+        if bad:
+            noncanonical = True
+            for path in bad:
+                print(
+                    f"  non-canonical SDK import {path!r} ({', '.join(unit.sources)}); "
+                    f"use {GO_MODULE}"
+                )
+    if noncanonical:
+        return 1
+
+    network_retries = 4 if source == "published" else 0
+    go_mod = ["module readme-snippets\n", "go 1.26.1\n"]
+    if source == "local":
+        sdk_path = os.path.join(repo_root, "sdk", "go")
+        # Throwaway module — a local replace here is fine and never published
+        # (publish-go.yml only rejects replaces in the SDK's own go.mod).
+        go_mod.append(f"require {GO_MODULE} v0.0.0\n")
+        go_mod.append(f"replace {GO_MODULE} => {sdk_path}\n")
+    else:
+        go_mod.append(f"require {GO_MODULE} v{version}\n")
+
+    with open(os.path.join(workdir, "go.mod"), "w", encoding="utf-8") as fh:
+        fh.writelines(go_mod)
+
+    for n, unit in enumerate(units, start=1):
+        pkg_dir = os.path.join(workdir, f"snippet_{n:03d}")
+        os.makedirs(pkg_dir, exist_ok=True)
+        _write_unit(pkg_dir, "main.go", unit)
+
+    env = {"GOFLAGS": "-mod=mod", "GOWORK": "off"}
+    if _run(["go", "mod", "tidy"], cwd=workdir, env=env, retries=network_retries) != 0:
+        return 1
+    return _run(["go", "build", "./..."], cwd=workdir, env=env)
+
+
+# --------------------------------------------------------------------------- #
+# TypeScript
+# --------------------------------------------------------------------------- #
+
+
+def check_ts(units: list[extract.Unit], source: str, version: str | None, repo_root: str, workdir: str) -> int:
+    if not units:
+        print("  no TypeScript units to check")
+        return 0
+
+    if source == "local":
+        dep = f"file:{os.path.join(repo_root, 'sdk', 'ts')}"
+    else:
+        dep = version
+
+    package_json = {
+        "name": "readme-snippets",
+        "private": True,
+        "type": "module",
+        "dependencies": {TS_PACKAGE: dep},
+        "devDependencies": {"typescript": "^5", "@types/node": "^22"},
+    }
+    with open(os.path.join(workdir, "package.json"), "w", encoding="utf-8") as fh:
+        json.dump(package_json, fh, indent=2)
+
+    tsconfig = {
+        "compilerOptions": {
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "esnext",
+            "lib": ["esnext"],
+            "types": ["node"],
+            "strict": True,
+            "noEmit": True,
+            "skipLibCheck": True,
+        },
+        "include": ["snippets/*.ts"],
+    }
+    with open(os.path.join(workdir, "tsconfig.json"), "w", encoding="utf-8") as fh:
+        json.dump(tsconfig, fh, indent=2)
+
+    snip_dir = os.path.join(workdir, "snippets")
+    os.makedirs(snip_dir, exist_ok=True)
+    for n, unit in enumerate(units, start=1):
+        _write_unit(snip_dir, f"snippet_{n:03d}.ts", unit)
+
+    retries = 4 if source == "published" else 0
+    if _run(["npm", "install", "--no-audit", "--no-fund"], cwd=workdir, retries=retries) != 0:
+        return 1
+    return _run(["npx", "--no-install", "tsc", "--noEmit"], cwd=workdir)
+
+
+# --------------------------------------------------------------------------- #
+# Python
+# --------------------------------------------------------------------------- #
+
+
+def check_py(units: list[extract.Unit], source: str, version: str | None, repo_root: str, workdir: str) -> int:
+    if not units:
+        print("  no Python units to check")
+        return 0
+
+    snip_dir = os.path.join(workdir, "snippets")
+    os.makedirs(snip_dir, exist_ok=True)
+    files = []
+    for n, unit in enumerate(units, start=1):
+        path = _write_unit(snip_dir, f"snippet_{n:03d}.py", unit)
+        files.append(path)
+
+    venv = os.path.join(workdir, "venv")
+    if _run([sys.executable, "-m", "venv", venv], cwd=workdir) != 0:
+        return 1
+    py = os.path.join(venv, "bin", "python")
+    pip_install = [py, "-m", "pip", "install", "--quiet", "--upgrade", "pip", "mypy"]
+    if _run(pip_install, cwd=workdir) != 0:
+        return 1
+
+    if source == "local":
+        target = os.path.join(repo_root, "sdk", "py")
+        retries = 0
+    else:
+        target = f"{PY_PACKAGE}=={version}"
+        retries = 4
+    if _run([py, "-m", "pip", "install", "--quiet", target], cwd=workdir, retries=retries) != 0:
+        return 1
+
+    # mypy's default errors on a missing/renamed import and on a non-existent
+    # attribute of a typed object (agent-receipts ships py.typed), catching all
+    # three drift classes without executing the snippet.
+    return _run([py, "-m", "mypy", *files], cwd=workdir)
+
+
+# --------------------------------------------------------------------------- #
+
+
+def _write_unit(dirpath: str, filename: str, unit: extract.Unit) -> str:
+    path = os.path.join(dirpath, filename)
+    header = f"// snippet sources: {', '.join(unit.sources)}" if unit.lang != "py" else f"# snippet sources: {', '.join(unit.sources)}"
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(header + "\n")
+        fh.write(unit.code)
+        if not unit.code.endswith("\n"):
+            fh.write("\n")
+    return path
+
+
+_CHECKERS = {"go": check_go, "ts": check_ts, "py": check_py}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--lang", required=True, choices=["go", "ts", "py"])
+    parser.add_argument("--source", required=True, choices=["local", "published"])
+    parser.add_argument("--version", default=None)
+    parser.add_argument("--repo-root", default=os.getcwd())
+    parser.add_argument("--workdir", default=None)
+    parser.add_argument("readmes", nargs="+")
+    args = parser.parse_args(argv)
+
+    repo_root = os.path.abspath(args.repo_root)
+    readmes = [os.path.join(repo_root, r) if not os.path.isabs(r) else r for r in args.readmes]
+    readmes = [r for r in readmes if os.path.exists(r)]
+
+    print(f"Checking {args.lang} snippets ({args.source}) in:")
+    units = _collect_units(readmes, args.lang)
+    if not units:
+        print("No SDK snippets found — nothing to check.")
+        return 0
+
+    version = None
+    if args.source == "published":
+        version = _resolve_version(args.lang, repo_root, args.version)
+        print(f"  pinning to published version: {version}")
+
+    cleanup = False
+    if args.workdir:
+        workdir = os.path.abspath(args.workdir)
+        os.makedirs(workdir, exist_ok=True)
+    else:
+        workdir = tempfile.mkdtemp(prefix="readme-snippets-")
+        cleanup = True
+
+    try:
+        rc = _CHECKERS[args.lang](units, args.source, version, repo_root, workdir)
+    finally:
+        if cleanup:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    if rc == 0:
+        print(f"\nAll {len(units)} {args.lang} snippet unit(s) compiled cleanly.")
+    else:
+        print(f"\nSnippet check FAILED for {args.lang} (see errors above).")
+    return rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

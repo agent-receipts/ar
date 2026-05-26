@@ -18,7 +18,7 @@
 ## Install
 
 ```sh
-go get github.com/agent-receipts/sdk-go
+go get github.com/agent-receipts/ar/sdk/go
 ```
 
 ## Packages
@@ -96,9 +96,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/agent-receipts/sdk-go/receipt"
-	"github.com/agent-receipts/sdk-go/store"
-	"github.com/agent-receipts/sdk-go/taxonomy"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
+	"github.com/agent-receipts/ar/sdk/go/store"
+	"github.com/agent-receipts/ar/sdk/go/taxonomy"
 )
 
 func main() {

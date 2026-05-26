@@ -101,6 +101,7 @@ receipt_hash = hash_receipt(receipt)
 
 ### Verify a receipt
 
+<!-- snippet-check: continues -->
 ```python
 from agent_receipts import verify_receipt
 
@@ -110,6 +111,7 @@ print(f"Signature valid: {valid}")  # True
 
 ### Verify a chain
 
+<!-- snippet-check: continues -->
 ```python
 from agent_receipts import verify_chain
 
