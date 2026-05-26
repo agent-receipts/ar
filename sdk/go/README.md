@@ -74,8 +74,12 @@ func main() {
 }
 ```
 
-`emitter.Emit` is fire-and-forget: if the daemon is unreachable the event is
-dropped (logged at debug level), so start the daemon before your app. See the
+By default `emitter.Emit` surfaces transport failure (ADR-0023): if the daemon
+is unreachable it logs at debug level and returns a non-nil error wrapping
+`emitter.ErrTransport` rather than dropping silently, so start the daemon before
+your app. The call stays non-blocking (bounded by the dial + write timeout).
+Pass `emitter.WithBestEffort()` to opt into loss-tolerant emission (`Emit`
+returns nil on transport failure). See the
 [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/) for
 running the daemon and verifying the chain.
 
