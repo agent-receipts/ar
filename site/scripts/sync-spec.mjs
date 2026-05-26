@@ -64,13 +64,6 @@ function semverCompare(a, b) {
   return 0;
 }
 
-// The release signal for a spec version is a pushed `spec-v<X.Y.Z>` git
-// tag (ADR-0021 D4), not the mere presence of a spec/v<X.Y.Z>/ directory on
-// main. Return the set of version names ("v0.4.0", …) that have such a tag.
-// Requires tag history: a normal local clone has it; CI must check out with
-// fetch-depth: 0 (or fetch-tags: true). If git is unavailable we return an
-// empty set rather than crash — nothing publishes, which is the safe
-// failure mode (a missing page is recoverable; a wrongly-pinned one is not).
 // Parse the output of `git tag -l` into the set of released version names
 // ("v0.4.0", …). Only exact spec-v<X.Y.Z> tags count: prerelease tags
 // (spec-v0.4.0-rc1) and other artifacts (context-v1) have no matching
@@ -85,6 +78,13 @@ export function parseReleasedTags(tagOutput) {
   return released;
 }
 
+// The release signal for a spec version is a pushed `spec-v<X.Y.Z>` git
+// tag (ADR-0021 D4), not the mere presence of a spec/v<X.Y.Z>/ directory on
+// main. Return the set of version names ("v0.4.0", …) that have such a tag.
+// Requires tag history: a normal local clone has it; CI must check out with
+// fetch-depth: 0 (or fetch-tags: true). If git is unavailable we return an
+// empty set rather than crash — nothing publishes, which is the safe
+// failure mode (a missing page is recoverable; a wrongly-pinned one is not).
 function releasedVersions() {
   let out;
   try {
