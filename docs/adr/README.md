@@ -37,6 +37,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0021](0021-spec-and-context-versioning.md) | Spec and JSON-LD Context Versioning, with Permanent Per-Version URLs | Accepted |
 | [ADR-0022](0022-canonical-deployment-shape.md) | Canonical Agent Receipts Deployment Shape (Daemon-Mediated Primary, In-Process Tutorial-Only) | Accepted |
 | [ADR-0023](0023-canonical-go-module-path.md) | Canonical Go Module Path | Accepted |
+| [ADR-0024](0024-project-verification-contract.md) | Project Verification Contract — Every Asserted Property Has a Gate | Proposed |
 
 ## References
 
