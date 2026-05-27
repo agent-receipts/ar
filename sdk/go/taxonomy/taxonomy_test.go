@@ -61,9 +61,9 @@ func TestGetActionType(t *testing.T) {
 
 func TestAllActions(t *testing.T) {
 	all := AllActions()
-	// 7 filesystem + 7 system + 3 data + 1 unknown = 18
-	if len(all) != 18 {
-		t.Errorf("expected 18 action types, got %d", len(all))
+	// 7 filesystem + 7 system + 3 data + 1 diagnostic + 1 unknown = 19
+	if len(all) != 19 {
+		t.Errorf("expected 19 action types, got %d", len(all))
 	}
 }
 

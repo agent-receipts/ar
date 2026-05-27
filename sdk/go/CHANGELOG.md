@@ -11,6 +11,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+### Added
+
+- **`taxonomy.DiagnosticRoundtripActionType`** ([#539](https://github.com/agent-receipts/ar/issues/539)) — new built-in low-risk action type (`doctor.agent-receipts-doctor.roundtrip`) classifying the synthetic round-trip event the `agent-receipts doctor` health check emits. Registered in `AllActions()`; exempt from the spec cross-check since diagnostic self-checks are not part of the agent-action taxonomy the spec enumerates.
+
 ## [0.13.0] - 2026-05-24
 
 ### Breaking Changes

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/agent-receipts/ar/daemon/internal/doctorcli"
 	"github.com/agent-receipts/ar/daemon/internal/listcli"
 	"github.com/agent-receipts/ar/daemon/internal/showcli"
 	"github.com/agent-receipts/ar/daemon/internal/verifycli"
@@ -20,6 +21,7 @@ Commands:
   show          Print the full fields of a single receipt by sequence number.
   verify        Verify a stored chain's signatures and hash links.
   verify-event  Verify one historical receipt's end-to-end pipeline provenance.
+  doctor        Diagnose pipeline health end-to-end (emitter → socket → daemon → DB → verify).
 
 Run 'agent-receipts <command> -h' for command-specific flags.
 `
@@ -38,6 +40,8 @@ func main() {
 		os.Exit(verifycli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
 	case "verify-event":
 		os.Exit(verifyeventcli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
+	case "doctor":
+		os.Exit(doctorcli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
 	case "-h", "--help", "help":
 		fmt.Fprint(os.Stdout, usage)
 		os.Exit(verifycli.ExitOK)
