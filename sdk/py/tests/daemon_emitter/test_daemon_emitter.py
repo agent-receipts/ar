@@ -429,11 +429,17 @@ class TestSurfacesTransportFailureByDefault:
 
     def test_transport_error_distinct_from_caller_bug(self) -> None:
         e = DaemonEmitter(socket_path="/tmp/no-such-daemon-py-test.sock")
-        # Caller bug raises ValueError before any dial — distinguishable from
-        # the transport failure raised once the dial is attempted.
-        with pytest.raises(ValueError, match="invalid decision"):
+        # A caller bug raises ValueError before any dial; the exception raised
+        # must NOT be an EmitTransportError, so callers can tell the two apart.
+        with pytest.raises(ValueError, match="invalid decision") as caller_bug:
             e.emit(channel="sdk", tool_name="noop", decision="maybe")
-        assert not isinstance(ValueError(), EmitTransportError)
+        assert not isinstance(caller_bug.value, EmitTransportError)
+
+        # A transport failure raises EmitTransportError, which is not a
+        # ValueError — the two error classes are disjoint.
+        with pytest.raises(EmitTransportError) as transport:
+            e.emit(channel="sdk", tool_name="noop", decision="allowed")
+        assert not isinstance(transport.value, ValueError)
         e.close()
 
 

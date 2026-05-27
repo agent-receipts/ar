@@ -916,8 +916,8 @@ func TestEmit_DialFailure_SurfacesError(t *testing.T) {
 		Tool:     Tool{Name: "noop"},
 		Decision: "allowed",
 	})
-	if err == nil {
-		t.Error("Emit returned nil; want error on dial failure (ADR-0024)")
+	if !errors.Is(err, ErrTransport) {
+		t.Errorf("Emit err = %v; want a transport failure (errors.Is ErrTransport) on dial failure (ADR-0024)", err)
 	}
 }
 
@@ -957,8 +957,8 @@ func TestEmit_WriteFailure_SurfacesError(t *testing.T) {
 		Tool:     Tool{Name: "failing"},
 		Decision: "allowed",
 	})
-	if err == nil {
-		t.Error("Emit returned nil; want error on write failure (ADR-0024)")
+	if !errors.Is(err, ErrTransport) {
+		t.Errorf("Emit err = %v; want a transport failure (errors.Is ErrTransport) on write failure (ADR-0024)", err)
 	}
 }
 

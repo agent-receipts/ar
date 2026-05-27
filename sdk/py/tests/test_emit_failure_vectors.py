@@ -65,13 +65,12 @@ def test_emit_failure_contract_vector(case: dict[str, str], tmp_path: Path) -> N
         )
 
     # Default mode (no best_effort) against a socket with no listener.
-    e = DaemonEmitter(socket_path=str(tmp_path / "missing.sock"), session_id="vec")
-    try:
+    with DaemonEmitter(
+        socket_path=str(tmp_path / "missing.sock"), session_id="vec"
+    ) as e:
         got = _classify(
             lambda: e.emit(channel="sdk", tool_name="noop", decision=decision)
         )
-    finally:
-        e.close()
     assert got == case["expect"], (
         f"case {name!r}: outcome {got!r}, want {case['expect']!r}"
     )

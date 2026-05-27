@@ -290,6 +290,19 @@ export class DaemonEmitter {
 	private writeQueue: Promise<void> = Promise.resolve();
 
 	constructor(options: DaemonEmitterOptions = {}) {
+		// Validate the caller-supplied socket path early. JS callers bypass the
+		// compile-time type, and a non-string truthy value would make
+		// createConnection throw synchronously inside emit() — breaking the
+		// contract that emit() resolves with Error | null. Mirrors the Go/Python
+		// SDKs, which type-check socket_path at construction.
+		if (
+			options.socketPath !== undefined &&
+			typeof options.socketPath !== "string"
+		) {
+			throw new TypeError(
+				`emitter: socketPath must be a string, got ${typeof options.socketPath}`,
+			);
+		}
 		const socketPath = options.socketPath ?? defaultSocketPath();
 		if (!socketPath) {
 			throw new Error(
@@ -425,7 +438,18 @@ export class DaemonEmitter {
 			() => {},
 			() => {},
 		);
-		return next;
+		// doWrite is designed to resolve with Error | null and never reject, but
+		// a synchronous throw from a Node socket call (e.g. write() on a freshly
+		// destroyed socket) would otherwise reject emit()'s Promise and break the
+		// documented contract. Convert any unexpected rejection into a transport
+		// failure so callers always get Error | null.
+		return next.catch((err: unknown) => {
+			const e = err instanceof Error ? err : new Error(String(err));
+			this.logDrop("write", e);
+			return this.transportFailure(
+				`emitter: unexpected emit error: ${e.message}`,
+			);
+		});
 	}
 
 	/**
