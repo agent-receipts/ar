@@ -63,9 +63,23 @@ jobs:
           if [[ "${COLLECTOR_VERSION}" == *-* ]]; then
             PRERELEASE_ARG+=(--prerelease)
           fi
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "collector ${COLLECTOR_VERSION}" \
-            --generate-notes \
-            "${PRERELEASE_ARG[@]}" \
+          # Create the release if it doesn't already exist (e.g. pre-created
+          # for release notes), then upload assets either way. If it already
+          # exists, normalise title and prerelease flag — a pre-created release
+          # may be missing --prerelease, which would cause a pre-release tag to
+          # appear as the latest stable release. Idempotent so a re-run after a
+          # partial failure doesn't error on an existing release.
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" \
+              --title "collector ${COLLECTOR_VERSION}" \
+              "${PRERELEASE_ARG[@]}"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "collector ${COLLECTOR_VERSION}" \
+              --generate-notes \
+              "${PRERELEASE_ARG[@]}"
+          fi
+          gh release upload "${GITHUB_REF_NAME}" \
             collector/dist/*.tar.gz \
-            collector/dist/checksums.txt
+            collector/dist/checksums.txt \
+            --clobber
