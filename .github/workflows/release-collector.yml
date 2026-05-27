@@ -57,27 +57,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Mark pre-release tags (e.g. v0.13.0-alpha.1) so they don't show
-          # up as "latest" on the GitHub Releases page.
-          PRERELEASE_ARG=()
+          # Mark pre-release tags (e.g. v0.13.0-alpha.1) as prerelease so they
+          # don't show up as "latest" on the GitHub Releases page. Pass an
+          # explicit boolean on both paths so the edit path also *clears*
+          # prerelease for a stable tag whose release was pre-created as a
+          # prerelease (an omitted flag would leave the existing state).
+          PRERELEASE=false
           if [[ "${COLLECTOR_VERSION}" == *-* ]]; then
-            PRERELEASE_ARG+=(--prerelease)
+            PRERELEASE=true
           fi
           # Create the release if it doesn't already exist (e.g. pre-created
-          # for release notes), then upload assets either way. If it already
-          # exists, normalise title and prerelease flag — a pre-created release
-          # may be missing --prerelease, which would cause a pre-release tag to
-          # appear as the latest stable release. Idempotent so a re-run after a
-          # partial failure doesn't error on an existing release.
+          # for release notes), then upload assets either way. Idempotent so a
+          # re-run after a partial failure doesn't error on an existing release.
           if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
             gh release edit "${GITHUB_REF_NAME}" \
               --title "collector ${COLLECTOR_VERSION}" \
-              "${PRERELEASE_ARG[@]}"
+              --prerelease="${PRERELEASE}"
           else
             gh release create "${GITHUB_REF_NAME}" \
               --title "collector ${COLLECTOR_VERSION}" \
               --generate-notes \
-              "${PRERELEASE_ARG[@]}"
+              --prerelease="${PRERELEASE}"
           fi
           gh release upload "${GITHUB_REF_NAME}" \
             collector/dist/*.tar.gz \
