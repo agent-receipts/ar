@@ -96,10 +96,14 @@ func TestDropCounterEndToEnd(t *testing.T) {
 		t.Fatal("first daemon did not stop within 3s")
 	}
 
+	// WithBestEffort so the dead-socket sends return nil and accumulate in the
+	// drop counter rather than surfacing as errors (ADR-0024). The drop-counter
+	// pipeline is exactly the loss-tolerant path this option selects.
 	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(cfg.SocketPath),
 		emitter.WithSessionID("drop-e2e-session"),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		emitter.WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("emitter.NewDaemon: %v", err)
@@ -110,7 +114,7 @@ func TestDropCounterEndToEnd(t *testing.T) {
 	// Three emits to the dead socket → three dial failures → drop_count = 3.
 	for i := 0; i < 3; i++ {
 		if err := em.Emit(ctx, emitter.Event{Channel: "test", Tool: emitter.Tool{Name: "dropped"}, Decision: "allowed"}); err != nil {
-			t.Fatalf("Emit %d: expected nil (fire-and-forget), got %v", i, err)
+			t.Fatalf("Emit %d: expected nil (WithBestEffort), got %v", i, err)
 		}
 	}
 

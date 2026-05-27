@@ -327,17 +327,19 @@ func TestEmit_HashDeterminism(t *testing.T) {
 	}
 }
 
-// TestEmit_FireAndForgetWhenDaemonDown enforces the core fire-and-forget
-// contract from ADR-0010: an unreachable daemon MUST NOT block the agent.
-// Emit returns nil within milliseconds when the configured socket path
-// does not exist on disk.
-func TestEmit_FireAndForgetWhenDaemonDown(t *testing.T) {
+// TestEmit_BestEffortWhenDaemonDown enforces the non-blocking property under
+// the WithBestEffort opt-out (ADR-0024): an unreachable daemon MUST NOT block
+// the agent, and Emit returns nil within milliseconds when the configured
+// socket path does not exist on disk. (The default surface-error behaviour is
+// covered by the unit tests in emitter_unix_test.go.)
+func TestEmit_BestEffortWhenDaemonDown(t *testing.T) {
 	dir := shortSocketDir(t)
 	socketPath := filepath.Join(dir, "no-such-daemon.sock")
 
 	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(socketPath),
 		emitter.WithLogger(silentLogger),
+		emitter.WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -354,10 +356,10 @@ func TestEmit_FireAndForgetWhenDaemonDown(t *testing.T) {
 	elapsed := time.Since(start)
 
 	if err != nil {
-		t.Errorf("Emit returned err = %v, want nil (fire-and-forget)", err)
+		t.Errorf("Emit returned err = %v, want nil (WithBestEffort)", err)
 	}
 	if elapsed > 50*time.Millisecond {
-		t.Errorf("Emit blocked for %v, want <50ms (fire-and-forget contract)", elapsed)
+		t.Errorf("Emit blocked for %v, want <50ms (non-blocking contract)", elapsed)
 	}
 }
 
@@ -371,9 +373,14 @@ func TestEmit_ReconnectAfterDaemonRestart(t *testing.T) {
 	dir := shortSocketDir(t)
 	d1 := startDaemon(t, dir)
 
+	// WithBestEffort so the stale-connection write failure on the first
+	// post-restart Emit returns nil and the reconnect loop keeps going
+	// (ADR-0024); success is detected via the receipt store, not the return
+	// value.
 	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(d1.cfg.SocketPath),
 		emitter.WithLogger(silentLogger),
+		emitter.WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("New: %v", err)
