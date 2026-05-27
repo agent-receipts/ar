@@ -3,7 +3,12 @@ title: "An audit trail your agent can't tamper with"
 description: A separate daemon signs and stores a tamper-evident receipt for every tool call your agent makes. The signing keys and the receipt store live outside the agent process.
 ---
 
-A separate daemon signs and stores a tamper-evident receipt for every tool call your agent makes. The signing keys and the receipt store live outside the agent process, so the audit trail holds up even if the agent is compromised.
+{/* OTTO: personal twist on this opening */}
+An agent runs overnight. By morning, a customer's production data is gone — the agent called a cleanup tool with the wrong scope and deleted records it was never meant to touch. The first question everyone asks is the simplest one: what exactly did it do, on whose authority, and with what inputs? You open the logs and find a single line — "maintenance task completed." Nothing about the destructive call. Nothing about who approved it. And no way to prove the log itself wasn't edited afterward.
+
+This is the gap. Agents are taking real actions — deleting files, moving money, changing records — and the trail they leave is whatever they happened to write, in a place anyone with access can rewrite. When something goes wrong, "the agent did it" is not an answer your security team, your auditor, or your customer will accept.
+
+Agent Receipts closes that gap. A separate daemon records a tamper-evident receipt for every tool call your agent makes. The signing keys and the receipt store live outside the agent process, so the audit trail holds up even if the agent is compromised.
 
 Built for platform and security teams approving agentic deployments.
 
@@ -115,7 +120,7 @@ It sits in front of an MCP server you already use and gives you:
 
 *Conceptual overview. Signing and storage happen inside the `agent-receipts` daemon — the agent process sends events over a Unix socket and never touches the keys.*
 
-AI agents are increasingly acting on behalf of humans — sending emails, modifying documents, making purchases, managing files. Observability platforms like LangSmith and Arize provide valuable operational telemetry but are designed for debugging and monitoring, not cryptographic proof of authorization or identity. Agent Receipts produces a tamper-evident record using the same Ed25519 and SHA-256 primitives the space already converged on, wrapped in the W3C Verifiable Credentials envelope — reusing standards, not authoring a new one. The EU AI Act mandates traceability for high-risk AI systems (Article 12); Agent Receipts produces a record that meets that bar.
+AI agents are increasingly acting on behalf of humans — sending emails, modifying documents, making purchases, managing files. Agent Receipts produces a tamper-evident record of those actions using the same Ed25519 and SHA-256 primitives the space already converged on, wrapped in the W3C Verifiable Credentials envelope — reusing standards, not authoring a new one. The EU AI Act mandates traceability for high-risk AI systems (Article 12); Agent Receipts produces a record that meets that bar. For how this fits alongside observability platforms, policy engines, and the other approaches teams are weighing, see the [agent security tooling landscape](/ecosystem/landscape/).
 
 ```mermaid
 graph LR
