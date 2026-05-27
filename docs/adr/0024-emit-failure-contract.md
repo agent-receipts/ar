@@ -4,10 +4,10 @@
 
 Accepted
 
-> Ratified under issue #599 (Closure 2). This ADR records the protocol-level
-> decision only. The per-SDK implementation, the conformance vector, and the
-> documentation edits are mechanical follow-through tracked as the checklist
-> under *Consequences*, and are deliberately **not** part of this ADR's diff.
+> Ratified under issue #599 (Closure 2). This document records the
+> protocol-level *decision*; the per-SDK implementation, the conformance
+> vector, and the documentation edits ship in the same pull request and are
+> tracked as the checklist under *Consequences*.
 
 ## Context
 
@@ -19,19 +19,19 @@ not the agent, not the operator, not an auditor — can tell.
 Three of the SDK daemon-socket emitters do exactly this when the daemon is
 unreachable:
 
-- **Python (PY-P9).** `DaemonEmitter.emit()` returns `None` in well under a
-  millisecond when the socket cannot be dialled, raises nothing, and logs at
-  `DEBUG` only (`sdk/py/src/agent_receipts/daemon_emitter.py:174`, dial failure
-  path at `:316`).
-- **Go (GO-P5).** `DaemonEmitter.Emit` returns `nil` on dial/write failure
-  unless the caller opted into `WithStrictErrors()`
-  (`sdk/go/emitter/emitter.go:174`, `:418`). The default is silent, and
-  `site/src/content/docs/getting-started/daemon-setup.mdx` *documents* the
-  silent drop as expected behaviour (lines 73, 81, 241, 252).
-- **TypeScript (suspected, now confirmed by reading).** `DaemonEmitter.emit`
-  resolves to `null` on dial/write failure
-  (`sdk/ts/src/daemon-emitter.ts:290`, drop paths at `:406`). No strict mode
-  exists.
+The as-found state below is what this PR changes (locations given by symbol,
+not line number, so they don't rot):
+
+- **Python (PY-P9).** `DaemonEmitter.emit()` returned `None` in well under a
+  millisecond when the socket could not be dialled, raised nothing, and logged
+  at `DEBUG` only (`daemon_emitter.py`, in `emit` / `_dial_if_needed`).
+- **Go (GO-P5).** `DaemonEmitter.Emit` returned `nil` on dial/write failure
+  unless the caller opted into the old `WithStrictErrors()`
+  (`sdk/go/emitter/emitter.go`). The default was silent, and
+  `daemon-setup.mdx` *documented* the silent drop as expected behaviour.
+- **TypeScript (suspected, then confirmed by reading).** `DaemonEmitter.emit`
+  resolved to `null` on dial/write failure (`sdk/ts/src/daemon-emitter.ts`, in
+  `emit` / `doWrite`). No strict mode existed.
 
 The two audits scored identical behaviour differently — `med` for Python,
 `high` for Go. The Go score is correct: silently producing an incomplete audit
@@ -61,15 +61,19 @@ fire-and-forget latency budget **and** tell its caller that the transport was
 unreachable. A failed `connect()` is known synchronously, in microseconds; it
 costs nothing to report.
 
-### Blocking prerequisite (PY-P4)
+### The issue's PY-P4 framing (revised by § 3 below)
 
-The Python WAL-durability fix shipped in v0.10.0 wraps the HTTP delivery path
-but cannot wrap `DaemonEmitter` because the `Emitter` Protocol shape does not
+Issue #599 framed PY-P4 as a *blocking prerequisite* for closing PY-P9: the
+Python WAL-durability fix shipped in v0.10.0 wraps the HTTP delivery path but
+cannot wrap `DaemonEmitter`, because the `Emitter` Protocol shape does not
 capture the real arity of `DaemonEmitter.emit` (keyword-only `channel`,
-`tool_name`, `decision`, ...). PY-P4 must be resolved as part of adopting this
-contract, because a conformant "surface the failure, then opt into durability
-by wrapping" story requires the wrapper to be able to wrap the daemon emitter
-at all. Resolution order matters: PY-P4 before PY-P9.
+`tool_name`, `decision`, ...). That framing assumed the fix for the silent drop
+was to retrofit the WAL onto the daemon path — making PY-P4 a precondition.
+
+The § 1 decision below dissolves that dependency (see § 3): the base obligation
+is "surface the failure," and durability is a separate, opt-in concern. So
+PY-P9 closes without PY-P4, and PY-P4 stays with ADR-0020 step-2 work. This
+subsection is retained to record the original reasoning the decision revises.
 
 ## Decision
 

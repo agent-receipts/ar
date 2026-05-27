@@ -124,7 +124,6 @@ func main() {
 
 	opts := []emitter.Option{
 		emitter.WithLogger(logger),
-		emitter.WithStrictErrors(),
 	}
 	if sessionID != "" {
 		opts = append(opts, emitter.WithSessionID(sessionID))

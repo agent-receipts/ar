@@ -66,7 +66,11 @@ describe("emit failure contract vector (ADR-0024)", () => {
 			if (c.name === "dial_failure_unreachable_socket") {
 				err = await emitter.emit(event);
 			} else if (c.name === "caller_bug_invalid_decision") {
-				err = await emitter.emit({ ...event, decision: "bogus" as never });
+				err = await emitter.emit({
+					...event,
+					// @ts-expect-error intentionally invalid decision to exercise caller-bug validation
+					decision: "bogus",
+				});
 			} else {
 				emitter.close();
 				throw new Error(

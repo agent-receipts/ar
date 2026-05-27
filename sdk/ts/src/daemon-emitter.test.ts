@@ -437,7 +437,8 @@ describe("DaemonEmitter — surfaces transport failure when daemon is down", () 
 		const elapsed = Date.now() - start;
 
 		expect(err).toBeInstanceOf(EmitTransportError);
-		// Must return within 50ms (dial timeout is 25ms + overhead).
+		// Non-blocking: a dial failure is detected well within the 150ms bound
+		// (dial timeout is 25ms; the failure surfaces in roughly that time).
 		expect(elapsed).toBeLessThan(150);
 
 		emitter.close();
@@ -466,7 +467,8 @@ describe("DaemonEmitter — surfaces transport failure when daemon is down", () 
 
 		const callerBug = await emitter.emit({
 			...GOOD_EVENT,
-			decision: "nope" as never,
+			// @ts-expect-error intentionally invalid decision to exercise caller-bug validation
+			decision: "nope",
 		});
 		expect(callerBug).toBeInstanceOf(Error);
 		expect(callerBug).not.toBeInstanceOf(EmitTransportError);
