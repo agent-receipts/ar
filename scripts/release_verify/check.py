@@ -215,7 +215,16 @@ def verify_go(version: str, workdir: str) -> int:
     with open(os.path.join(workdir, "main.go"), "w", encoding="utf-8") as fh:
         fh.write("package main\n\nfunc main() {}\n")
 
-    env = {"GOFLAGS": "-mod=mod", "GOWORK": "off"}
+    # Pin GOPROXY to the public proxy with no `direct` fallback. The default
+    # (`https://proxy.golang.org,direct`) lets `go mod download` fetch straight
+    # from VCS when the proxy hasn't indexed the tag yet — which would let this
+    # gate pass without actually proving the public proxy resolves the release.
+    # Gate #2 asserts registry resolution, so the proxy must be the only source.
+    env = {
+        "GOFLAGS": "-mod=mod",
+        "GOWORK": "off",
+        "GOPROXY": "https://proxy.golang.org",
+    }
     print(f"\n--- Fetching {GO_MODULE}@v{version} from the Go proxy")
     if (
         _run(
