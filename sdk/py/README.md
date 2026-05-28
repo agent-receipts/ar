@@ -199,6 +199,9 @@ from agent_receipts.aws import KMSSigner
 signer = KMSSigner("arn:aws:kms:us-east-1:111122223333:key/abc…", timeout=5.0)
 
 public_key = signer.get_public_key()  # raw 32 bytes (RFC 8032 §5.1.5)
+
+# `sign` operates on the canonical (RFC 8785) bytes of a receipt.
+canonical_receipt_bytes = b"...canonicalised AgentReceipt..."
 signature = signer.sign(canonical_receipt_bytes)
 ```
 
