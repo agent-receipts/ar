@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -42,7 +42,7 @@ The following gates are committed to as the initial set, each tracked by its own
 |---|---|---|---|
 | 1 | **Documented code snippets execute** | Every code block in README and site docs runs against the published artifact in a clean tmpdir and exits 0 | #650 |
 | 2 | **Release round-trip verification** | After publishing to PyPI/npm/Go proxy, the published version is fetched and asserted to be the version released; documented snippets run against the fetched artifact | #651 |
-| 3 | **Spec URLs resolve** | Every `/spec/vX.Y.Z/` and `/context/v<N>` URL referenced by any released artifact resolves with valid content | #597 (D4 + D6) |
+| 3 | **Spec URLs resolve** | Every `/spec/v<X.Y.Z>/` and `/context/v<N>` URL referenced by any released artifact resolves with valid content | #597 (D4 + D6) |
 | 4 | **E2E receipt validation against live spec** | Every receipt produced by the conformance suite validates as a W3C VC against a strict JSON-LD processor that resolves `@context` URLs from the live site | #597 (D6) |
 | 5 | **Site documented-snippet gate** | Same as #1 but for `.mdx` code blocks in the site source | #652 |
 | 6 | **SDK output schema-conformance at release time** | Each SDK release produces a receipt and validates it against the published JSON Schema before the release goes out | #653 |
