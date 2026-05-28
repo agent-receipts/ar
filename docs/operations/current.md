@@ -20,9 +20,9 @@
 
 ## Last updated
 
-`2026-05-28` — supersedes the unmerged #647 EOD snapshot. Since then: `homepage-rewrite` shipped (#644), closing out closure-1's last writing node; ADR-0024 **verification-contract** landed (#658) — no longer deferred — with Gate #1 shipped (#632) and Gate #2 in review (#664); emit-failure-contract is now **ADR-0025** (#643, in review); ADR-0023 follow-up `go-import-path-sweep` (#636) shipped; v1-blockers #534 (AWS KMS, #663) and #535 (ephemeral guide, #660) shipped; operator tooling doctor/verify-event/show all shipped (#661/#659/#662); SDK bumped to v0.13.0 (#646).
+`2026-05-29` — #643 (emit-failure-contract / ADR-0025) merged, closing closure-2; #664 (Gate #2 release round-trip) merged, closes #651; #666 (Gate #1 execute mode for README snippets) merged, closes #650; #667 (Gate #5 MDX snippet execution) merged, closes #652; issue #599 closed manually; `collector-tagging` (#638) farmed off.
 
-> **ADR numbering note.** The numbers settled after three landed in close succession: **ADR-0023** = canonical Go module path (#640/#642), **ADR-0024** = project verification contract (#658), **ADR-0025** = emit failure contract (#643, in review). Earlier snapshots had 0024/0025 swapped.
+> **ADR numbering note.** The numbers settled after three landed in close succession: **ADR-0023** = canonical Go module path (#640/#642), **ADR-0024** = project verification contract (#658), **ADR-0025** = emit failure contract (#643, merged). Earlier snapshots had 0024/0025 swapped.
 
 ---
 
@@ -38,8 +38,8 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 - **`closure-0` (spec/context versioning) — SHIPPED.**
 - **`closure-1` (Quick Start coherence + Go module identity) — ESSENTIALLY COMPLETE.** All Quick Start / README / ADR nodes shipped, including `homepage-rewrite` (#644) and `ADR-0023-go-module-path` (#640). Two ADR-0023 follow-ups remain in-flight: `collector-tagging` (#638) and `d5-release-verification` (#639, blocked on #638). Once both close, closure-1 (and its tracker #598) can close.
-- **`closure-2` (emit failure contract) — IN PROGRESS.** Implements **ADR-0025**; PR #643 open in review, covers all three SDKs in one PR. Closes #599.
-- **`verification-contract` (ADR-0024) — SHIPPED & BUILDING GATES.** ADR-0024 landed (#658). Gate #1 (README-snippet CI) shipped (#632). Gate #2 (release round-trip) in review (#664, tracks #651). Gates #6/#7 (schema-conformance, cross-SDK byte-identity at release time) are future siblings.
+- **`closure-2` (emit failure contract) — SHIPPED.** ADR-0025 implemented across all three SDKs (#643, merged 2026-05-28). Issue #599 closed.
+- **`verification-contract` (ADR-0024) — SHIPPED & BUILDING GATES.** ADR-0024 landed (#658). Gate #1 type-check shipped (#632); Gate #1 execute mode shipped (#666, closes #650). Gate #2 (release round-trip) shipped (#664, closes #651). Gate #5 (MDX snippet execution) shipped (#667, closes #652). Gates #3/#4/#6/#7 are future siblings.
 - **`v1-blockers`** (orthogonal to closures; tracked by `v1-blocker` label) — #534 (AWS KMS signers) shipped for TS + Python (#663); #535 (ephemeral-compute deployment guide) shipped (#660). Foreground for the v1 release path; not part of the audit response.
 - **`daemon-v2`** — Otto's foreground design work. Not yet broken into nodes here; add when it becomes farmable.
 
@@ -187,7 +187,7 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - depends_on: [`ADR-0023-go-module-path`]
 - issues: #638 (open)
 - prs: #648 (merged — release automation only)
-- farmable: yes
+- farmable: yes (farmed off 2026-05-29)
 - notes: #648 landed the GoReleaser config + `collector/v*` release workflow. Still open in #638: actually push the `collector/v0.13.0` tag aligned to `sdk/go/v0.13.x` and verify `go install github.com/agent-receipts/ar/collector/cmd/collector@latest` builds against a fresh GOPATH.
 
 #### `d5-release-verification`
@@ -202,12 +202,12 @@ A closure is a coherent piece of work that retires a category of audit findings 
 ### Closure 2 — emit failure contract (ADR-0025)
 
 #### `emit-failure-contract`
-- state: in-flight
+- state: shipped
 - depends_on: []
-- issues: #599
-- prs: #643 (open, in review)
-- farmable: no (PR in review)
-- notes: implements ADR-0025 (renumbered from 0023→0024→0025 as other ADRs landed). Emit MUST surface transport failure by default; best-effort is opt-out (Go `WithBestEffort()`, Python `best_effort=True`, TS `bestEffort: true`). Shared conformance vector at `cross-sdk-tests/emit_failure_vectors.json`. Breaking change across all three SDKs. Closes #599.
+- issues: #599 (closed)
+- prs: #643 (merged)
+- artifacts: `docs/adr/0025-emit-failure-contract.md`; `cross-sdk-tests/emit_failure_vectors.json`
+- notes: implements ADR-0025 (renumbered from 0023→0024→0025 as other ADRs landed). Emit MUST surface transport failure by default; best-effort is opt-out (Go `WithBestEffort()`, Python `best_effort=True`, TS `bestEffort: true`). Breaking change across all three SDKs.
 
 #### `py-protocol-arity-fix` (PY-P4)
 - state: decoupled from this closure
@@ -231,21 +231,37 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - artifacts: `docs/adr/0024-project-verification-contract.md`
 - notes: was deferred; landed once Closures 1 and 2 demonstrated the property-with-gate pattern. Defines a gate catalogue (Gates #1–#7).
 
-#### `cnap-snippet-ci` (Gate #1)
+#### `cnap-snippet-ci` (Gate #1 — type-check)
 - state: shipped
 - depends_on: []
 - issues: #595 (closed)
 - prs: #632 (merged)
 - artifacts: `scripts/readme_snippets/` harness; `readme-snippets.yml` CI gate; in-tree + published snippet checks for Go/TS/Python
-- notes: README code-snippet CI gate — Gate #1 of ADR-0024. Also fixed a stale module path in `sdk/go/README.md` and a wrong `ActionInput` call in the root README Python quick-start.
+- notes: README code-snippet CI gate — type-check half of Gate #1 of ADR-0024. Also fixed a stale module path in `sdk/go/README.md` and a wrong `ActionInput` call in the root README Python quick-start.
+
+#### `readme-snippet-execution` (Gate #1 — execute)
+- state: shipped
+- depends_on: [`cnap-snippet-ci`]
+- issues: #650 (closed)
+- prs: #666 (merged)
+- artifacts: `--mode run` added to `scripts/readme_snippets/check.py`; `Run … snippets (in-tree)` CI step for all three SDKs
+- notes: adds the execute half of Gate #1 — snippets actually run in an isolated tmpdir, not just type-checked. Non-hermetic snippets (`DaemonEmitter`, `KMSSigner`, etc.) marked `no-run` with documented reason; still covered by type-check gate.
+
+#### `mdx-snippet-execution` (Gate #5)
+- state: shipped
+- depends_on: [`readme-snippet-execution`]
+- issues: #652 (closed)
+- prs: #667 (merged)
+- artifacts: `mdx-snippets.yml` CI gate; MDX JSX comment directives in `extract.py`
+- notes: executes runnable SDK snippets in site `.mdx` docs against in-tree SDK. Reuses gate #1 run-mode harness. Type-check gate for MDX deferred (12 pre-existing doc type-strictness issues; doc-quality follow-up, not a regression).
 
 #### `release-roundtrip-verification` (Gate #2)
-- state: in-flight
+- state: shipped
 - depends_on: [`ADR-0024-verification-contract`]
-- issues: #651 (open)
-- prs: #664 (open)
-- farmable: no (PR up; in review)
-- notes: post-publish CI step per SDK — fetch the just-published artifact from the public registry in a clean env, assert resolved version == released version, run documented snippets against it. `scripts/release_verify/check.py` + 23 unit tests; wired into `release-sdk-{go,py,ts}.yml`. Release-blocking.
+- issues: #651 (closed)
+- prs: #664 (merged)
+- artifacts: `scripts/release_verify/check.py` + 23 unit tests; `release-verify` job wired into `release-sdk-{go,py,ts}.yml`
+- notes: post-publish CI step per SDK — fetch the just-published artifact from the public registry in a clean env, assert resolved version == released version. Release-blocking.
 
 ---
 
@@ -262,19 +278,14 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 ## Next farmable (computed)
 
-As of `2026-05-28`, applying the "open + dependencies-met + no in-flight conflicts" rule:
+As of `2026-05-29`, applying the "open + dependencies-met + no in-flight conflicts" rule:
 
-1. **`collector-tagging` (#638)** — deps met (ADR-0023 shipped, #648 automation landed). Push the `collector/v0.13.0` tag and verify `go install ...collector@latest`. Unblocks `d5-release-verification`.
+1. **`collector-tagging` (#638)** — farmed off 2026-05-29. Push the `collector/v0.13.0` tag and verify `go install ...collector@latest`. Unblocks `d5-release-verification`.
 
 Unlocks after the above:
 - **`d5-release-verification` (#639)** — becomes farmable once #638 closes.
 
-In-flight (PR up — not farmable but not blocked):
-- `emit-failure-contract` → #643 (in review)
-- `release-roundtrip-verification` → #664 (in review)
-
-Otto owes (non-blocking):
-- Optional final copy pass on the `homepage-rewrite` opening paragraph if a placeholder was left (#644).
+No other active nodes are blocked or in review.
 
 ---
 
