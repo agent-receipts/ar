@@ -185,6 +185,11 @@ class DaemonEmitter:
             )
         self._session_id = session_id if session_id else str(uuid.uuid4())
         self._log = log if log is not None else logger
+        if not isinstance(best_effort, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError(
+                "emitter: best_effort must be a bool, got "
+                f"{type(best_effort).__name__!r}"
+            )
         self._best_effort = best_effort
 
         self._lock = threading.Lock()
@@ -305,16 +310,17 @@ class DaemonEmitter:
             if self._closed:
                 raise RuntimeError("emitter: closed")
 
-            conn = self._dial_if_needed()
+            conn, dial_err = self._dial_if_needed()
             if conn is None:
                 # Dial failure already logged at DEBUG by _dial_if_needed.
                 if self._best_effort:
                     return None
                 raise EmitTransportError(
-                    f"emitter: cannot reach daemon at {self._socket_path}"
-                )
+                    f"emitter: cannot reach daemon at {self._socket_path}: {dial_err}"
+                ) from dial_err
 
-            if not self._write_frame(conn, body):
+            write_err = self._write_frame(conn, body)
+            if write_err is not None:
                 # Write failure — close and clear so next emit re-dials.
                 try:
                     conn.close()
@@ -324,8 +330,9 @@ class DaemonEmitter:
                 if self._best_effort:
                     return None
                 raise EmitTransportError(
-                    f"emitter: write to daemon at {self._socket_path} failed"
-                )
+                    f"emitter: write to daemon at {self._socket_path} "
+                    f"failed: {write_err}"
+                ) from write_err
 
     def close(self) -> None:
         """Release the underlying socket connection.
@@ -354,10 +361,15 @@ class DaemonEmitter:
     # Private helpers (must be called with self._lock held)
     # ------------------------------------------------------------------
 
-    def _dial_if_needed(self) -> socket.socket | None:
-        """Return the live connection, dialing if needed. Returns None on failure."""
+    def _dial_if_needed(self) -> tuple[socket.socket | None, OSError | None]:
+        """Return the live connection, dialing if needed.
+
+        On failure returns ``(None, exc)`` where ``exc`` is the underlying
+        ``OSError`` so the caller can surface its detail; on success returns
+        ``(conn, None)``.
+        """
         if self._conn is not None:
-            return self._conn
+            return self._conn, None
         conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             conn.settimeout(_DIAL_TIMEOUT)
@@ -378,18 +390,22 @@ class DaemonEmitter:
                     "err": str(exc),
                 },
             )
-            return None
+            return None, exc
         self._conn = conn
-        return conn
+        return conn, None
 
-    def _write_frame(self, conn: socket.socket, body: bytes) -> bool:
-        """Write a length-prefixed frame. Returns True on success."""
+    def _write_frame(self, conn: socket.socket, body: bytes) -> OSError | None:
+        """Write a length-prefixed frame.
+
+        Returns ``None`` on success, or the underlying ``OSError`` on failure
+        so the caller can surface its detail.
+        """
         deadline = time.monotonic() + _WRITE_TIMEOUT
         try:
             header = struct.pack(">I", len(body))
             _send_all(conn, header, deadline)
             _send_all(conn, body, deadline)
-            return True
+            return None
         except OSError as exc:
             self._log.debug(
                 "agent-receipts emitter dropped event",
@@ -399,7 +415,7 @@ class DaemonEmitter:
                     "err": str(exc),
                 },
             )
-            return False
+            return exc
 
 
 # ---------------------------------------------------------------------------

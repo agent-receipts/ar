@@ -290,17 +290,25 @@ export class DaemonEmitter {
 	private writeQueue: Promise<void> = Promise.resolve();
 
 	constructor(options: DaemonEmitterOptions = {}) {
-		// Validate the caller-supplied socket path early. JS callers bypass the
-		// compile-time type, and a non-string truthy value would make
-		// createConnection throw synchronously inside emit() — breaking the
-		// contract that emit() resolves with Error | null. Mirrors the Go/Python
-		// SDKs, which type-check socket_path at construction.
+		// Validate caller-supplied options early. JS callers bypass the
+		// compile-time types, so a non-string path or non-boolean flag would
+		// otherwise surface as an opaque downstream failure; fail fast with a
+		// clear caller-bug error instead. Mirrors the Go/Python SDKs, which
+		// type-check their constructor inputs.
 		if (
 			options.socketPath !== undefined &&
 			typeof options.socketPath !== "string"
 		) {
 			throw new TypeError(
 				`emitter: socketPath must be a string, got ${typeof options.socketPath}`,
+			);
+		}
+		if (
+			options.bestEffort !== undefined &&
+			typeof options.bestEffort !== "boolean"
+		) {
+			throw new TypeError(
+				`emitter: bestEffort must be a boolean, got ${typeof options.bestEffort}`,
 			);
 		}
 		const socketPath = options.socketPath ?? defaultSocketPath();
