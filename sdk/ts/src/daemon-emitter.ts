@@ -344,9 +344,12 @@ export class DaemonEmitter {
 	 *
 	 * Concurrent-close caveat: if close() is called concurrently with an
 	 * in-flight emit() that has already passed the initial closed check, the
-	 * emit may result in a silent drop (null) rather than an Error. This is
-	 * consistent with the fire-and-forget failure model — the daemon may or
-	 * may not have received the frame by the time close() interrupts.
+	 * emit resolves with an Error rather than completing normally — either
+	 * `Error("emitter: closed")` once the close is observed, or an
+	 * `EmitTransportError` if the connection is torn down mid-write (the daemon
+	 * may or may not have received the frame, consistent with the
+	 * fire-and-forget failure model). A silent drop (null) happens only under
+	 * `bestEffort: true`, where that transport failure is swallowed.
 	 */
 	async emit(ev: EmitEvent): Promise<Error | null> {
 		// Validate caller-supplied fields first (before acquiring the write lock).
