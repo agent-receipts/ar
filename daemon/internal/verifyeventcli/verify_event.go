@@ -139,7 +139,7 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	}
 	dbPath := fs.String("db", envOr("AGENTRECEIPTS_DB", daemon.DefaultDBPath()), "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	pubKeyPath := fs.String("public-key", defaultPubKey, "PEM-encoded SPKI public key path (env: AGENTRECEIPTS_PUBLIC_KEY)")
-	chainID := fs.String("chain-id", envLookup("AGENTRECEIPTS_CHAIN_ID"), "Chain id to read from (env: AGENTRECEIPTS_CHAIN_ID); required only when --chain-head/--since and the store holds more than one chain")
+	chainID := fs.String("chain-id", envLookup("AGENTRECEIPTS_CHAIN_ID"), "Chain id (env: AGENTRECEIPTS_CHAIN_ID); with --chain-head it selects the chain (required only if the store holds more than one); with --since it is an optional filter (default: all chains)")
 	id := fs.String("id", "", "Select the receipt with this receipt id")
 	chainHead := fs.Bool("chain-head", false, "Select the most recent receipt in the chain")
 	since := fs.String("since", "", "Select every receipt issued within the trailing duration window (e.g. 10m, 24h)")

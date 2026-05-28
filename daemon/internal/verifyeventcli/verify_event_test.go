@@ -438,7 +438,7 @@ func TestVerifyEvent_AmbiguousChainIsUsageError(t *testing.T) {
 	// Two chains in one store; --chain-head with no --chain-id is ambiguous.
 	dbPath, pubKeyPath, _ := buildStore(t, dir, "chain-1", []recSpec{{peer: linuxPeer("/usr/bin/mcp-proxy")}})
 	// Append a second chain to the same DB.
-	appendChain(t, dbPath, pubKeyPath, dir, "chain-2")
+	appendChain(t, dbPath, "chain-2")
 
 	code, _, stderr := runOnce(t, []string{
 		"--db", dbPath, "--public-key", pubKeyPath, "--chain-head",
@@ -451,10 +451,11 @@ func TestVerifyEvent_AmbiguousChainIsUsageError(t *testing.T) {
 	}
 }
 
-// appendChain adds a second single-receipt chain to an existing DB, signed by
-// the key already written at pubKeyPath's sibling (regenerated here — the
-// verify only needs the chain to exist for the ambiguity check).
-func appendChain(t *testing.T, dbPath, pubKeyPath, dir, chainID string) {
+// appendChain adds a second single-receipt chain to an existing DB so the store
+// holds more than one chain. It signs with a throwaway key because the
+// ambiguity check that consumes this fixture fires during chain resolution,
+// before any signature is verified.
+func appendChain(t *testing.T, dbPath, chainID string) {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
