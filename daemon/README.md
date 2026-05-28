@@ -323,7 +323,9 @@ The round-trip is the check the Max-incident postmortem motivated: an
 `INSERT`-then-`SELECT` on the DB file "works" while bypassing the socket, the daemon's
 peer-cred capture, and the chain head. The synthetic event is **deliberately
 visible** in the chain — channel `doctor`, tool `agent-receipts-doctor.roundtrip`,
-taxonomy `diagnostic.roundtrip` (low risk). A "test mode" that bypassed the
+which the daemon records as `action.type` **`doctor.agent-receipts-doctor.roundtrip`**
+(a low-risk diagnostic self-check). That is the value to filter on when querying
+the chain. A "test mode" that bypassed the
 chain would defeat the property being tested: that *real* events make the full
 traversal. Use `--no-roundtrip` to skip it (e.g. a forensic-mode daemon that
 must not receive synthetic events); the round-trip check then reports `warn`.

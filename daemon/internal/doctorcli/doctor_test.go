@@ -2,7 +2,10 @@ package doctorcli
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -348,6 +351,51 @@ func TestPublicKeyFingerprint(t *testing.T) {
 	}
 	if !strings.HasPrefix(fp, "sha256:") {
 		t.Errorf("got %q, want sha256: prefix", fp)
+	}
+}
+
+func TestPublicKeyFingerprintRejectsNonEd25519(t *testing.T) {
+	dir := t.TempDir()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubDER, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "ecdsa.pub")
+	if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := publicKeyFingerprint(p); err == nil {
+		t.Fatal("expected an error for a non-Ed25519 public key, got nil")
+	}
+}
+
+func TestCheckDBPermissionsWALSibling(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "receipts.db")
+	if err := os.WriteFile(db, []byte("x"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(db, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	// A world-readable WAL sibling must fail even when the main DB is 0640.
+	wal := db + "-wal"
+	if err := os.WriteFile(wal, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(wal, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := checkDBPermissions(db)
+	if r.Status != StatusFail {
+		t.Fatalf("got %s (%s), want fail for a world-readable -wal sibling", r.Status, r.Reason)
+	}
+	if !strings.Contains(r.Reason, "-wal") {
+		t.Errorf("reason should name the -wal sibling, got %q", r.Reason)
 	}
 }
 

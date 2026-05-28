@@ -14,6 +14,7 @@ package doctorcli
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
@@ -283,9 +284,11 @@ func checkEmitterDialPath(socketPath string, envLookup func(string) string) Resu
 	return Result{Check: name, Status: StatusOK, Reason: fmt.Sprintf("emitter and daemon agree on %s (%s)", dialPath, source)}
 }
 
-// checkDBPermissions (check 4) confirms the receipt DB is no looser than 0640
-// per ADR-0010 § Read interface. World-readable receipts leak peer attestation
-// and operator disclosures to other local users.
+// checkDBPermissions (check 4) confirms the receipt DB — and its WAL/SHM
+// siblings — are no looser than 0640 per ADR-0010 § Read interface. The daemon
+// (tightenDBFiles) holds the same ceiling over <db>, <db>-wal, and <db>-shm; a
+// world-readable WAL still leaks recent receipt content even when the main file
+// is locked down, so doctor checks all three.
 func checkDBPermissions(dbPath string) Result {
 	const name = "db permissions"
 	if dbPath == "" {
@@ -311,7 +314,31 @@ func checkDBPermissions(dbPath string) Result {
 			Fix:    fmt.Sprintf("chmod 0640 %s", dbPath),
 		}
 	}
-	return Result{Check: name, Status: StatusOK, Reason: fmt.Sprintf("%s mode %04o, %s", dbPath, perm, owner)}
+	// WAL/SHM siblings: missing is fine (non-WAL mode, or a quiescent DB that
+	// already checkpointed), but a present sibling that is non-regular or looser
+	// than 0640 is the same leak as a loose main file.
+	for _, suffix := range []string{"-wal", "-shm"} {
+		sib := dbPath + suffix
+		si, err := os.Lstat(sib)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("stat %s: %v", sib, err)}
+		}
+		if !si.Mode().IsRegular() {
+			return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("%s is not a regular file (mode %s)", sib, si.Mode())}
+		}
+		if si.Mode().Perm()&^allowedDBPerm != 0 {
+			return Result{
+				Check:  name,
+				Status: StatusFail,
+				Reason: fmt.Sprintf("%s has mode %04o (looser than 0640); recent receipts in the WAL are exposed to other users", sib, si.Mode().Perm()),
+				Fix:    fmt.Sprintf("chmod 0640 %s", sib),
+			}
+		}
+	}
+	return Result{Check: name, Status: StatusOK, Reason: fmt.Sprintf("%s mode %04o, %s (WAL/SHM siblings within 0640)", dbPath, perm, owner)}
 }
 
 // checkSchema (check 5) confirms the DB is readable and the daemon-published
@@ -426,8 +453,11 @@ func checkChainHead(dbPath, pubKeyPath, chainID string) Result {
 // pipeline ADR-0010 describes is intact": only a real traversal produces a
 // peer credential the daemon attested for *our* PID/UID.
 //
-// The synthetic event is deliberately visible in the chain (channel "doctor",
-// tool "agent-receipts-doctor.roundtrip", taxonomy diagnostic.roundtrip) — a
+// The synthetic event is deliberately visible in the chain: the daemon derives
+// its action.type as "<channel>.<tool.name>", so channel "doctor" + tool
+// "agent-receipts-doctor.roundtrip" yields action.type
+// "doctor.agent-receipts-doctor.roundtrip" (taxonomy.DiagnosticRoundtripActionType,
+// a low-risk diagnostic self-check) — that is the value operators filter on. A
 // "test mode" that bypassed the chain would defeat the property being tested.
 func checkRoundtrip(socketPath, dbPath, chainID string, timeout time.Duration) Result {
 	const name = "round-trip"
@@ -513,7 +543,8 @@ func checkRoundtrip(socketPath, dbPath, chainID string, timeout time.Duration) R
 }
 
 // pollForRoundtrip polls the DB until a receipt matching the doctor session id
-// and the diagnostic.roundtrip action type appears, or the timeout elapses.
+// and the doctor.agent-receipts-doctor.roundtrip action type
+// (taxonomy.DiagnosticRoundtripActionType) appears, or the timeout elapses.
 // Returns (nil, nil) when nothing landed in time (not an error — the caller
 // reports it as a failed round-trip with pipeline context).
 func pollForRoundtrip(dbPath, chainID, sessionID string, timeout time.Duration) (*receipt.AgentReceipt, error) {
@@ -522,7 +553,7 @@ func pollForRoundtrip(dbPath, chainID, sessionID string, timeout time.Duration) 
 	for {
 		s, err := store.OpenReadOnly(dbPath)
 		if err != nil {
-			return nil, fmt.Errorf("open store %s: %v", dbPath, err)
+			return nil, fmt.Errorf("open store %s: %w", dbPath, err)
 		}
 		cid := chainID
 		limit := 50
@@ -534,7 +565,7 @@ func pollForRoundtrip(dbPath, chainID, sessionID string, timeout time.Duration) 
 		})
 		_ = s.Close()
 		if qErr != nil {
-			return nil, fmt.Errorf("query store %s: %v", dbPath, qErr)
+			return nil, fmt.Errorf("query store %s: %w", dbPath, qErr)
 		}
 		for i := range receipts {
 			if receipts[i].Issuer.SessionID == sessionID {
@@ -549,7 +580,10 @@ func pollForRoundtrip(dbPath, chainID, sessionID string, timeout time.Duration) 
 }
 
 // publicKeyFingerprint parses an Ed25519 SPKI public key from a PEM file and
-// returns a short "sha256:<hex>" fingerprint over the DER bytes.
+// returns a short "sha256:<hex>" fingerprint over the DER bytes. It rejects
+// non-Ed25519 keys: Ed25519 is the only signing algorithm the protocol
+// supports, so a different key type means the published key could never have
+// signed the chain — reporting a fingerprint for it would be misleading.
 func publicKeyFingerprint(path string) (string, error) {
 	pubPEM, err := os.ReadFile(path)
 	if err != nil {
@@ -562,8 +596,12 @@ func publicKeyFingerprint(path string) (string, error) {
 	if block.Type != "PUBLIC KEY" {
 		return "", fmt.Errorf("PEM block type is %q, want PUBLIC KEY", block.Type)
 	}
-	if _, err := x509.ParsePKIXPublicKey(block.Bytes); err != nil {
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
 		return "", fmt.Errorf("parse SPKI public key: %w", err)
+	}
+	if _, ok := parsed.(ed25519.PublicKey); !ok {
+		return "", fmt.Errorf("public key is %T, want ed25519.PublicKey (Ed25519 is the only supported algorithm)", parsed)
 	}
 	sum := sha256.Sum256(block.Bytes)
 	return "sha256:" + hex.EncodeToString(sum[:8]), nil

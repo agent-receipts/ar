@@ -90,10 +90,11 @@ func TestAllSDKActionsExistInSpec(t *testing.T) {
 	}
 
 	for _, entry := range AllActions() {
-		// "unknown" is the SDK's fallback entry, and the diagnostic.* entries
-		// classify daemon/CLI self-checks (e.g. the agent-receipts doctor
-		// round-trip probe) rather than agent tool calls — neither belongs in
-		// the agent-action taxonomy the spec enumerates.
+		// "unknown" is the SDK's fallback entry, and
+		// DiagnosticRoundtripActionType ("doctor.agent-receipts-doctor.roundtrip")
+		// classifies a daemon/CLI self-check (the agent-receipts doctor round-trip
+		// probe) rather than an agent tool call — neither belongs in the
+		// agent-action taxonomy the spec enumerates.
 		if entry.Type == "unknown" || entry.Type == DiagnosticRoundtripActionType {
 			continue
 		}
