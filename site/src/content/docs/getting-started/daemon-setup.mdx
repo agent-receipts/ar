@@ -70,7 +70,7 @@ The daemon listens on a Unix domain socket. The socket path depends on platform:
 On Linux, if `$XDG_RUNTIME_DIR` is not set, the daemon falls back to `/run/agentreceipts/events.sock`, which requires elevated permissions to create. If you are running as a non-root user without `$XDG_RUNTIME_DIR`, and `/run/user/$(id -u)` exists and is owned by you (standard on systemd-based Linux), set it with `export XDG_RUNTIME_DIR=/run/user/$(id -u)` — that path is user-writable and inside the daemon's per-platform safe set. On other init systems that directory may not exist; in that case set `AGENTRECEIPTS_SOCKET` to a path you create manually and pass `--unsafe-socket-path` (a boolean flag that allows the path outside the safe set). Note the daemon **rejects** an `AGENTRECEIPTS_SOCKET` value outside the safe set (`$XDG_RUNTIME_DIR`, `/run`, `/var/run`) unless you also pass `--unsafe-socket-path`, so a path like `~/.local/run/...` will not work on its own (see [issue #538](https://github.com/agent-receipts/ar/issues/538)).
 :::
 
-Start the daemon before launching any agent session. Emitters that cannot reach the socket drop events silently — they do not return an error, but `Emit` may block briefly for the dial timeout (25 ms) plus the write timeout (100 ms) before returning.
+Start the daemon before launching any agent session. By default, emitters that cannot reach the socket **surface the failure to the caller** (bounded by the configured dial and write deadlines; the TypeScript SDK may re-dial once on a stale connection, so the bound can span two dial+write cycles) rather than dropping the event silently, so an unreachable daemon is detectable per the [emit failure contract](https://github.com/agent-receipts/ar/blob/main/docs/adr/0025-emit-failure-contract.md). The exact shape is language-specific — Go returns a non-nil `error`, Python raises `EmitTransportError`, TypeScript resolves with an `EmitTransportError`. SDKs offer an opt-in best-effort mode for callers that knowingly tolerate dropped events.
 
 To run as a persistent service on macOS, use the launchd plist available at [`daemon/packaging/macos/`](https://github.com/agent-receipts/ar/tree/main/daemon/packaging/macos) on GitHub and included in the release tarball. A Linux systemd unit is included in the release tarball but is not yet committed to the repository.
 
@@ -78,7 +78,7 @@ To run as a persistent service on macOS, use the launchd plist available at [`da
 
 Point each SDK or plugin at the daemon socket. On macOS and Linux, all components resolve a platform default socket path automatically (see the table above). Set `AGENTRECEIPTS_SOCKET` to override that default. Other platforms have no platform default, but `AGENTRECEIPTS_SOCKET` (or the SDK's explicit socket-path option, e.g. Go's `WithSocketPath`) still supplies one; the emitter constructor only errors when neither is provided.
 
-There is no in-process fallback: if the daemon is unreachable, events are dropped silently (see [Start](#start) for timeout details).
+There is no in-process fallback: if the daemon is unreachable, emit surfaces the failure to the caller by default rather than dropping silently (see [Start](#start) for timeout and best-effort opt-out details).
 
 ```bash
 export AGENTRECEIPTS_SOCKET=/path/to/events.sock   # overrides the platform default
@@ -258,7 +258,7 @@ Exit codes are stable for scripting: `0` when the receipt is found and printed, 
 ## Troubleshooting
 
 **Receipts are not appearing in the database.**
-The most common cause is that the daemon is not running when the emitter starts. Emitters drop events silently if the socket is unreachable — check that `agent-receipts-daemon` is running and that the socket path matches. Confirm the daemon is alive and the socket exists:
+The most common cause is that the daemon is not running when the emitter starts. By default, emitters surface an error when the socket is unreachable, so check your application logs for emit failures — then confirm `agent-receipts-daemon` is running and that the socket path matches. Confirm the daemon is alive and the socket exists:
 
 ```bash
 pgrep agent-receipts-daemon
@@ -269,7 +269,7 @@ ls -la "${XDG_RUNTIME_DIR:-/run}/agentreceipts/events.sock"  # Linux
 If you've set `AGENTRECEIPTS_SOCKET` or an absolute `XDG_DATA_HOME`, check that path instead. The macOS example above assumes the default fallback location.
 
 **Socket path mismatch.**
-If you start the daemon and an emitter on different socket paths, events are dropped. Set `AGENTRECEIPTS_SOCKET` to the same value in the daemon's environment and each emitter's environment, or rely on the platform default by not setting it in either.
+If you start the daemon and an emitter on different socket paths, the emitter cannot reach the daemon and (by default) surfaces a transport error on each emit. Set `AGENTRECEIPTS_SOCKET` to the same value in the daemon's environment and each emitter's environment, or rely on the platform default by not setting it in either.
 
 **Key not initialised error.**
 If the daemon exits immediately with an error about a missing key or database, run `agent-receipts-daemon --init` first. The daemon will not auto-create the key on first start — initialisation is intentionally explicit so key generation is a deliberate action, not a side effect.

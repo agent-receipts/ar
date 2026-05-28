@@ -469,7 +469,6 @@ func checkRoundtrip(socketPath, dbPath, chainID string, timeout time.Duration) R
 	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(socketPath),
 		emitter.WithSessionID(sessionID),
-		emitter.WithStrictErrors(),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 	if err != nil {

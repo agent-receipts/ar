@@ -343,12 +343,13 @@ func TestEmit_ReconnectsAfterListenerRestart(t *testing.T) {
 	}
 }
 
-func TestEmit_FireAndForgetWhenSocketMissing(t *testing.T) {
+func TestEmit_BestEffortFireAndForgetWhenSocketMissing(t *testing.T) {
 	dir := shortSocketDir(t)
 	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithSessionID("no-daemon-test"),
 		WithLogger(silentLogger()),
+		WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("NewDaemon: %v", err)
@@ -363,14 +364,14 @@ func TestEmit_FireAndForgetWhenSocketMissing(t *testing.T) {
 	})
 	elapsed := time.Since(start)
 
-	// Fire-and-forget: returns nil, not an error.
+	// Best-effort opt-out: returns nil on transport failure, not an error.
 	if err != nil {
-		t.Fatalf("Emit returned error %v; want nil (fire-and-forget)", err)
+		t.Fatalf("Emit returned error %v; want nil (WithBestEffort)", err)
 	}
 	// 25ms dial timeout + 100ms write deadline = 125ms upper bound. Allow
 	// 2x for slow CI.
 	if elapsed > 250*time.Millisecond {
-		t.Errorf("Emit took %s; want <250ms (fire-and-forget contract)", elapsed)
+		t.Errorf("Emit took %s; want <250ms (non-blocking contract)", elapsed)
 	}
 }
 
@@ -658,9 +659,12 @@ func TestEmit_WriteFailureResetsConn(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
+	// WithBestEffort so the write-failure and re-dial paths return nil — this
+	// test exercises conn-reset mechanics, not the surface-error contract.
 	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithLogger(silentLogger()),
+		WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("NewDaemon: %v", err)
@@ -684,13 +688,13 @@ func TestEmit_WriteFailureResetsConn(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// This Emit should fail the write and reset e.conn to nil (returns nil
-	// per fire-and-forget contract).
+	// under WithBestEffort).
 	if err := em.Emit(context.Background(), Event{
 		Channel:  "mcp",
 		Tool:     Tool{Name: "failing"},
 		Decision: "allowed",
 	}); err != nil {
-		t.Fatalf("failing Emit returned error %v; want nil (fire-and-forget)", err)
+		t.Fatalf("failing Emit returned error %v; want nil (WithBestEffort)", err)
 	}
 
 	// e.conn should now be nil; a subsequent Emit must attempt a new dial
@@ -712,9 +716,12 @@ func TestEmit_DropCounterIncrementsOnFailure(t *testing.T) {
 	dir := shortSocketDir(t)
 	missingPath := filepath.Join(dir, "missing.sock")
 
+	// WithBestEffort so the failing emits return nil; the drop counter still
+	// increments on every failed send regardless of the opt-out.
 	em, err := NewDaemon(
 		WithSocketPath(missingPath),
 		WithLogger(silentLogger()),
+		WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("NewDaemon: %v", err)
@@ -728,7 +735,7 @@ func TestEmit_DropCounterIncrementsOnFailure(t *testing.T) {
 			Tool:     Tool{Name: "noop"},
 			Decision: "allowed",
 		}); err != nil {
-			t.Fatalf("Emit %d: expected nil (fire-and-forget), got %v", i, err)
+			t.Fatalf("Emit %d: expected nil (WithBestEffort), got %v", i, err)
 		}
 	}
 
@@ -890,15 +897,14 @@ func TestEmit_DropCounterRestoredOnWriteFailure(t *testing.T) {
 	}
 }
 
-// TestEmit_StrictErrors_DialFailure asserts that WithStrictErrors() causes
-// Emit to return an error when the daemon socket is missing, rather than
-// silently returning nil (the default fire-and-forget behaviour).
-func TestEmit_StrictErrors_DialFailure(t *testing.T) {
+// TestEmit_DialFailure_SurfacesError asserts the default emit failure contract
+// (ADR-0025): Emit returns a non-nil error when the daemon socket is missing,
+// rather than silently returning nil.
+func TestEmit_DialFailure_SurfacesError(t *testing.T) {
 	dir := shortSocketDir(t)
 	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithLogger(silentLogger()),
-		WithStrictErrors(),
 	)
 	if err != nil {
 		t.Fatalf("NewDaemon: %v", err)
@@ -910,22 +916,21 @@ func TestEmit_StrictErrors_DialFailure(t *testing.T) {
 		Tool:     Tool{Name: "noop"},
 		Decision: "allowed",
 	})
-	if err == nil {
-		t.Error("Emit with strict errors returned nil; want error on dial failure")
+	if !errors.Is(err, ErrTransport) {
+		t.Errorf("Emit err = %v; want a transport failure (errors.Is ErrTransport) on dial failure (ADR-0025)", err)
 	}
 }
 
-// TestEmit_StrictErrors_WriteFailure asserts that WithStrictErrors() causes
-// Emit to return an error when the write fails (listener closed mid-stream),
-// rather than silently returning nil.
-func TestEmit_StrictErrors_WriteFailure(t *testing.T) {
+// TestEmit_WriteFailure_SurfacesError asserts the default contract surfaces an
+// error when the write fails (listener closed mid-stream), rather than
+// silently returning nil.
+func TestEmit_WriteFailure_SurfacesError(t *testing.T) {
 	dir := shortSocketDir(t)
 	rl := newRecordingListener(t, dir)
 
 	em, err := NewDaemon(
 		WithSocketPath(rl.path),
 		WithLogger(silentLogger()),
-		WithStrictErrors(),
 	)
 	if err != nil {
 		t.Fatalf("NewDaemon: %v", err)
@@ -952,19 +957,19 @@ func TestEmit_StrictErrors_WriteFailure(t *testing.T) {
 		Tool:     Tool{Name: "failing"},
 		Decision: "allowed",
 	})
-	if err == nil {
-		t.Error("Emit with strict errors returned nil; want error on write failure")
+	if !errors.Is(err, ErrTransport) {
+		t.Errorf("Emit err = %v; want a transport failure (errors.Is ErrTransport) on write failure (ADR-0025)", err)
 	}
 }
 
-// TestEmit_NoStrictErrors_DialFailure confirms that without WithStrictErrors
-// the default fire-and-forget behaviour is preserved: dial failure returns nil.
-func TestEmit_NoStrictErrors_DialFailure(t *testing.T) {
+// TestEmit_BestEffort_DialFailureReturnsNil confirms WithBestEffort opts out of
+// the surface-error contract: dial failure returns nil (loss-tolerant path).
+func TestEmit_BestEffort_DialFailureReturnsNil(t *testing.T) {
 	dir := shortSocketDir(t)
 	em, err := NewDaemon(
 		WithSocketPath(filepath.Join(dir, "missing.sock")),
 		WithLogger(silentLogger()),
-		// no WithStrictErrors
+		WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("NewDaemon: %v", err)
@@ -976,7 +981,7 @@ func TestEmit_NoStrictErrors_DialFailure(t *testing.T) {
 		Tool:     Tool{Name: "noop"},
 		Decision: "allowed",
 	}); err != nil {
-		t.Errorf("Emit without strict errors returned error %v; want nil (fire-and-forget)", err)
+		t.Errorf("Emit with WithBestEffort returned error %v; want nil", err)
 	}
 }
 

@@ -9,14 +9,15 @@ Targets sdk/py >= 0.10.0. The socket emitter is `DaemonEmitter` (renamed from
 `Emitter` in ADR-0020); the top-level `Emitter` name is now an un-instantiable
 Protocol.
 
-Two tests pin behaviour that is currently under decision and should be flipped
-when the decision lands rather than silently kept:
-
-- `test_daemon_emitter_no_daemon_is_silent_drop` — pins v0.10.0 silent-drop;
-  #599 (emit-failure-contract) may decide emit MUST raise on transport failure.
+- `test_daemon_emitter_no_daemon_surfaces_transport_error` — pins the emit
+  failure contract (#599 / ADR-0025): emit raises `EmitTransportError` when the
+  daemon is unreachable, with `best_effort=True` opting back into silent drop.
 - `test_wal_emitter_cannot_wrap_daemon_emitter` — pins the runtime_checkable
-  Protocol/DaemonEmitter arity mismatch; tracked as PY-P4 in
-  docs/operations/current.md, gated on #599.
+  Protocol/DaemonEmitter arity mismatch, tracked as PY-P4 in
+  docs/operations/current.md. ADR-0025 §3 decoupled PY-P4 from #599 (the emit
+  failure contract makes surfacing the base obligation and durability opt-in),
+  so it stays with ADR-0020 step-2 work. When that lands, replace this with a
+  positive assertion that `WalEmitter` wraps `DaemonEmitter` correctly.
 """
 
 from __future__ import annotations
@@ -133,18 +134,27 @@ def test_daemon_emitter_roundtrip_against_live_daemon():
         assert ret is None
 
 
-def test_daemon_emitter_no_daemon_is_silent_drop(tmp_path):
-    """Local-path first-run-without-daemon: emit drops silently, never raises.
+def test_daemon_emitter_no_daemon_surfaces_transport_error(tmp_path):
+    """First-run-without-daemon: emit raises EmitTransportError (ADR-0025).
 
-    Pins v0.10.0 current behaviour. #599 (emit-failure-contract) may decide
-    that emit MUST surface transport failure as a raised error — when that
-    decision lands, flip this test to assert the new contract.
+    The emit failure contract (#599) requires transport failure to surface
+    rather than drop silently. best_effort=True opts back into the old
+    loss-tolerant behaviour for callers that knowingly accept dropped events.
     """
-    from agent_receipts import DaemonEmitter
+    from agent_receipts import DaemonEmitter, EmitTransportError
 
     dead_socket = str(tmp_path / "nope.sock")
     with DaemonEmitter(socket_path=dead_socket, session_id="contracts-drop") as e:
-        assert e.emit(channel="py-sdk", tool_name="x.y", decision="allowed") is None
+        with pytest.raises(EmitTransportError):
+            e.emit(channel="py-sdk", tool_name="x.y", decision="allowed")
+
+    with DaemonEmitter(
+        socket_path=dead_socket, session_id="contracts-drop", best_effort=True
+    ) as best_effort:
+        assert (
+            best_effort.emit(channel="py-sdk", tool_name="x.y", decision="allowed")
+            is None
+        )
 
 
 def test_top_level_emitter_is_now_a_protocol():

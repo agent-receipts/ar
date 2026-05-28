@@ -10,12 +10,15 @@
  * single Emitter instance. The internal write is serialised so concurrent
  * calls cannot interleave bytes on the same socket connection.
  *
- * Failure model: emit() MUST NOT block the agent on the daemon. When the
- * socket is unreachable (daemon not started, socket file missing, broken
- * connection) emit() logs a debug-level drop and returns null within
- * milliseconds. Returns an error only for caller bugs (missing channel,
- * missing tool name, invalid decision, invalid JSON, emitter already closed)
- * — situations a retry could not fix.
+ * Failure model: emit() MUST NOT block the agent on the daemon, and it MUST
+ * surface transport failure (ADR-0025). When the socket is unreachable (daemon
+ * not started, socket file missing, broken connection) emit() logs a
+ * debug-level drop and resolves with an `EmitTransportError` within
+ * milliseconds — distinct from the plain `Error` returned for caller bugs
+ * (missing channel, missing tool name, invalid decision, invalid JSON, emitter
+ * already closed) so callers can retry only transport failures. Pass
+ * `bestEffort: true` to opt back into loss-tolerant emission (emit() resolves
+ * with null on transport failure).
  */
 
 import { randomUUID } from "node:crypto";
@@ -37,6 +40,22 @@ const WRITE_TIMEOUT_MS = 100;
 
 /** Valid decision values (must be lowercase to match the wire format). */
 const VALID_DECISIONS = new Set(["allowed", "denied", "pending"]);
+
+/**
+ * Returned by {@link DaemonEmitter.emit} when the daemon transport fails — a
+ * dial failure (daemon not running, socket missing), write failure, or write
+ * timeout (ADR-0025). Distinct from the plain `Error` returned for caller bugs
+ * (invalid event, closed emitter), so callers can check
+ * `err instanceof EmitTransportError` to retry only recoverable transport
+ * failures. Returned as null only when the emitter is constructed with
+ * `bestEffort: true`.
+ */
+export class EmitTransportError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "EmitTransportError";
+	}
+}
 
 /** Tool identifies the tool the agent invoked. server is optional. */
 export interface EmitTool {
@@ -90,6 +109,14 @@ export interface DaemonEmitterOptions {
 	 * Pass `console.debug` or a structured logger to surface drops.
 	 */
 	debugLog?: (message: string, attrs: Record<string, string>) => void;
+	/**
+	 * Opt out of the emit failure contract (ADR-0025). When true, emit()
+	 * resolves with null on transport failure instead of an
+	 * `EmitTransportError`. Use only when the caller knowingly accepts
+	 * silently dropped events; the default surfaces failures so audit-critical
+	 * callers get the safe behaviour without opting in.
+	 */
+	bestEffort?: boolean;
 }
 
 /**
@@ -255,6 +282,7 @@ export class DaemonEmitter {
 		message: string,
 		attrs: Record<string, string>,
 	) => void;
+	private readonly bestEffort: boolean;
 
 	private conn: Socket | null = null;
 	private closed = false;
@@ -262,6 +290,27 @@ export class DaemonEmitter {
 	private writeQueue: Promise<void> = Promise.resolve();
 
 	constructor(options: DaemonEmitterOptions = {}) {
+		// Validate caller-supplied options early. JS callers bypass the
+		// compile-time types, so a non-string path or non-boolean flag would
+		// otherwise surface as an opaque downstream failure; fail fast with a
+		// clear caller-bug error instead. Mirrors the Go/Python SDKs, which
+		// type-check their constructor inputs.
+		if (
+			options.socketPath !== undefined &&
+			typeof options.socketPath !== "string"
+		) {
+			throw new TypeError(
+				`emitter: socketPath must be a string, got ${typeof options.socketPath}`,
+			);
+		}
+		if (
+			options.bestEffort !== undefined &&
+			typeof options.bestEffort !== "boolean"
+		) {
+			throw new TypeError(
+				`emitter: bestEffort must be a boolean, got ${typeof options.bestEffort}`,
+			);
+		}
 		const socketPath = options.socketPath ?? defaultSocketPath();
 		if (!socketPath) {
 			throw new Error(
@@ -272,20 +321,35 @@ export class DaemonEmitter {
 		const trimmedSessionId = options.sessionId?.trim();
 		this.sessionId = trimmedSessionId ? trimmedSessionId : randomUUID();
 		this.debugLog = options.debugLog ?? (() => {});
+		this.bestEffort = options.bestEffort ?? false;
 	}
 
 	/**
-	 * Emit sends one event to the daemon. Returns null even when the daemon
-	 * is unreachable: dial and write failures are logged at debug level and
-	 * the conn is reset for re-dial on the next emit(). Returns an Error only
-	 * for caller bugs (emitter closed, oversized frame, invalid event fields,
-	 * malformed input/output JSON) — situations a retry could not fix.
+	 * Build the return value for a transport failure: an `EmitTransportError`
+	 * by default (ADR-0025), or null when constructed with `bestEffort: true`.
+	 */
+	private transportFailure(message: string): Error | null {
+		return this.bestEffort ? null : new EmitTransportError(message);
+	}
+
+	/**
+	 * Emit sends one event to the daemon. On success resolves with null. By
+	 * default (ADR-0025) it resolves with an `EmitTransportError` when the
+	 * daemon is unreachable: dial and write failures are logged at debug level
+	 * and the conn is reset for re-dial on the next emit(). Construct with
+	 * `bestEffort: true` to resolve with null on transport failure instead.
+	 * Resolves with a plain Error for caller bugs (emitter closed, oversized
+	 * frame, invalid event fields, malformed input/output JSON) — situations a
+	 * retry could not fix — which stay distinct from `EmitTransportError`.
 	 *
 	 * Concurrent-close caveat: if close() is called concurrently with an
 	 * in-flight emit() that has already passed the initial closed check, the
-	 * emit may result in a silent drop (null) rather than an Error. This is
-	 * consistent with the fire-and-forget failure model — the daemon may or
-	 * may not have received the frame by the time close() interrupts.
+	 * emit resolves with an Error rather than completing normally — either
+	 * `Error("emitter: closed")` once the close is observed, or an
+	 * `EmitTransportError` if the connection is torn down mid-write (the daemon
+	 * may or may not have received the frame, consistent with the
+	 * fire-and-forget failure model). A silent drop (null) happens only under
+	 * `bestEffort: true`, where that transport failure is swallowed.
 	 */
 	async emit(ev: EmitEvent): Promise<Error | null> {
 		// Validate caller-supplied fields first (before acquiring the write lock).
@@ -385,12 +449,31 @@ export class DaemonEmitter {
 			() => {},
 			() => {},
 		);
-		return next;
+		// doWrite is designed to resolve with Error | null and never reject, but
+		// a synchronous throw from a Node socket call (e.g. write() on a freshly
+		// destroyed socket) would otherwise reject emit()'s Promise and break the
+		// documented contract. Convert any unexpected rejection into a transport
+		// failure so callers always get Error | null.
+		return next.catch((err: unknown) => {
+			const e = err instanceof Error ? err : new Error(String(err));
+			this.logDrop("write", e);
+			// A synchronous throw most likely came from a socket call on a bad
+			// connection. Discard it so the next emit() re-dials instead of
+			// reusing a dead socket and failing the same way.
+			if (this.conn !== null) {
+				this.discardConn(this.conn);
+			}
+			return this.transportFailure(
+				`emitter: unexpected emit error: ${e.message}`,
+			);
+		});
 	}
 
 	/**
 	 * doWrite dials if needed, then writes the framed body. Returns null on
-	 * success, logs and returns null on transient errors (fire-and-forget).
+	 * success; logs and returns an EmitTransportError on transport failure
+	 * (null when bestEffort is set). The "emitter: closed" caller-bug error is
+	 * propagated as a plain Error regardless.
 	 *
 	 * Write timeouts are treated as drops without retry: a timeout does not
 	 * mean the frame was not received — the data may already be in-flight or
@@ -412,13 +495,17 @@ export class DaemonEmitter {
 				return dialErr;
 			}
 			this.logDrop("dial", dialErr);
-			return null;
+			return this.transportFailure(
+				`emitter: dial ${this.socketPath} failed: ${dialErr.message}`,
+			);
 		}
 
 		const conn = this.conn;
 		if (conn === null) {
 			// close() raced between dialIfNeeded and this read.
-			return this.closed ? new Error("emitter: closed") : null;
+			return this.closed
+				? new Error("emitter: closed")
+				: this.transportFailure("emitter: connection lost before write");
 		}
 
 		const writeErr = await this.writeFrame(conn, body);
@@ -431,7 +518,9 @@ export class DaemonEmitter {
 		if (writeErr.message.startsWith("write timeout")) {
 			this.logDrop("write", writeErr);
 			this.discardConn(conn);
-			return null;
+			return this.transportFailure(
+				`emitter: write to ${this.socketPath} failed: ${writeErr.message}`,
+			);
 		}
 
 		// Connection error: the daemon definitively did not receive the frame.
@@ -440,17 +529,27 @@ export class DaemonEmitter {
 
 		const redialErr = await this.dialIfNeeded();
 		if (redialErr !== null) {
+			if (redialErr.message === "emitter: closed") {
+				return redialErr;
+			}
 			this.logDrop("dial", redialErr);
-			return null;
+			return this.transportFailure(
+				`emitter: dial ${this.socketPath} failed: ${redialErr.message}`,
+			);
 		}
 		const newConn = this.conn;
 		if (newConn === null) {
-			return null;
+			return this.closed
+				? new Error("emitter: closed")
+				: this.transportFailure("emitter: connection lost before write");
 		}
 		const retryErr = await this.writeFrame(newConn, body);
 		if (retryErr !== null) {
 			this.logDrop("write", retryErr);
 			this.discardConn(newConn);
+			return this.transportFailure(
+				`emitter: write to ${this.socketPath} failed: ${retryErr.message}`,
+			);
 		}
 		return null;
 	}

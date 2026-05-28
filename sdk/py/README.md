@@ -81,8 +81,12 @@ agent-receipts-daemon          # start the daemon (leave it running)
 ### 2. Emit a receipt
 
 `DaemonEmitter` forwards the tool-call event to the daemon, which constructs,
-signs, and chains the receipt. It is fire-and-forget — start the daemon before
-your app, since an unreachable daemon drops the event (logged at `DEBUG`).
+signs, and chains the receipt. By default `emit()` surfaces transport failure
+(ADR-0025): an unreachable daemon is logged at `DEBUG` and raised as
+`EmitTransportError` rather than dropped silently, so start the daemon before
+your app. The call stays non-blocking (bounded by the dial + write timeout);
+pass `best_effort=True` to opt into loss-tolerant emission (`emit()` returns
+`None` on transport failure).
 
 ```python
 from agent_receipts import DaemonEmitter

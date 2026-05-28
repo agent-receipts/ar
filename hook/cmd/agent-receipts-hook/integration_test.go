@@ -122,9 +122,9 @@ func (r *recordingListener) waitForFrames(t *testing.T, want int, timeout time.D
 
 // wireFrame mirrors emitter.frame for unmarshalling in tests.
 type wireFrame struct {
-	Version   string          `json:"v"`
-	SessionID string          `json:"session_id"`
-	Channel   string          `json:"channel"`
+	Version   string `json:"v"`
+	SessionID string `json:"session_id"`
+	Channel   string `json:"channel"`
 	Tool      struct {
 		Server string `json:"server,omitempty"`
 		Name   string `json:"name"`
@@ -205,12 +205,12 @@ func TestIntegration_ClaudeCodeFrame(t *testing.T) {
 	}
 }
 
-// TestIntegration_DaemonDown_StrictErrors verifies that with WithStrictErrors()
-// (the mode the hook uses), Emit returns an error when the daemon socket is
+// TestIntegration_DaemonDown_SurfacesError verifies that by default (ADR-0025,
+// the mode the hook uses), Emit returns an error when the daemon socket is
 // unreachable. The hook then exits non-zero to surface the failure to the agent
 // runtime. Latency must still be bounded by the dial timeout so the agent is
 // not blocked indefinitely.
-func TestIntegration_DaemonDown_StrictErrors(t *testing.T) {
+func TestIntegration_DaemonDown_SurfacesError(t *testing.T) {
 	dir := shortSocketDir(t)
 	// No listener started — socket path doesn't exist.
 	socketPath := filepath.Join(dir, "missing.sock")
@@ -232,7 +232,6 @@ func TestIntegration_DaemonDown_StrictErrors(t *testing.T) {
 		emitter.WithSocketPath(socketPath),
 		emitter.WithSessionID(sid),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
-		emitter.WithStrictErrors(),
 	)
 	if err != nil {
 		t.Fatalf("emitter.NewDaemon: %v", err)
@@ -243,22 +242,22 @@ func TestIntegration_DaemonDown_StrictErrors(t *testing.T) {
 	emitErr := em.Emit(context.Background(), ev)
 	elapsed := time.Since(start)
 
-	// With strict errors, a missing daemon must surface as an error.
+	// By default (ADR-0025), a missing daemon must surface as an error.
 	if emitErr == nil {
-		t.Error("Emit returned nil; want error when daemon is unreachable (strict mode)")
+		t.Error("Emit returned nil; want error when daemon is unreachable")
 	}
 
 	// Latency must still be bounded: dial timeout (25ms) is the dominant cost.
 	// Allow 2x for slow CI.
 	if elapsed > 250*time.Millisecond {
-		t.Errorf("Emit took %s; want <250ms even in strict mode", elapsed)
+		t.Errorf("Emit took %s; want <250ms even when surfacing the failure", elapsed)
 	}
 }
 
-// TestIntegration_DaemonDown_FireAndForget verifies that without WithStrictErrors,
-// the default fire-and-forget behaviour is preserved: Emit returns nil quickly
-// when the daemon socket is unreachable.
-func TestIntegration_DaemonDown_FireAndForget(t *testing.T) {
+// TestIntegration_DaemonDown_BestEffort verifies that with WithBestEffort, the
+// loss-tolerant behaviour is available: Emit returns nil quickly when the
+// daemon socket is unreachable (ADR-0025 opt-out).
+func TestIntegration_DaemonDown_BestEffort(t *testing.T) {
 	dir := shortSocketDir(t)
 	// No listener started — socket path doesn't exist.
 	socketPath := filepath.Join(dir, "missing.sock")
@@ -280,7 +279,7 @@ func TestIntegration_DaemonDown_FireAndForget(t *testing.T) {
 		emitter.WithSocketPath(socketPath),
 		emitter.WithSessionID(sid),
 		emitter.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
-		// no WithStrictErrors — fire-and-forget mode
+		emitter.WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("emitter.NewDaemon: %v", err)
@@ -289,13 +288,13 @@ func TestIntegration_DaemonDown_FireAndForget(t *testing.T) {
 
 	start := time.Now()
 	if err := em.Emit(context.Background(), ev); err != nil {
-		t.Fatalf("Emit returned error %v; want nil (fire-and-forget)", err)
+		t.Fatalf("Emit returned error %v; want nil (WithBestEffort)", err)
 	}
 	elapsed := time.Since(start)
 
 	// dial timeout (25ms) + write timeout (100ms) = 125ms upper bound.
 	// Allow 2x for slow CI.
 	if elapsed > 250*time.Millisecond {
-		t.Errorf("Emit took %s; want <250ms (fire-and-forget contract)", elapsed)
+		t.Errorf("Emit took %s; want <250ms (non-blocking contract)", elapsed)
 	}
 }
