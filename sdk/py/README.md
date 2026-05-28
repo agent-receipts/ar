@@ -179,6 +179,37 @@ def deliver(receipt: AgentReceipt) -> None:
 Confirm receipts landed with `agent-receipts verify` (above) against the
 collector's store.
 
+### Signing with AWS KMS (production key custody)
+
+Client-side signing needs a private key. Loading raw PEM bytes from an env var
+or secrets manager keeps an extractable key in process memory — it will not pass
+most security reviews. The optional `aws` extra provides a `Signer` whose key
+never leaves AWS KMS:
+
+```sh
+pip install "agent-receipts[aws]"
+```
+
+```python
+from agent_receipts.aws import KMSSigner
+
+# keyId: a key ID, key ARN, alias name, or alias ARN. The key must be an
+# ECC_NIST_EDWARDS25519 (Ed25519) key with SIGN_VERIFY usage. Credentials come
+# from the ambient AWS provider chain (instance role, IRSA, env, profile).
+signer = KMSSigner("arn:aws:kms:us-east-1:111122223333:key/abc…", timeout=5.0)
+
+public_key = signer.get_public_key()  # raw 32 bytes (RFC 8032 §5.1.5)
+signature = signer.sign(canonical_receipt_bytes)
+```
+
+`sign` delegates to `kms:Sign` with `SigningAlgorithm=ED25519_SHA_512` and
+`MessageType=RAW` (pure Ed25519); the public key is fetched once via
+`kms:GetPublicKey` and cached. The key is not extractable, not present in process
+memory, and revocable via IAM — the production answer to the *"Not for
+production"* caveat below. (Wiring the `Signer` into `sign_receipt` so it signs
+canonical receipts end-to-end is tracked separately; this ships the key-custody
+half.)
+
 ## Appendix: in-process signing (tutorial and testing only)
 
 The SDK can also create and sign a receipt entirely in your process, with no
