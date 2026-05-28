@@ -457,6 +457,12 @@ export class DaemonEmitter {
 		return next.catch((err: unknown) => {
 			const e = err instanceof Error ? err : new Error(String(err));
 			this.logDrop("write", e);
+			// A synchronous throw most likely came from a socket call on a bad
+			// connection. Discard it so the next emit() re-dials instead of
+			// reusing a dead socket and failing the same way.
+			if (this.conn !== null) {
+				this.discardConn(this.conn);
+			}
 			return this.transportFailure(
 				`emitter: unexpected emit error: ${e.message}`,
 			);
