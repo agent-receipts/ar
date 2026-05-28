@@ -97,7 +97,7 @@ func TestDropCounterEndToEnd(t *testing.T) {
 	}
 
 	// WithBestEffort so the dead-socket sends return nil and accumulate in the
-	// drop counter rather than surfacing as errors (ADR-0024). The drop-counter
+	// drop counter rather than surfacing as errors (ADR-0025). The drop-counter
 	// pipeline is exactly the loss-tolerant path this option selects.
 	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(cfg.SocketPath),

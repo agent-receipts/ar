@@ -203,6 +203,151 @@ Exit codes are stable for scripting:
 | `1` | No receipt at the requested sequence (or empty store) |
 | `2` | Usage error (bad flags, ambiguous chain, unreadable DB) |
 
+## Read interface: `agent-receipts verify-event`
+
+`verify` answers "is this chain internally consistent?". `verify-event` answers
+the narrower question that turns out to matter most for trust: **was this
+specific receipt produced by the documented `emitter → daemon → chain`
+pipeline, or written to the store by some other path?** It composes the chain
+checks (signature, hash linkage, sequence contiguity) with the daemon-captured
+`peer_credential` (ADR-0010 § Permissions and trust) that makes the audit
+meaningful — the agent's self-asserted identity is untrusted; peer attestation
+is what is load-bearing.
+
+```sh
+# A single receipt by id:
+agent-receipts verify-event --id urn:receipt:...
+
+# The most recent receipt in the chain:
+agent-receipts verify-event --chain-head
+
+# Every receipt issued in a trailing window (e.g. post-incident triage):
+agent-receipts verify-event --since 10m --json
+
+# Pin the expected emitter(s) — mismatches warn, they do not fail:
+agent-receipts verify-event --chain-head \
+  --emitter-allowlist /usr/bin/mcp-proxy,/usr/bin/openclaw
+```
+
+Exactly one selector (`--id`, `--chain-head`, `--since`) is required. Like the
+other read commands it opens the store **read-only**, so it is safe to run
+against a live daemon's database or a forensic snapshot, and it never emits —
+unlike `doctor`'s synthetic round-trip, this is a cheap historical read.
+
+It runs six checks per receipt, each reported with a structured pass / fail /
+warn / n/a status:
+
+1. **Signature** — the Ed25519 signature verifies under the supplied public key.
+2. **Hash linkage** — the receipt chains back to the daemon's startup baseline
+   and is reachable from the chain head (any break anywhere taints it).
+3. **Peer credential present** — the daemon-captured `peer_credential` is
+   present and well-formed. Receipts predating peer-credential capture are
+   flagged `n/a` ("predates peer-credential evidence"), **not failed**.
+4. **Emitter identity** — the captured `exe_path` matches the operator
+   `--emitter-allowlist`. This is operator policy, not protocol: a mismatch
+   **warns**, it never fails. With no allowlist configured the observed path is
+   surfaced informationally.
+5. **Schema version** — the receipt's schema version is one this verifier
+   understands (compatible by major version).
+6. **Chain context** — the receipt's sequence position is contiguous with its
+   neighbours (no gap immediately before or after).
+
+The verdict distinguishes the two cases operators currently cannot tell apart:
+
+- **VERIFIED — pipeline-provenance confirmed**: crypto holds *and* the
+  peer-credential evidence shows the documented pipeline produced it.
+- **VERIFIED (cryptographically) — no pipeline-provenance evidence**: crypto
+  holds but there is no peer credential. This is the state a receipt written
+  directly to SQLite (or emitted before peer-credential capture) produces.
+
+What it deliberately does **not** check: whether the audited action actually
+happened in the world (no protocol can attest to that), and whether the emitter
+binary is trustworthy beyond its `exe_path` matching the allowlist (binary
+integrity attestation is a separate, ADR-grade decision).
+
+Use cases: forensic snapshot review, post-incident triage (`--since`), and a CI
+gate on a known-good receipt — gate on exit `0` to require provenance, or
+accept `0` and `3` alike to require only cryptographic validity.
+
+Exit codes are stable for scripting:
+
+| Code | Meaning |
+|---|---|
+| `0` | Verified **and** pipeline-provenance confirmed |
+| `1` | A check failed — the receipt is suspect, investigate |
+| `2` | Usage error (bad flags, no/ambiguous selector, unreadable DB or key) |
+| `3` | Verifies cryptographically but lacks peer-credential evidence |
+
+When a selector resolves to multiple receipts (`--since`), the process exit code
+is the worst case across them (`1` outranks `3`, which outranks `0`).
+
+## Health check: `agent-receipts doctor`
+
+```sh
+agent-receipts doctor
+# structured output for CI / healthchecks:
+agent-receipts doctor --json
+# treat warnings as failures (stricter CI gate):
+agent-receipts doctor --json --warn-as-error
+# skip the synthetic round-trip (writes no event to the chain):
+agent-receipts doctor --no-roundtrip
+```
+
+`doctor` diagnoses the whole pipeline ADR-0010 describes — emitter → socket →
+daemon → SQLite → `verify` — and reports an actionable per-step result. It
+exists because the pipeline's failure modes are subtle: tool calls succeed at
+the application layer and individual signatures verify, yet the documented path
+can be silently broken (wrong socket path, world-readable DB, version skew,
+missing peer-credential capture). `doctor` makes "agent-receipts is working on
+this host" mean **`doctor` exits 0**, not "a row exists in SQLite" (issue #539).
+
+It resolves paths and the chain id exactly like `verify`/`list` (`--socket`,
+`--db`, `--public-key`, `--chain-id`, or the matching `AGENTRECEIPTS_*` env
+vars), so a no-flag run works after the daemon has run once with the same
+per-user paths.
+
+Checks, in pipeline order:
+
+| Check | What it asserts | `fail` means |
+|---|---|---|
+| `daemon process` | A daemon is reachable on the resolved socket. | No daemon is listening — start `agent-receipts-daemon`. |
+| `socket` | The socket file exists, is a socket, and is not world-accessible (daemon binds `0660`). | Missing/usurped path, or a non-socket file at the path. |
+| `emitter dial path` | The path an emitter on this host would dial matches the daemon's. | (warns) Emitter and daemon disagree — events would never arrive. |
+| `db permissions` | The receipt DB is no looser than `0640` (ADR-0010 § Read interface). | World-readable receipts leak peer attestation / disclosures. |
+| `schema/version` | The store is readable and the published public key parses; reports the key fingerprint and receipt count. | Unreadable DB or malformed/absent public key. |
+| `peer credentials` | The OS peer-credential primitive (`SO_PEERCRED` / `LOCAL_PEERCRED`) is available. | Unsupported platform — peer-cred capture, and thus the trust model, is unavailable. |
+| `chain head` | The stored chain verifies via the `verify` code path. An `unknown` head (never cleanly terminated) is surfaced as a `warn` (issue #475). | The chain fails verification (BROKEN). |
+| `round-trip` | **Load-bearing.** A synthetic event fired through the real socket lands in the DB with a *fresh* peer credential matching doctor's PID/UID. | The event never landed, or its peer credential was not freshly attested for this process. |
+
+The round-trip is the check the Max-incident postmortem motivated: an
+`INSERT`-then-`SELECT` on the DB file "works" while bypassing the socket, the daemon's
+peer-cred capture, and the chain head. The synthetic event is **deliberately
+visible** in the chain — channel `doctor`, tool `agent-receipts-doctor.roundtrip`,
+which the daemon records as `action.type` **`doctor.agent-receipts-doctor.roundtrip`**
+(a low-risk diagnostic self-check). That is the value to filter on when querying
+the chain. A "test mode" that bypassed the
+chain would defeat the property being tested: that *real* events make the full
+traversal. Use `--no-roundtrip` to skip it (e.g. a forensic-mode daemon that
+must not receive synthetic events); the round-trip check then reports `warn`.
+
+On macOS the daemon's accept-time `LOCAL_PEEREPID` lookup can race a fast peer
+detach and record `pid=0` (see `peercred_darwin.go`); when the synthetic event
+lands with a matching UID but `pid=0`, the round-trip reports `warn` (pipeline
+intact, fresh PID unconfirmed) rather than a misleading credential-mismatch
+`fail`.
+
+`chain head` verifies the **full** stored chain rather than only a tail window:
+hash-link verification is meaningless without the prefix, so a partial-tail
+check could not establish integrity.
+
+Exit codes are stable for CI:
+
+| Code | Meaning |
+|---|---|
+| `0` | All checks `ok` (or only `warn` without `--warn-as-error`) |
+| `1` | At least one check `fail`ed (or `warn`ed under `--warn-as-error`) |
+| `2` | Usage error (bad flags) |
+
 ## Wire protocol
 
 SOCK_STREAM Unix-domain socket (uniform across Linux and macOS — see
@@ -274,7 +419,7 @@ The following are deliberate Phase 1 choices, all callable out for follow-up:
 ```
 daemon.go                                  # Run() entrypoint and Config; publishes the public key on startup
 cmd/agent-receipts-daemon/main.go          # daemon CLI: flag/env parsing, signal handling
-cmd/agent-receipts/main.go                 # read CLI: thin shim over internal/{listcli,showcli,verifycli}
+cmd/agent-receipts/main.go                 # read CLI: thin shim over internal/{listcli,showcli,verifycli,doctorcli}
 internal/
   chain/state.go                           # in-memory (seq, prev_hash) owner; sole writer
   keysource/keysource.go                   # KeySource interface (ADR-0015 shape)
@@ -285,5 +430,7 @@ internal/
   listcli/list.go                          # `agent-receipts list` subcommand
   showcli/show.go                          # `agent-receipts show <seq>` subcommand
   verifycli/verify.go                      # `agent-receipts verify` subcommand
+  doctorcli/doctor.go                      # `agent-receipts doctor` pipeline health check
 integration_test.go                        # tags: integration. End-to-end concurrency, peer-cred, and verify-CLI fixtures.
+tests_doctor_test.go                       # tags: integration. `agent-receipts doctor` round-trip against a live daemon.
 ```

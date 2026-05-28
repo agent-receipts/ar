@@ -8,7 +8,7 @@ separation, 2026-05-03).
 Wire format: 4-byte big-endian length prefix followed by a UTF-8 JSON body.
 
 Failure model: ``emit()`` MUST return quickly even when the daemon is not
-running, and it MUST surface transport failure to the caller (ADR-0024). By
+running, and it MUST surface transport failure to the caller (ADR-0025). By
 default a dial or write failure is logged at DEBUG level and raised as
 ``EmitTransportError``; pass ``best_effort=True`` to opt back into
 loss-tolerant emission (``emit()`` returns ``None`` on transport failure).
@@ -54,7 +54,7 @@ class EmitTransportError(Exception):
     """Raised by :meth:`DaemonEmitter.emit` when the daemon transport fails.
 
     Covers dial failure (daemon not running, socket missing) and write
-    failure (ADR-0024). Distinct from the ``ValueError`` / ``RuntimeError``
+    failure (ADR-0025). Distinct from the ``ValueError`` / ``RuntimeError``
     raised for caller bugs, so callers can ``except EmitTransportError`` to
     retry only recoverable transport failures while letting programming errors
     surface. Suppressed (``emit()`` returns ``None``) only when the emitter is
@@ -161,7 +161,7 @@ class DaemonEmitter:
             Pass ``logging.getLogger("null")`` (configured with NullHandler)
             to silence drop logs in tests.
         best_effort:
-            Opt out of the emit failure contract (ADR-0024). When ``True``,
+            Opt out of the emit failure contract (ADR-0025). When ``True``,
             ``emit()`` returns ``None`` on transport failure instead of
             raising ``EmitTransportError``. Use only when the caller knowingly
             accepts silently dropped events; the default surfaces failures so
@@ -214,7 +214,7 @@ class DaemonEmitter:
     ) -> None:
         """Send one tool-call event to the daemon.
 
-        On success returns ``None``. By default (ADR-0024) a transport failure
+        On success returns ``None``. By default (ADR-0025) a transport failure
         — the daemon socket cannot be dialled or the write fails — is logged at
         DEBUG level, the socket is reset for re-dial on the next call, and
         ``EmitTransportError`` is raised. Construct the emitter with

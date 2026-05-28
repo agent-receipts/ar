@@ -1,6 +1,6 @@
 /**
  * Data-driven conformance runner for the shared emit failure contract vector
- * (cross-sdk-tests/emit_failure_vectors.json, ADR-0024). Loads the vector,
+ * (cross-sdk-tests/emit_failure_vectors.json, ADR-0025). Loads the vector,
  * iterates every case, runs it against DaemonEmitter (default mode, no
  * listener), maps the outcome to an outcome category, and asserts it matches
  * `expect`. The vector is the single source of truth for which cases exist:
@@ -33,7 +33,7 @@ const vector: FailureVector = JSON.parse(readFileSync(vectorPath, "utf8"));
 
 /**
  * Map an emit outcome to an outcome category. Transport failures are
- * EmitTransportError instances (ADR-0024); caller bugs are plain Error
+ * EmitTransportError instances (ADR-0025); caller bugs are plain Error
  * instances — distinct types, so the contract's distinguishability requirement
  * holds without string matching.
  */
@@ -47,7 +47,7 @@ function classify(err: Error | null): string {
 	return "caller_error";
 }
 
-describe("emit failure contract vector (ADR-0024)", () => {
+describe("emit failure contract vector (ADR-0025)", () => {
 	expect(vector.cases.length).toBeGreaterThan(0);
 
 	for (const c of vector.cases) {

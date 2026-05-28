@@ -10,11 +10,11 @@ Targets sdk/py >= 0.10.0. The socket emitter is `DaemonEmitter` (renamed from
 Protocol.
 
 - `test_daemon_emitter_no_daemon_surfaces_transport_error` — pins the emit
-  failure contract (#599 / ADR-0024): emit raises `EmitTransportError` when the
+  failure contract (#599 / ADR-0025): emit raises `EmitTransportError` when the
   daemon is unreachable, with `best_effort=True` opting back into silent drop.
 - `test_wal_emitter_cannot_wrap_daemon_emitter` — pins the runtime_checkable
   Protocol/DaemonEmitter arity mismatch, tracked as PY-P4 in
-  docs/operations/current.md. ADR-0024 §3 decoupled PY-P4 from #599 (the emit
+  docs/operations/current.md. ADR-0025 §3 decoupled PY-P4 from #599 (the emit
   failure contract makes surfacing the base obligation and durability opt-in),
   so it stays with ADR-0020 step-2 work. When that lands, replace this with a
   positive assertion that `WalEmitter` wraps `DaemonEmitter` correctly.
@@ -135,7 +135,7 @@ def test_daemon_emitter_roundtrip_against_live_daemon():
 
 
 def test_daemon_emitter_no_daemon_surfaces_transport_error(tmp_path):
-    """First-run-without-daemon: emit raises EmitTransportError (ADR-0024).
+    """First-run-without-daemon: emit raises EmitTransportError (ADR-0025).
 
     The emit failure contract (#599) requires transport failure to surface
     rather than drop silently. best_effort=True opts back into the old

@@ -13,7 +13,11 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Breaking Changes
 
-- **`emitter.Emit` surfaces transport failure by default** ([#599](https://github.com/agent-receipts/ar/issues/599), ADR-0024). When the daemon socket cannot be dialled or a write fails, `Emit` now returns a non-nil error wrapping the new sentinel `emitter.ErrTransport` instead of silently returning nil. Use `errors.Is(err, emitter.ErrTransport)` to distinguish a transport failure (recoverable; a retry or WAL wrapper may help) from a caller-bug error (invalid event, closed emitter) that a retry cannot fix. The `WithStrictErrors()` option is **removed** — surfacing is now the default; pass the new `WithBestEffort()` option to opt back into loss-tolerant emission (`Emit` returns nil on transport failure).
+- **`emitter.Emit` surfaces transport failure by default** ([#599](https://github.com/agent-receipts/ar/issues/599), ADR-0025). When the daemon socket cannot be dialled or a write fails, `Emit` now returns a non-nil error wrapping the new sentinel `emitter.ErrTransport` instead of silently returning nil. Use `errors.Is(err, emitter.ErrTransport)` to distinguish a transport failure (recoverable; a retry or WAL wrapper may help) from a caller-bug error (invalid event, closed emitter) that a retry cannot fix. The `WithStrictErrors()` option is **removed** — surfacing is now the default; pass the new `WithBestEffort()` option to opt back into loss-tolerant emission (`Emit` returns nil on transport failure).
+
+### Added
+
+- **`taxonomy.DiagnosticRoundtripActionType`** ([#539](https://github.com/agent-receipts/ar/issues/539)) — new built-in low-risk action type (`doctor.agent-receipts-doctor.roundtrip`) classifying the synthetic round-trip event the `agent-receipts doctor` health check emits. Registered in `AllActions()`; exempt from the spec cross-check since diagnostic self-checks are not part of the agent-action taxonomy the spec enumerates.
 
 ## [0.13.0] - 2026-05-24
 

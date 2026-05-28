@@ -510,7 +510,7 @@ describe("DaemonEmitter — reconnect after daemon restart", () => {
 		expect(await server1.frames()).toHaveLength(1);
 
 		// Stop server1 and emit — connection is broken, re-dial fails (no
-		// server), so the transport failure surfaces (ADR-0024).
+		// server), so the transport failure surfaces (ADR-0025).
 		await server1.stop();
 		const errAfterStop = await emitter.emit(GOOD_EVENT);
 		expect(errAfterStop).toBeInstanceOf(EmitTransportError);

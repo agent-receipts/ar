@@ -1,7 +1,7 @@
 //go:build linux || darwin
 
 // Data-driven conformance runner for the shared emit failure contract vector
-// (cross-sdk-tests/emit_failure_vectors.json, ADR-0024). The vector — not this
+// (cross-sdk-tests/emit_failure_vectors.json, ADR-0025). The vector — not this
 // file — is the single source of truth for which cases exist: the runner fails
 // on any case name it does not handle, so adding a case to the JSON breaks this
 // SDK until it is implemented here.
@@ -27,7 +27,7 @@ type emitFailureVectors struct {
 }
 
 // classifyEmitOutcome maps an Emit result to one of the vector's outcome
-// categories. Transport failures are tagged with ErrTransport (ADR-0024), so
+// categories. Transport failures are tagged with ErrTransport (ADR-0025), so
 // they are distinguishable from caller-bug errors without string matching.
 func classifyEmitOutcome(err error) string {
 	switch {

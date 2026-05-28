@@ -13,7 +13,7 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Breaking Changes
 
-- **`DaemonEmitter.emit` surfaces transport failure by default** ([#599](https://github.com/agent-receipts/ar/issues/599), ADR-0024). When the daemon is unreachable or a write fails, `emit()` now raises `EmitTransportError` (exported from the package root) instead of returning `None`. It is distinct from the `ValueError` / `RuntimeError` raised for caller bugs, so callers can `except EmitTransportError` to retry only transport failures. Pass `best_effort=True` to the constructor to opt back into loss-tolerant emission (`emit()` returns `None` on transport failure).
+- **`DaemonEmitter.emit` surfaces transport failure by default** ([#599](https://github.com/agent-receipts/ar/issues/599), ADR-0025). When the daemon is unreachable or a write fails, `emit()` now raises `EmitTransportError` (exported from the package root) instead of returning `None`. It is distinct from the `ValueError` / `RuntimeError` raised for caller bugs, so callers can `except EmitTransportError` to retry only transport failures. Pass `best_effort=True` to the constructor to opt back into loss-tolerant emission (`emit()` returns `None` on transport failure).
 
 ## [0.10.0] - 2026-05-24
 

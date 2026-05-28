@@ -16,13 +16,13 @@
 // hide a transport failure it observed. When the socket is unreachable (daemon
 // not started, socket file missing, broken connection) Emit logs a debug-level
 // drop via the configured slog.Logger and returns a non-nil error within
-// milliseconds — per ADR-0024, a known transport failure is surfaced to the
+// milliseconds — per ADR-0025, a known transport failure is surfaced to the
 // caller, never silently swallowed. "Non-blocking" and "silent" are distinct:
 // Emit stays bounded by dialTimeout + writeTimeout while still reporting the
 // outcome. WithBestEffort opts back into loss-tolerant emission (Emit returns
 // nil on transport failure) for callers that knowingly accept dropped events.
 // The in-chain events_dropped marker still requires a live daemon to record it
-// (ADR-0010); ADR-0024 adds the caller-visible signal that holds even when no
+// (ADR-0010); ADR-0025 adds the caller-visible signal that holds even when no
 // daemon exists.
 //
 // Drop counter: every failed send (dial timeout, write timeout, broken
@@ -82,7 +82,7 @@ const dialTimeout = 25 * time.Millisecond
 const writeTimeout = 100 * time.Millisecond
 
 // ErrTransport marks an error returned by Emit as a transport-layer failure
-// (dial, write, or write-deadline expiry) surfaced per ADR-0024. Callers use
+// (dial, write, or write-deadline expiry) surfaced per ADR-0025. Callers use
 // errors.Is(err, ErrTransport) to distinguish a transport failure — which a
 // retry or a durability wrapper (WAL) may recover — from a caller-bug error
 // (invalid event, closed emitter, oversized frame) that a retry cannot fix.
@@ -176,7 +176,7 @@ func WithLogger(l *slog.Logger) Option {
 	return func(c *config) { c.logger = l }
 }
 
-// WithBestEffort opts out of the default emit failure contract (ADR-0024):
+// WithBestEffort opts out of the default emit failure contract (ADR-0025):
 // Emit returns nil on dial and write failures instead of surfacing them as
 // errors. Use only when the caller knowingly accepts silently dropped events
 // — a high-throughput, loss-tolerant path where receipt completeness is not
@@ -289,7 +289,7 @@ type frameTool struct {
 	Name   string `json:"name"`
 }
 
-// Emit sends one event to the daemon. By default (ADR-0024) it surfaces
+// Emit sends one event to the daemon. By default (ADR-0025) it surfaces
 // transport failure: when the daemon is unreachable a dial or write failure is
 // logged at debug level, the conn is reset for re-dial on the next Emit, and a
 // non-nil error is returned. WithBestEffort opts out, returning nil on those

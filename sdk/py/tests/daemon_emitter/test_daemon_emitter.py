@@ -415,7 +415,7 @@ class TestDaemonEmitterValidation:
 
 
 class TestSurfacesTransportFailureByDefault:
-    """ADR-0024: emit raises EmitTransportError when the daemon is absent,
+    """ADR-0025: emit raises EmitTransportError when the daemon is absent,
     without blocking the caller longer than the dial/write budget."""
 
     def test_raises_quickly_on_dial_failure(self) -> None:

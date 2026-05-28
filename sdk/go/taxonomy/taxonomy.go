@@ -61,12 +61,28 @@ var (
 		{Type: "data.api.delete", Description: "Delete data via an external API", RiskLevel: receipt.RiskHigh},
 	}
 
+	// DiagnosticActions classify daemon/CLI self-checks rather than agent tool
+	// calls. They are low risk by construction — the daemon emits them, not an
+	// agent — but they land in the real chain like any other event so operators
+	// can see (and filter) them.
+	DiagnosticActions = []ActionTypeEntry{
+		{Type: DiagnosticRoundtripActionType, Description: "agent-receipts doctor synthetic round-trip probe (diagnostic.roundtrip)", RiskLevel: receipt.RiskLow},
+	}
+
 	UnknownAction = ActionTypeEntry{
 		Type:        "unknown",
 		Description: "Tool call that does not map to any known action type",
 		RiskLevel:   receipt.RiskMedium,
 	}
 )
+
+// DiagnosticRoundtripActionType is the action.type the daemon derives for the
+// `agent-receipts doctor` synthetic round-trip event. The daemon builds
+// action.type structurally as "<channel>.<tool.name>", so the doctor probe's
+// channel ("doctor") and tool name ("agent-receipts-doctor.roundtrip") yield
+// this value. It is registered as a low-risk built-in so the probe is
+// classified rather than falling back to UnknownAction (RiskMedium).
+const DiagnosticRoundtripActionType = "doctor.agent-receipts-doctor.roundtrip"
 
 var actionMap map[string]ActionTypeEntry
 
@@ -81,15 +97,19 @@ func init() {
 	for _, e := range DataActions {
 		actionMap[e.Type] = e
 	}
+	for _, e := range DiagnosticActions {
+		actionMap[e.Type] = e
+	}
 	actionMap[UnknownAction.Type] = UnknownAction
 }
 
 // AllActions returns all built-in action type entries.
 func AllActions() []ActionTypeEntry {
-	out := make([]ActionTypeEntry, 0, len(FilesystemActions)+len(SystemActions)+len(DataActions)+1)
+	out := make([]ActionTypeEntry, 0, len(FilesystemActions)+len(SystemActions)+len(DataActions)+len(DiagnosticActions)+1)
 	out = append(out, FilesystemActions...)
 	out = append(out, SystemActions...)
 	out = append(out, DataActions...)
+	out = append(out, DiagnosticActions...)
 	out = append(out, UnknownAction)
 	return out
 }

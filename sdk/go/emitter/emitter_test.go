@@ -328,7 +328,7 @@ func TestEmit_HashDeterminism(t *testing.T) {
 }
 
 // TestEmit_BestEffortWhenDaemonDown enforces the non-blocking property under
-// the WithBestEffort opt-out (ADR-0024): an unreachable daemon MUST NOT block
+// the WithBestEffort opt-out (ADR-0025): an unreachable daemon MUST NOT block
 // the agent, and Emit returns nil within milliseconds when the configured
 // socket path does not exist on disk. (The default surface-error behaviour is
 // covered by the unit tests in emitter_unix_test.go.)
@@ -375,7 +375,7 @@ func TestEmit_ReconnectAfterDaemonRestart(t *testing.T) {
 
 	// WithBestEffort so the stale-connection write failure on the first
 	// post-restart Emit returns nil and the reconnect loop keeps going
-	// (ADR-0024); success is detected via the receipt store, not the return
+	// (ADR-0025); success is detected via the receipt store, not the return
 	// value.
 	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(d1.cfg.SocketPath),

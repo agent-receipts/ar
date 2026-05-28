@@ -1,6 +1,6 @@
 """Data-driven conformance runner for the shared emit failure contract vector.
 
-Loads ``cross-sdk-tests/emit_failure_vectors.json`` (ADR-0024), iterates every
+Loads ``cross-sdk-tests/emit_failure_vectors.json`` (ADR-0025), iterates every
 case, runs it against ``DaemonEmitter`` (default mode, no listener), maps the
 outcome to an outcome category, and asserts it matches ``expect``. The vector
 is the single source of truth for which cases exist: this runner fails on any
@@ -38,7 +38,7 @@ def _load_cases() -> list[dict[str, str]]:
 def _classify(emit_call: Callable[[], object]) -> str:
     """Map an emit outcome to an outcome category.
 
-    Transport failures raise EmitTransportError (ADR-0024); caller bugs raise
+    Transport failures raise EmitTransportError (ADR-0025); caller bugs raise
     ValueError/RuntimeError. The two are distinct types, so the contract's
     distinguishability requirement holds without string matching.
     """
