@@ -547,11 +547,6 @@ export class DaemonEmitter {
 		}
 		return new Promise((resolve) => {
 			let settled = false;
-			// Declared before the timer so the timeout callback can guard with
-			// socket?.destroy(): if createConnection throws synchronously the
-			// socket stays null, and an unguarded reference would throw a TDZ
-			// ReferenceError inside the timer callback and crash the process.
-			let socket: Socket | null = null;
 			const settle = (err: Error | null) => {
 				if (settled) {
 					return;
@@ -562,54 +557,43 @@ export class DaemonEmitter {
 			};
 
 			const timer = setTimeout(() => {
-				socket?.destroy();
+				socket.destroy();
 				settle(new Error(`dial timeout after ${DIAL_TIMEOUT_MS}ms`));
 			}, DIAL_TIMEOUT_MS);
 
-			try {
-				socket = createConnection({ path: this.socketPath }, () => {
-					const s = socket;
-					if (s === null) {
-						return;
-					}
-					// Dial timeout already fired and destroyed this socket — the
-					// promise is settled. Discard the late-arriving connection
-					// without touching this.conn so the next emit() re-dials.
-					if (settled) {
-						s.destroy();
-						return;
-					}
-					// Attach a permanent error listener BEFORE settling. Without
-					// it, any later 'error' event on this socket (peer reset,
-					// daemon crash, EPIPE on a half-open conn) crashes the host
-					// process via Node's unhandled-'error' rule. The listener
-					// also discards the dead conn so the next emit() re-dials
-					// transparently.
-					s.on("error", (err) => this.handleSocketError(s, err));
-					// If close() ran while we were dialing, drop this freshly
-					// connected socket on the floor — the caller already asked
-					// to release resources.
-					if (this.closed) {
-						s.destroy();
-						settle(new Error("emitter: closed"));
-						return;
-					}
-					this.conn = s;
-					settle(null);
-				});
+			const socket = createConnection({ path: this.socketPath }, () => {
+				// Dial timeout already fired and destroyed this socket — the
+				// promise is settled. Discard the late-arriving connection
+				// without touching this.conn so the next emit() re-dials.
+				if (settled) {
+					socket.destroy();
+					return;
+				}
+				// Attach a permanent error listener BEFORE settling. Without
+				// it, any later 'error' event on this socket (peer reset,
+				// daemon crash, EPIPE on a half-open conn) crashes the host
+				// process via Node's unhandled-'error' rule. The listener
+				// also discards the dead conn so the next emit() re-dials
+				// transparently.
+				socket.on("error", (err) => this.handleSocketError(socket, err));
+				// If close() ran while we were dialing, drop this freshly
+				// connected socket on the floor — the caller already asked
+				// to release resources.
+				if (this.closed) {
+					socket.destroy();
+					settle(new Error("emitter: closed"));
+					return;
+				}
+				this.conn = socket;
+				settle(null);
+			});
 
-				socket.once("error", (err) => {
-					// Dial-time error: 'connect' never fired, so the permanent
-					// listener was never installed and this once-listener is
-					// the only one. settle() also clears the dial timer.
-					settle(err);
-				});
-			} catch (err) {
-				// createConnection threw synchronously (e.g. an invalid socket
-				// path with NUL bytes). Settle as a dial error; the lingering
-				// timer's socket?.destroy() is then a no-op rather than a crash.
-				settle(err instanceof Error ? err : new Error(String(err)));
-			}
+			socket.once("error", (err) => {
+				// Dial-time error: 'connect' never fired, so the permanent
+				// listener was never installed and this once-listener is
+				// the only one. settle() also clears the dial timer.
+				settle(err);
+			});
 		});
 	}
 
