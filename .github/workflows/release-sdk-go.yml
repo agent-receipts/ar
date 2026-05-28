@@ -62,3 +62,43 @@ jobs:
             --title "sdk-go ${SDK_GO_VERSION}" \
             --generate-notes \
             "${PRERELEASE_ARG[@]}"
+
+  # Gate #1: the just-published module must satisfy the code snippets in the
+  # READMEs. Runs after release so the tag is live on the Go proxy; a drifted
+  # snippet turns the release red.
+  readme-snippets:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.26"
+      - name: Verify published README snippets build
+        run: |
+          VERSION="${GITHUB_REF_NAME#sdk/go/v}"
+          python3 scripts/readme_snippets/check.py \
+            --lang go --source published --version "$VERSION" \
+            README.md sdk/go/README.md
+
+  # Gate #2: verify the Go proxy resolved exactly the tagged version.
+  # Asserts version identity: the module the proxy serves is the one we tagged,
+  # not a redirect or stale cache entry.
+  release-verify:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.26"
+      - name: Verify published version identity (Gate #2)
+        run: |
+          VERSION="${GITHUB_REF_NAME#sdk/go/v}"
+          python3 scripts/release_verify/check.py --lang go --version "$VERSION"
+      - name: Run unit tests for release-verify gate
+        run: python3 scripts/release_verify/test_check.py
