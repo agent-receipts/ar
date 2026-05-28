@@ -33,6 +33,9 @@ Issues = "https://github.com/agent-receipts/ar/issues"
 Spec = "https://github.com/agent-receipts/spec"
 
 [project.optional-dependencies]
+aws = [
+    "boto3>=1.40",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.9",
