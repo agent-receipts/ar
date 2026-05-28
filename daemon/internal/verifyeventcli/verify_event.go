@@ -227,7 +227,7 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 				return ExitUsageError
 			}
 			cv := receipt.VerifyChain(chain, string(pubPEM))
-			ctx = chainCtx{chain: chain, cv: cv, indexByID: indexByID(chain)}
+			ctx = chainCtx{chain: chain, cv: cv, indexByID: indexByID(chain), firstLinkBreak: firstLinkBreak(cv)}
 			chainCache[t.chainID] = ctx
 		}
 		idx, ok := ctx.indexByID[t.receiptID]
@@ -248,11 +248,14 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	return exitCode(results)
 }
 
-// chainCtx caches a loaded chain and its single verification pass.
+// chainCtx caches a loaded chain and its single verification pass, plus the
+// index of the first hash-linkage break (-1 if none) computed once so a
+// multi-target --since batch doesn't rescan the chain per receipt.
 type chainCtx struct {
-	chain     []receipt.AgentReceipt
-	cv        receipt.ChainVerification
-	indexByID map[string]int
+	chain          []receipt.AgentReceipt
+	cv             receipt.ChainVerification
+	indexByID      map[string]int
+	firstLinkBreak int
 }
 
 // target is one selected receipt awaiting verification.
@@ -357,7 +360,7 @@ func evaluate(ctx chainCtx, idx int, allowlist []string) eventResult {
 	r := ctx.chain[idx]
 	checks := []check{
 		checkSignature(ctx.cv, idx),
-		checkHashLinkage(ctx.cv, idx),
+		checkHashLinkage(ctx.firstLinkBreak, idx),
 		checkPeerPresent(r),
 		checkEmitterIdentity(r, allowlist),
 		checkSchemaVersion(r),
@@ -381,29 +384,32 @@ func checkSignature(cv receipt.ChainVerification, idx int) check {
 	return check{Name: "signature", Status: statusFail, Detail: "signature does not verify under the supplied public key"}
 }
 
+// firstLinkBreak returns the index of the first receipt whose hash link does
+// not hold, or -1 if the whole chain's linkage is intact.
+func firstLinkBreak(cv receipt.ChainVerification) int {
+	for j := range cv.Receipts {
+		if !cv.Receipts[j].HashLinkValid {
+			return j
+		}
+	}
+	return -1
+}
+
 // checkHashLinkage reports whether the target is anchored in an unbroken chain:
 // every link from the daemon's startup baseline (index 0, previous_receipt_hash
 // nil) up to the chain head must hold (check #2). A break before the target
 // means it does not chain back to the baseline; a break after means it is not
 // reachable from a trustworthy head. Either way the target's provenance is
-// suspect, so the whole chain's linkage must be intact.
-func checkHashLinkage(cv receipt.ChainVerification, idx int) check {
-	firstBreak := -1
-	for j := range cv.Receipts {
-		if !cv.Receipts[j].HashLinkValid {
-			firstBreak = j
-			break
-		}
-	}
+// suspect, so the whole chain's linkage must be intact. firstBreak is the
+// chain's first broken-link index (-1 if none), precomputed once per chain.
+func checkHashLinkage(firstBreak, idx int) check {
 	if firstBreak == -1 {
 		return check{Name: "hash linkage", Status: statusPass, Detail: "chains back to the startup baseline and is reachable from the chain head"}
 	}
-	switch {
-	case firstBreak <= idx:
+	if firstBreak <= idx {
 		return check{Name: "hash linkage", Status: statusFail, Detail: fmt.Sprintf("broken hash link at index %d — receipt does not chain back to the startup baseline", firstBreak)}
-	default:
-		return check{Name: "hash linkage", Status: statusFail, Detail: fmt.Sprintf("broken hash link at index %d — receipt is not reachable from a trustworthy chain head", firstBreak)}
 	}
+	return check{Name: "hash linkage", Status: statusFail, Detail: fmt.Sprintf("broken hash link at index %d — receipt is not reachable from a trustworthy chain head", firstBreak)}
 }
 
 // checkPeerPresent reports on the daemon-captured peer credential (check #3).
