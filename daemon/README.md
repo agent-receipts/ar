@@ -330,6 +330,12 @@ chain would defeat the property being tested: that *real* events make the full
 traversal. Use `--no-roundtrip` to skip it (e.g. a forensic-mode daemon that
 must not receive synthetic events); the round-trip check then reports `warn`.
 
+On macOS the daemon's accept-time `LOCAL_PEEREPID` lookup can race a fast peer
+detach and record `pid=0` (see `peercred_darwin.go`); when the synthetic event
+lands with a matching UID but `pid=0`, the round-trip reports `warn` (pipeline
+intact, fresh PID unconfirmed) rather than a misleading credential-mismatch
+`fail`.
+
 `chain head` verifies the **full** stored chain rather than only a tail window:
 hash-link verification is meaningless without the prefix, so a partial-tail
 check could not establish integrity.

@@ -510,10 +510,42 @@ func checkRoundtrip(socketPath, dbPath, chainID string, timeout time.Duration) R
 	}
 
 	pc := found.CredentialSubject.Action.PeerCredential
+	return evalRoundtripPeer(runtime.GOOS, pc, found.CredentialSubject.Chain.Sequence, wantPID, wantUID, wantExe)
+}
+
+// evalRoundtripPeer judges a round-trip receipt's captured peer credential
+// against the doctor process's identity. Split out (with goos as a parameter)
+// so the darwin-specific branch is unit-testable on any host.
+//
+//   - PID and UID must match → ok (the fresh, daemon-attested identity).
+//   - darwin pid=0 with a matching UID → warn, not fail: macOS LOCAL_PEEREPID
+//     reads the live peer pcb and returns ENOTCONN if the peer detaches between
+//     accept() and the daemon's getsockopt, recorded as pid=0 (see
+//     peercred_darwin.go). The UID still comes from LOCAL_PEERCRED (captured at
+//     connect time), so a UID match means the event did traverse the pipeline;
+//     we just could not pin the PID. Treating this as a hard "mismatch" would
+//     make doctor flaky on macOS for a known, benign race.
+//   - any other PID/UID mismatch → fail (a credential not freshly attested for
+//     this process).
+//   - exe_path differing when both are known → warn: PID+UID already prove
+//     freshness, and exe resolution can legitimately differ across the OS
+//     primitives doctor and the daemon use.
+func evalRoundtripPeer(goos string, pc *receipt.PeerCredential, seq int, wantPID int32, wantUID uint32, wantExe string) Result {
+	const name = "round-trip"
 	if pc == nil {
-		return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("round-trip receipt (seq %d) has no peer credential; peer-cred capture is not working", found.CredentialSubject.Chain.Sequence)}
+		return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("round-trip receipt (seq %d) has no peer credential; peer-cred capture is not working", seq)}
 	}
-	if pc.PID != wantPID || pc.UID == nil || *pc.UID != wantUID {
+	uidMatch := pc.UID != nil && *pc.UID == wantUID
+
+	if goos == "darwin" && pc.PID == 0 && uidMatch {
+		return Result{
+			Check:  name,
+			Status: StatusWarn,
+			Reason: fmt.Sprintf("synthetic event landed at seq %d (uid=%d matches) but the daemon recorded pid=0 — the macOS LOCAL_PEEREPID race left the PID unresolved; the pipeline is intact, the fresh PID just could not be confirmed", seq, wantUID),
+		}
+	}
+
+	if pc.PID != wantPID || !uidMatch {
 		gotUID := "nil"
 		if pc.UID != nil {
 			gotUID = strconv.FormatUint(uint64(*pc.UID), 10)
@@ -524,11 +556,7 @@ func checkRoundtrip(socketPath, dbPath, chainID string, timeout time.Duration) R
 			Reason: fmt.Sprintf("peer credential mismatch: receipt records pid=%d uid=%s but doctor is pid=%d uid=%d; the recorded credential was not freshly attested for this process", pc.PID, gotUID, wantPID, wantUID),
 		}
 	}
-	seq := found.CredentialSubject.Chain.Sequence
 	if wantExe != "" && pc.ExePath != "" && pc.ExePath != wantExe {
-		// PID+UID already prove freshness; exe-path resolution can legitimately
-		// differ across the OS primitives doctor and the daemon use, so a
-		// mismatch is a corroborating warning, not a failure.
 		return Result{
 			Check:  name,
 			Status: StatusWarn,

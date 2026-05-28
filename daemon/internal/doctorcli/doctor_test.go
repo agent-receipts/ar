@@ -324,6 +324,59 @@ func TestCheckRoundtripNoDaemon(t *testing.T) {
 	}
 }
 
+func TestEvalRoundtripPeer(t *testing.T) {
+	uid := func(v uint32) *uint32 { return &v }
+	const wantPID = int32(4242)
+	const wantUID = uint32(1000)
+	const wantExe = "/usr/local/bin/agent-receipts"
+
+	t.Run("happy path ok", func(t *testing.T) {
+		pc := &receipt.PeerCredential{PID: wantPID, UID: uid(wantUID), ExePath: wantExe}
+		if r := evalRoundtripPeer("linux", pc, 7, wantPID, wantUID, wantExe); r.Status != StatusOK {
+			t.Fatalf("got %s (%s), want ok", r.Status, r.Reason)
+		}
+	})
+	t.Run("nil peer cred fails", func(t *testing.T) {
+		if r := evalRoundtripPeer("linux", nil, 7, wantPID, wantUID, wantExe); r.Status != StatusFail {
+			t.Fatalf("got %s, want fail", r.Status)
+		}
+	})
+	t.Run("darwin pid=0 with uid match warns", func(t *testing.T) {
+		pc := &receipt.PeerCredential{PID: 0, UID: uid(wantUID)}
+		r := evalRoundtripPeer("darwin", pc, 7, wantPID, wantUID, wantExe)
+		if r.Status != StatusWarn {
+			t.Fatalf("got %s (%s), want warn for the macOS LOCAL_PEEREPID race", r.Status, r.Reason)
+		}
+		if !strings.Contains(r.Reason, "pid=0") {
+			t.Errorf("reason should explain the pid=0 race, got %q", r.Reason)
+		}
+	})
+	t.Run("darwin pid=0 with uid MISMATCH still fails", func(t *testing.T) {
+		pc := &receipt.PeerCredential{PID: 0, UID: uid(wantUID + 1)}
+		if r := evalRoundtripPeer("darwin", pc, 7, wantPID, wantUID, wantExe); r.Status != StatusFail {
+			t.Fatalf("got %s (%s), want fail when the uid does not match", r.Status, r.Reason)
+		}
+	})
+	t.Run("linux pid=0 fails (no such race on linux)", func(t *testing.T) {
+		pc := &receipt.PeerCredential{PID: 0, UID: uid(wantUID)}
+		if r := evalRoundtripPeer("linux", pc, 7, wantPID, wantUID, wantExe); r.Status != StatusFail {
+			t.Fatalf("got %s (%s), want fail; SO_PEERCRED does not lose the pid", r.Status, r.Reason)
+		}
+	})
+	t.Run("uid mismatch fails", func(t *testing.T) {
+		pc := &receipt.PeerCredential{PID: wantPID, UID: uid(wantUID + 1)}
+		if r := evalRoundtripPeer("linux", pc, 7, wantPID, wantUID, wantExe); r.Status != StatusFail {
+			t.Fatalf("got %s, want fail", r.Status)
+		}
+	})
+	t.Run("exe mismatch warns", func(t *testing.T) {
+		pc := &receipt.PeerCredential{PID: wantPID, UID: uid(wantUID), ExePath: "/some/other/binary"}
+		if r := evalRoundtripPeer("linux", pc, 7, wantPID, wantUID, wantExe); r.Status != StatusWarn {
+			t.Fatalf("got %s (%s), want warn", r.Status, r.Reason)
+		}
+	})
+}
+
 func TestHasFailures(t *testing.T) {
 	warnOnly := []Result{{Status: StatusOK}, {Status: StatusWarn}}
 	if hasFailures(warnOnly, false) {
