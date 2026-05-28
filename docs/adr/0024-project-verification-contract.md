@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Every property the project asserts in spec text, README text, or published documentation MUST have a corresponding mechanical check that fails the build when the assertion is false. Properties without enforcement are aspirations, not properties. This ADR records this as project policy and lists the initial set of gates that follow from it.
+Every property the project asserts in spec text, README text, published documentation, or release notes MUST have a corresponding mechanical check that fails the build when the assertion is false. Properties without enforcement are aspirations, not properties. This ADR records this as project policy and lists the initial set of gates that follow from it.
 
 Agent Receipts' value proposition is "verifiable property of the system, independently checkable, not requiring trust in the system's claims." A project that makes that claim about AI agent actions while its own published claims drift from reality is in an untenable position. Auditing the project on 2026-05-24 surfaced ~40 findings across three SDKs and the site. Most collapse to a small number of root causes — *all of them are the same shape*: the project asserted a property (README quick-start works, spec URLs resolve, emit contract is X, module path is Y) and didn't mechanically check the assertion.
 
