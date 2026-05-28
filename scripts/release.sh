@@ -10,8 +10,8 @@ Validate and push the git tag for a module in this monorepo.
 The script tags only. Each module has a dedicated per-module release
 workflow in .github/workflows/release-<module>.yml that triggers on the
 tag, runs CI tests in a clean environment, and creates the GitHub Release.
-For modules with binaries (hook, mcp-proxy, daemon) it also builds
-artifacts via GoReleaser and publishes a Homebrew formula.
+For modules with binaries (hook, mcp-proxy, daemon, collector) it also
+builds artifacts via GoReleaser and publishes a Homebrew formula.
 
 Modules:
   sdk-go       Go SDK                 (tag: sdk/go/vVERSION)
@@ -20,6 +20,7 @@ Modules:
   hook         agent-receipts-hook    (tag: hook/vVERSION)
   mcp-proxy    MCP proxy              (tag: mcp-proxy/vVERSION)
   daemon       agent-receipts daemon  (tag: daemon/vVERSION)
+  collector    reference collector    (tag: collector/vVERSION)
 
 Flags:
   --dry-run    Validate everything and print the actions, but do not push
@@ -34,6 +35,7 @@ Examples:
   $(basename "$0") sdk-go 0.2.0
   $(basename "$0") --dry-run mcp-proxy 0.8.0-alpha.1
   $(basename "$0") daemon 0.8.0-alpha.1
+  $(basename "$0") collector 0.13.0
 EOF
   exit 1
 }
@@ -72,7 +74,7 @@ case "$MODULE" in
     [[ "$VERSION" =~ $SEMVER_RE ]] || [[ "$VERSION" =~ $PEP440_PRE_RE ]] || \
       fail "invalid version '$VERSION' for sdk-py — expected SemVer (e.g. 0.5.0, 1.0.0-beta.1) or PEP 440 pre-release (e.g. 0.8.0a1)"
     ;;
-  sdk-go|sdk-ts|hook|mcp-proxy|daemon)
+  sdk-go|sdk-ts|hook|mcp-proxy|daemon|collector)
     [[ "$VERSION" =~ $SEMVER_RE ]] || \
       fail "invalid version '$VERSION' for $MODULE — expected SemVer (e.g. 0.2.0, 1.0.0-beta.1). PEP 440 form (e.g. 0.8.0a1) is accepted only for sdk-py."
     ;;
@@ -94,7 +96,7 @@ REMOTE=$(git rev-parse origin/main)
 
 # Go modules don't support build metadata in tags
 case "$MODULE" in
-  sdk-go|hook|mcp-proxy|daemon)
+  sdk-go|hook|mcp-proxy|daemon|collector)
     [[ "$VERSION" != *+* ]] || fail "Go module versions cannot contain build metadata (+...)"
     ;;
 esac
@@ -123,6 +125,10 @@ case "$MODULE" in
   daemon)
     TAG="daemon/v${VERSION}"
     DIR="daemon"
+    ;;
+  collector)
+    TAG="collector/v${VERSION}"
+    DIR="collector"
     ;;
   *)
     fail "unknown module '$MODULE' — run with no args for usage"
@@ -174,6 +180,21 @@ case "$MODULE" in
     # -tags=integration is intentionally omitted: integration tests spawn node
     # and uv subprocess emitters that require the full TS/Python SDK setup,
     # which is not guaranteed on a release operator's machine. CI covers those.
+    (cd "$DIR" && GOWORK=off go vet ./... && GOWORK=off go test -race ./...)
+    ;;
+  collector)
+    command -v go >/dev/null 2>&1 || fail "go is not installed"
+    echo "--- Checking for replace directive in $DIR/go.mod"
+    if grep -Eq '^[[:space:]]*replace[[:space:]]' "$DIR/go.mod"; then
+      fail "$DIR/go.mod contains a replace directive — remove it and point to a published sdk/go version before releasing"
+    fi
+    echo "--- Running Go checks in $DIR"
+    # GOWORK=off ensures vet/test resolve from collector/go.mod (published
+    # sdk/go) rather than the in-tree ./sdk/go wired up by the repo-root
+    # go.work — the same isolation the released binary builds under, so a
+    # stale transitive sdk/go pin (ADR-0023 D3) is caught here before tagging.
+    # -race mirrors collector CI: the in-memory and SQLite stores carry
+    # concurrency invariants exercised by the *_ConcurrentInserts tests.
     (cd "$DIR" && GOWORK=off go vet ./... && GOWORK=off go test -race ./...)
     ;;
   sdk-ts)
