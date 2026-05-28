@@ -64,7 +64,9 @@ directives override this when a block isn't standalone:
 <!-- snippet-check: no-run -->      <!-- type-check only; don't execute (run mode) -->
 ```
 
-Place the directive on its own line immediately above the opening fence.
+Place the directive on its own line immediately above the opening fence. In
+`.mdx` site sources, use the JSX comment form instead (HTML comments are invalid
+MDX): `{/* snippet-check: skip */}`.
 
 `no-run` is the opt-out for snippets that can't run in a hermetic clean tmpdir —
 they need a daemon, the network, AWS, or a writable system path (e.g. the

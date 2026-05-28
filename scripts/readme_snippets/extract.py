@@ -25,6 +25,10 @@ Selection rules:
   Directives are invisible in rendered markdown. Unmarked blocks are checked by
   default, so a newly added quick-start snippet is covered without anyone
   remembering to annotate it — which is the drift this gate exists to catch.
+
+Directive syntax is the HTML comment ``<!-- snippet-check: ... -->`` in ``.md``
+and the JSX comment ``{/* snippet-check: ... */}`` in ``.mdx`` (HTML comments
+aren't valid MDX). Both forms are recognised identically.
 """
 
 from __future__ import annotations
@@ -53,7 +57,9 @@ _SDK_IMPORT_PATTERN = {
     "py": re.compile(r"\b(?:from|import)\s+agent_receipts\b"),
 }
 
-_DIRECTIVE_RE = re.compile(r"<!--\s*snippet-check:\s*(?P<directive>[\w-]+)\s*-->")
+_DIRECTIVE_RE = re.compile(
+    r"(?:<!--|\{/\*)\s*snippet-check:\s*(?P<directive>[\w-]+)\s*(?:-->|\*/\})"
+)
 _FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<ticks>`{3,})(?P<info>.*)$")
 
 _VALID_DIRECTIVES = {"continues", "skip", "no-run"}
