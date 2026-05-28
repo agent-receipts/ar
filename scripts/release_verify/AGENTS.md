@@ -34,9 +34,10 @@ which runs alongside this gate in each `release-sdk-*.yml` workflow.
 
 ## Relationship to Gate #1
 
-Gate #1 (`readme-snippets`) runs first and checks that the snippets compile
-against the published artifact. Gate #2 runs in the same workflow and adds
-the version-identity assertion: "the thing that just got installed is
-actually version X, not some other version the registry decided to give us."
+Gate #1 (`readme-snippets`) checks that the snippets compile against the
+published artifact. Gate #2 adds the version-identity assertion: "the thing
+that just got installed is actually version X, not some other version the
+registry decided to give us." Both jobs depend only on `release`, so CI runs
+them in parallel — there is no ordering between them.
 
 Both gates must pass for a release to be considered green.

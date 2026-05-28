@@ -2,11 +2,11 @@
 """Gate #2: Release round-trip verification.
 
 After a release is published, verify that the public registry resolves the
-exact version that was tagged and that the documented snippets run against
-the fetched artifact. This closes the gap between "we tagged it" and
-"consumers can actually install exactly that version".
+exact version that was tagged and that it installs in a clean environment.
+This closes the gap between "we tagged it" and "consumers can actually
+install exactly that version".
 
-Three properties this gate asserts (ADR-0024 D1/D2):
+Two properties this gate asserts (ADR-0024 D1/D2):
 
   1. Version identity — `pip install agent-receipts==X.Y.Z`, `npm install
      @agnt-rcpt/sdk-ts@X.Y.Z`, or `go get ...@vX.Y.Z` resolves to exactly
@@ -14,12 +14,10 @@ Three properties this gate asserts (ADR-0024 D1/D2):
 
   2. Installability — the artifact is fetchable in a clean environment.
 
-  3. Snippet consistency — the documented snippets type-check against the
-     fetched artifact (shared with Gate #1; delegated to check.py).
-
-The gate intentionally does NOT execute snippets at runtime — static
-analysis (mypy / tsc / go build) is sufficient to detect API drift and
-avoids needing live credentials or network side-effects in CI.
+Snippet consistency (documented code compiles against the published
+artifact) is a separate property, covered by Gate #1
+(`scripts/readme_snippets/check.py --source published`), which runs as its
+own job alongside this gate in each release-sdk-*.yml workflow.
 
 Usage:
     check.py --lang {go,ts,py} --version X.Y.Z
@@ -128,11 +126,6 @@ def verify_py(version: str, workdir: str) -> int:
 # ---------------------------------------------------------------------------
 # TypeScript
 # ---------------------------------------------------------------------------
-
-_TS_VERSION_RE = re.compile(
-    r'"' + re.escape(TS_PACKAGE.replace("/", r"\/")) + r'":\s*\{[^}]*"version":\s*"([^"]+)"',
-    re.DOTALL,
-)
 
 
 def _parse_npm_list_version(output: str, package: str) -> str | None:
@@ -326,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
         workdir = tempfile.mkdtemp(prefix="release-verify-")
         cleanup = True
 
-    print(f"Gate #2 — release round-trip verification")
+    print("Gate #2 — release round-trip verification")
     print(f"  lang    : {args.lang}")
     print(f"  version : {args.version}")
     print(f"  workdir : {workdir}")
