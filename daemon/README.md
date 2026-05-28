@@ -203,6 +203,84 @@ Exit codes are stable for scripting:
 | `1` | No receipt at the requested sequence (or empty store) |
 | `2` | Usage error (bad flags, ambiguous chain, unreadable DB) |
 
+## Read interface: `agent-receipts verify-event`
+
+`verify` answers "is this chain internally consistent?". `verify-event` answers
+the narrower question that turns out to matter most for trust: **was this
+specific receipt produced by the documented `emitter → daemon → chain`
+pipeline, or written to the store by some other path?** It composes the chain
+checks (signature, hash linkage, sequence contiguity) with the daemon-captured
+`peer_credential` (ADR-0010 § Permissions and trust) that makes the audit
+meaningful — the agent's self-asserted identity is untrusted; peer attestation
+is what is load-bearing.
+
+```sh
+# A single receipt by id:
+agent-receipts verify-event --id urn:receipt:...
+
+# The most recent receipt in the chain:
+agent-receipts verify-event --chain-head
+
+# Every receipt issued in a trailing window (e.g. post-incident triage):
+agent-receipts verify-event --since 10m --json
+
+# Pin the expected emitter(s) — mismatches warn, they do not fail:
+agent-receipts verify-event --chain-head \
+  --emitter-allowlist /usr/bin/mcp-proxy,/usr/bin/openclaw
+```
+
+Exactly one selector (`--id`, `--chain-head`, `--since`) is required. Like the
+other read commands it opens the store **read-only**, so it is safe to run
+against a live daemon's database or a forensic snapshot, and it never emits —
+unlike `doctor`'s synthetic round-trip, this is a cheap historical read.
+
+It runs six checks per receipt, each reported with a structured pass / fail /
+warn / n/a status:
+
+1. **Signature** — the Ed25519 signature verifies under the supplied public key.
+2. **Hash linkage** — the receipt chains back to the daemon's startup baseline
+   and is reachable from the chain head (any break anywhere taints it).
+3. **Peer credential present** — the daemon-captured `peer_credential` is
+   present and well-formed. Receipts predating peer-credential capture are
+   flagged `n/a` ("predates peer-credential evidence"), **not failed**.
+4. **Emitter identity** — the captured `exe_path` matches the operator
+   `--emitter-allowlist`. This is operator policy, not protocol: a mismatch
+   **warns**, it never fails. With no allowlist configured the observed path is
+   surfaced informationally.
+5. **Schema version** — the receipt's schema version is one this verifier
+   understands (compatible by major version).
+6. **Chain context** — the receipt's sequence position is contiguous with its
+   neighbours (no gap immediately before or after).
+
+The verdict distinguishes the two cases operators currently cannot tell apart:
+
+- **VERIFIED — pipeline-provenance confirmed**: crypto holds *and* the
+  peer-credential evidence shows the documented pipeline produced it.
+- **VERIFIED (cryptographically) — no pipeline-provenance evidence**: crypto
+  holds but there is no peer credential. This is the state a receipt written
+  directly to SQLite (or emitted before peer-credential capture) produces.
+
+What it deliberately does **not** check: whether the audited action actually
+happened in the world (no protocol can attest to that), and whether the emitter
+binary is trustworthy beyond its `exe_path` matching the allowlist (binary
+integrity attestation is a separate, ADR-grade decision).
+
+Use cases: forensic snapshot review, post-incident triage (`--since`), and a CI
+gate on a known-good receipt — gate on exit `0` to require provenance, or
+accept `0` and `3` alike to require only cryptographic validity.
+
+Exit codes are stable for scripting:
+
+| Code | Meaning |
+|---|---|
+| `0` | Verified **and** pipeline-provenance confirmed |
+| `1` | A check failed — the receipt is suspect, investigate |
+| `2` | Usage error (bad flags, no/ambiguous selector, unreadable DB or key) |
+| `3` | Verifies cryptographically but lacks peer-credential evidence |
+
+When a selector resolves to multiple receipts (`--since`), the process exit code
+is the worst case across them (`1` outranks `3`, which outranks `0`).
+
 ## Wire protocol
 
 SOCK_STREAM Unix-domain socket (uniform across Linux and macOS — see
