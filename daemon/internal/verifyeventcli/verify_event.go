@@ -599,12 +599,15 @@ func parseAllowlist(raw string) []string {
 }
 
 // majorVersion returns the leading numeric component of a dotted version
-// string ("0.4.0" → "0"), or "" if there is no leading component.
+// string ("0.4.0" → "0"). It requires the dotted form: a string with no '.'
+// (e.g. "0" or "garbage") is not a valid schema version and returns "", so
+// checkSchemaVersion rejects it as unparseable rather than treating a bare
+// major as compatible.
 func majorVersion(v string) string {
 	if i := strings.IndexByte(v, '.'); i >= 0 {
 		return v[:i]
 	}
-	return v
+	return ""
 }
 
 // validatePublicKeyPEM rejects PEM bytes that don't decode to an Ed25519 SPKI

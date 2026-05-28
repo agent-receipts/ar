@@ -297,6 +297,29 @@ func TestVerifyEvent_UnknownSchemaVersion_Fails(t *testing.T) {
 	}
 }
 
+// A schema version without a dotted form ("0") is malformed, not a compatible
+// bare major: it must fail explicitly as unparseable.
+func TestVerifyEvent_MalformedSchemaVersion_Fails(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath, ids := buildStore(t, dir, "chain-1", []recSpec{
+		{peer: linuxPeer("/usr/bin/mcp-proxy"), version: "0"},
+	})
+
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--id", ids[0],
+		"--json",
+	})
+	if code != ExitVerifyFailed {
+		t.Fatalf("exit = %d, want %d (stderr=%s)", code, ExitVerifyFailed, stderr)
+	}
+	c := findCheck(t, decodeJSON(t, stdout).Results[0], "schema version")
+	if c.Status != statusFail || !strings.Contains(c.Detail, "unparseable") {
+		t.Errorf("schema version = %q (%s), want fail/unparseable", c.Status, c.Detail)
+	}
+}
+
 // --chain-head selects the most recent receipt; with one chain present no
 // --chain-id is needed.
 func TestVerifyEvent_ChainHeadSelector(t *testing.T) {
