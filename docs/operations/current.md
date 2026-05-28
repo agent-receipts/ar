@@ -2,7 +2,7 @@
 
 > **Purpose.** This file is the operational source of truth for what is in flight, what is blocked, and what is next. Updated whenever a node's state changes. Read by humans and by agents.
 >
-> **Scope.** Captures the *active subgraph* of work: the audit response, the v1-blocker chain, and current foreground work. Does not capture every open issue — the project has 77 of those and most are background, not blocking the current focus. Items enter this file when they become active; they leave it when they ship.
+> **Scope.** Captures the *active subgraph* of work: the audit response, the v1-blocker chain, and current foreground work. Does not capture every open issue — most open issues are background, not blocking the current focus. Items enter this file when they become active; they leave it when they ship.
 >
 > **Schema.** Each node has: `state`, `depends_on`, `conflicts_with`, `issues` / `prs`, `farmable`, `notes`. Conflicts mean "may touch overlapping files / state; sequence rather than parallelize."
 
@@ -20,17 +20,15 @@
 
 ## Last updated
 
-`2026-05-26` — #632 (`cnap-snippet-ci` / #595) merged. #633 (py contract tests salvaged from #591) merged — 7 tests in `sdk/py/tests/contracts/`, two flagged for flip when `emit-failure-contract` (#599) lands. `spec-publishing-tag-aware` (#612) PR open as #634 — awaiting review.
+`2026-05-28` — supersedes the unmerged #647 EOD snapshot. Since then: `homepage-rewrite` shipped (#644), closing out closure-1's last writing node; ADR-0024 **verification-contract** landed (#658) — no longer deferred — with Gate #1 shipped (#632) and Gate #2 in review (#664); emit-failure-contract is now **ADR-0025** (#643, in review); ADR-0023 follow-up `go-import-path-sweep` (#636) shipped; v1-blockers #534 (AWS KMS, #663) and #535 (ephemeral guide, #660) shipped; operator tooling doctor/verify-event/show all shipped (#661/#659/#662); SDK bumped to v0.13.0 (#646).
+
+> **ADR numbering note.** The numbers settled after three landed in close succession: **ADR-0023** = canonical Go module path (#640/#642), **ADR-0024** = project verification contract (#658), **ADR-0025** = emit failure contract (#643, in review). Earlier snapshots had 0024/0025 swapped.
 
 ---
 
 ## Decisions blocked on Otto
 
-- **`emit-failure-contract`** (gates Closure 2) — decide that emit MUST surface transport failure as raised error / non-nil return; durability across crashes is opt-in via WAL; silent drop is never the default. Once recorded, per-SDK propagation is farmable. Issue: #599.
-- **`homepage-rewrite`** — needs Otto's voice; cannot farm. Should lead with a concrete failure scenario, drop crypto-jargon-first opening, retract any residual "no project does this" framing, add comparison link to `/ecosystem/landscape/`. No issue filed yet.
-- **`#615 ADR-0023 (Go module path)`** — needs the ADR drafted (issue exists; no PR yet). #623 already merged, so if the ADR ships with a Go module path change, `sdk/go/README.md` will need a follow-up rebase to update import paths.
-- **`#600 verification-contract ADR`** — decide whether to land now (commits the project to property-with-gate as policy) or defer until Closures 1 and 2 demonstrate the pattern. Synthesis recommends defer.
-- **`#592 inline-publish-pypi-npm`** — PR is technically sound and CI is green, but PyPI and npm "trusted publishing" authorizes a *specific* workflow filename. The new inline publish steps in `release-sdk-py.yml` / `release-sdk-ts.yml` will be rejected at release time until trusted-publisher configs are updated. Manual step: add `release-sdk-py.yml` to https://pypi.org/manage/project/agent-receipts/settings/publishing/ and add `release-sdk-ts.yml` to the npm package's trusted-publisher list. Keep the old entries so the manual escape hatches still work. Then merge #592. Release-blocker — every release ships silently broken until this lands.
+No decisions currently blocked. (`homepage-rewrite` shipped via #644 — if the agent left an `{/* OTTO: personal twist */}` placeholder in the opening paragraph, that final copy pass is the only outstanding Otto touch, and it is non-blocking.)
 
 ---
 
@@ -38,11 +36,11 @@
 
 A closure is a coherent piece of work that retires a category of audit findings or installs a category of capability. Nodes group into closures; the DAG below is the dependency view.
 
-- **`closure-0` (spec/context versioning) — SHIPPED** except `spec-publishing-tag-aware` (#612).
-- **`closure-1` (Quick Start coherence + Go module identity) — IN PROGRESS.** ADR-0022 merged; `in-process-snippet-sweep` (#621), `spec-overview-cleanup` (#624), `go-readme-reposition` (#623), `quickstart-rewrite` (#625), and `daemon-setup-stale-api` (#628 closing #627) all shipped. Remaining: `ADR-0023-go-module-path` (#615 — needs ADR drafted by Otto), `homepage-rewrite` (blocked on Otto's voice), and `py-readme-daemon-refresh` (#630 — farmable; bundles five v0.10.0 first-run audit paper-cuts).
-- **`closure-2` (emit failure contract) — BLOCKED ON OTTO DECISION.** No work farmable until contract decided.
-- **`verification-contract` (#600) — DEFERRED** by recommendation; revisit after Closure 1 and 2 demonstrate the pattern.
-- **`v1-blockers`** (orthogonal to closures; tracked by `v1-blocker` label) — includes #534 (Cloud KMS signers), #535 (ephemeral-compute deployment guide). Foreground for the v1 release path; not part of audit response. Listed here so the file acknowledges they exist; details in their own issues.
+- **`closure-0` (spec/context versioning) — SHIPPED.**
+- **`closure-1` (Quick Start coherence + Go module identity) — ESSENTIALLY COMPLETE.** All Quick Start / README / ADR nodes shipped, including `homepage-rewrite` (#644) and `ADR-0023-go-module-path` (#640). Two ADR-0023 follow-ups remain in-flight: `collector-tagging` (#638) and `d5-release-verification` (#639, blocked on #638). Once both close, closure-1 (and its tracker #598) can close.
+- **`closure-2` (emit failure contract) — IN PROGRESS.** Implements **ADR-0025**; PR #643 open in review, covers all three SDKs in one PR. Closes #599.
+- **`verification-contract` (ADR-0024) — SHIPPED & BUILDING GATES.** ADR-0024 landed (#658). Gate #1 (README-snippet CI) shipped (#632). Gate #2 (release round-trip) in review (#664, tracks #651). Gates #6/#7 (schema-conformance, cross-SDK byte-identity at release time) are future siblings.
+- **`v1-blockers`** (orthogonal to closures; tracked by `v1-blocker` label) — #534 (AWS KMS signers) shipped for TS + Python (#663); #535 (ephemeral-compute deployment guide) shipped (#660). Foreground for the v1 release path; not part of the audit response.
 - **`daemon-v2`** — Otto's foreground design work. Not yet broken into nodes here; add when it becomes farmable.
 
 ---
@@ -94,12 +92,12 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - notes: daemon-mediated is canonical, in-process is tutorial-only with mandatory "Not for production" note, no runtime enforcement (deferred)
 
 #### `ADR-0023-go-module-path`
-- state: open (needs ADR drafted)
+- state: shipped
 - depends_on: []
-- conflicts_with: [`go-readme-reposition`] (soft — repositioning under unresolved canonical path risks re-edit if path decision flips)
-- issues: #615 (tracker — no PR yet)
-- farmable: no (Otto drafts the ADR PR)
-- notes: proposed direction is monorepo `github.com/agent-receipts/ar/sdk/go` canonical; standalone `sdk-go` gets a final deprecation release
+- issues: #615 (closed)
+- prs: #640 (merged)
+- artifacts: `docs/adr/0023-canonical-go-module-path.md`
+- notes: canonical path is `github.com/agent-receipts/ar/sdk/go`; standalone `sdk-go` gets a final deprecation release; spawned #636–#639.
 
 #### `quickstart-rewrite`
 - state: shipped
@@ -126,7 +124,7 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - issues: #618
 - prs: #623 (merged)
 - artifacts: `sdk/go/README.md` leads with daemon path; collector positioned under "Enterprise / multi-host."
-- notes: shipped before ADR-0023 landed; if the ADR lands with a Go module path change, this README will need a follow-up rebase to update import paths.
+- notes: shipped before ADR-0023 landed; import paths updated as part of ADR-0023 follow-up #636.
 
 #### `spec-overview-cleanup`
 - state: shipped
@@ -137,10 +135,11 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - artifacts: `site/src/content/docs/specification/overview.mdx` bumped to v0.4.0; "Relationship to existing work" reorganized into normative ancestry vs adjacent projects.
 
 #### `homepage-rewrite`
-- state: blocked on otto writing
-- depends_on: [`quickstart-rewrite`] (so the homepage CTA can link into a coherent Quick Start)
-- issues: none yet — file when Otto starts
-- farmable: no — needs Otto's voice
+- state: shipped
+- depends_on: [`quickstart-rewrite`]
+- prs: #644 (merged)
+- artifacts: `site/src/content/docs/index.mdx` — leads with failure scenario, drops "no project does this" framing, links `/ecosystem/landscape/`.
+- notes: agent-drafted then merged. If a `{/* OTTO: personal twist */}` placeholder was left in the opening paragraph, Otto owes a final copy pass — non-blocking.
 
 #### `daemon-setup-stale-api`
 - state: shipped
@@ -152,94 +151,130 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - notes: surfaced by an agent while doing #625; the macOS socket-path fix was the user-impacting bit (readers were landing on the wrong socket and the handshake failed silently).
 
 #### `py-readme-daemon-refresh`
-- state: open
+- state: shipped
 - depends_on: [`ADR-0022-deployment-shape`]
 - conflicts_with: []
-- issues: #630
-- farmable: yes
-- notes: bundles five paper-cuts from the v0.10.0 first-run audit (closed PR #591). Lead `sdk/py/README.md` with daemon-mediated signing per ADR-0022 (matches what #625 did for the site); document `DaemonEmitter` + the new `agent_receipts.emitters` package (`HttpEmitter`, `WalEmitter`, `CompositeEmitter`); reference `agent-receipts verify` as the confirmation path; re-export `ActionInput` from the top-level package; fix stale `agent-receipts/sdk-py` badge/links. Closure-1 follow-on, analogous to how `daemon-setup-stale-api` (#628) closed `daemon-setup.mdx` gaps mid-closure.
+- issues: #630 (closed)
+- prs: #641 (merged)
+- artifacts: `sdk/py/README.md` — daemon-mediated path leads, `DaemonEmitter`/`HttpEmitter`/`WalEmitter` documented, `ActionInput` re-exported from top-level, stale links fixed.
+- notes: bundled five paper-cuts from the v0.10.0 first-run audit (closed PR #591). Regression tests salvaged separately into `sdk/py/tests/contracts/` (#633).
+
+#### `inline-publish-pypi-npm`
+- state: shipped
+- depends_on: []
+- prs: #592 (merged)
+- notes: PyPI trusted publisher updated to `release-sdk-py.yml`; npm trusted publisher updated to `release-sdk-ts.yml`. Release pipeline now fully wired.
 
 ---
 
-### Closure 2 — emit failure contract
+### Closure 1 — ADR-0023 follow-ups
+
+#### `go-import-path-sweep`
+- state: shipped
+- depends_on: [`ADR-0023-go-module-path`]
+- issues: #636 (closed)
+- notes: all README/example import paths updated `sdk-go/...` → `ar/sdk/go/...`.
+
+#### `sdk-go-deprecation-release`
+- state: shipped
+- depends_on: [`ADR-0023-go-module-path`]
+- issues: #637
+- prs: #645 (merged)
+- notes: final deprecation release staged for the standalone `github.com/agent-receipts/sdk-go` module.
+
+#### `collector-tagging`
+- state: in-flight
+- depends_on: [`ADR-0023-go-module-path`]
+- issues: #638 (open)
+- prs: #648 (merged — release automation only)
+- farmable: yes
+- notes: #648 landed the GoReleaser config + `collector/v*` release workflow. Still open in #638: actually push the `collector/v0.13.0` tag aligned to `sdk/go/v0.13.x` and verify `go install github.com/agent-receipts/ar/collector/cmd/collector@latest` builds against a fresh GOPATH.
+
+#### `d5-release-verification`
+- state: blocked
+- depends_on: [`go-import-path-sweep`, `collector-tagging`]
+- issues: #639 (open)
+- farmable: no (blocked on `collector-tagging` #638 closing)
+- notes: run ADR-0023 D5 one-time verification — `go get @latest` resolves, collector `go install` builds, README hello-world compiles — and record results in #639.
+
+---
+
+### Closure 2 — emit failure contract (ADR-0025)
 
 #### `emit-failure-contract`
-- state: blocked on otto decision
+- state: in-flight
 - depends_on: []
 - issues: #599
-- farmable: no (decision first)
-- notes: proposed wording in #599. Per-SDK propagation issues are not filed yet; they get filed once the contract is recorded.
+- prs: #643 (open, in review)
+- farmable: no (PR in review)
+- notes: implements ADR-0025 (renumbered from 0023→0024→0025 as other ADRs landed). Emit MUST surface transport failure by default; best-effort is opt-out (Go `WithBestEffort()`, Python `best_effort=True`, TS `bestEffort: true`). Shared conformance vector at `cross-sdk-tests/emit_failure_vectors.json`. Breaking change across all three SDKs. Closes #599.
 
 #### `py-protocol-arity-fix` (PY-P4)
-- state: not yet filed as issue
-- depends_on: [`emit-failure-contract`]
-- conflicts_with: []
-- farmable: yes once filed and contract decided
-- notes: prerequisite for Py silent-drop fix; the Protocol shape must capture `DaemonEmitter.emit`'s real arity so `WalEmitter` can wrap it.
+- state: decoupled from this closure
+- depends_on: []
+- notes: per #643, no longer a blocking prerequisite — the base obligation is "surface the failure"; durability (WAL wrapping) is opt-in. PY-P4 moves to ADR-0020 step-2 work (daemon ingesting signed receipts). The salvaged contract test `test_wal_emitter_cannot_wrap_daemon_emitter` (#633) still pins the current footgun and should flip to a positive assertion when PY-P4 lands.
 
-#### `py-silent-drop-fix` (PY-P9)
-- state: not yet filed as issue
-- depends_on: [`emit-failure-contract`, `py-protocol-arity-fix`]
-- farmable: yes once predecessors complete
-
-#### `go-silent-drop-fix` (GO-P5)
-- state: not yet filed as issue
+#### `py-silent-drop-fix` (PY-P9) / `go-silent-drop-fix` (GO-P5) / `ts-silent-drop-verify-and-fix`
+- state: superseded by #643
 - depends_on: [`emit-failure-contract`]
-- farmable: yes once contract decided
-
-#### `ts-silent-drop-verify-and-fix`
-- state: not yet filed as issue
-- depends_on: [`emit-failure-contract`]
-- farmable: yes once contract decided
-- notes: TS audit did not measure emit-without-daemon behavior; first step is a one-line test confirming the suspected silent drop, then fix.
+- notes: all three SDK silent-drop fixes are covered by the single #643 PR.
 
 ---
 
-### Verification contract (deferred)
+### Verification contract (ADR-0024 — shipped, building gates)
 
 #### `ADR-0024-verification-contract`
-- state: deferred
-- depends_on: [`closure-1-complete`, `closure-2-complete`]
-- issues: #600
-- notes: lands after Closures 1 and 2 demonstrate the pattern; revisit when those ship.
-
-#### `cnap-snippet-ci` (closes #595, instance of verification contract)
 - state: shipped
-- depends_on: [] (can ship independently of #600)
+- depends_on: []
+- issues: #600 (closed)
+- prs: #658 (merged)
+- artifacts: `docs/adr/0024-project-verification-contract.md`
+- notes: was deferred; landed once Closures 1 and 2 demonstrated the property-with-gate pattern. Defines a gate catalogue (Gates #1–#7).
+
+#### `cnap-snippet-ci` (Gate #1)
+- state: shipped
+- depends_on: []
 - issues: #595 (closed)
 - prs: #632 (merged)
 - artifacts: `scripts/readme_snippets/` harness; `readme-snippets.yml` CI gate; in-tree + published snippet checks for Go/TS/Python
-- notes: README code-snippet CI gate — predates this OPERATIONS.md framing but is exactly the first gate the verification-contract ADR would mandate. Also fixed stale module path in `sdk/go/README.md` and a wrong `ActionInput` call in root README Python quick-start.
+- notes: README code-snippet CI gate — Gate #1 of ADR-0024. Also fixed a stale module path in `sdk/go/README.md` and a wrong `ActionInput` call in the root README Python quick-start.
+
+#### `release-roundtrip-verification` (Gate #2)
+- state: in-flight
+- depends_on: [`ADR-0024-verification-contract`]
+- issues: #651 (open)
+- prs: #664 (open)
+- farmable: no (PR up; in review)
+- notes: post-publish CI step per SDK — fetch the just-published artifact from the public registry in a clean env, assert resolved version == released version, run documented snippets against it. `scripts/release_verify/check.py` + 23 unit tests; wired into `release-sdk-{go,py,ts}.yml`. Release-blocking.
 
 ---
 
 ## Background — not in the active graph but worth noting
 
-These exist as open issues; they are foreground for *some* future session but not blocking current work. Listed so the file acknowledges them; details in the issues themselves.
-
-- **`v1-blocker` work:** #534 (Cloud KMS signers), #535 (ephemeral compute deployment guide). The label suggests these gate the v1 release; they are not part of the audit response.
-- **Standards/positioning:** #555 (v0.3.0 blog post), #556/#557/#558 (AIVS CG contributions), #559 (draft-sharif review comment), #561 (ADR on adjacent format posture). These are the standards-room presence work; cadence-driven, not blocker-driven.
-- **Blog campaign (Posts 3–7):** #541, #542, #543, #544 — drafted as issue bodies, contingent on Otto having writing time.
-- **Operator tooling:** #539 (`agent-receipts doctor`), #540 (`verify-event`), #552 (`agent-receipts show <seq>`) — outgrowth of the Max-forged-a-receipt incident; ship when the hardening surface is being touched anyway.
+- **`v1-blocker` work:** #534 (AWS KMS signers) shipped for TS + Python (#663) — confirm whether Go KMS coverage is in scope/remaining. #535 (ephemeral-compute deployment guide) shipped (#660).
+- **Operator tooling — SHIPPED:** #539 `agent-receipts doctor` (#661), #540 `verify-event` (#659), #552 `agent-receipts show <seq>` (#662). Outgrowth of the Max-forged-a-receipt incident.
+- **Standards/positioning:** #555 (v0.3.0 blog post), #556/#557/#558 (AIVS CG contributions), #559 (draft-sharif review comment), #561 (ADR on adjacent format posture). Cadence-driven, not blocker-driven.
+- **Blog campaign (Posts 3–7):** #541, #542, #543, #544 + draft PRs #442/#444 — contingent on Otto having writing time.
+- **Idle PRs:** #532 (hermes-agent plugin) — open since 2026-05-22, needs a review pass or a close decision.
 - **Daemon redesign:** the v2 work. Not surfaced as issues at the granularity that would let it enter this DAG; Otto's foreground design work.
 
 ---
 
 ## Next farmable (computed)
 
-As of `2026-05-26` (post-merge of #632 and #633):
+As of `2026-05-28`, applying the "open + dependencies-met + no in-flight conflicts" rule:
 
-1. **`py-readme-daemon-refresh` (#630)** — independent; touches `sdk/py/README.md` only; no overlap with open PRs or active worktrees. Dispatchable now.
+1. **`collector-tagging` (#638)** — deps met (ADR-0023 shipped, #648 automation landed). Push the `collector/v0.13.0` tag and verify `go install ...collector@latest`. Unblocks `d5-release-verification`.
 
-In-flight (not farmable but not blocked either):
+Unlocks after the above:
+- **`d5-release-verification` (#639)** — becomes farmable once #638 closes.
 
-- `spec-publishing-tag-aware` → #634 open — needs review before merge.
+In-flight (PR up — not farmable but not blocked):
+- `emit-failure-contract` → #643 (in review)
+- `release-roundtrip-verification` → #664 (in review)
 
-Decisions Otto owes (each one unblocks downstream farmable work):
-
-- `emit-failure-contract` (#599) — recording the contract unblocks 4 SDK nodes (`py-protocol-arity-fix`, `py-silent-drop-fix`, `go-silent-drop-fix`, `ts-silent-drop-verify-and-fix`).
-- `ADR-0023-go-module-path` (#615) — needs the ADR written. If it lands with a Go module path change, the just-shipped `go-readme-reposition` work will need a follow-up rebase to update import paths.
-- `homepage-rewrite` — needs Otto's voice; unblocks the broader new-visitor sweep.
+Otto owes (non-blocking):
+- Optional final copy pass on the `homepage-rewrite` opening paragraph if a placeholder was left (#644).
 
 ---
 
