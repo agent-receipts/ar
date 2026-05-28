@@ -1,9 +1,15 @@
 name: "CI: README snippets"
 
-# Compile / type-check the SDK code snippets embedded in the user-facing
-# READMEs against the in-tree SDK, so a snippet and the API it documents are
-# verified against the same commit. The release-blocking variant (against the
-# *published* artifact) lives in the publish-* workflows.
+# Verify the SDK code snippets embedded in the user-facing READMEs against the
+# in-tree SDK, so a snippet and the API it documents are verified against the
+# same commit. Two complementary gates run here:
+#   * typecheck — compile (Go) / type-check (TS, Py) every SDK snippet.
+#   * run       — execute every runnable snippet in an isolated tmpdir and
+#                 assert exit 0 (verification-gate #1 / ADR-0024). Snippets that
+#                 can't run hermetically carry a `<!-- snippet-check: no-run -->`
+#                 directive and stay covered by the typecheck gate.
+# The release-blocking variant (against the *published* artifact) lives in the
+# publish-* workflows.
 #
 # See scripts/readme_snippets/ for the extractor and orchestrator.
 
@@ -30,6 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - run: python3 scripts/readme_snippets/test_extract.py
+      - run: python3 scripts/readme_snippets/test_check.py
 
   go:
     runs-on: ubuntu-latest
@@ -40,6 +47,8 @@ jobs:
           go-version: "1.26"
       - name: Check Go snippets (in-tree)
         run: python3 scripts/readme_snippets/check.py --lang go --source local README.md sdk/go/README.md
+      - name: Run Go snippets (in-tree)
+        run: python3 scripts/readme_snippets/check.py --lang go --source local --mode run README.md sdk/go/README.md
 
   typescript:
     runs-on: ubuntu-latest
@@ -58,6 +67,8 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm run build
       - name: Check TypeScript snippets (in-tree)
         run: python3 scripts/readme_snippets/check.py --lang ts --source local README.md sdk/ts/README.md
+      - name: Run TypeScript snippets (in-tree)
+        run: python3 scripts/readme_snippets/check.py --lang ts --source local --mode run README.md sdk/ts/README.md
 
   python:
     runs-on: ubuntu-latest
@@ -65,3 +76,5 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Check Python snippets (in-tree)
         run: python3 scripts/readme_snippets/check.py --lang py --source local README.md sdk/py/README.md
+      - name: Run Python snippets (in-tree)
+        run: python3 scripts/readme_snippets/check.py --lang py --source local --mode run README.md sdk/py/README.md

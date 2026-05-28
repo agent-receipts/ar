@@ -17,6 +17,11 @@ Selection rules:
     state (store/verify follow-ons) resolve their references.
     ``<!-- snippet-check: skip -->`` opts a block out entirely (intentionally
     partial pseudo-code).
+    ``<!-- snippet-check: no-run -->`` keeps the block under the type-check gate
+    but opts it out of the execute gate — for snippets that can't run in a
+    hermetic clean tmpdir (they need a daemon, the network, AWS, a writable
+    system path, …). The block is still extracted and compiled / type-checked;
+    only execution is skipped (``Unit.run`` is ``False``).
   Directives are invisible in rendered markdown. Unmarked blocks are checked by
   default, so a newly added quick-start snippet is covered without anyone
   remembering to annotate it — which is the drift this gate exists to catch.
@@ -51,7 +56,7 @@ _SDK_IMPORT_PATTERN = {
 _DIRECTIVE_RE = re.compile(r"<!--\s*snippet-check:\s*(?P<directive>[\w-]+)\s*-->")
 _FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<ticks>`{3,})(?P<info>.*)$")
 
-_VALID_DIRECTIVES = {"continues", "skip"}
+_VALID_DIRECTIVES = {"continues", "skip", "no-run"}
 
 
 @dataclass
@@ -72,6 +77,11 @@ class Unit:
     name: str
     code: str
     sources: list[str] = field(default_factory=list)
+    # False when any block in the unit carries the ``no-run`` directive: the
+    # snippet still type-checks but can't be executed hermetically (it needs a
+    # daemon, the network, a writable system path, …). The execute gate skips
+    # these; the type-check gate still covers them.
+    run: bool = True
 
 
 def parse_blocks(text: str) -> list[Block]:
@@ -142,11 +152,14 @@ def _imports_sdk(lang: str, code: str) -> bool:
     return bool(pattern and pattern.search(code))
 
 
-def build_units(readme_label: str, text: str, lang: str) -> list[Unit]:
+def build_units(readme_label: str, text: str, lang: str, mode: str = "typecheck") -> list[Unit]:
     """Assemble compilation units for a single README and target language.
 
     ``readme_label`` is a human-readable source reference (e.g. the README path),
-    used both for diagnostics and to derive stable unit names.
+    used both for diagnostics and to derive stable unit names. ``mode`` selects
+    how units are rendered: ``"typecheck"`` (the default) renders Go as a library
+    package so a block without ``func main`` still compiles; ``"run"`` renders Go
+    as an executable ``package main`` so the snippet can be run end-to-end.
     """
 
     blocks = [b for b in parse_blocks(text) if b.lang == lang]
@@ -159,9 +172,16 @@ def build_units(readme_label: str, text: str, lang: str) -> list[Unit]:
             return
         idx = len(units) + 1
         sources = [f"{readme_label}:{b.line}" for b in chain]
-        code = _render(lang, chain)
+        code = _render(lang, chain, mode)
+        run = not any(b.directive == "no-run" for b in chain)
         units.append(
-            Unit(lang=lang, name=f"{_safe_label(readme_label)}-{lang}-{idx}", code=code, sources=sources)
+            Unit(
+                lang=lang,
+                name=f"{_safe_label(readme_label)}-{lang}-{idx}",
+                code=code,
+                sources=sources,
+                run=run,
+            )
         )
         chain.clear()
 
@@ -191,7 +211,7 @@ def _safe_label(label: str) -> str:
     return re.sub(r"[^\w]+", "_", label).strip("_") or "readme"
 
 
-def _render(lang: str, chain: list[Block]) -> str:
+def _render(lang: str, chain: list[Block], mode: str = "typecheck") -> str:
     if lang == "go":
         # Go blocks are standalone (a full program or a bare statement snippet);
         # concatenating two would not compile. Fail loudly rather than silently
@@ -201,7 +221,7 @@ def _render(lang: str, chain: list[Block]) -> str:
             raise ValueError(
                 f"Go snippets cannot use 'continues' ({srcs}); each must be standalone"
             )
-        return _render_go(chain[0].code)
+        return _render_go(chain[0].code, mode)
     return "\n\n".join(b.code for b in chain)
 
 
@@ -218,14 +238,19 @@ _GO_IMPORT_BLOCK_OPEN_RE = re.compile(r"^import\s*\(\s*$")
 GO_SNIPPET_PACKAGE = "snippet"
 
 
-def _render_go(code: str) -> str:
-    """Render a Go snippet as a buildable, non-main library package.
+def _render_go(code: str, mode: str = "typecheck") -> str:
+    """Render a Go snippet as a buildable unit.
 
-    Every unit is compiled as ``package snippet`` rather than ``package main``:
-    that way a snippet that defines helper funcs but no ``main`` (e.g. the
-    collector-delivery example) still builds, and an unused ``func main`` is not
-    an error. Unused *imports* and unused *locals* remain errors, so genuine
-    drift is still caught.
+    In ``typecheck`` mode every unit is compiled as ``package snippet`` rather
+    than ``package main``: that way a snippet that defines helper funcs but no
+    ``main`` (e.g. the collector-delivery example) still builds, and an unused
+    ``func main`` is not an error. Unused *imports* and unused *locals* remain
+    errors, so genuine drift is still caught.
+
+    In ``run`` mode the unit is rendered as an executable ``package main`` with a
+    ``func main`` entry point, so ``go run`` actually executes the snippet. (Only
+    runnable snippets reach this mode — library-style blocks with no entry point
+    carry the ``no-run`` directive and are filtered out before execution.)
 
     Blocks that already declare a package have that line rewritten. Bare
     statement snippets (root README quick-start) have their ``import`` lines
@@ -234,9 +259,12 @@ def _render_go(code: str) -> str:
     trip Go's unused-variable error.
     """
 
+    package = "main" if mode == "run" else GO_SNIPPET_PACKAGE
+    entry_func = "main" if mode == "run" else "run"
+
     if re.search(r"^package\s+\w+", code, re.MULTILINE):
         rewritten = re.sub(
-            r"^package\s+\w+", f"package {GO_SNIPPET_PACKAGE}", code.strip(), count=1, flags=re.MULTILINE
+            r"^package\s+\w+", f"package {package}", code.strip(), count=1, flags=re.MULTILINE
         )
         return rewritten + "\n"
 
@@ -279,14 +307,14 @@ def _render_go(code: str) -> str:
         if var:
             declared.append(var.group("name"))
 
-    out: list[str] = [f"package {GO_SNIPPET_PACKAGE}", ""]
+    out: list[str] = [f"package {package}", ""]
     if imports:
         out.append("import (")
         for spec in imports:
             out.append(f"\t{spec}")
         out.append(")")
         out.append("")
-    out.append("func run() {")
+    out.append(f"func {entry_func}() {{")
     for line in _trim_blank_edges(body):
         out.append("\t" + line if line.strip() else "")
     for name in declared:

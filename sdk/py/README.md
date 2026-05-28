@@ -84,6 +84,7 @@ agent-receipts-daemon          # start the daemon (leave it running)
 signs, and chains the receipt. It is fire-and-forget — start the daemon before
 your app, since an unreachable daemon drops the event (logged at `DEBUG`).
 
+<!-- snippet-check: no-run -->
 ```python
 from agent_receipts import DaemonEmitter
 
@@ -157,6 +158,7 @@ you sign with `sign_receipt`, shown in the [in-process appendix](#appendix-in-pr
 - **`CompositeEmitter`** (fan-out), **`BufferingEmitter`** (batching), and
   **`InMemoryEmitter`** (testing) round out the set.
 
+<!-- snippet-check: no-run -->
 ```python
 from agent_receipts import (
     AgentReceipt,
@@ -190,6 +192,7 @@ never leaves AWS KMS:
 pip install "agent-receipts[aws]"
 ```
 
+<!-- snippet-check: no-run -->
 ```python
 from agent_receipts.aws import KMSSigner
 

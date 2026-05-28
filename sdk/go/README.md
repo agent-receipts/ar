@@ -42,6 +42,7 @@ your app cannot reach the key or forge receipts.
 
 Start the daemon, then emit events from your app:
 
+<!-- snippet-check: no-run -->
 ```go
 package main
 
@@ -161,6 +162,7 @@ daemon-side signing), `emitters` deliver *already-signed* `receipt.AgentReceipt`
 values — sign client-side (or accept pre-signed receipts), then POST them to a
 deployed `agent-receipts-collector`.
 
+<!-- snippet-check: no-run -->
 ```go
 package main
 
