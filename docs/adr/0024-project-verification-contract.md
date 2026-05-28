@@ -42,13 +42,13 @@ The following gates are committed to as the initial set, each tracked by its own
 |---|---|---|---|
 | 1 | **Documented code snippets execute** | Every code block in README and site docs runs against the published artifact in a clean tmpdir and exits 0 | #650 |
 | 2 | **Release round-trip verification** | After publishing to PyPI/npm/Go proxy, the published version is fetched and asserted to be the version released; documented snippets run against the fetched artifact | #651 |
-| 3 | **Spec URLs resolve** | Every `/spec/vX.Y.Z/` and `/context/vN` URL referenced by any released artifact resolves with valid content | #597 (D4 + D6) |
+| 3 | **Spec URLs resolve** | Every `/spec/vX.Y.Z/` and `/context/v<N>` URL referenced by any released artifact resolves with valid content | #597 (D4 + D6) |
 | 4 | **E2E receipt validation against live spec** | Every receipt produced by the conformance suite validates as a W3C VC against a strict JSON-LD processor that resolves `@context` URLs from the live site | #597 (D6) |
 | 5 | **Site documented-snippet gate** | Same as #1 but for `.mdx` code blocks in the site source | #652 |
 | 6 | **SDK output schema-conformance at release time** | Each SDK release produces a receipt and validates it against the published JSON Schema before the release goes out | #653 |
 | 7 | **Cross-SDK byte-identity at release time** | Each SDK release runs the canonicalization vectors and asserts byte-identical output before the release goes out | #654 |
 | 8 | **Daemon ↔ SDK protocol compatibility** | An SDK release declares a daemon-protocol version range and the gate verifies the released daemon at the same time speaks a compatible range | #655 |
-| 9 | **Spec source-of-truth integrity** | At most one canonical spec source file exists at a time; every spec version's `@context` URL exists in the repo at `spec/context/vN/context.jsonld` | #597 follow-through |
+| 9 | **Spec source-of-truth integrity** | At most one canonical spec source file exists at a time; every spec version's `@context` URL exists in the repo at `spec/context/v<N>/context.jsonld` | #597 follow-through |
 | 10 | **Documented dependencies match installed dependencies** | The dependencies the README claims match an SBOM produced at release time; unexplained eager dependencies fail the build | #656 |
 
 ### D5. Gate exemptions are explicit
@@ -96,7 +96,7 @@ Gates #3, #4, and #9 are tracked under ADR-0021 (#597) and its follow-through.
 
 ## Inputs
 
-- Audit synthesis: `docs/audit/2026-05-24-quickstart-and-site-synthesis.md`
+- The 2026-05-24 quick-start and site audit, whose ~40 findings across the three SDKs and the site motivated this ADR
 - ADR-0021 (#597), spec versioning — first instance of an ADR shipped with its enforcement gate (D4 + D6)
 - Closure 1 (#598), Closure 2 (#599) — first closures of pre-existing drift; their existence is what this ADR is committing to make unnecessary in future
 
