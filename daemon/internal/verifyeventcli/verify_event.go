@@ -78,6 +78,18 @@ type check struct {
 	Detail string      `json:"detail,omitempty"`
 }
 
+// Check names are constants so verdict logic keys off an identifier rather than
+// a presentation string — renaming a check can't silently change which check
+// deriveVerdict treats as the peer-credential signal.
+const (
+	checkSignatureName       = "signature"
+	checkHashLinkageName     = "hash linkage"
+	checkPeerCredentialName  = "peer credential"
+	checkEmitterIdentityName = "emitter identity"
+	checkSchemaVersionName   = "schema version"
+	checkChainContextName    = "chain context"
+)
+
 // verdict is the per-receipt provenance conclusion.
 type verdict string
 
@@ -227,7 +239,13 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 				return ExitUsageError
 			}
 			cv := receipt.VerifyChain(chain, string(pubPEM))
-			ctx = chainCtx{chain: chain, cv: cv, indexByID: indexByID(chain), firstLinkBreak: firstLinkBreak(cv)}
+			ctx = chainCtx{
+				chain:          chain,
+				cv:             cv,
+				indexByID:      indexByID(chain),
+				firstLinkBreak: firstLinkBreak(cv),
+				structuralErr:  structuralErr(cv),
+			}
 			chainCache[t.chainID] = ctx
 		}
 		idx, ok := ctx.indexByID[t.receiptID]
@@ -248,14 +266,16 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	return exitCode(results)
 }
 
-// chainCtx caches a loaded chain and its single verification pass, plus the
-// index of the first hash-linkage break (-1 if none) computed once so a
-// multi-target --since batch doesn't rescan the chain per receipt.
+// chainCtx caches a loaded chain and its single verification pass, plus values
+// derived from it once so a multi-target --since batch doesn't recompute them
+// per receipt: the first hash-linkage break (-1 if none) and any whole-chain
+// structural-integrity error not already attributed to a per-receipt check.
 type chainCtx struct {
 	chain          []receipt.AgentReceipt
 	cv             receipt.ChainVerification
 	indexByID      map[string]int
 	firstLinkBreak int
+	structuralErr  string
 }
 
 // target is one selected receipt awaiting verification.
@@ -364,7 +384,7 @@ func evaluate(ctx chainCtx, idx int, allowlist []string) eventResult {
 		checkPeerPresent(r),
 		checkEmitterIdentity(r, allowlist),
 		checkSchemaVersion(r),
-		checkChainContext(ctx.cv, idx),
+		checkChainContext(ctx.cv, ctx.structuralErr, idx),
 	}
 	return eventResult{
 		ReceiptID: r.ID,
@@ -379,9 +399,9 @@ func evaluate(ctx chainCtx, idx int, allowlist []string) eventResult {
 // verifies under the supplied public key (check #1).
 func checkSignature(cv receipt.ChainVerification, idx int) check {
 	if cv.Receipts[idx].SignatureValid {
-		return check{Name: "signature", Status: statusPass, Detail: "Ed25519 signature verifies"}
+		return check{Name: checkSignatureName, Status: statusPass, Detail: "Ed25519 signature verifies"}
 	}
-	return check{Name: "signature", Status: statusFail, Detail: "signature does not verify under the supplied public key"}
+	return check{Name: checkSignatureName, Status: statusFail, Detail: "signature does not verify under the supplied public key"}
 }
 
 // firstLinkBreak returns the index of the first receipt whose hash link does
@@ -404,30 +424,37 @@ func firstLinkBreak(cv receipt.ChainVerification) int {
 // chain's first broken-link index (-1 if none), precomputed once per chain.
 func checkHashLinkage(firstBreak, idx int) check {
 	if firstBreak == -1 {
-		return check{Name: "hash linkage", Status: statusPass, Detail: "chains back to the startup baseline and is reachable from the chain head"}
+		return check{Name: checkHashLinkageName, Status: statusPass, Detail: "chains back to the startup baseline and is reachable from the chain head"}
 	}
 	if firstBreak <= idx {
-		return check{Name: "hash linkage", Status: statusFail, Detail: fmt.Sprintf("broken hash link at index %d — receipt does not chain back to the startup baseline", firstBreak)}
+		return check{Name: checkHashLinkageName, Status: statusFail, Detail: fmt.Sprintf("broken hash link at index %d — receipt does not chain back to the startup baseline", firstBreak)}
 	}
-	return check{Name: "hash linkage", Status: statusFail, Detail: fmt.Sprintf("broken hash link at index %d — receipt is not reachable from a trustworthy chain head", firstBreak)}
+	return check{Name: checkHashLinkageName, Status: statusFail, Detail: fmt.Sprintf("broken hash link at index %d — receipt is not reachable from a trustworthy chain head", firstBreak)}
 }
 
 // checkPeerPresent reports on the daemon-captured peer credential (check #3).
 // Absent is NOT a failure: receipts predating peer-credential capture verify
 // cryptographically but carry no pipeline-provenance evidence (n/a). Present
-// but malformed IS a failure — corrupt evidence is worse than none.
+// but malformed IS a failure — corrupt evidence is worse than none. A
+// recognized platform (linux/darwin — the only kinds the daemon captures) must
+// carry uid/gid; an unrecognized platform is reported n/a rather than confirmed,
+// since the verifier cannot interpret its peer-credential semantics and must not
+// vouch for provenance it can't validate.
 func checkPeerPresent(r receipt.AgentReceipt) check {
 	pc := r.CredentialSubject.Action.PeerCredential
 	if pc == nil {
-		return check{Name: "peer credential", Status: statusNA, Detail: "receipt predates peer-credential evidence; pipeline-provenance verification not available"}
+		return check{Name: checkPeerCredentialName, Status: statusNA, Detail: "receipt predates peer-credential evidence; pipeline-provenance verification not available"}
 	}
 	if pc.Platform == "" {
-		return check{Name: "peer credential", Status: statusFail, Detail: "peer credential present but malformed: missing platform"}
+		return check{Name: checkPeerCredentialName, Status: statusFail, Detail: "peer credential present but malformed: missing platform"}
 	}
-	if (pc.Platform == "linux" || pc.Platform == "darwin") && (pc.UID == nil || pc.GID == nil) {
-		return check{Name: "peer credential", Status: statusFail, Detail: fmt.Sprintf("peer credential present but malformed: %s peer without uid/gid", pc.Platform)}
+	if pc.Platform != "linux" && pc.Platform != "darwin" {
+		return check{Name: checkPeerCredentialName, Status: statusNA, Detail: fmt.Sprintf("unrecognized peer platform %q; cannot interpret peer-credential semantics, pipeline-provenance not verifiable", pc.Platform)}
 	}
-	return check{Name: "peer credential", Status: statusPass, Detail: fmt.Sprintf("daemon-attested %s peer (pid %d)", pc.Platform, pc.PID)}
+	if pc.UID == nil || pc.GID == nil {
+		return check{Name: checkPeerCredentialName, Status: statusFail, Detail: fmt.Sprintf("peer credential present but malformed: %s peer without uid/gid", pc.Platform)}
+	}
+	return check{Name: checkPeerCredentialName, Status: statusPass, Detail: fmt.Sprintf("daemon-attested %s peer (pid %d)", pc.Platform, pc.PID)}
 }
 
 // checkEmitterIdentity compares the captured exe_path against an operator
@@ -438,20 +465,20 @@ func checkPeerPresent(r receipt.AgentReceipt) check {
 func checkEmitterIdentity(r receipt.AgentReceipt, allowlist []string) check {
 	pc := r.CredentialSubject.Action.PeerCredential
 	if pc == nil {
-		return check{Name: "emitter identity", Status: statusNA, Detail: "no peer credential; emitter identity not checked"}
+		return check{Name: checkEmitterIdentityName, Status: statusNA, Detail: "no peer credential; emitter identity not checked"}
 	}
 	if pc.ExePath == "" {
-		return check{Name: "emitter identity", Status: statusNA, Detail: "no exe_path captured; emitter identity not checked"}
+		return check{Name: checkEmitterIdentityName, Status: statusNA, Detail: "no exe_path captured; emitter identity not checked"}
 	}
 	if len(allowlist) == 0 {
-		return check{Name: "emitter identity", Status: statusNA, Detail: fmt.Sprintf("no emitter allowlist configured; observed exe_path %s", pc.ExePath)}
+		return check{Name: checkEmitterIdentityName, Status: statusNA, Detail: fmt.Sprintf("no emitter allowlist configured; observed exe_path %s", pc.ExePath)}
 	}
 	for _, allowed := range allowlist {
 		if pc.ExePath == allowed {
-			return check{Name: "emitter identity", Status: statusPass, Detail: fmt.Sprintf("exe_path %s matches the emitter allowlist", pc.ExePath)}
+			return check{Name: checkEmitterIdentityName, Status: statusPass, Detail: fmt.Sprintf("exe_path %s matches the emitter allowlist", pc.ExePath)}
 		}
 	}
-	return check{Name: "emitter identity", Status: statusWarn, Detail: fmt.Sprintf("exe_path %s is not in the emitter allowlist [%s]", pc.ExePath, strings.Join(allowlist, ", "))}
+	return check{Name: checkEmitterIdentityName, Status: statusWarn, Detail: fmt.Sprintf("exe_path %s is not in the emitter allowlist [%s]", pc.ExePath, strings.Join(allowlist, ", "))}
 }
 
 // checkSchemaVersion reports whether the receipt's schema version is one this
@@ -461,34 +488,61 @@ func checkEmitterIdentity(r receipt.AgentReceipt, allowlist []string) check {
 // assert anything about a schema it does not model.
 func checkSchemaVersion(r receipt.AgentReceipt) check {
 	if r.Version == "" {
-		return check{Name: "schema version", Status: statusFail, Detail: "receipt carries no schema version"}
+		return check{Name: checkSchemaVersionName, Status: statusFail, Detail: "receipt carries no schema version"}
 	}
 	known := majorVersion(receipt.Version)
 	got := majorVersion(r.Version)
 	if got == "" {
-		return check{Name: "schema version", Status: statusFail, Detail: fmt.Sprintf("unparseable schema version %q", r.Version)}
+		return check{Name: checkSchemaVersionName, Status: statusFail, Detail: fmt.Sprintf("unparseable schema version %q", r.Version)}
 	}
 	if got != known {
-		return check{Name: "schema version", Status: statusFail, Detail: fmt.Sprintf("schema version %s is not known to this verifier (understands %s.x)", r.Version, known)}
+		return check{Name: checkSchemaVersionName, Status: statusFail, Detail: fmt.Sprintf("schema version %s is not known to this verifier (understands %s.x)", r.Version, known)}
 	}
 	if r.Version != receipt.Version {
-		return check{Name: "schema version", Status: statusPass, Detail: fmt.Sprintf("schema version %s is compatible with this verifier's %s", r.Version, receipt.Version)}
+		return check{Name: checkSchemaVersionName, Status: statusPass, Detail: fmt.Sprintf("schema version %s is compatible with this verifier's %s", r.Version, receipt.Version)}
 	}
-	return check{Name: "schema version", Status: statusPass, Detail: fmt.Sprintf("schema version %s", r.Version)}
+	return check{Name: checkSchemaVersionName, Status: statusPass, Detail: fmt.Sprintf("schema version %s", r.Version)}
 }
 
 // checkChainContext reports that the target's sequence position is contiguous
 // with its neighbours (check #6, cross-checking #479): no gap immediately
 // before (the target's own sequence relative to its predecessor) and none
-// immediately after (its successor's sequence).
-func checkChainContext(cv receipt.ChainVerification, idx int) check {
+// immediately after (its successor's sequence). It also surfaces whole-chain
+// structural-integrity violations that the per-receipt signature/hash/sequence
+// booleans don't capture — chain_id splice, receipt-after-terminal, or a
+// chain.status schema invariant (spec §7.3.2–7.3.4) — via structuralErr, so a
+// chain VerifyChain rejected can't yield an all-pass, provenance-confirmed
+// verdict.
+func checkChainContext(cv receipt.ChainVerification, structuralErr string, idx int) check {
 	if !cv.Receipts[idx].SequenceValid {
-		return check{Name: "chain context", Status: statusFail, Detail: fmt.Sprintf("sequence gap at or before index %d", idx)}
+		return check{Name: checkChainContextName, Status: statusFail, Detail: fmt.Sprintf("sequence gap at or before index %d", idx)}
 	}
 	if idx+1 < len(cv.Receipts) && !cv.Receipts[idx+1].SequenceValid {
-		return check{Name: "chain context", Status: statusFail, Detail: fmt.Sprintf("sequence gap immediately after index %d", idx)}
+		return check{Name: checkChainContextName, Status: statusFail, Detail: fmt.Sprintf("sequence gap immediately after index %d", idx)}
 	}
-	return check{Name: "chain context", Status: statusPass, Detail: "sequence position is contiguous with its neighbours"}
+	if structuralErr != "" {
+		return check{Name: checkChainContextName, Status: statusFail, Detail: "chain integrity violation: " + structuralErr}
+	}
+	return check{Name: checkChainContextName, Status: statusPass, Detail: "sequence position is contiguous with its neighbours"}
+}
+
+// structuralErr returns a whole-chain integrity error that VerifyChain reports
+// via cv.Valid/cv.Error but the per-receipt signature/hash/sequence booleans do
+// not reflect — chain_id mismatch, receipt-after-terminal, or a chain.status
+// schema invariant. It returns "" when the chain verifies, or when the failure
+// is already attributable to a per-receipt check (so the dedicated signature /
+// hash linkage / chain-context-sequence checks own the report and this doesn't
+// double-count). Computed once per chain.
+func structuralErr(cv receipt.ChainVerification) string {
+	if cv.Valid {
+		return ""
+	}
+	for _, rv := range cv.Receipts {
+		if !rv.SignatureValid || !rv.HashLinkValid || !rv.SequenceValid {
+			return ""
+		}
+	}
+	return cv.Error
 }
 
 // deriveVerdict reduces the six checks to a provenance conclusion. Any failed
@@ -502,7 +556,7 @@ func deriveVerdict(checks []check) verdict {
 		if c.Status == statusFail {
 			return verdictFailed
 		}
-		if c.Name == "peer credential" && c.Status == statusNA {
+		if c.Name == checkPeerCredentialName && c.Status == statusNA {
 			peerAbsent = true
 		}
 	}

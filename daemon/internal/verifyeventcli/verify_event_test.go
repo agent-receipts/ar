@@ -34,6 +34,7 @@ type recSpec struct {
 	peer          *receipt.PeerCredential // nil = no peer credential (legacy receipt)
 	breakPrevHash bool                    // stamp a bogus previous_receipt_hash to break linkage at this receipt
 	version       string                  // override the schema version ("" = SDK default)
+	terminal      bool                    // mark this receipt chain.terminal: true
 }
 
 // buildStore writes a daemon-shaped DB containing a signed chain built from
@@ -85,8 +86,9 @@ func buildStore(t *testing.T, dir, chainID string, specs []recSpec) (dbPath, pub
 				RiskLevel:      receipt.RiskLow,
 				PeerCredential: spec.peer,
 			},
-			Outcome: receipt.Outcome{Status: receipt.StatusSuccess},
-			Chain:   receipt.Chain{Sequence: seq, PreviousReceiptHash: linkHash, ChainID: chainID},
+			Outcome:  receipt.Outcome{Status: receipt.StatusSuccess},
+			Chain:    receipt.Chain{Sequence: seq, PreviousReceiptHash: linkHash, ChainID: chainID},
+			Terminal: spec.terminal,
 		})
 		if spec.version != "" {
 			unsigned.Version = spec.version
@@ -317,6 +319,62 @@ func TestVerifyEvent_MalformedSchemaVersion_Fails(t *testing.T) {
 	c := findCheck(t, decodeJSON(t, stdout).Results[0], "schema version")
 	if c.Status != statusFail || !strings.Contains(c.Detail, "unparseable") {
 		t.Errorf("schema version = %q (%s), want fail/unparseable", c.Status, c.Detail)
+	}
+}
+
+// A receipt-after-terminal violation makes VerifyChain reject the whole chain
+// without tripping any per-receipt signature/hash/sequence boolean. verify-event
+// must still fail it (via chain context) rather than confirming provenance.
+func TestVerifyEvent_ReceiptAfterTerminal_Fails(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath, ids := buildStore(t, dir, "chain-1", []recSpec{
+		{peer: linuxPeer("/usr/bin/mcp-proxy"), terminal: true},
+		{peer: linuxPeer("/usr/bin/mcp-proxy")}, // follows a terminal receipt — spec §7.3.2 violation
+	})
+
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--id", ids[0],
+		"--json",
+	})
+	if code != ExitVerifyFailed {
+		t.Fatalf("exit = %d, want %d (stderr=%s)", code, ExitVerifyFailed, stderr)
+	}
+	r := decodeJSON(t, stdout).Results[0]
+	if r.Verdict != verdictFailed {
+		t.Errorf("verdict = %q, want %q", r.Verdict, verdictFailed)
+	}
+	c := findCheck(t, r, "chain context")
+	if c.Status != statusFail || !strings.Contains(c.Detail, "chain integrity violation") {
+		t.Errorf("chain context = %q (%s), want fail with chain-integrity detail", c.Status, c.Detail)
+	}
+}
+
+// A peer credential with an unrecognized platform can't be interpreted, so it is
+// reported n/a (no provenance evidence) rather than confirmed.
+func TestVerifyEvent_UnknownPeerPlatform_NoProvenance(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath, ids := buildStore(t, dir, "chain-1", []recSpec{
+		{peer: &receipt.PeerCredential{Platform: "plan9", PID: 7}},
+	})
+
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--id", ids[0],
+		"--json",
+	})
+	if code != ExitNoProvenance {
+		t.Fatalf("exit = %d, want %d (stderr=%s)", code, ExitNoProvenance, stderr)
+	}
+	r := decodeJSON(t, stdout).Results[0]
+	if r.Verdict != verdictNoProvenance {
+		t.Errorf("verdict = %q, want %q", r.Verdict, verdictNoProvenance)
+	}
+	c := findCheck(t, r, "peer credential")
+	if c.Status != statusNA || !strings.Contains(c.Detail, "unrecognized peer platform") {
+		t.Errorf("peer credential = %q (%s), want n/a with unrecognized-platform detail", c.Status, c.Detail)
 	}
 }
 
