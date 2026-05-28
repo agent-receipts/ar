@@ -10,14 +10,16 @@ import (
 	"github.com/agent-receipts/ar/daemon/internal/listcli"
 	"github.com/agent-receipts/ar/daemon/internal/showcli"
 	"github.com/agent-receipts/ar/daemon/internal/verifycli"
+	"github.com/agent-receipts/ar/daemon/internal/verifyeventcli"
 )
 
 const usage = `Usage: agent-receipts <command> [flags]
 
 Commands:
-  list     List recent receipts from the store.
-  show     Print the full fields of a single receipt by sequence number.
-  verify   Verify a stored chain's signatures and hash links.
+  list          List recent receipts from the store.
+  show          Print the full fields of a single receipt by sequence number.
+  verify        Verify a stored chain's signatures and hash links.
+  verify-event  Verify one historical receipt's end-to-end pipeline provenance.
 
 Run 'agent-receipts <command> -h' for command-specific flags.
 `
@@ -34,6 +36,8 @@ func main() {
 		os.Exit(showcli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
 	case "verify":
 		os.Exit(verifycli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
+	case "verify-event":
+		os.Exit(verifyeventcli.Run(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
 	case "-h", "--help", "help":
 		fmt.Fprint(os.Stdout, usage)
 		os.Exit(verifycli.ExitOK)
