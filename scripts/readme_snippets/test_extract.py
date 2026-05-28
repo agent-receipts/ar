@@ -238,6 +238,29 @@ st.Open("x")
     assert 'st "github.com/agent-receipts/ar/sdk/go/store"' in unit.code
 
 
+def test_mdx_jsx_comment_directive() -> None:
+    # MDX can't use HTML comments; the JSX comment form must be recognised.
+    text = """
+{/* snippet-check: skip */}
+```python
+from agent_receipts import x
+```
+"""
+    (block,) = extract.parse_blocks(text)
+    assert block.directive == "skip"
+
+
+def test_mdx_jsx_comment_no_run() -> None:
+    text = """
+{/* snippet-check: no-run */}
+```typescript
+import { KMSSigner } from "@agnt-rcpt/sdk-ts";
+```
+"""
+    (unit,) = extract.build_units("page.mdx", text, "ts")
+    assert unit.run is False
+
+
 def test_default_unit_is_runnable() -> None:
     text = "```python\nfrom agent_receipts import create_receipt\ncreate_receipt()\n```\n"
     (unit,) = extract.build_units("R.md", text, "py")
