@@ -77,9 +77,9 @@ jobs:
         with:
           packages-dir: sdk/py/dist/
 
-  # Release-blocking gate: the just-published package must satisfy the code
-  # snippets in the READMEs. Runs after publish so the version is live on PyPI;
-  # a drifted snippet turns the release red.
+  # Gate #1: the just-published package must satisfy the code snippets in the
+  # READMEs. Runs after publish so the version is live on PyPI; a drifted
+  # snippet turns the release red.
   readme-snippets:
     needs: release
     runs-on: ubuntu-latest
@@ -92,3 +92,23 @@ jobs:
           python-version: "3.13"
       - name: Verify published README snippets type-check
         run: python3 scripts/readme_snippets/check.py --lang py --source published README.md sdk/py/README.md
+
+  # Gate #2: verify PyPI resolved exactly the tagged version.
+  # Asserts version identity: `pip install agent-receipts==X.Y.Z` returns
+  # exactly X.Y.Z, not a yank-substitute or nearest match.
+  release-verify:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+      - name: Verify published version identity (Gate #2)
+        run: |
+          VERSION="${GITHUB_REF_NAME#sdk-py-v}"
+          python3 scripts/release_verify/check.py --lang py --version "$VERSION"
+      - name: Run unit tests for release-verify gate
+        run: python3 scripts/release_verify/test_check.py
