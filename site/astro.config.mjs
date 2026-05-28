@@ -112,6 +112,15 @@ export default defineConfig({
           ],
         },
         {
+          label: "Deployment",
+          items: [
+            {
+              label: "Ephemeral Compute",
+              slug: "deployment/ephemeral-compute",
+            },
+          ],
+        },
+        {
           label: "MCP Proxy",
           items: [
             { label: "Overview", slug: "mcp-proxy/overview" },
