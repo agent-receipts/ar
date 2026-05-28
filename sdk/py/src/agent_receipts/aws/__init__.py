@@ -1,6 +1,7 @@
 """AWS adapters for the Agent Receipts SDK.
 
-Requires the optional ``aws`` extra: ``pip install agent-receipts[aws]``.
+Install the optional ``aws`` extra (``pip install agent-receipts[aws]``) to use
+the default boto3-backed client; injecting your own ``client`` needs no AWS SDK.
 """
 
 from __future__ import annotations

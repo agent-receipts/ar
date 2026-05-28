@@ -43,9 +43,13 @@ class Signer(Protocol):
     protocol; it is declared here so adapters satisfy a single contract.
     """
 
-    def sign(self, message: bytes) -> bytes: ...
+    def sign(self, message: bytes) -> bytes:
+        """Return the raw Ed25519 signature over ``message``."""
+        raise NotImplementedError
 
-    def get_public_key(self) -> bytes: ...
+    def get_public_key(self) -> bytes:
+        """Return the raw 32-byte Ed25519 public key (RFC 8032 §5.1.5)."""
+        raise NotImplementedError
 
 
 class KMSClient(Protocol):
@@ -62,9 +66,11 @@ class KMSClient(Protocol):
         Message: bytes,
         SigningAlgorithm: str,
         MessageType: str,
-    ) -> Mapping[str, Any]: ...
+    ) -> Mapping[str, Any]:
+        raise NotImplementedError
 
-    def get_public_key(self, *, KeyId: str) -> Mapping[str, Any]: ...
+    def get_public_key(self, *, KeyId: str) -> Mapping[str, Any]:
+        raise NotImplementedError
 
 
 class KMSSignerError(Exception):
