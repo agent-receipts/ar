@@ -88,6 +88,7 @@ your app. The call stays non-blocking (bounded by the dial + write timeout);
 pass `best_effort=True` to opt into loss-tolerant emission (`emit()` returns
 `None` on transport failure).
 
+<!-- snippet-check: no-run -->
 ```python
 from agent_receipts import DaemonEmitter
 
@@ -161,6 +162,7 @@ you sign with `sign_receipt`, shown in the [in-process appendix](#appendix-in-pr
 - **`CompositeEmitter`** (fan-out), **`BufferingEmitter`** (batching), and
   **`InMemoryEmitter`** (testing) round out the set.
 
+<!-- snippet-check: no-run -->
 ```python
 from agent_receipts import (
     AgentReceipt,
@@ -194,6 +196,7 @@ never leaves AWS KMS:
 pip install "agent-receipts[aws]"
 ```
 
+<!-- snippet-check: no-run -->
 ```python
 from agent_receipts.aws import KMSSigner
 

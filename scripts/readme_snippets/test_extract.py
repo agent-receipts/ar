@@ -238,6 +238,124 @@ st.Open("x")
     assert 'st "github.com/agent-receipts/ar/sdk/go/store"' in unit.code
 
 
+def test_default_unit_is_runnable() -> None:
+    text = "```python\nfrom agent_receipts import create_receipt\ncreate_receipt()\n```\n"
+    (unit,) = extract.build_units("R.md", text, "py")
+    assert unit.run is True
+
+
+def test_no_run_directive_marks_unit_not_runnable() -> None:
+    # `no-run` keeps the block (still type-checked) but flags it as not
+    # executable — the opt-out for snippets that can't run hermetically.
+    text = """
+<!-- snippet-check: no-run -->
+```python
+from agent_receipts.aws import KMSSigner
+
+signer = KMSSigner("arn:aws:kms:...")
+```
+"""
+    (unit,) = extract.build_units("R.md", text, "py")
+    assert unit.run is False
+    assert "KMSSigner" in unit.code  # still present for the type-check gate
+
+
+def test_no_run_block_is_not_excluded_like_skip() -> None:
+    # A `skip` block disappears; a `no-run` block survives (just isn't run).
+    text = """
+```python
+from agent_receipts import create_receipt
+receipt = create_receipt()
+```
+
+<!-- snippet-check: no-run -->
+```python
+from agent_receipts import KMSSigner
+KMSSigner("x")
+```
+"""
+    units = extract.build_units("R.md", text, "py")
+    assert len(units) == 2
+    assert [u.run for u in units] == [True, False]
+
+
+def test_no_run_in_chain_taints_whole_unit() -> None:
+    text = """
+```python
+from agent_receipts import create_receipt
+receipt = create_receipt()
+```
+
+<!-- snippet-check: no-run -->
+```python
+from agent_receipts import verify_receipt
+verify_receipt(receipt)
+```
+"""
+    # The `no-run` block here is a standalone unit (it doesn't say `continues`),
+    # so we get two units; only the second is non-runnable.
+    units = extract.build_units("R.md", text, "py")
+    assert [u.run for u in units] == [True, False]
+
+
+def test_continues_chain_inherits_no_run() -> None:
+    text = """
+<!-- snippet-check: no-run -->
+```python
+from agent_receipts import HttpEmitter
+http = HttpEmitter()
+```
+
+<!-- snippet-check: continues -->
+```python
+http.emit(receipt)
+```
+"""
+    (unit,) = extract.build_units("R.md", text, "py")
+    assert unit.run is False
+
+
+def test_go_run_mode_wraps_bare_snippet_as_main() -> None:
+    text = """
+```go
+import "github.com/agent-receipts/ar/sdk/go/receipt"
+
+keys, _ := receipt.GenerateKeyPair()
+```
+"""
+    (unit,) = extract.build_units("R.md", text, "go", mode="run")
+    assert unit.code.startswith("package main")
+    assert "func main() {" in unit.code
+    assert "_ = keys" in unit.code
+
+
+def test_go_run_mode_keeps_full_program_as_main() -> None:
+    code = (
+        "package main\n\n"
+        'import "github.com/agent-receipts/ar/sdk/go/receipt"\n\n'
+        "func main() { _, _ = receipt.GenerateKeyPair() }"
+    )
+    text = f"```go\n{code}\n```\n"
+    (unit,) = extract.build_units("R.md", text, "go", mode="run")
+    assert unit.code.startswith("package main")
+    assert "func main()" in unit.code
+    assert "package snippet" not in unit.code
+
+
+def test_go_typecheck_mode_still_library_package() -> None:
+    # Default mode is unchanged: a bare snippet becomes a library package.
+    text = """
+```go
+import "github.com/agent-receipts/ar/sdk/go/receipt"
+
+keys, _ := receipt.GenerateKeyPair()
+```
+"""
+    (unit,) = extract.build_units("R.md", text, "go")
+    assert unit.code.startswith("package snippet")
+    assert "func run() {" in unit.code
+
+
 def test_go_continues_is_rejected_loudly() -> None:
     text = """
 ```go
