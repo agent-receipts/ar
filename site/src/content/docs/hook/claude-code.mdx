@@ -42,7 +42,7 @@ Add to `~/.claude/settings.json` to capture tool calls across all projects. Use 
 After running any Claude Code tool (e.g. a `Bash` command), check the dashboard — receipts with `channel: claude-code` should appear alongside any MCP receipts from `mcp-proxy`.
 
 :::note
-`agent-receipts list` is not yet implemented ([#410](https://github.com/agent-receipts/ar/issues/410)). Use the dashboard to inspect receipts in the interim.
+You can also inspect receipts from the command line: `agent-receipts list` shows recent receipts, and `agent-receipts show <seq>` prints the full fields of a single receipt by sequence number.
 :::
 
 ## What Claude Code sends

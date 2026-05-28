@@ -227,6 +227,26 @@ The paths above use the default fallback location (`~/.local/share/agent-receipt
 
 A successful run prints the chain length and confirms hash linkage and signatures are intact. This is the command auditors and operators should use after any session.
 
+## Inspect a single receipt
+
+`agent-receipts show <seq>` prints the full fields of one receipt by its chain sequence number (1-indexed) — issuer, chain id, action type and tool, parameters hash, outcome, signature, and any action-specific payload (such as the drop count on an `events_dropped` receipt). Like `verify`, it opens the store read-only, so it is safe to run while the daemon is writing.
+
+```bash
+AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
+  agent-receipts show 42
+```
+
+Add `--json` for the raw receipt JSON instead of the human-readable table:
+
+```bash
+AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
+  agent-receipts show 42 --json
+```
+
+`--chain-id` is required only when the store holds more than one chain; with a single chain it is auto-detected. Without it on a multi-chain store, the command lists the available chain ids and exits with a usage error.
+
+Exit codes are stable for scripting: `0` when the receipt is found and printed, `1` when there is no receipt at the requested sequence (or the store is empty), and `2` for a usage error (bad flags, ambiguous chain, or an unreadable database).
+
 ## Migrating from pre-v0.8 in-process signing
 
 **Chains are abandoned at the cutover.** The daemon starts a fresh chain at seq=1. There is no migration path for pre-cutover chains — do not attempt to resume them under the daemon.
