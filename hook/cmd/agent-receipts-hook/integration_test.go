@@ -205,7 +205,7 @@ func TestIntegration_ClaudeCodeFrame(t *testing.T) {
 	}
 }
 
-// TestIntegration_DaemonDown_SurfacesError verifies that by default (ADR-0024,
+// TestIntegration_DaemonDown_SurfacesError verifies that by default (ADR-0025,
 // the mode the hook uses), Emit returns an error when the daemon socket is
 // unreachable. The hook then exits non-zero to surface the failure to the agent
 // runtime. Latency must still be bounded by the dial timeout so the agent is
@@ -242,7 +242,7 @@ func TestIntegration_DaemonDown_SurfacesError(t *testing.T) {
 	emitErr := em.Emit(context.Background(), ev)
 	elapsed := time.Since(start)
 
-	// By default (ADR-0024), a missing daemon must surface as an error.
+	// By default (ADR-0025), a missing daemon must surface as an error.
 	if emitErr == nil {
 		t.Error("Emit returned nil; want error when daemon is unreachable")
 	}
@@ -256,7 +256,7 @@ func TestIntegration_DaemonDown_SurfacesError(t *testing.T) {
 
 // TestIntegration_DaemonDown_BestEffort verifies that with WithBestEffort, the
 // loss-tolerant behaviour is available: Emit returns nil quickly when the
-// daemon socket is unreachable (ADR-0024 opt-out).
+// daemon socket is unreachable (ADR-0025 opt-out).
 func TestIntegration_DaemonDown_BestEffort(t *testing.T) {
 	dir := shortSocketDir(t)
 	// No listener started — socket path doesn't exist.
