@@ -6,7 +6,7 @@ description: How to audit remote HTTP/SSE MCP servers — like the Atlassian Rem
 The Agent Receipts proxy expects an upstream MCP server it can spawn as a local stdio process. A growing class of MCP servers — **Atlassian, Slack, Linear, HubSpot, Notion, and others** — are hosted as remote HTTP/SSE endpoints behind OAuth instead. To audit those today, compose [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) in front of `mcp-proxy`: `mcp-remote` handles the OAuth dance and exposes a stdio MCP transport, which the proxy then wraps as it would any local server.
 
 :::note[Why this is its own page]
-The composition pattern works, but a few things differ from local-server setups: ports stack up, OAuth is invisible to the proxy, and bundled taxonomies are what give risk scoring meaning out of the box. Native HTTP/SSE support inside `mcp-proxy` is tracked in [issue #227](https://github.com/agent-receipts/ar/issues/227); until that lands, this page is the supported path.
+The composition pattern works, but a few things differ from local-server setups: ports stack up, OAuth is invisible to the proxy, and the proxy's prefix-based operation classification drives risk scoring. Native HTTP/SSE support inside `mcp-proxy` is tracked in [issue #227](https://github.com/agent-receipts/ar/issues/227); until that lands, this page is the supported path.
 :::
 
 ## How the composition works
@@ -15,7 +15,7 @@ The composition pattern works, but a few things differ from local-server setups:
 MCP Client (Claude / Codex)
         │  stdio
         ▼
-   mcp-proxy   ◄── audits, scores, signs receipts
+   mcp-proxy   ◄── audits, scores, forwards to daemon
         │  stdio
         ▼
    mcp-remote  ◄── OAuth flow, token refresh, transport bridge
