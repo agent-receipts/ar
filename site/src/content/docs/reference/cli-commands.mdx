@@ -1,13 +1,21 @@
 ---
 title: CLI Commands
-description: Command reference for the Agent Receipts CLI tools — mcp-proxy audit commands and agent-receipts-hook.
+description: Command reference for the Agent Receipts CLI tools — the mcp-proxy policy proxy, the agent-receipts read/verify CLI, and agent-receipts-hook.
 ---
 
-This page covers the `mcp-proxy` audit subcommands and the `agent-receipts-hook` PostToolUse hook binary.
+This page covers three binaries:
 
-> The default `-db` and `-receipt-db` paths shown below resolve via Go's `os.UserHomeDir()`. On Unix and macOS this is `$HOME`; on Windows this uses the OS user home directory, typically `%USERPROFILE%`.
+- **`mcp-proxy`** — wraps an MCP server, enforces policy, and forwards completed tool-call events to `agent-receipts-daemon`. Since v0.9.0 the proxy holds **no store of its own** — signing, chaining, and persistence are the daemon's job ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). It has no signing key and no `list`/`verify` subcommands.
+- **`agent-receipts`** — the daemon's read-side companion CLI. Lists, shows, and verifies receipts from the daemon-written store. Installed alongside `agent-receipts-daemon` (Homebrew installs both).
+- **`agent-receipts-hook`** — the PostToolUse hook binary that captures native host tool calls.
 
-## `mcp-proxy -version`
+> The `agent-receipts` `--db` and `--public-key` defaults resolve via the same per-user paths the daemon uses (`$XDG_DATA_HOME/agent-receipts/`, falling back to `~/.local/share/agent-receipts/`). See [Daemon Setup](/getting-started/daemon-setup/) for how those paths are chosen and how to override them.
+
+## `mcp-proxy`
+
+`mcp-proxy` has three subcommands — `serve` (the default), `doctor`, and `init` — plus `-version`. There are no audit subcommands on the proxy; querying and verifying receipts is done with [`agent-receipts`](#agent-receipts).
+
+### `mcp-proxy -version`
 
 Print the version and exit.
 
@@ -16,153 +24,29 @@ mcp-proxy -version
 # mcp-proxy vX.Y.Z
 ```
 
-## `mcp-proxy list`
+### `mcp-proxy serve`
 
-List receipts from the audit store. Results are sorted **newest first** — the most recent receipts appear at the top. Default limit is 50.
-
-```bash
-mcp-proxy list                            # latest 50 receipts, newest first
-mcp-proxy list -risk high                 # filter by risk level
-mcp-proxy list -action data.api.read      # filter by action type (taxonomy value)
-mcp-proxy list -chain <chain-id>          # filter by chain
-mcp-proxy list -limit 100                 # limit results
-mcp-proxy list -json                      # JSON output
-mcp-proxy list -f                         # tail-like: stream new receipts live
-mcp-proxy list --follow --interval 1s     # custom poll interval
-```
-
-| Flag | Description |
-|------|-------------|
-| `-risk` | Filter by risk level: `low`, `medium`, `high`, `critical` |
-| `-action` | Filter by action type |
-| `-chain` | Filter by chain ID |
-| `-limit` | Maximum number of receipts to return (default: `50`) |
-| `-json` | Output as JSON (NDJSON — one object per line — in `--follow` mode) |
-| `-follow`, `-f` | After the initial listing, keep polling and stream new receipts as they are inserted (`tail -f`-style). Exit with `Ctrl-C`. In `--follow` mode, the startup batch is printed in chronological order (oldest → newest) so it reads continuously with the streamed tail. |
-| `-interval` | Poll interval in `--follow` mode (default: `500ms`) |
-| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
-
-### Example output
-
-```
-$ mcp-proxy list
-ID                     SERVER         TOOL                           ACTION                 RISK     STATUS   TIMESTAMP
----
-urn:receipt:b4b430f9... atlassian      getJiraIssue                   data.api.read          low      success  2026-04-24T02:05:19Z
-urn:receipt:32506b71... atlassian      searchJiraIssuesUsingJql       data.api.read          low      success  2026-04-24T01:56:12Z
-urn:receipt:f5da030f... atlassian      getAccessibleAtlassianResou... data.api.read          low      success  2026-04-24T01:56:06Z
-urn:receipt:a125fd30... github         list_pull_requests             data.api.read          low      success  2026-04-24T01:44:20Z
-urn:receipt:67fede57... github         add_reply_to_pull_reques...    data.api.write         medium   success  2026-04-24T00:51:57Z
-urn:receipt:013bfc43... github         request_copilot_review         data.api.write         medium   success  2026-04-24T00:43:40Z
-urn:receipt:7ae4f1b2... github         issue_write                    data.api.write         medium   success  2026-04-24T00:19:35Z
-urn:receipt:d52ba1fd... github         issue_write                    data.api.write         medium   success  2026-04-24T00:19:25Z
-
-8 receipts
-```
-
-SERVER identifies which MCP server handled the call. It comes from the `-name` flag, defaulting to the wrapped command's basename if `-name` is omitted. TOOL is the raw tool name (truncated at 30 characters). When running multiple proxied servers simultaneously — for example GitHub and Atlassian — the SERVER column is how you tell their receipts apart at a glance.
-
-The `-action` filter matches the ACTION column (taxonomy type, e.g. `data.api.read`), not the TOOL column. Issuer and operator identity isn't shown in the tabular view — use `mcp-proxy list -json` to see it.
-
-## `mcp-proxy inspect`
-
-Show details for a single receipt.
+Wrap an MCP server. `serve` is the default, so the subcommand token is optional — `mcp-proxy <command>` and `mcp-proxy serve <command>` are equivalent. The proxy scores and classifies each tool call, applies policy, and forwards completed events to the daemon over `--socket`.
 
 ```bash
-mcp-proxy inspect <receipt-id>
-mcp-proxy inspect -key public.pem <receipt-id>   # verify signature
+mcp-proxy -name github -issuer-name "Claude Code" github-mcp-server stdio
 ```
 
-| Flag | Description |
-|------|-------------|
-| `-key` | Public key PEM file to verify the receipt signature |
-| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-rules` | (built-in defaults) | Policy rules YAML file |
+| `-name` | (inferred from command) | Server name for the audit trail |
+| `-http` | `none` | HTTP address for the approval listener. Off by default. Pass `127.0.0.1:0` for a random free port or `127.0.0.1:<port>` to pin one. See [Approval Server](/mcp-proxy/approval-ui/). |
+| `-approval-timeout` | `1m0s` | Maximum time to wait for HTTP approval before a paused call is auto-denied |
+| `-socket` | platform default | Unix-domain socket for `agent-receipts-daemon` (env: `AGENTRECEIPTS_SOCKET`). Pass `--socket=""` to disable emission entirely. Emit errors are logged but do not block tool calls. |
+| `-issuer-name` | (auto-detected) | Issuer name, e.g. `Claude Code` (env: `AGENTRECEIPTS_ISSUER_NAME`) |
+| `-issuer-model` | (none) | AI model identifier, e.g. `claude-sonnet-4-6` (env: `AGENTRECEIPTS_ISSUER_MODEL`) |
+| `-operator-id` | (none) | Operator DID (organisation running the agent), e.g. `did:web:anthropic.com` (env: `AGENTRECEIPTS_OPERATOR_ID`) |
+| `-operator-name` | (none) | Operator name, e.g. `Anthropic` (env: `AGENTRECEIPTS_OPERATOR_NAME`) |
 
-## `mcp-proxy verify`
+`-operator-name` requires `-operator-id`. See [Configuration](/mcp-proxy/configuration/) for policy rules, risk scoring, and the approval workflow.
 
-Verify the integrity of a receipt chain -- checks signatures, hash linkage, and sequence numbers.
-
-```bash
-mcp-proxy verify -key public.pem <chain-id>
-```
-
-| Flag | Description |
-|------|-------------|
-| `-key` | Public key PEM file (required) |
-| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
-
-## `mcp-proxy export`
-
-Export a receipt chain as JSON.
-
-```bash
-mcp-proxy export <chain-id>
-mcp-proxy export <chain-id> > chain.json
-```
-
-| Flag | Description |
-|------|-------------|
-| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
-
-## `mcp-proxy stats`
-
-Show aggregate statistics about the audit store.
-
-```bash
-mcp-proxy stats
-mcp-proxy stats -json
-```
-
-| Flag | Description |
-|------|-------------|
-| `-json` | Output as JSON |
-| `-receipt-db` | Receipt store path (default: `$HOME/.local/share/agent-receipts/receipts.db`) |
-
-## `mcp-proxy timing`
-
-Show per-tool timing breakdown from the audit database. Reports average phase durations (policy evaluation, approval wait, upstream call, receipt signing) and p50/p95/p99 percentiles.
-
-```bash
-mcp-proxy timing                              # all sessions
-mcp-proxy timing -session <session-id>        # filter by session
-mcp-proxy timing -json                        # JSON output
-mcp-proxy timing -limit 10                    # top 10 tools
-```
-
-| Flag | Description |
-|------|-------------|
-| `-db` | Audit database path (default: `$HOME/.local/share/agent-receipts/audit.db`) |
-| `-session` | Filter by session ID |
-| `-limit` | Maximum number of tools to show (default: `20`) |
-| `-json` | Output as JSON |
-
-### Example output
-
-```
-$ mcp-proxy timing
-Tool call timing (73 calls)
-
-Per-tool averages:
-TOOL                            COUNT UPSTREAM(us) POLICY(us) RECEIPT(us)  APPROVAL(us)  TOTAL(ms)
-get_file_contents                  21            -          -           -             -        679
-create_or_update_file              15            -          -           -             -       1162
-search_issues                       6       747952          2         468             -        790
-create_issue                        5            -          -           -             -       3742
-create_branch                       5            -          -           -             -       1123
-
-Percentiles:
-PHASE                  p50        p95        p99
-upstream            715744     946737     946737 (us)
-policy_eval              2          5          5 (us)
-receipt_sign           830       2420       2420 (us)
-duration_ms            708       2489      16230 (ms)
-```
-
-Columns with `-` indicate tool calls recorded before timing instrumentation was added. New calls will populate all phase columns automatically.
-
-The data shows that for a GitHub MCP server, upstream API latency dominates (about 716-947ms based on the upstream percentiles shown), while policy evaluation (2-5us) and receipt signing (0.8-2.4ms) add negligible overhead.
-
-## `mcp-proxy doctor`
+### `mcp-proxy doctor`
 
 Diagnose proxy configuration: load and validate the policy rules file, summarise enabled rules by action (`pause`, `block`, `flag`), and optionally probe an approver URL for reachability.
 
@@ -181,59 +65,137 @@ mcp-proxy doctor -json                              # JSON output
 
 **Exit codes:** `0` if the configuration is healthy; `1` if any issues are reported; `2` on flag/usage errors.
 
-## `mcp-proxy init`
+### `mcp-proxy init`
 
-One-command setup: creates `~/.local/share/agent-receipts/`, generates an Ed25519 signing keypair with correct permissions (private key `0600`, public key `0644`), initialises the receipt database, and prints a `claude_desktop_config.json` snippet to stdout.
-
-Safe to re-run — warns and skips key generation if files already exist (use `-force` to overwrite).
+One-command bootstrap: creates the data directory (`~/.local/share/agent-receipts/`, respecting `$XDG_DATA_HOME`) and prints a `claude_desktop_config.json` snippet to stdout with placeholders for your MCP server command. It does **not** generate a signing key — keys belong to the daemon (`agent-receipts-daemon --init`, see [Daemon Setup](/getting-started/daemon-setup/)). Safe to re-run.
 
 ```bash
-mcp-proxy init                              # generate keys for the "default" instance
+mcp-proxy init                              # default instance name
 mcp-proxy init -name github                 # custom instance name
 mcp-proxy init -no-approval                 # omit -http from the printed snippet
 mcp-proxy init -http-port 9000              # custom approval listener port in snippet
-mcp-proxy init -force                       # overwrite existing key files
 ```
 
 | Flag | Description |
 |------|-------------|
-| `-name` | Name for this proxy instance, used in filenames and the config snippet (default: `default`) |
+| `-name` | Name for this proxy instance, used as the snippet key (default: `default`) |
 | `-no-approval` | Omit `-http` from the printed config snippet (no approval server) |
 | `-http-port` | Approval listener port written into the config snippet (default: `7778`) |
-| `-force` | Overwrite existing key files |
 
-**Exit codes:** `0` on success; `1` on setup errors (home directory resolve, key write, DB init); `2` on invalid arguments (out-of-range `-http-port`, invalid `-name`) or flag/usage errors.
+**Exit codes:** `0` on success; `1` on setup errors (home directory resolve, directory create); `2` on invalid arguments (out-of-range `-http-port`, invalid `-name`) or flag/usage errors.
 
-## `mcp-proxy audit-secrets`
+## `agent-receipts`
 
-Scan the audit database for values that match any built-in or custom redaction pattern. Useful after upgrading the proxy, adding new patterns, or as a periodic check that redaction is working as intended.
+The daemon's read-side CLI. Every subcommand opens the store **read-only**, so it is safe to run while the daemon is the active writer, and verification does not require the daemon socket to be reachable. Subcommands: `list`, `show`, `verify`, `verify-event`, `doctor`.
+
+### `agent-receipts list`
+
+List recent receipts, newest first. Default limit is 50.
 
 ```bash
-mcp-proxy audit-secrets                                       # scan with built-in patterns
-mcp-proxy audit-secrets -redact-patterns custom.yaml          # also scan custom patterns
-mcp-proxy audit-secrets -db /path/to/audit.db                 # specify audit DB path
+agent-receipts list                  # latest 50 receipts, newest first
+agent-receipts list -limit 100       # raise the limit
+agent-receipts list -json            # raw JSON array
+agent-receipts list -db /path/to/receipts.db
 ```
 
 | Flag | Description |
 |------|-------------|
-| `-db` | Audit database path (default: `$HOME/.local/share/agent-receipts/audit.db`) |
-| `-redact-patterns` | YAML file with additional patterns to scan for |
+| `-db` | Receipt-store path (default: per-user path; env: `AGENTRECEIPTS_DB`) |
+| `-limit` | Maximum number of receipts to return (default: `50`) |
+| `-json` | Output as a raw JSON array (includes issuer/operator identity and all fields) |
 
-If the database was encrypted at rest (proxy launched with `BEACON_ENCRYPTION_KEY`), set the same env var before running so the scanner can decrypt. Without the key, encrypted rows are reported as `encrypted-no-key` and counted as hits.
-
-Output format — one line per match:
+#### Example output
 
 ```
-messages col=raw row=42 pattern=github_token
-tool_calls col=arguments row=51 json-key=password
-tool_calls col=result row=78 decrypt-error
+$ agent-receipts list
+SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
+8    2026-04-24T02:05:19Z  default  getJiraIssue
+7    2026-04-24T01:58:45Z  default  issue_write
+6    2026-04-24T01:56:12Z  default  searchJiraIssuesUsingJql
+5    2026-04-24T01:45:07Z  default  list_issues
 ```
 
-The scanner reads `messages.raw` (full JSON-RPC payloads) and `tool_calls.arguments` / `tool_calls.result` / `tool_calls.error` — the columns where redaction is applied at write time.
+The tabular view shows the chain sequence, timestamp, chain id, and the tool name (falling back to the action type when a tool name is absent). Issuer and operator identity are not in the tabular view — use `-json` to see them.
 
-**Exit codes:** `0` if no matches found; `1` if one or more matches found; `2` on error.
+### `agent-receipts show`
 
-If matches are found, the raw token values are already in the database. Because the audit log is append-only, the recommended action is to **rotate the secret** and consider the old value compromised.
+Print the full fields of a single receipt by its chain sequence number (1-indexed) — issuer, chain id, action type and tool, parameters hash, outcome, signature, and any action-specific payload.
+
+```bash
+agent-receipts show 42               # human-readable table
+agent-receipts show 42 --json        # raw receipt JSON
+```
+
+| Flag | Description |
+|------|-------------|
+| `-db` | Receipt-store path (default: per-user path; env: `AGENTRECEIPTS_DB`) |
+| `-chain-id` | Chain to read from (env: `AGENTRECEIPTS_CHAIN_ID`); required only when the store holds more than one chain |
+| `-json` | Output the raw receipt JSON instead of the human-readable table |
+
+`--chain-id` is auto-detected with a single chain. On a multi-chain store, omitting it lists the available chain ids and exits with a usage error.
+
+**Exit codes:** `0` when the receipt is found and printed; `1` when there is no receipt at the requested sequence (or the store is empty); `2` on a usage error (bad flags, ambiguous chain, unreadable database).
+
+### `agent-receipts verify`
+
+Verify the integrity of a stored chain — signatures, hash linkage, and sequence numbers — against the daemon's published public key.
+
+```bash
+agent-receipts verify \
+  --public-key ~/.local/share/agent-receipts/signing.key.pub
+```
+
+| Flag | Description |
+|------|-------------|
+| `-db` | Receipt-store path (default: per-user path; env: `AGENTRECEIPTS_DB`) |
+| `-public-key` | PEM-encoded SPKI public key path (env: `AGENTRECEIPTS_PUBLIC_KEY`; defaults to `<key>.pub` derived from `AGENTRECEIPTS_KEY`) |
+| `-chain-id` | Chain id to verify (default: `default`; env: `AGENTRECEIPTS_CHAIN_ID`) |
+
+A successful run prints `Chain <id>: VALID (<n> receipts)`. A tampered chain prints `Chain <id>: BROKEN at receipt <n>` with the failing cause and per-receipt status (`BAD SIGNATURE`, `BAD HASH LINK`, `BAD SEQUENCE`).
+
+**Exit codes:** `0` chain verified; `1` chain failed verification; `2` bad flags or an unreadable DB/key file.
+
+### `agent-receipts verify-event`
+
+Verify a single historical receipt's end-to-end pipeline provenance. Select the receipt by id, by chain head, or by a trailing time window.
+
+```bash
+agent-receipts verify-event --id urn:receipt:a72ee10b...     # one receipt by id
+agent-receipts verify-event --chain-head                     # the most recent receipt
+agent-receipts verify-event --since 24h                      # every receipt in the last day
+```
+
+| Flag | Description |
+|------|-------------|
+| `-id` | Select the receipt with this receipt id |
+| `-chain-head` | Select the most recent receipt in the chain |
+| `-since` | Select every receipt issued within the trailing window (e.g. `10m`, `24h`) |
+| `-db` | Receipt-store path (env: `AGENTRECEIPTS_DB`) |
+| `-public-key` | Public key path (env: `AGENTRECEIPTS_PUBLIC_KEY`) |
+| `-chain-id` | Chain id; selects/filters the chain (env: `AGENTRECEIPTS_CHAIN_ID`) |
+| `-emitter-allowlist` | Comma-separated `exe_path` allowlist of expected emitters (env: `AGENTRECEIPTS_EMITTER_ALLOWLIST`); mismatches warn, never fail |
+| `-json` | Machine-readable JSON output |
+
+### `agent-receipts doctor`
+
+Diagnose pipeline health end-to-end (emitter → socket → daemon → DB → verify), optionally writing a synthetic round-trip event to confirm the full path is live.
+
+```bash
+agent-receipts doctor                  # full health check
+agent-receipts doctor --no-roundtrip   # skip the synthetic write
+agent-receipts doctor --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `-socket` | Daemon socket path (env: `AGENTRECEIPTS_SOCKET`) |
+| `-db` | Receipt-store path (env: `AGENTRECEIPTS_DB`) |
+| `-public-key` | Public key path (env: `AGENTRECEIPTS_PUBLIC_KEY`) |
+| `-chain-id` | Chain id to inspect (default: `default`; env: `AGENTRECEIPTS_CHAIN_ID`) |
+| `-no-roundtrip` | Skip the synthetic round-trip check (no event is written to the chain) |
+| `-warn-as-error` | Exit non-zero when any check warns, not only on failures |
+| `-json` | Structured JSON output |
 
 ## `agent-receipts-hook`
 
