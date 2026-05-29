@@ -261,6 +261,22 @@ import { KMSSigner } from "@agnt-rcpt/sdk-ts";
     assert unit.run is False
 
 
+def test_mismatched_comment_delimiters_are_not_directives() -> None:
+    # The opener fixes the closer: a mismatched pair is invalid directive syntax
+    # and must not silently skip/no-run the snippet. An unrecognised "directive"
+    # leaves the block at its default (checked, runnable).
+    for opener, closer in (("<!--", "*/}"), ("{/*", "-->")):
+        text = f"""
+{opener} snippet-check: skip {closer}
+```python
+from agent_receipts import create_receipt
+create_receipt()
+```
+"""
+        (unit,) = extract.build_units("page.mdx", text, "py")
+        assert unit.run is True, f"{opener} … {closer} should not be a directive"
+
+
 def test_default_unit_is_runnable() -> None:
     text = "```python\nfrom agent_receipts import create_receipt\ncreate_receipt()\n```\n"
     (unit,) = extract.build_units("R.md", text, "py")
