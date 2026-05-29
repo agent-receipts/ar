@@ -57,8 +57,12 @@ _SDK_IMPORT_PATTERN = {
     "py": re.compile(r"\b(?:from|import)\s+agent_receipts\b"),
 }
 
+# The opener fixes the closer: an HTML comment (``<!--``) must close with
+# ``-->`` and a JSX comment (``{/*``) with ``*/}``. The conditional ``(?(html)…)``
+# enforces the matching pair so a mismatched directive (``<!-- … */}``) isn't
+# silently accepted, which would quietly skip or no-run a snippet on invalid syntax.
 _DIRECTIVE_RE = re.compile(
-    r"(?:<!--|\{/\*)\s*snippet-check:\s*(?P<directive>[\w-]+)\s*(?:-->|\*/\})"
+    r"(?:(?P<html><!--)|\{/\*)\s*snippet-check:\s*(?P<directive>[\w-]+)\s*(?(html)-->|\*/\})"
 )
 _FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<ticks>`{3,})(?P<info>.*)$")
 
