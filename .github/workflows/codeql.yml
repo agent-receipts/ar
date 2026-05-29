@@ -1,0 +1,118 @@
+name: CodeQL
+
+# Advanced-setup CodeQL. Requires GitHub's default CodeQL setup to be
+# disabled in repository Settings → Code security → Code scanning; if left
+# enabled both configurations run and double the analysis minutes.
+#
+# Replaces the default setup, which cannot path-filter and runs all four
+# analyzers on every PR — including docs-only ones. See issue #629.
+#
+# Branch-protection contract: the four `Analyze (<language>)` checks always
+# report a status because the `analyze` job always runs. On docs-only PRs the
+# job runs but skips the CodeQL init/analyze steps, so the required checks
+# pass quickly without burning analysis minutes. Non-docs PRs and every push
+# to `main` get the full analysis. This avoids the "required check never
+# fired" stall that workflow-level `paths-ignore` would cause.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan keeps the security tab fresh between merges (parity with
+    # default setup's scheduled run). Off-the-hour minute per GitHub guidance.
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+# Supersede in-progress PR analyses on new pushes, but never cancel a `main`
+# (or scheduled) run — each merge should complete its scan for the security tab.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Detect docs-only changes
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+    steps:
+      # Non-PR events exit early without diffing, so a shallow clone suffices.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: github.event_name != 'pull_request'
+
+      # PR events need full history to compute the diff against the base SHA.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        shell: bash
+        run: |
+          # Non-PR events (push to main, scheduled scan) always analyze.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base='${{ github.event.pull_request.base.sha }}'
+          changed="$(git diff --name-only "$base"...HEAD)"
+          # Skip CodeQL only when *every* changed file is docs (site/**,
+          # docs/**, *.md, *.mdx). Any other file means analyze.
+          if printf '%s\n' "$changed" | grep -qvE '^(site/|docs/)|\.mdx?$'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    needs: changes
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to upload SARIF results to the security tab.
+      security-events: write
+      # Required to fetch CodeQL query packs.
+      packages: read
+      # Read-only access for the actions/contents the analyzers inspect.
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # Go autobuild needs the repo's Go toolchain on PATH; the other
+      # languages use build-mode: none and need no toolchain.
+      - name: Set up Go
+        if: needs.changes.outputs.run == 'true' && matrix.language == 'go'
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.26"
+
+      - name: Initialize CodeQL
+        if: needs.changes.outputs.run == 'true'
+        uses: github/codeql-action/init@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3.36.0
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        if: needs.changes.outputs.run == 'true'
+        uses: github/codeql-action/analyze@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3.36.0
+        with:
+          category: "/language:${{ matrix.language }}"
