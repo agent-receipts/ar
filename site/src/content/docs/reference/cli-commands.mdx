@@ -194,6 +194,7 @@ agent-receipts doctor --json
 | `-public-key` | Public key path (env: `AGENTRECEIPTS_PUBLIC_KEY`) |
 | `-chain-id` | Chain id to inspect (default: `default`; env: `AGENTRECEIPTS_CHAIN_ID`) |
 | `-no-roundtrip` | Skip the synthetic round-trip check (no event is written to the chain) |
+| `-roundtrip-timeout` | How long to wait for the synthetic event to land in the DB (default: `3s`) |
 | `-warn-as-error` | Exit non-zero when any check warns, not only on failures |
 | `-json` | Structured JSON output |
 
