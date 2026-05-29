@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from typing import Protocol, runtime_checkable
 
 from agent_receipts.receipt.signing import KeyPair, generate_key_pair
@@ -20,6 +21,7 @@ _DEV_WARNING = (
 """The one-line, dev-only warning emitted at most once per process."""
 
 # One stderr warning per process, regardless of how many providers are built.
+_dev_warning_lock = threading.Lock()
 _dev_warning_emitted = False
 
 
@@ -68,9 +70,10 @@ class GeneratingKeyProvider:
                 "secret-store key provider"
             )
 
-        if not _dev_warning_emitted:
-            _dev_warning_emitted = True
-            print(_DEV_WARNING, file=sys.stderr)
+        with _dev_warning_lock:
+            if not _dev_warning_emitted:
+                _dev_warning_emitted = True
+                print(_DEV_WARNING, file=sys.stderr)
 
         self._key_pair = generate_key_pair()
 

@@ -49,8 +49,8 @@ var warnWriter io.Writer = os.Stderr
 // GeneratingKeyProvider generates a fresh Ed25519 keypair for development and
 // bootstrap use only. The keypair is stable for the lifetime of the provider.
 //
-// It is explicitly prohibited in production: construct one when
-// AGENTRECEIPTS_PRODUCTION=true and NewGeneratingKeyProvider returns
+// It is explicitly prohibited in production: constructing one when
+// AGENTRECEIPTS_PRODUCTION=true causes NewGeneratingKeyProvider to return
 // ErrProductionKeyProvider before any key is generated.
 type GeneratingKeyProvider struct {
 	keyPair KeyPair

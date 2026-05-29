@@ -3,8 +3,37 @@ import {
 	GeneratingKeyProvider,
 	ProductionKeyProviderError,
 } from "./key-provider.js";
+import { signReceipt, verifyReceipt } from "./signing.js";
+import type { UnsignedAgentReceipt } from "./types.js";
+import { CONTEXT, CREDENTIAL_TYPE, VERSION } from "./types.js";
 
 const ENV_VAR = "AGENTRECEIPTS_PRODUCTION";
+
+function makeUnsignedReceipt(): UnsignedAgentReceipt {
+	return {
+		"@context": CONTEXT,
+		id: "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
+		type: CREDENTIAL_TYPE,
+		version: VERSION,
+		issuer: { id: "did:agent:test-agent" },
+		issuanceDate: "2026-03-29T14:31:00Z",
+		credentialSubject: {
+			principal: { id: "did:user:test-user" },
+			action: {
+				id: "act_001",
+				type: "filesystem.file.read",
+				risk_level: "low",
+				timestamp: "2026-03-29T14:31:00Z",
+			},
+			outcome: { status: "success" },
+			chain: {
+				sequence: 1,
+				previous_receipt_hash: null,
+				chain_id: "chain_test",
+			},
+		},
+	};
+}
 
 describe("GeneratingKeyProvider", () => {
 	const original = process.env[ENV_VAR];
@@ -52,6 +81,15 @@ describe("GeneratingKeyProvider", () => {
 
 		// Stable for the lifetime of the provider.
 		expect(await provider.getKeyPair()).toEqual(kp);
+	});
+
+	it("signs and verifies a receipt with the generated keypair", async () => {
+		const provider = new GeneratingKeyProvider();
+		const kp = await provider.getKeyPair();
+		const unsigned = makeUnsignedReceipt();
+
+		const signed = signReceipt(unsigned, kp.privateKey, "did:agent:test#key-1");
+		expect(verifyReceipt(signed, kp.publicKey)).toBe(true);
 	});
 
 	it("emits exactly one stderr warning per process", async () => {
