@@ -65,7 +65,7 @@ All endpoints require `Authorization: Bearer <token>`, where `<token>` is the va
 | `POST` | `/api/tool-calls/{approval_id}/approve` | Approve a paused call. Unblocks the proxy to forward the request to the MCP server. |
 | `POST` | `/api/tool-calls/{approval_id}/deny` | Deny a paused call. The proxy returns `-32002` to the MCP client. |
 
-There is no `GET /pending` endpoint yet — approvers are expected to watch stderr (or the audit DB) for pending approvals. `{approval_id}` is the ID logged on the `PAUSED` line (distinct from the bearer token, which is printed once at startup):
+There is no `GET /pending` endpoint yet — approvers are expected to watch stderr for pending approvals. `{approval_id}` is the ID logged on the `PAUSED` line (distinct from the bearer token, which is printed once at startup):
 
 ```
 mcp-proxy: PAUSED update_auth_config (rule: pause_high_risk, risk: 70) — approval id: a1b2c3d4...
@@ -157,13 +157,18 @@ done < <(tail -f /path/to/proxy.stderr)
 For local testing only, auto-approve every paused call. This defeats the point of the pause rule — do not run it on anything you care about:
 
 ```bash
-sqlite3 ~/.local/share/agent-receipts/audit.db \
-  "SELECT approval_id FROM tool_calls WHERE policy_action='pause' AND approved_by IS NULL;" |
-while read -r id; do
-  curl -sX POST "http://127.0.0.1:8081/api/tool-calls/$id/approve" \
-    -H "Authorization: Bearer $APPROVAL_TOKEN"
-done
+while read -r line; do
+  case "$line" in
+    *"PAUSED"*)
+      id=$(echo "$line" | sed -n 's/.*approval id: //p')
+      curl -sX POST "http://127.0.0.1:8081/api/tool-calls/$id/approve" \
+        -H "Authorization: Bearer $APPROVAL_TOKEN"
+      ;;
+  esac
+done < <(tail -f /path/to/proxy.stderr)
 ```
+
+Pending approvals live in the proxy's memory (not a database), so the approval ids come from the proxy's stderr `PAUSED` lines — the same source the interactive approver above reads.
 
 ## Auto-start with the MCP client
 

@@ -16,7 +16,7 @@ Both `claude mcp add-json` and `.mcp.json` persist their content as plaintext on
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
-- A signing key pair generated (see below)
+- [`agent-receipts-daemon` installed, initialised, and running](/getting-started/daemon-setup/) — it holds the signing key and writes every receipt
 - Claude Code installed (`npm install -g @anthropic-ai/claude-code`)
 - The MCP server you want to audit. The examples below wrap GitHub's official MCP server:
 
@@ -26,18 +26,20 @@ Both `claude mcp add-json` and `.mcp.json` persist their content as plaintext on
 
   This puts a `github-mcp-server` binary on your `$PATH`. Verify with `which github-mcp-server`.
 
-## Generate a signing key
+## Start the daemon
+
+The proxy holds no signing key of its own — `agent-receipts-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching Claude Code:
 
 ```bash
-mcp-proxy init --name github-proxy
-# creates ~/.local/share/agent-receipts/github-proxy.pem (0600) and ~/.local/share/agent-receipts/github-proxy.pem.pub
+agent-receipts-daemon --init   # one-time: generates the Ed25519 signing key pair
+agent-receipts-daemon          # start the daemon (listens on a Unix socket)
 ```
 
-Re-running `init` is safe — it warns and skips if the key already exists. Use absolute paths everywhere — Claude Code launches MCP servers with a clean environment where `~` expansion and `$PATH` may not behave as expected.
+The proxy reaches the daemon over its default platform socket automatically — no extra flag needed. See [Daemon Setup](/getting-started/daemon-setup/) for install options, socket paths, and running it as a service. Use absolute paths everywhere in the config below — Claude Code launches MCP servers with a clean environment where `~` expansion and `$PATH` may not behave as expected.
 
 ## Register the proxy with Claude Code
 
-Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. Your shell resolves the proxy, key, and server paths at paste time.
+Use `claude mcp add-json` to register a proxied server. The example below wraps `github-mcp-server`. Your shell resolves the proxy and server paths at paste time.
 
 The token needs to reach `mcp-proxy`'s environment **without being written into the stored config**. Pick whichever pattern matches your secrets setup.
 
@@ -65,7 +67,6 @@ JSON_BODY=$(cat <<JSON
     "--",
     "$(which mcp-proxy)",
     "-name", "github",
-    "-key", "$HOME/.local/share/agent-receipts/github-proxy.pem",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -84,7 +85,6 @@ claude mcp add-json github-audited --scope user "$JSON_BODY"
 set OP (which op)
 set MCP_PROXY (which mcp-proxy)
 set GITHUB_MCP (which github-mcp-server)
-set KEY $HOME/.local/share/agent-receipts/github-proxy.pem
 set ENV_FILE $HOME/.local/share/agent-receipts/mcp.env
 
 set json (printf '{
@@ -95,13 +95,12 @@ set json (printf '{
     "--",
     "%s",
     "-name", "github",
-    "-key", "%s",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
     "%s", "stdio"
   ]
-}' $OP $ENV_FILE $MCP_PROXY $KEY $GITHUB_MCP | string collect)
+}' $OP $ENV_FILE $MCP_PROXY $GITHUB_MCP | string collect)
 
 claude mcp add-json github-audited --scope user "$json"
 ```
@@ -121,7 +120,6 @@ JSON_BODY=$(cat <<JSON
   "command": "$(which mcp-proxy)",
   "args": [
     "-name", "github",
-    "-key", "$HOME/.local/share/agent-receipts/github-proxy.pem",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -142,13 +140,10 @@ claude mcp add-json github-audited --scope user "$JSON_BODY"
 ```fish
 set MCP_PROXY (which mcp-proxy)
 set GITHUB_MCP (which github-mcp-server)
-set KEY $HOME/.local/share/agent-receipts/github-proxy.pem
-
 set json (printf '{
   "command": "%s",
   "args": [
     "-name", "github",
-    "-key", "%s",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -157,7 +152,7 @@ set json (printf '{
   "env": {
     "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
   }
-}' $MCP_PROXY $KEY $GITHUB_MCP | string collect)
+}' $MCP_PROXY $GITHUB_MCP | string collect)
 
 claude mcp add-json github-audited --scope user "$json"
 ```
@@ -166,7 +161,7 @@ Set `GITHUB_PERSONAL_ACCESS_TOKEN` in your shell rc (`~/.zshrc`, `~/.config/fish
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
 
-`-issuer-name`, `-operator-id`, and `-operator-name` stamp the signed receipt with the agent and the organisation running it. Setting `-issuer-name` to `Claude Code` here (and to `Codex` in the [Codex integration](/mcp-proxy/codex/)) is what lets you tell at receipt-inspection time which client made a given call — without it, every receipt just shows the default `did:agent:mcp-proxy` issuer. See the [configuration reference](/mcp-proxy/configuration/#cli-flags) for the full set of identity flags.
+`-issuer-name`, `-operator-id`, and `-operator-name` stamp the signed receipt with the agent and the organisation running it. Setting `-issuer-name` to `Claude Code` here (and to `Codex` in the [Codex integration](/mcp-proxy/codex/)) is what lets you tell at receipt-inspection time which client made a given call — without it, every receipt just shows the daemon's default `did:agent-receipts-daemon:local` issuer. See the [configuration reference](/mcp-proxy/configuration/#cli-flags) for the full set of identity flags.
 
 Verify the server is registered:
 
@@ -182,7 +177,6 @@ Since `.mcp.json` is a static JSON file, print the absolute paths you need first
 
 ```bash
 echo "command: $(which mcp-proxy)"
-echo "key:     $HOME/.local/share/agent-receipts/github-proxy.pem"
 echo "server:  $(which github-mcp-server)"
 ```
 
@@ -201,7 +195,6 @@ Point Claude Code at `op run`, same as the `claude mcp add-json` pattern above. 
         "--",
         "/Users/YOU/go/bin/mcp-proxy",
         "-name", "github",
-        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Code",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -223,7 +216,6 @@ Claude Code expands `${VAR}` placeholders at server-launch time, so each develop
       "command": "/Users/YOU/go/bin/mcp-proxy",
       "args": [
         "-name", "github",
-        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Code",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -237,36 +229,32 @@ Claude Code expands `${VAR}` placeholders at server-launch time, so each develop
 }
 ```
 
-The proxy path and key path will need to be consistent across the team, or handled via a wrapper script.
+The proxy path will need to be consistent across the team, or handled via a wrapper script.
 
 ## Verifying receipts
 
-After making tool calls through Claude Code, inspect the receipt store from your terminal:
+The daemon signs and stores every tool call. After making calls through Claude Code, query and verify the store with the `agent-receipts` CLI (installed alongside the daemon). It opens the database read-only, so it is safe to run while the daemon is writing:
 
 ```bash
-# List all receipts (uses the default ~/.local/share/agent-receipts/receipts.db)
-mcp-proxy list
+# List recent receipts (newest first)
+agent-receipts list
 
-# Verify chain integrity
-mcp-proxy verify \
-  -key ~/.local/share/agent-receipts/github-proxy.pem.pub \
-  <chain-id>
+# Verify the chain's signatures and hash links
+agent-receipts verify \
+  --public-key ~/.local/share/agent-receipts/signing.key.pub
 ```
 
 ```
-$ mcp-proxy list
-ID                     SERVER         TOOL                           ACTION                 RISK     STATUS   TIMESTAMP
----
-urn:receipt:a72ee10b... github         list_issues                    data.api.read          low      success  2026-04-24T01:45:07Z
-urn:receipt:a125fd30... github         list_pull_requests             data.api.read          low      success  2026-04-24T01:44:20Z
-urn:receipt:67fede57... github         add_reply_to_pull_reques...    data.api.write         medium   success  2026-04-24T00:51:57Z
-urn:receipt:013bfc43... github         request_copilot_review         data.api.write         medium   success  2026-04-24T00:43:40Z
-urn:receipt:7ae4f1b2... github         issue_write                    data.api.write         medium   success  2026-04-24T00:19:35Z
-
-5 receipts
+$ agent-receipts list
+SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
+5    2026-04-24T01:45:07Z  default  list_issues
+4    2026-04-24T01:44:20Z  default  list_pull_requests
+3    2026-04-24T00:51:57Z  default  add_reply_to_pull_request
+2    2026-04-24T00:43:40Z  default  request_copilot_review
+1    2026-04-24T00:19:35Z  default  issue_write
 ```
 
-Read tools like `list_issues` and `list_pull_requests` show `data.api.read / low`; write tools like `issue_write` show `data.api.write / medium`. The SERVER column reflects the `-name github` flag you passed to `mcp-proxy`.
+`agent-receipts verify` prints `Chain default: VALID (5 receipts)` when signatures and hash links are intact. Inspect a single receipt — including its action type, risk level, and parameters hash — with `agent-receipts show <seq>`. See the [CLI reference](/reference/cli-commands/#agent-receipts) for all subcommands.
 
 ## Gotchas
 
@@ -278,6 +266,6 @@ Read tools like `list_issues` and `list_pull_requests` show `data.api.read / low
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
-**Per-session chain IDs.** By default the proxy generates a new chain ID each session. Pass `-chain <id>` to persist a chain across sessions.
+**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `agent-receipts-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
 
-**Old receipts show `unknown`.** If you upgraded from a version before v0.2.0, existing receipts in the DB will always show `Action: unknown` — the tool name was never stored. Clear the DB and start fresh after upgrading.
+**No receipts appearing?** The daemon must be running *before* Claude Code launches the proxied server, or emits fail. Confirm with `pgrep agent-receipts-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.

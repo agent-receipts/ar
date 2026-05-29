@@ -1,9 +1,9 @@
 ---
 title: MCP Proxy
-description: Transparent audit proxy for MCP servers — classifies and scores tool calls, applies proxy-layer policy rules, signs receipts locally, and forwards events to agent-receipts-daemon when configured.
+description: Transparent audit proxy for MCP servers — classifies and scores tool calls, applies proxy-layer policy rules, and forwards events to agent-receipts-daemon, which signs and stores the receipts.
 ---
 
-The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, Claude Code, etc.) and any MCP server. It intercepts every tool call, classifies and scores it, applies proxy-layer policy rules, redacts sensitive data, and signs and stores an Ed25519 receipt locally. When `agent-receipts-daemon` is configured via `--socket`, it also forwards events to the daemon for an independently signed and stored chain — without modifying the server or client.
+The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, Claude Code, etc.) and any MCP server. It intercepts every tool call, classifies and scores it, and applies proxy-layer policy rules — then forwards the completed event to `agent-receipts-daemon` over a Unix socket. The daemon redacts sensitive data, signs an Ed25519 receipt, hash-chains it, and persists it. The proxy holds no key and no store of its own ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)) — so a compromised proxy cannot rewrite the chain. It does this without modifying the server or client.
 
 **Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy)
 
@@ -17,16 +17,15 @@ Scores that cross 50: `create_token` (write 20 + sensitive 30 = 50), `update_aut
 
 - **Risk scoring** -- scores every tool call 0-100 based on operation type, sensitive keywords, and patterns
 - **Operation classification** -- classifies calls as read, write, delete, or execute by tool name
-- **Action taxonomy** -- classifies tool calls using configurable taxonomy mappings; GitHub and Atlassian MCP servers are covered by bundled taxonomies out of the box
+- **Action taxonomy** -- daemon stores action types as `<channel>.<server>.<tool>`; full taxonomy remapping to canonical types like `data.api.read` is tracked for a future release
 - **MCP prefix stripping** -- automatically strips `mcp__<server>__` prefixes so receipts and classification use clean tool names
 - **Policy rules** (proxy layer) -- YAML rules engine with four actions: pass, flag, pause (approval required), and block
 - **Approval workflows** (proxy layer) -- HTTP endpoints for async approval of paused operations
-- **Cryptographic receipts** -- Ed25519-signed W3C Verifiable Credentials, hash-chained per session; events are also forwarded to `agent-receipts-daemon` when `--socket` is configured
+- **Cryptographic receipts** -- the daemon signs each forwarded event as an Ed25519 W3C Verifiable Credential and hash-chains it; the proxy itself never holds the key
 - **Issuer identity** -- receipts identify the AI agent, model, and operator via CLI flags
 - **Intent tracking** -- groups related tool calls by temporal proximity
-- **Data redaction** -- JSON-aware and pattern-based redaction of secrets before storage
-- **Encryption at rest** -- optional AES-256-GCM encryption of audit data
-- **Audit CLI** -- list, inspect, verify, export, and query receipts from the command line
+- **Data redaction** (daemon) -- JSON-aware and pattern-based redaction of secrets before storage
+- **Audit CLI** -- list, show, and verify receipts with the [`agent-receipts`](/reference/cli-commands/#agent-receipts) CLI
 
 ```mermaid
 flowchart TD
@@ -53,14 +52,13 @@ MCP Client (Claude Desktop / Claude Code)
     |  - classify operation
     |  - score risk
     |  - evaluate policy rules
-    |  - redact sensitive data (local storage)
-    |  - sign receipt (Ed25519) → local SQLite
     |  - forward event (--socket) ─────────────> agent-receipts-daemon
-    v                                                 - sign independently
- MCP Server (any)                                     - append to daemon chain
+    v                                                 - redact sensitive data
+ MCP Server (any)                                     - sign receipt (Ed25519)
+                                                      - hash-chain + persist
 ```
 
-The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, forwards them to the wrapped server, and returns the response. Each tool call produces a locally signed Agent Receipt. When `--socket` points to a running `agent-receipts-daemon`, events are also forwarded for an independently signed chain.
+The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, forwards them to the wrapped server, and returns the response. Each completed tool call is emitted to `agent-receipts-daemon` over `--socket`, which signs it into the receipt chain. Start the daemon before the proxy — see [Daemon Setup](/getting-started/daemon-setup/).
 
 ```mermaid
 graph LR
@@ -81,13 +79,11 @@ brew install agent-receipts/tap/mcp-proxy
 mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 
 # With configuration (example: GitHub's official MCP server — brew install github-mcp-server)
-# -key sets the local signing key (omit for an ephemeral key).
-# Daemon forwarding is a separate path configured via --socket — see Daemon Setup.
+# Receipts are signed and stored by agent-receipts-daemon — start it first (see Daemon Setup).
 mcp-proxy \
   -name github \
-  -key private.pem \
   -rules rules.yaml \
-  -taxonomy taxonomy.json \
+  -issuer-name "Claude Code" \
   github-mcp-server stdio
 ```
 
@@ -108,7 +104,6 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
         "--",
         "/Users/YOU/go/bin/mcp-proxy",
         "-name", "github",
-        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -130,7 +125,6 @@ claude mcp add-json github-audited --scope user '{
   "command": "/Users/YOU/go/bin/mcp-proxy",
   "args": [
     "-name", "github",
-    "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
     "-issuer-name", "Claude Code",
     "-operator-id", "did:web:anthropic.com",
     "-operator-name", "Anthropic",
@@ -161,7 +155,7 @@ Each tool call produces a signed W3C Verifiable Credential. Key fields shown (ab
 ```json
 {
   "issuer": {
-    "id": "did:agent:mcp-proxy",
+    "id": "did:agent-receipts-daemon:local",
     "name": "Claude Code",
     "operator": {
       "id": "did:web:anthropic.com",
@@ -186,22 +180,19 @@ Each tool call produces a signed W3C Verifiable Credential. Key fields shown (ab
 }
 ```
 
-Receipts are Ed25519-signed, hash-chained per session, and stored in a local SQLite database. Use `mcp-proxy list`, `mcp-proxy inspect`, and `mcp-proxy verify` to query and validate them.
+Receipts are Ed25519-signed by the daemon, hash-chained, and stored in a local SQLite database. Use `agent-receipts list`, `agent-receipts show`, and `agent-receipts verify` to query and validate them.
 
-`mcp-proxy list` gives a compact tabular view. The SERVER column is populated from the server name (defaulting to the wrapped command's basename if `-name` is omitted). When you proxy multiple MCP servers — for example GitHub and Atlassian — the SERVER and TOOL columns let you scan activity across all of them at once:
+`agent-receipts list` gives a compact tabular view of the daemon's store. When you proxy multiple MCP servers — for example GitHub and Atlassian — the TOOL column lets you scan activity across all of them at once:
 
 ```
-$ mcp-proxy list
-ID                     SERVER         TOOL                           ACTION                 RISK     STATUS   TIMESTAMP
----
-urn:receipt:b4b430f9... atlassian      getJiraIssue                   data.api.read          low      success  2026-04-24T02:05:19Z
-urn:receipt:103200d1... github         issue_write                    data.api.write         medium   success  2026-04-24T01:58:45Z
-urn:receipt:32506b71... atlassian      searchJiraIssuesUsingJql       data.api.read          low      success  2026-04-24T01:56:12Z
-urn:receipt:f5da030f... atlassian      getAccessibleAtlassianResou... data.api.read          low      success  2026-04-24T01:56:06Z
-urn:receipt:276a6c2a... github         issue_write                    data.api.write         medium   success  2026-04-24T01:48:55Z
-urn:receipt:a72ee10b... github         list_issues                    data.api.read          low      success  2026-04-24T01:45:07Z
-
-6 receipts
+$ agent-receipts list
+SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
+6    2026-04-24T02:05:19Z  default  getJiraIssue
+5    2026-04-24T01:58:45Z  default  issue_write
+4    2026-04-24T01:56:12Z  default  searchJiraIssuesUsingJql
+3    2026-04-24T01:56:06Z  default  getAccessibleAtlassianResources
+2    2026-04-24T01:48:55Z  default  issue_write
+1    2026-04-24T01:45:07Z  default  list_issues
 ```
 
 See [Installation](/mcp-proxy/installation/) to get started, or [Configuration](/mcp-proxy/configuration/) for the full set of options.

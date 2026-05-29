@@ -16,7 +16,7 @@ The default policy includes a `pause_high_risk` rule. When you generate a config
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
-- A signing key pair generated (see below)
+- [`agent-receipts-daemon` installed, initialised, and running](/getting-started/daemon-setup/) — it holds the signing key and writes every receipt
 - The MCP server you want to audit. The example below wraps GitHub's official MCP server:
 
   ```bash
@@ -25,15 +25,18 @@ The default policy includes a `pause_high_risk` rule. When you generate a config
 
   This puts a `github-mcp-server` binary on your `$PATH`. Verify with `which github-mcp-server`.
 
-## Generate a signing key
+## Start the daemon
+
+The proxy holds no signing key of its own — `agent-receipts-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching Claude Desktop:
 
 ```bash
-mcp-proxy init --name github-proxy
-# creates ~/.local/share/agent-receipts/github-proxy.pem (0600) and ~/.local/share/agent-receipts/github-proxy.pem.pub
-# prints a claude_desktop_config.json snippet — paste it as a starting point
+agent-receipts-daemon --init   # one-time: generates the Ed25519 signing key pair
+agent-receipts-daemon          # start the daemon (listens on a Unix socket)
 ```
 
-Re-running `init` is safe — it warns and skips if the key already exists. Use absolute paths everywhere — Claude Desktop launches MCP servers with a clean environment where `~` expansion and `$PATH` are not available.
+The proxy reaches the daemon over its default platform socket automatically. To run the daemon as a background service on macOS, see [Daemon Setup](/getting-started/daemon-setup/). Use absolute paths everywhere — Claude Desktop launches MCP servers with a clean environment where `~` expansion and `$PATH` are not available.
+
+You can scaffold a starting config with `mcp-proxy init`, which prints a `claude_desktop_config.json` snippet to paste below.
 
 ## Configure claude_desktop_config.json
 
@@ -43,7 +46,6 @@ Claude Desktop doesn't shell-expand config values, so paste absolute paths. On m
 
 ```bash
 echo "command: $(which mcp-proxy)"
-echo "key:     $HOME/.local/share/agent-receipts/github-proxy.pem"
 echo "server:  $(which github-mcp-server)"
 ```
 
@@ -77,7 +79,6 @@ Point Claude Desktop at `op run` — it resolves the `op://` reference at exec t
         "--",
         "/Users/YOU/go/bin/mcp-proxy",
         "-name", "github",
-        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -120,7 +121,6 @@ Point Claude Desktop at the launcher — no `env` block, since the script sets i
       "command": "/Users/YOU/.local/share/agent-receipts/run-mcp-proxy-github.sh",
       "args": [
         "-name", "github",
-        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -142,7 +142,6 @@ Useful for kicking the tyres against a throwaway PAT before wiring up secret man
       "command": "/Users/YOU/go/bin/mcp-proxy",
       "args": [
         "-name", "github",
-        "-key", "/Users/YOU/.local/share/agent-receipts/github-proxy.pem",
         "-issuer-name", "Claude Desktop",
         "-operator-id", "did:web:anthropic.com",
         "-operator-name", "Anthropic",
@@ -162,31 +161,27 @@ Restart Claude Desktop. The GitHub MCP server now runs behind the proxy — ever
 
 ## Verifying receipts
 
-After making tool calls, inspect the receipt store from your terminal:
+The daemon signs and stores every tool call. After making calls through Claude Desktop, query and verify the store with the `agent-receipts` CLI (installed alongside the daemon). It opens the database read-only, so it is safe to run while the daemon is writing:
 
 ```bash
-# List all receipts (uses the default ~/.local/share/agent-receipts/receipts.db)
-mcp-proxy list
+# List recent receipts (newest first)
+agent-receipts list
 
-# Verify chain integrity
-mcp-proxy verify \
-  -key ~/.local/share/agent-receipts/github-proxy.pem.pub \
-  <chain-id>
+# Verify the chain's signatures and hash links
+agent-receipts verify \
+  --public-key ~/.local/share/agent-receipts/signing.key.pub
 ```
 
 ```
-$ mcp-proxy list
-ID                     SERVER         TOOL                           ACTION                 RISK     STATUS   TIMESTAMP
----
-urn:receipt:64b00b98... github         issue_write                    data.api.write         medium   success  2026-04-24T01:55:09Z
-urn:receipt:276a6c2a... github         issue_write                    data.api.write         medium   success  2026-04-24T01:48:55Z
-urn:receipt:a72ee10b... github         list_issues                    data.api.read          low      success  2026-04-24T01:45:07Z
-urn:receipt:a125fd30... github         list_pull_requests             data.api.read          low      success  2026-04-24T01:44:20Z
-
-4 receipts
+$ agent-receipts list
+SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
+4    2026-04-24T01:55:09Z  default  issue_write
+3    2026-04-24T01:48:55Z  default  list_issues
+2    2026-04-24T01:44:20Z  default  list_pull_requests
+1    2026-04-24T01:40:02Z  default  get_issue
 ```
 
-The SERVER column reflects the `-name github` flag you passed to `mcp-proxy`. Read operations show `data.api.read / low`; writes show `data.api.write / medium`.
+`agent-receipts verify` prints `Chain default: VALID (4 receipts)` when signatures and hash links are intact. Inspect a single receipt — including its action type, risk level, and parameters hash — with `agent-receipts show <seq>`. See the [CLI reference](/reference/cli-commands/#agent-receipts) for all subcommands.
 
 ## Gotchas
 
@@ -194,6 +189,6 @@ The SERVER column reflects the `-name github` flag you passed to `mcp-proxy`. Re
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
-**Per-session chain IDs.** By default the proxy generates a new chain ID each session. Pass `-chain <id>` to persist a chain across sessions.
+**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `agent-receipts-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
 
-**Old receipts show `unknown`.** If you upgraded from a version before v0.2.0, existing receipts in the DB will always show `Action: unknown` — the tool name was never stored. Clear the DB and start fresh after upgrading.
+**No receipts appearing?** The daemon must be running *before* Claude Desktop launches the proxied server, or emits fail. Confirm with `pgrep agent-receipts-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.

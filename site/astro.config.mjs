@@ -131,6 +131,14 @@ export default defineConfig({
             { label: "Claude Desktop", slug: "mcp-proxy/claude-desktop" },
             { label: "Claude Code", slug: "mcp-proxy/claude-code" },
             { label: "Codex", slug: "mcp-proxy/codex" },
+            { label: "Cursor", slug: "mcp-proxy/cursor" },
+            { label: "Windsurf", slug: "mcp-proxy/windsurf" },
+            { label: "VS Code Copilot", slug: "mcp-proxy/vscode-copilot" },
+            {
+              label: "JetBrains AI Assistant",
+              slug: "mcp-proxy/jetbrains",
+            },
+            { label: "Cline", slug: "mcp-proxy/cline" },
           ],
         },
         {
