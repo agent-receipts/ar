@@ -20,7 +20,7 @@
 
 ## Last updated
 
-`2026-05-29` — #643 (emit-failure-contract / ADR-0025) merged, closing closure-2; #664 (Gate #2 release round-trip) merged, closes #651; #666 (Gate #1 execute mode for README snippets) merged, closes #650; #667 (Gate #5 MDX snippet execution) merged, closes #652; issue #599 closed manually; `collector-tagging` (#638) farmed off.
+`2026-05-29` — #643 (emit-failure-contract / ADR-0025) merged, closing closure-2; #664 (Gate #2 release round-trip) merged, closes #651; #666 (Gate #1 execute mode for README snippets) merged, closes #650; #667 (Gate #5 MDX snippet execution) merged, closes #652; issue #599 closed manually; `collector-tagging` (#638) farmed off. Background sweep farmed off 7 additional items: #476, #473, #488, #462, #495, #622, #629 (all in-flight).
 
 > **ADR numbering note.** The numbers settled after three landed in close succession: **ADR-0023** = canonical Go module path (#640/#642), **ADR-0024** = project verification contract (#658), **ADR-0025** = emit failure contract (#643, merged). Earlier snapshots had 0024/0025 swapped.
 
@@ -265,6 +265,59 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 ---
 
+### Activated 2026-05-29 — background items now in-flight
+
+#### `production-key-guard` (#476)
+- state: in-flight (farmed)
+- depends_on: []
+- issues: #476 (open)
+- farmable: yes
+- notes: throw `ProductionKeyProviderError` when `AGENTRECEIPTS_PRODUCTION=true`, loud warning otherwise. Fully spec'd in ADR-0019 §S2. All three SDKs.
+
+#### `ts-hpke-hand-roll` (#473)
+- state: in-flight (farmed)
+- depends_on: []
+- issues: #473 (open)
+- farmable: yes
+- notes: replace `@hpke/core` with hand-rolled HPKE from `node:crypto`. RFC 9180 §7.1.3 DeriveKeyPair gotcha documented; existing test vectors to pin against. TS SDK only. 0.9.0 stable still ships `@hpke/core` lazy-loaded; this is the tracked removal.
+
+#### `sequential-emit-under-parallel` (#488)
+- state: in-flight (farmed)
+- depends_on: []
+- issues: #488 (open)
+- farmable: yes
+- notes: queue serialisation inside SDK + warning on concurrent `emit()` calls. Clear spec. All three SDKs.
+
+#### `env-marker-secondary-host` (#462)
+- state: in-flight (farmed)
+- depends_on: []
+- issues: #462 (open)
+- farmable: yes
+- notes: env-var-driven secondary host detection in mcp-proxy. Env var table and fallback logic fully specified; it's a TODO in `detect_linux.go`.
+
+#### `editor-integration-guides` (#495)
+- state: in-flight (farmed)
+- depends_on: []
+- issues: #495 (open)
+- farmable: yes
+- notes: MCP proxy integration guides for Cursor, Windsurf, VS Code Copilot, JetBrains, Cline. Pure docs work using the Claude Code guide as template.
+
+#### `aivs-cg-landscape` (#622)
+- state: in-flight (farmed)
+- depends_on: []
+- issues: #622 (open)
+- farmable: yes
+- notes: add W3C AIVS Community Group entry to `landscape.mdx`. Content and suggested framing given in the issue.
+
+#### `codeql-advanced-setup` (#629)
+- state: in-flight (farmed)
+- depends_on: []
+- issues: #629 (open)
+- farmable: yes
+- notes: migrate CodeQL from default to advanced setup with `paths-ignore` for docs-only PRs. CI workflow change — goes through a PR per convention.
+
+---
+
 ## Background — not in the active graph but worth noting
 
 - **`v1-blocker` work:** #534 (AWS KMS signers) shipped for TS + Python (#663) — confirm whether Go KMS coverage is in scope/remaining. #535 (ephemeral-compute deployment guide) shipped (#660).
@@ -280,12 +333,19 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 As of `2026-05-29`, applying the "open + dependencies-met + no in-flight conflicts" rule:
 
-1. **`collector-tagging` (#638)** — farmed off 2026-05-29. Push the `collector/v0.13.0` tag and verify `go install ...collector@latest`. Unblocks `d5-release-verification`.
+All currently farmable nodes have been dispatched. In-flight:
 
-Unlocks after the above:
-- **`d5-release-verification` (#639)** — becomes farmable once #638 closes.
+- `collector-tagging` (#638) — tag push + go install verify; unblocks `d5-release-verification` (#639)
+- `production-key-guard` (#476) — production guard across all 3 SDKs
+- `ts-hpke-hand-roll` (#473) — replace `@hpke/core` in TS SDK
+- `sequential-emit-under-parallel` (#488) — serialised emit under concurrent calls, all 3 SDKs
+- `env-marker-secondary-host` (#462) — mcp-proxy secondary host detection
+- `editor-integration-guides` (#495) — editor integration docs
+- `aivs-cg-landscape` (#622) — landscape.mdx W3C AIVS CG entry
+- `codeql-advanced-setup` (#629) — CodeQL advanced config with paths-ignore
 
-No other active nodes are blocked or in review.
+Unlocks when `collector-tagging` closes:
+- **`d5-release-verification` (#639)**
 
 ---
 
