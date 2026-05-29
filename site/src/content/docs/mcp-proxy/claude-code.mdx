@@ -161,7 +161,7 @@ Set `GITHUB_PERSONAL_ACCESS_TOKEN` in your shell rc (`~/.zshrc`, `~/.config/fish
 
 `--scope user` makes the server available across all projects. Omit it for project-local scope only.
 
-`-issuer-name`, `-operator-id`, and `-operator-name` stamp the signed receipt with the agent and the organisation running it. Setting `-issuer-name` to `Claude Code` here (and to `Codex` in the [Codex integration](/mcp-proxy/codex/)) is what lets you tell at receipt-inspection time which client made a given call — without it, every receipt just shows the default `did:agent:mcp-proxy` issuer. See the [configuration reference](/mcp-proxy/configuration/#cli-flags) for the full set of identity flags.
+`-issuer-name`, `-operator-id`, and `-operator-name` stamp the signed receipt with the agent and the organisation running it. Setting `-issuer-name` to `Claude Code` here (and to `Codex` in the [Codex integration](/mcp-proxy/codex/)) is what lets you tell at receipt-inspection time which client made a given call — without it, every receipt just shows the daemon's default `did:agent-receipts-daemon:local` issuer. See the [configuration reference](/mcp-proxy/configuration/#cli-flags) for the full set of identity flags.
 
 Verify the server is registered:
 
