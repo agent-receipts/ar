@@ -171,7 +171,7 @@ SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
-**Per-session chain IDs.** By default the proxy generates a new chain ID each session. Pass `-chain <id>` to persist a chain across sessions.
+**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `agent-receipts-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
 
 **Want human-in-the-loop approvals? Opt in with `-http`.** The approval listener is off by default. If your server exposes tools that cross the risk-score threshold (e.g. `create_token` = 50, `update_auth_config` = 70), pass `-http 127.0.0.1:<port>` and run an approver — see [Approval Server](/mcp-proxy/approval-ui/). Without it, a paused call fails immediately with JSON-RPC code `-32003` (`no approver configured`). To prevent pausing entirely, drop `pause`/`block` rules from a custom `-rules` YAML.
 

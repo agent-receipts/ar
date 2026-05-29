@@ -90,7 +90,7 @@ The first time the server is invoked, `mcp-remote` opens a browser tab to comple
 
 ## Bundled taxonomy
 
-The daemon classifies each tool call against the bundled Agent Receipts taxonomy, which covers Atlassian's Jira and Confluence tools (`createJiraIssue`, `editJiraIssue`, `searchJiraIssuesUsingJql`, `createConfluencePage`, `updateConfluencePage`, and others), so writes are recorded as `data.api.write` and reads as `data.api.read` out of the box — no extra configuration required.
+The daemon stores action types in `<channel>.<server>.<tool>` form — for example, `mcp.atlassian.createJiraIssue`. Full taxonomy mapping that would reclassify Atlassian tools to canonical types like `data.api.write` and `data.api.read` is not yet applied at the daemon level and is tracked for a future release. The proxy's prefix-based operation classification drives policy risk scoring today.
 
 See the [Action Taxonomy](/specification/action-taxonomy/) reference for the full set of mappings, and open a PR against the [taxonomy definitions](https://github.com/agent-receipts/ar/tree/main/spec/spec/taxonomy) to add or correct entries.
 

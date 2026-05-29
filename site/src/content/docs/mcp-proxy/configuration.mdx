@@ -96,11 +96,11 @@ MCP tool names are automatically stripped of their `mcp__<server>__` prefix befo
 
 ## Action taxonomy
 
-Tool calls are classified into action types (`data.api.read`, `data.api.write`, …) by the daemon, using the bundled Agent Receipts taxonomy. GitHub and Atlassian MCP tools are covered out of the box, so reads are recorded as `data.api.read` and writes as `data.api.write` without any configuration.
+The daemon stores action types in `<channel>.<server>.<tool>` form — for example, `mcp.github-audited.create_branch`. Full taxonomy mapping that would reclassify tools to canonical types like `data.api.write` is not yet applied by the daemon; that work is tracked for a future release. Receipts for action types that do not match a built-in taxonomy entry carry `RiskMedium` as their risk level.
 
 Available action types include `filesystem.file.*`, `system.*`, and `data.api.*` (read, write, delete). See the [Action Taxonomy](/specification/action-taxonomy/) reference and the [taxonomy definitions](https://github.com/agent-receipts/ar/tree/main/spec/spec/taxonomy) for the full list, and open a PR to add or correct mappings.
 
-The proxy still does coarse prefix-based [operation classification](#operation-classification) locally to drive policy risk scoring — that is independent of the daemon's taxonomy-based action typing in the stored receipt.
+The proxy's prefix-based [operation classification](#operation-classification) drives policy risk scoring today and is independent of the daemon's action type labelling.
 
 ## Approval workflow
 
@@ -117,7 +117,7 @@ The [Approval Server page](/mcp-proxy/approval-ui/) has the full treatment — e
 
 ## Data redaction
 
-The daemon redacts sensitive data before storage using two passes:
+Tool-call inputs and outputs are **not stored as plaintext** — the daemon stores only a cryptographic hash of each (see [Payload disclosure](#payload-disclosure) below). Redaction applies to the **error text** stored when a tool call fails, using two passes:
 
 **JSON-aware redaction** replaces values of sensitive keys including: `password`, `token`, `api_key`, `secret`, `authorization`, `private_key`, `access_token`, `jwt`, `database_url`, `ssh_key`, `connection_string`, and others (42 keys total).
 
