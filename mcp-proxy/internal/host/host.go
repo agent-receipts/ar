@@ -9,7 +9,7 @@ type Identity struct {
 	IssuerModel  string // optional, e.g. ""
 	OperatorID   string // e.g. "did:web:anthropic.com"
 	OperatorName string // e.g. "Anthropic"
-	Source       string // "auto:<key>" | "flags" | "unknown" — for logging only
+	Source       string // "auto:<comm>" | "env:<var>" | "flags" | "unknown" — for logging only
 }
 
 // registry maps parent process comm names to their known Identity.
