@@ -108,6 +108,15 @@ class ReceiptChain:
         if not verification_method:
             msg = "ReceiptChain: verification_method is required"
             raise ValueError(msg)
+        # Duck-typed rather than `is None` so the guard also rejects objects
+        # that are not emitters, and so it holds even if a caller passes None
+        # past the type checker (which `is None` would flag as unreachable).
+        if not callable(getattr(emitter, "emit", None)):
+            msg = "ReceiptChain: emitter is required (must provide an emit() method)"
+            raise ValueError(msg)
+        if start_sequence < 1:
+            msg = "ReceiptChain: start_sequence must be a positive integer (>= 1)"
+            raise ValueError(msg)
         self._chain_id = chain_id
         self._private_key = private_key
         self._verification_method = verification_method

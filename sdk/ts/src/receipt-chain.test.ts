@@ -76,11 +76,15 @@ describe("ReceiptChain", () => {
 		);
 		expect(
 			() =>
-				new ReceiptChain({
-					...base,
-					emitter: undefined as unknown as Emitter,
-				}),
+				// @ts-expect-error emitter is required: this also asserts the
+				// public type rejects a missing emitter, not just the runtime guard.
+				new ReceiptChain({ ...base, emitter: undefined }),
 		).toThrow(/emitter/);
+		for (const startSequence of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+			expect(() => new ReceiptChain({ ...base, startSequence })).toThrow(
+				/startSequence/,
+			);
+		}
 	});
 
 	it("builds, signs, links, and delivers sequential receipts", async () => {

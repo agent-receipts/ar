@@ -83,6 +83,21 @@ def test_requires_core_options() -> None:
             verification_method="",
             emitter=InMemoryEmitter(),
         )
+    with pytest.raises(ValueError, match="emitter"):
+        ReceiptChain(
+            chain_id="c",
+            private_key=_KEYS.private_key,
+            verification_method=_VERIFICATION_METHOD,
+            emitter=None,  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValueError, match="start_sequence"):
+        ReceiptChain(
+            chain_id="c",
+            private_key=_KEYS.private_key,
+            verification_method=_VERIFICATION_METHOD,
+            emitter=InMemoryEmitter(),
+            start_sequence=0,
+        )
 
 
 def test_builds_signs_links_and_delivers_sequentially() -> None:

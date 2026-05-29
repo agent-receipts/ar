@@ -47,8 +47,9 @@ export interface ReceiptChainOptions {
 	/** Delivery transport for signed receipts (HTTP, WAL, in-memory, …). */
 	emitter: Emitter;
 	/**
-	 * Sequence number for the first receipt. Defaults to 1. Set when resuming
-	 * an existing chain (e.g. a warm serverless instance continuing its chain).
+	 * Sequence number for the first receipt. Defaults to 1; must be a positive
+	 * safe integer (>= 1) per the spec. Set when resuming an existing chain
+	 * (e.g. a warm serverless instance continuing its chain).
 	 */
 	startSequence?: number;
 	/**
@@ -108,13 +109,21 @@ export class ReceiptChain {
 		if (!options.emitter) {
 			throw new Error("ReceiptChain: emitter is required");
 		}
+		// `?? 1` (not `|| 1`) so an explicit 0 is rejected below rather than
+		// silently defaulting; the spec requires sequence >= 1.
+		const startSequence = options.startSequence ?? 1;
+		if (!Number.isSafeInteger(startSequence) || startSequence < 1) {
+			throw new Error(
+				"ReceiptChain: startSequence must be a positive safe integer (>= 1)",
+			);
+		}
 		this.#chainId = options.chainId;
 		this.#privateKey = options.privateKey;
 		this.#verificationMethod = options.verificationMethod;
 		this.#emitter = options.emitter;
 		this.#onConcurrentEmit =
 			options.onConcurrentEmit ?? ((message) => console.warn(message));
-		this.#sequence = options.startSequence ?? 1;
+		this.#sequence = startSequence;
 		this.#previousReceiptHash = options.previousReceiptHash ?? null;
 	}
 

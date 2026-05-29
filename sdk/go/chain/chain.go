@@ -66,7 +66,8 @@ type Options struct {
 	// Emitter delivers each signed receipt. Required.
 	Emitter emitters.Emitter
 	// StartSequence is the sequence number for the first receipt. Defaults to
-	// 1 when zero. Set when resuming an existing chain.
+	// 1 when zero; must not be negative (the spec requires sequence >= 1). Set
+	// when resuming an existing chain.
 	StartSequence int
 	// PreviousReceiptHash links the first emitted receipt to an existing
 	// chain. Defaults to nil (a fresh chain).
@@ -111,6 +112,8 @@ func New(opts Options) (*ReceiptChain, error) {
 		return nil, errors.New("chain: VerificationMethod is required")
 	case opts.Emitter == nil:
 		return nil, errors.New("chain: Emitter is required")
+	case opts.StartSequence < 0:
+		return nil, errors.New("chain: StartSequence must not be negative (spec requires sequence >= 1)")
 	}
 	seq := opts.StartSequence
 	if seq == 0 {

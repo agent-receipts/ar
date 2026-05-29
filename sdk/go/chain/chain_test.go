@@ -95,6 +95,7 @@ func TestNewRequiresCoreOptions(t *testing.T) {
 		"PrivateKeyPEM":      func(o *chain.Options) { o.PrivateKeyPEM = "" },
 		"VerificationMethod": func(o *chain.Options) { o.VerificationMethod = "" },
 		"Emitter":            func(o *chain.Options) { o.Emitter = nil },
+		"negative StartSeq":  func(o *chain.Options) { o.StartSequence = -1 },
 	}
 	for name, mutate := range cases {
 		opts := base
