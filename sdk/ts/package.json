@@ -55,7 +55,6 @@
 	},
 	"packageManager": "pnpm@10.33.0",
 	"dependencies": {
-		"@hpke/core": "^1.9.0",
 		"undici": "^8.3.0",
 		"zod": "^4.4.2"
 	},

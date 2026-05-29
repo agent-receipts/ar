@@ -15,6 +15,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 - **`DaemonEmitter.emit` surfaces transport failure by default** ([#599](https://github.com/agent-receipts/ar/issues/599), ADR-0025). When the daemon is unreachable or a write fails, `emit()` now resolves with the new `EmitTransportError` (a subclass of `Error`, exported from the package root) instead of `null`. Check `err instanceof EmitTransportError` to distinguish it from the plain `Error` returned for caller bugs. Pass `bestEffort: true` to the constructor to opt back into loss-tolerant emission (`emit()` resolves with `null` on transport failure).
 
+### Changed
+
+- **Dropped the `@hpke/core` runtime dependency** ([#473](https://github.com/agent-receipts/ar/issues/473)). The HPKE disclosure envelope (`encryptDisclosure` / `decryptDisclosure` / `generateForensicKeyPair`) now uses an in-tree RFC 9180 base-mode implementation built on `node:crypto` (`src/receipt/hpke.ts`), removing a third-party crypto dependency from a cryptographic protocol's supply chain. The public API and the on-the-wire envelope are unchanged — the deterministic cross-SDK test vectors still pass byte-for-byte.
+
 ## [0.10.0] - 2026-05-24
 
 Implements spec v0.4.0 (`action.idempotency_key`), the ADR-0020 emitter interface redesign (WAL, HTTP, composite, in-memory), and aligns `peer_credential` uid/gid types with the Go SDK. Two breaking changes.

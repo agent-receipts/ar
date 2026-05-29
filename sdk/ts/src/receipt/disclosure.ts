@@ -3,28 +3,15 @@
  *
  * Ciphersuite: hpke-x25519-hkdf-sha256-aes-256-gcm
  * (RFC 9180, KEM=DHKEM(X25519,HKDF-SHA256) 0x0020, KDF=HKDF-SHA256 0x0001, AEAD=AES-256-GCM 0x0002)
+ *
+ * The HPKE primitives are implemented in ./hpke.ts on top of node:crypto, so
+ * disclosure has no third-party crypto dependency.
  */
 
-import type { CipherSuite } from "@hpke/core";
 import { canonicalize, isPlainObject } from "./hash.js";
+import { generateKeyPair, open, seal } from "./hpke.js";
 
 const V1_ALG = "hpke-x25519-hkdf-sha256-aes-256-gcm" as const;
-
-// Loaded on first use so importing this module does not force consumers to
-// resolve @hpke/core unless they actually invoke a disclosure function.
-let _suitePromise: Promise<CipherSuite> | undefined;
-
-async function getSuite(): Promise<CipherSuite> {
-	_suitePromise ??= import("@hpke/core").then(
-		({ Aes256Gcm, CipherSuite, DhkemX25519HkdfSha256, HkdfSha256 }) =>
-			new CipherSuite({
-				kem: new DhkemX25519HkdfSha256(),
-				kdf: new HkdfSha256(),
-				aead: new Aes256Gcm(),
-			}),
-	);
-	return _suitePromise;
-}
 
 /** One entry in the recipients array. Field names match RFC 9180 §4.1 ("enc", not "encap"). */
 export interface DisclosureRecipient {
@@ -79,14 +66,8 @@ function fromBase64Url(s: string): Uint8Array {
  * The public key is shared with emitters; the private key must be kept offline.
  */
 export async function generateForensicKeyPair(): Promise<ForensicKeyPair> {
-	const suite = await getSuite();
-	const kp = await suite.kem.generateKeyPair();
-	const pubBytes = await suite.kem.serializePublicKey(kp.publicKey);
-	const privBytes = await suite.kem.serializePrivateKey(kp.privateKey);
-	return {
-		publicKey: new Uint8Array(pubBytes),
-		privateKey: new Uint8Array(privBytes),
-	};
+	const { publicKey, privateKey } = generateKeyPair();
+	return { publicKey, privateKey };
 }
 
 /**
@@ -120,9 +101,9 @@ export async function encryptDisclosure(
 
 /**
  * Deterministic variant of encryptDisclosure for cross-SDK test vectors.
- * ikmE (32 bytes) is passed as the ephemeral key material; @hpke/core internally
- * applies DHKEM(X25519) DeriveKeyPair (RFC 9180 §4.1 HKDF derivation) to produce
- * the ephemeral scalar — it does NOT use ikmE directly as the scalar. This is
+ * ikmE (32 bytes) is the ephemeral key material; the HPKE layer applies
+ * DHKEM(X25519) DeriveKeyPair (RFC 9180 §7.1.3 HKDF derivation) to produce the
+ * ephemeral scalar — it does NOT use ikmE directly as the scalar. This is
  * confirmed by vector-1: ikmE = RFC 9180 §A.1.1 ikmE → enc = RFC 9180 §A.1.1 pkEm.
  *
  * @internal FOR TESTING ONLY. Reusing ikmE across real encryptions breaks confidentiality.
@@ -156,27 +137,20 @@ async function encryptWithOptions(
 	kid: string,
 	ikmE: Uint8Array | undefined,
 ): Promise<DisclosureEnvelope> {
-	const suite = await getSuite();
-	const pubKey = await suite.kem.deserializePublicKey(recipientPublicKey);
-
 	// RFC 8785 JCS before encryption — cross-SDK interop depends on this.
 	const canonical = canonicalize(params);
 
-	// info="" (omitted = library default EMPTY) and AAD="" per ADR-0012 amendment §8.
-	const sender = await suite.createSenderContext({
-		recipientPublicKey: pubKey,
-		...(ikmE !== undefined ? { ekm: ikmE } : {}),
-	});
-
-	const ct = await sender.seal(
+	// info="" and AAD="" per ADR-0012 amendment §8 — both baked into seal().
+	const { enc, ct } = seal(
+		recipientPublicKey,
 		new TextEncoder().encode(canonical),
-		new Uint8Array(0), // AAD = ""
+		ikmE,
 	);
 
 	return {
 		v: "1",
 		alg: V1_ALG,
-		recipients: [{ kid, enc: toBase64Url(sender.enc) }],
+		recipients: [{ kid, enc: toBase64Url(enc) }],
 		ct: toBase64Url(ct),
 	};
 }
@@ -224,9 +198,6 @@ export async function decryptDisclosure(
 		throw new Error("recipient kid must be a non-empty string");
 	}
 
-	const suite = await getSuite();
-	const privKey = await suite.kem.deserializePrivateKey(recipientPrivateKey);
-
 	const enc = fromBase64Url(recipient.enc);
 	if (enc.byteLength !== 32) {
 		throw new Error(
@@ -235,12 +206,7 @@ export async function decryptDisclosure(
 	}
 	const ct = fromBase64Url(env.ct);
 
-	const receiver = await suite.createRecipientContext({
-		recipientKey: privKey,
-		enc,
-	});
-
-	const plaintext = await receiver.open(ct, new Uint8Array(0)); // AAD = ""
+	const plaintext = open(recipientPrivateKey, enc, ct);
 
 	const result: unknown = JSON.parse(new TextDecoder().decode(plaintext));
 	if (!isPlainObject(result)) {
