@@ -72,6 +72,7 @@ from agent_receipts.receipt.types import (
     StateChange,
     UnsignedAgentReceipt,
 )
+from agent_receipts.receipt_chain import ChainEmitInput, ReceiptChain
 from agent_receipts.store.store import (
     ReceiptQuery,
     ReceiptStore,
@@ -181,6 +182,9 @@ __all__ = [
     "Wal",
     "WalDrainResult",
     "WalEmitter",
+    # Sequential receipt construction (ADR-0020 §"Concurrency constraint")
+    "ChainEmitInput",
+    "ReceiptChain",
     # Hashing
     "canonicalize",
     "hash_receipt",

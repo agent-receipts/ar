@@ -17,6 +17,7 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Added
 
+- **`chain.ReceiptChain`** ([#488](https://github.com/agent-receipts/ar/issues/488), ADR-0020) — new `chain` package providing a stateful, serialised builder for a single hash-linked chain. It owns the chain head (`Sequence` + `PreviousReceiptHash`) and runs build → sign → hash → link → deliver under a mutex, so concurrent `Emit` calls are sequenced at the receipt layer even when the tool calls that triggered them ran in parallel. The first overlapping call logs a one-shot warning via the configured `slog.Logger`. Construct with `chain.New(chain.Options{...})` and emit per action with `Emit(ctx, chain.EmitInput{...})`; the head advances before delivery so a transient emitter failure cannot fork or stall the chain. Parallel sub-chains remain out of scope for v1.
 - **`taxonomy.DiagnosticRoundtripActionType`** ([#539](https://github.com/agent-receipts/ar/issues/539)) — new built-in low-risk action type (`doctor.agent-receipts-doctor.roundtrip`) classifying the synthetic round-trip event the `agent-receipts doctor` health check emits. Registered in `AllActions()`; exempt from the spec cross-check since diagnostic self-checks are not part of the agent-action taxonomy the spec enumerates.
 
 ## [0.13.0] - 2026-05-24

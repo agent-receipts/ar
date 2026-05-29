@@ -47,6 +47,11 @@ export {
 	signReceipt,
 	verifyReceipt,
 } from "./receipt/signing.js";
+export {
+	ReceiptChain,
+	type ReceiptChainEmitInput,
+	type ReceiptChainOptions,
+} from "./receipt-chain.js";
 
 // Backwards-compatibility aliases kept as standalone `type` declarations so
 // each symbol carries its own @deprecated JSDoc (IDE deprecation hints bind

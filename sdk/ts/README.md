@@ -137,6 +137,63 @@ const mapped = classifyToolCall("read_file", mappings);
 // → { action_type: "filesystem.file.read", risk_level: "low" }
 ```
 
+### Emit a chain (sequential construction under parallel tool calls)
+
+Hash chaining is inherently sequential: receipt *N* must be fully signed and its
+hash computed **before** receipt *N+1* is constructed, or the `previous_receipt_hash`
+link cannot be formed. A single-threaded agent satisfies this for free, but an
+agent that fires **parallel tool calls** would race on the shared chain head
+(`sequence` + `previous_receipt_hash`) and produce colliding sequence numbers or
+a forked chain.
+
+`ReceiptChain` owns that head and serialises the whole build → sign → hash →
+link → deliver pipeline through an internal queue, so concurrent `emit()` calls
+are sequenced **at the receipt layer** even when the tool calls that triggered
+them ran in parallel. Concurrent emission is not supported as parallel chains in
+v1 (a future ADR may add forked sub-chains); overlapping calls are queued in
+arrival order, and the first overlap logs a one-shot warning so the misuse is
+visible.
+
+```typescript
+import {
+  InMemoryEmitter,
+  ReceiptChain,
+  generateKeyPair,
+} from "@agnt-rcpt/sdk-ts";
+
+const keys = generateKeyPair();
+
+// One ReceiptChain per logical chain (e.g. per agent session). It owns the
+// chain head; pass any Emitter (here the in-memory test double, in production
+// an HttpEmitter or a WAL-backed emitter).
+const chain = new ReceiptChain({
+  chainId: "session-1",
+  privateKey: keys.privateKey,
+  verificationMethod: "did:agent:my-agent#key-1",
+  emitter: new InMemoryEmitter(),
+});
+
+// Every emit() is sequenced. Awaiting is optional: fire emit() for parallel
+// tool calls and the chain queues them in arrival order (warning once that
+// construction was serialised).
+const receipt = await chain.emit({
+  issuer: { id: "did:agent:my-agent" },
+  principal: { id: "did:user:alice" },
+  action: {
+    type: "filesystem.file.read",
+    risk_level: "low",
+    target: { system: "local", resource: "/docs/report.md" },
+  },
+  outcome: { status: "success" },
+});
+
+console.log(receipt.credentialSubject.chain.sequence); // 1
+```
+
+The head advances as soon as a receipt is signed and hashed — *before* delivery
+— so a transient emitter failure does not fork or stall the chain; wrap a
+`WalEmitter` around your transport for at-least-once delivery.
+
 ## What is an Agent Receipt?
 
 A [W3C Verifiable Credential](https://www.w3.org/TR/vc-data-model-2.0/) signed with Ed25519, recording:

@@ -15,6 +15,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 - **`DaemonEmitter.emit` surfaces transport failure by default** ([#599](https://github.com/agent-receipts/ar/issues/599), ADR-0025). When the daemon is unreachable or a write fails, `emit()` now raises `EmitTransportError` (exported from the package root) instead of returning `None`. It is distinct from the `ValueError` / `RuntimeError` raised for caller bugs, so callers can `except EmitTransportError` to retry only transport failures. Pass `best_effort=True` to the constructor to opt back into loss-tolerant emission (`emit()` returns `None` on transport failure).
 
+### Added
+
+- **`ReceiptChain`** ([#488](https://github.com/agent-receipts/ar/issues/488), ADR-0020). Stateful, serialised builder for a single hash-linked chain, exported from the package root alongside its per-receipt input model `ChainEmitInput`. It owns the chain head (`sequence` + `previous_receipt_hash`) and runs build → sign → hash → link → deliver under a lock, so concurrent `emit()` calls from multiple threads are sequenced at the receipt layer even when the tool calls that triggered them ran in parallel. The first overlapping call logs a one-shot warning via the `agent_receipts.receipt_chain` logger. The head advances before delivery so a transient emitter failure cannot fork or stall the chain. Parallel sub-chains remain out of scope for v1.
+
 ## [0.10.0] - 2026-05-24
 
 ### Breaking Changes

@@ -200,6 +200,75 @@ budget). For batching, fan-out, or write-ahead durability across collector
 outages, compose it with `BufferingEmitter`, `CompositeEmitter`, or
 `WALEmitter` from the same package.
 
+## Sequential receipt construction (parallel tool calls)
+
+Hash chaining is inherently sequential: receipt *N* must be fully signed and its
+hash computed **before** receipt *N+1* is constructed, or the
+`previous_receipt_hash` link cannot be formed. A single-goroutine agent
+satisfies this for free, but an agent that fires **parallel tool calls** would
+race on the shared chain head (`Sequence` + `PreviousReceiptHash`) and produce
+colliding sequence numbers or a forked chain.
+
+`chain.ReceiptChain` owns that head and serialises the whole build → sign →
+hash → link → deliver pipeline under a mutex, so concurrent `Emit` calls are
+sequenced **at the receipt layer** even when the tool calls that triggered them
+ran in parallel. Concurrent emission is not supported as parallel chains in v1
+(a future ADR may add forked sub-chains); overlapping calls block until the
+in-flight one completes, and the first overlap logs a one-shot warning so the
+misuse is visible.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/agent-receipts/ar/sdk/go/chain"
+	"github.com/agent-receipts/ar/sdk/go/emitters"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
+)
+
+func main() {
+	kp, err := receipt.GenerateKeyPair()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// One ReceiptChain per logical chain (e.g. per agent session). It owns the
+	// chain head; pass any emitters.Emitter — here the in-memory test double, in
+	// production an HttpEmitter or a WAL-backed emitter.
+	rc, err := chain.New(chain.Options{
+		ChainID:            "session-001",
+		PrivateKeyPEM:      kp.PrivateKey,
+		VerificationMethod: "did:agent:my-agent#key-1",
+		Emitter:            emitters.NewInMemory(),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Every Emit is sequenced: receipt N is signed and hashed before N+1 is
+	// built, even if your tool calls run in parallel.
+	signed, err := rc.Emit(context.Background(), chain.EmitInput{
+		Issuer:    receipt.Issuer{ID: "did:agent:my-agent"},
+		Principal: receipt.Principal{ID: "did:user:alice"},
+		Action:    receipt.Action{Type: "filesystem.file.read", RiskLevel: receipt.RiskLow},
+		Outcome:   receipt.Outcome{Status: receipt.StatusSuccess},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("emitted sequence %d\n", signed.CredentialSubject.Chain.Sequence)
+}
+```
+
+The head advances as soon as a receipt is signed and hashed — *before* delivery
+— so a transient emitter failure does not fork or stall the chain; wrap a
+`WALEmitter` around your transport for at-least-once delivery.
+
 ## License
 
 Apache 2.0
