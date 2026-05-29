@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-import agent_receipts.receipt.key_provider as kp_module
 from agent_receipts.receipt.key_provider import (
     GeneratingKeyProvider,
     ProductionKeyProviderError,
@@ -19,7 +18,9 @@ ENV_VAR = "AGENTRECEIPTS_PRODUCTION"
 def _reset_warning_latch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Start each test with an unset env var and a fresh once-per-process latch."""
     monkeypatch.delenv(ENV_VAR, raising=False)
-    monkeypatch.setattr(kp_module, "_dev_warning_emitted", False)
+    monkeypatch.setattr(
+        "agent_receipts.receipt.key_provider._dev_warning_emitted", False
+    )
 
 
 class TestProductionGuard:
