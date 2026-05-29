@@ -38,10 +38,12 @@ const HPKE_SUITE_ID = concatBytes(
 	i2osp2(0x0002),
 );
 
+const HASH_LEN = 32; // SHA-256 output (Nh)
 const NSECRET = 32; // DHKEM(X25519) shared secret length
 const NSK = 32; // X25519 private scalar length (Nsk)
 const NK = 32; // AES-256-GCM key length (Nk)
 const NN = 12; // AES-256-GCM nonce length (Nn)
+const NT = 16; // AES-256-GCM authentication tag length
 const MODE_BASE = 0x00;
 
 /** Raw 32-byte X25519 key pair. */
@@ -59,10 +61,14 @@ function hkdfExtract(salt: Uint8Array, ikm: Uint8Array): Buffer {
 	return createHmac("sha256", salt).update(ikm).digest();
 }
 
-// HKDF-Expand. `length` for this suite is always <= HASH_LEN (sk/shared_secret
-// =32, key=32, base_nonce=12), so a single HMAC block would suffice; the loop
-// is kept so the primitive stays correct for any length.
+// HKDF-Expand. Every call in this suite requests <= HASH_LEN bytes
+// (sk/shared_secret/key=32, base_nonce=12), so the loop runs once; it is kept
+// general so the primitive stays correct for any length up to RFC 5869's
+// 255*HashLen ceiling, beyond which the single-byte counter would wrap.
 function hkdfExpand(prk: Uint8Array, info: Uint8Array, length: number): Buffer {
+	if (length > 255 * HASH_LEN) {
+		throw new Error(`HKDF-Expand length ${length} exceeds 255*HashLen`);
+	}
 	const blocks: Buffer[] = [];
 	let prev = Buffer.alloc(0);
 	for (let counter = 1; blockLen(blocks) < length; counter++) {
@@ -152,10 +158,11 @@ function kemEncap(
 ): { enc: Uint8Array; sharedSecret: Uint8Array } {
 	const ephemeral =
 		ikmE !== undefined ? kemDeriveKeyPair(ikmE) : generateKeyPair();
-	const dh = diffieHellman({
-		privateKey: privFromRaw(ephemeral.privateKey),
-		publicKey: pubFromRaw(recipientPublicKey),
-	});
+	const dh = x25519(
+		privFromRaw(ephemeral.privateKey),
+		pubFromRaw(recipientPublicKey),
+		"recipient public key",
+	);
 	const kemContext = concatBytes(ephemeral.publicKey, recipientPublicKey);
 	return {
 		enc: ephemeral.publicKey,
@@ -169,13 +176,28 @@ function kemEncap(
  */
 function kemDecap(enc: Uint8Array, recipientPrivateKey: Uint8Array): Buffer {
 	const recipientPriv = privFromRaw(recipientPrivateKey);
-	const dh = diffieHellman({
-		privateKey: recipientPriv,
-		publicKey: pubFromRaw(enc),
-	});
+	const dh = x25519(recipientPriv, pubFromRaw(enc), "encapsulated key");
 	const recipientPub = rawPublicKey(createPublicKey(recipientPriv));
 	const kemContext = concatBytes(enc, recipientPub);
 	return extractAndExpand(dh, kemContext);
+}
+
+// X25519 key agreement that maps OpenSSL's opaque derivation failure to an
+// actionable error. A low-order public key (the all-zero shared secret RFC 7748
+// §6.1 warns about) is rejected here rather than producing that secret;
+// `keyName` identifies whose key was rejected for the caller.
+function x25519(
+	privateKey: KeyObject,
+	publicKey: KeyObject,
+	keyName: string,
+): Buffer {
+	try {
+		return diffieHellman({ privateKey, publicKey });
+	} catch (err) {
+		throw new Error(`invalid ${keyName}: X25519 key agreement failed`, {
+			cause: err,
+		});
+	}
 }
 
 // --- Key schedule (RFC 9180 §5.1) -------------------------------------------
@@ -227,11 +249,11 @@ function aeadOpen(
 	aad: Uint8Array,
 	ciphertext: Uint8Array,
 ): Buffer {
-	if (ciphertext.length < 16) {
-		throw new Error("ciphertext too short to contain a 16-byte GCM tag");
+	if (ciphertext.length < NT) {
+		throw new Error(`ciphertext too short to contain a ${NT}-byte GCM tag`);
 	}
-	const tag = ciphertext.subarray(ciphertext.length - 16);
-	const body = ciphertext.subarray(0, ciphertext.length - 16);
+	const tag = ciphertext.subarray(ciphertext.length - NT);
+	const body = ciphertext.subarray(0, ciphertext.length - NT);
 	const decipher = createDecipheriv("aes-256-gcm", key, nonce);
 	decipher.setAAD(aad);
 	decipher.setAuthTag(tag);

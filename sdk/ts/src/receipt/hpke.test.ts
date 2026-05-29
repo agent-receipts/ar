@@ -125,4 +125,38 @@ describe("hpke input validation", () => {
 			"32 bytes",
 		);
 	});
+
+	it("rejects a ciphertext too short to hold a GCM tag", () => {
+		// 32-byte enc passes the length check, so open() reaches aeadOpen, which
+		// guards the 16-byte tag minimum.
+		const { enc } = seal(
+			fromHex(ALICE_PUB_HEX),
+			new TextEncoder().encode("{}"),
+		);
+		expect(() =>
+			open(fromHex(ALICE_PRIV_HEX), enc, new Uint8Array(15)),
+		).toThrow("too short");
+	});
+});
+
+describe("hpke degenerate-key rejection", () => {
+	// The all-zero X25519 public key is a low-order point: the DH output is the
+	// all-zero shared secret RFC 7748 §6.1 warns about. We rely on OpenSSL's
+	// X25519 to reject it at derivation time rather than producing that secret;
+	// these tests pin that contract so a future DH-backend change can't silently
+	// regress it.
+	const LOW_ORDER = new Uint8Array(32); // 32 zero bytes
+
+	it("rejects a low-order recipient public key on seal", () => {
+		expect(() => seal(LOW_ORDER, new TextEncoder().encode("{}"))).toThrow(
+			"invalid recipient public key",
+		);
+	});
+
+	it("rejects a low-order enc on open", () => {
+		const { ct } = seal(fromHex(ALICE_PUB_HEX), new TextEncoder().encode("{}"));
+		expect(() => open(fromHex(ALICE_PRIV_HEX), LOW_ORDER, ct)).toThrow(
+			"invalid encapsulated key",
+		);
+	});
 });
