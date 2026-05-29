@@ -1,8 +1,11 @@
 name: CodeQL
 
-# Advanced-setup CodeQL (replaces GitHub's default setup, which cannot
-# path-filter and runs all four analyzers on every PR — including docs-only
-# ones). See issue #629.
+# Advanced-setup CodeQL. Requires GitHub's default CodeQL setup to be
+# disabled in repository Settings → Code security → Code scanning; if left
+# enabled both configurations run and double the analysis minutes.
+#
+# Replaces the default setup, which cannot path-filter and runs all four
+# analyzers on every PR — including docs-only ones. See issue #629.
 #
 # Branch-protection contract: the four `Analyze (<language>)` checks always
 # report a status because the `analyze` job always runs. On docs-only PRs the
@@ -37,9 +40,14 @@ jobs:
     outputs:
       run: ${{ steps.filter.outputs.run }}
     steps:
+      # Non-PR events exit early without diffing, so a shallow clone suffices.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: github.event_name != 'pull_request'
+
+      # PR events need full history to compute the diff against the base SHA.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: github.event_name == 'pull_request'
         with:
-          # Full history so the PR diff can be computed against its base.
           fetch-depth: 0
 
       - id: filter
