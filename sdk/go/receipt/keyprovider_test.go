@@ -54,7 +54,10 @@ func TestGeneratingKeyProviderGeneratesOutsideProduction(t *testing.T) {
 	}
 
 	// The keypair is stable for the lifetime of the provider.
-	kp2, _ := provider.GetKeyPair()
+	kp2, err := provider.GetKeyPair()
+	if err != nil {
+		t.Fatalf("GetKeyPair: %v", err)
+	}
 	if kp2 != kp {
 		t.Error("expected GetKeyPair to return a stable keypair")
 	}

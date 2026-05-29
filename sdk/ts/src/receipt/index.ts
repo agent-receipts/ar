@@ -14,6 +14,11 @@ export {
 } from "./disclosure.js";
 export { canonicalize, hashReceipt, sha256 } from "./hash.js";
 export {
+	GeneratingKeyProvider,
+	type KeyProvider,
+	ProductionKeyProviderError,
+} from "./key-provider.js";
+export {
 	generateKeyPair,
 	type KeyPair,
 	signReceipt,

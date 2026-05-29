@@ -2,6 +2,7 @@ package receipt
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -71,7 +72,7 @@ func NewGeneratingKeyProvider() (*GeneratingKeyProvider, error) {
 
 	kp, err := GenerateKeyPair()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("generate keypair: %w", err)
 	}
 	return &GeneratingKeyProvider{keyPair: kp}, nil
 }
