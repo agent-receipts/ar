@@ -42,6 +42,11 @@ export {
 } from "./receipt/disclosure.js";
 export { canonicalize, hashReceipt, sha256 } from "./receipt/hash.js";
 export {
+	GeneratingKeyProvider,
+	type KeyProvider,
+	ProductionKeyProviderError,
+} from "./receipt/key-provider.js";
+export {
 	generateKeyPair,
 	type KeyPair,
 	signReceipt,

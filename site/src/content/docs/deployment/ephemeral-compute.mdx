@@ -67,6 +67,20 @@ Client-side chaining requires that receipt *N* is fully signed and its hash comp
 - It is trivially exfiltrated by a compromised dependency — the exact threat the protocol exists to make evident.
 - Rotation means redeploying every function with new configuration.
 
+### Never auto-generate keys in production
+
+[ADR-0018](https://github.com/agent-receipts/ar/blob/main/docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md)'s `GeneratingKeyProvider` mints a fresh Ed25519 keypair on construction. It exists for **development and bootstrap only**. On ephemeral compute a cold start gives you a fresh process, so a production deployment that reached for it would silently generate a **new DID on every cold start** — producing an unverifiable, unattributable audit trail with no error surfaced ([ADR-0019 § S2](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)).
+
+To make that failure mode unreachable, set **`AGENTRECEIPTS_PRODUCTION=true`** in every production environment. With it set, constructing a `GeneratingKeyProvider` fails immediately, before any key is generated:
+
+| SDK | Symbol | Behaviour when `AGENTRECEIPTS_PRODUCTION=true` |
+|-----|--------|-----------------------------------------------|
+| TypeScript | `new GeneratingKeyProvider()` | throws `ProductionKeyProviderError` |
+| Python | `GeneratingKeyProvider()` | raises `ProductionKeyProviderError` |
+| Go | `receipt.NewGeneratingKeyProvider()` | returns `receipt.ErrProductionKeyProvider` |
+
+Only the exact value `"true"` is treated as production. In every other case the provider works but emits a one-time stderr warning (`⚠ GeneratingKeyProvider is dev-only …`) so the dev-only path is never silent. Production deployments must instead load a keypair provisioned out-of-band — the raw PEM from a secret store today, a KMS-backed `Signer` once that path lands (see below).
+
 ### Cloud KMS / HSM signers
 
 [ADR-0018](https://github.com/agent-receipts/ar/blob/main/docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md) defines a `Signer` abstraction so the private key never leaves a KMS or HSM. The signer signs canonical bytes remotely and exposes the public key for verifiers:

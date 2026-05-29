@@ -5,6 +5,11 @@ from agent_receipts.receipt.chain import (
 )
 from agent_receipts.receipt.create import CreateReceiptInput, create_receipt
 from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
+from agent_receipts.receipt.key_provider import (
+    GeneratingKeyProvider,
+    KeyProvider,
+    ProductionKeyProviderError,
+)
 from agent_receipts.receipt.signing import (
     KeyPair,
     generate_key_pair,
@@ -69,6 +74,10 @@ __all__ = [
     "generate_key_pair",
     "sign_receipt",
     "verify_receipt",
+    # Key providers (ADR-0018; production guard per ADR-0019 §S2)
+    "GeneratingKeyProvider",
+    "KeyProvider",
+    "ProductionKeyProviderError",
     # Chain
     "ChainVerification",
     "ReceiptVerification",
