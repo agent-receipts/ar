@@ -200,6 +200,15 @@ def test_head_advances_before_delivery() -> None:
     assert r2.credentialSubject.chain.previous_receipt_hash is not None
 
 
+def test_rejects_emit_after_terminal() -> None:
+    chain = _make_chain()
+    terminal = _make_input("/done")
+    terminal.terminal = True
+    chain.emit(terminal)
+    with pytest.raises(RuntimeError, match="closed"):
+        chain.emit(_make_input("/after"))
+
+
 def test_resumes_existing_chain() -> None:
     chain = _make_chain(start_sequence=7, previous_receipt_hash="sha256:deadbeef")
     r = chain.emit(_make_input("/a"))

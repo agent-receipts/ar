@@ -79,8 +79,8 @@ type Options struct {
 
 const concurrentEmitMessage = "concurrent Emit() detected on a ReceiptChain; " +
 	"receipt construction is serialised at the receipt layer (ADR-0020), " +
-	"parallel tool calls cannot build receipts concurrently in v1 — calls are " +
-	"queued in arrival order, which may not match the order the tool calls completed"
+	"parallel tool calls cannot build receipts concurrently in v1 — concurrent " +
+	"calls are serialised in an unspecified order under contention"
 
 // ReceiptChain is a stateful, serialised builder for one hash-linked chain.
 // Construct one per chain with [New]. It is safe for concurrent use.
@@ -94,6 +94,7 @@ type ReceiptChain struct {
 	mu           sync.Mutex // serialises construct + sign + hash + advance + deliver
 	sequence     int
 	previousHash *string
+	closed       bool // set once a terminal receipt is signed; rejects further Emit
 
 	stateMu sync.Mutex // guards active + warned
 	active  int
@@ -163,6 +164,10 @@ func (c *ReceiptChain) PreviousReceiptHash() *string {
 // On a delivery error the head has already advanced and the signed receipt is
 // returned alongside the error; pair with a WAL-backed emitter when delivery
 // durability matters.
+//
+// Emitting a receipt with Terminal set closes the chain: any subsequent Emit
+// returns an error rather than linking a receipt after the terminal one (which
+// [receipt.VerifyChain] would reject as a protocol violation).
 func (c *ReceiptChain) Emit(ctx context.Context, input EmitInput) (receipt.AgentReceipt, error) {
 	c.stateMu.Lock()
 	c.active++
@@ -182,6 +187,10 @@ func (c *ReceiptChain) Emit(ctx context.Context, input EmitInput) (receipt.Agent
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.closed {
+		return receipt.AgentReceipt{}, errors.New("chain: terminal receipt already emitted; chain is closed")
+	}
 
 	ch := receipt.Chain{
 		Sequence:            c.sequence,
@@ -212,6 +221,10 @@ func (c *ReceiptChain) Emit(ctx context.Context, input EmitInput) (receipt.Agent
 	// delivery failure cannot fork or stall the chain (ADR-0020 WAL model).
 	c.previousHash = &h
 	c.sequence++
+	// A terminal receipt closes the chain: nothing may link after it.
+	if input.Terminal {
+		c.closed = true
+	}
 
 	if err := c.emitter.Emit(ctx, signed); err != nil {
 		return signed, fmt.Errorf("chain: emit receipt: %w", err)

@@ -239,6 +239,29 @@ func TestConcurrentEmitsSerialisedAndWarn(t *testing.T) {
 	}
 }
 
+func TestRejectsEmitAfterTerminal(t *testing.T) {
+	keys := testKeys(t)
+	rc, err := chain.New(chain.Options{
+		ChainID:            "chain_test",
+		PrivateKeyPEM:      keys.PrivateKey,
+		VerificationMethod: verificationMethod,
+		Emitter:            emitters.NewInMemory(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx := context.Background()
+
+	terminal := emitInput()
+	terminal.Terminal = true
+	if _, err := rc.Emit(ctx, terminal); err != nil {
+		t.Fatalf("Emit terminal: %v", err)
+	}
+	if _, err := rc.Emit(ctx, emitInput()); err == nil {
+		t.Fatal("Emit after terminal: want closed-chain error, got nil")
+	}
+}
+
 func TestHeadAdvancesBeforeDelivery(t *testing.T) {
 	keys := testKeys(t)
 	fe := &failingEmitter{inner: emitters.NewInMemory(), failNext: true}

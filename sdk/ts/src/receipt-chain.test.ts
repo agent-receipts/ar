@@ -183,6 +183,12 @@ describe("ReceiptChain", () => {
 		expect(r2.credentialSubject.chain.previous_receipt_hash).not.toBeNull();
 	});
 
+	it("rejects emit after a terminal receipt", async () => {
+		const chain = makeChain();
+		await chain.emit({ ...makeInput("/done"), terminal: true });
+		await expect(chain.emit(makeInput("/after"))).rejects.toThrow(/closed/i);
+	});
+
 	it("resumes an existing chain from a supplied head", async () => {
 		const emitter = new InMemoryEmitter();
 		const chain = makeChain({

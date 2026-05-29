@@ -54,8 +54,8 @@ logger = logging.getLogger(__name__)
 _CONCURRENT_EMIT_MESSAGE = (
     "concurrent emit() detected on a ReceiptChain; receipt construction is "
     "serialised at the receipt layer (ADR-0020), parallel tool calls cannot "
-    "build receipts concurrently in v1 — calls are queued in arrival order, "
-    "which may not match the order the tool calls completed"
+    "build receipts concurrently in v1 — concurrent calls are serialised in an "
+    "unspecified order under contention"
 )
 
 
@@ -130,6 +130,8 @@ class ReceiptChain:
         self._state_lock = threading.Lock()
         self._active = 0
         self._warned = False
+        # Set once a terminal receipt is signed; rejects further emit().
+        self._closed = False
 
     @property
     def chain_id(self) -> str:
@@ -158,6 +160,10 @@ class ReceiptChain:
         Raises (after the head has advanced) if the underlying emitter raises:
         the receipt was signed and the chain head moved on, so use a WAL-backed
         emitter when delivery durability matters.
+
+        Emitting a receipt with ``terminal=True`` closes the chain: any later
+        :meth:`emit` raises :class:`RuntimeError` rather than linking a receipt
+        after the terminal one (which :func:`verify_chain` would reject).
         """
         with self._state_lock:
             self._active += 1
@@ -168,6 +174,12 @@ class ReceiptChain:
             self._logger.warning(_CONCURRENT_EMIT_MESSAGE)
         try:
             with self._lock:
+                if self._closed:
+                    msg = (
+                        "ReceiptChain: terminal receipt already emitted; "
+                        "chain is closed"
+                    )
+                    raise RuntimeError(msg)
                 chain = Chain(
                     sequence=self._sequence,
                     previous_receipt_hash=self._previous_hash,
@@ -196,6 +208,9 @@ class ReceiptChain:
                 # (ADR-0020 WAL model).
                 self._previous_hash = hash_receipt(signed)
                 self._sequence += 1
+                # A terminal receipt closes the chain: nothing links after it.
+                if input.terminal:
+                    self._closed = True
                 self._emitter.emit(signed)
                 return signed
         finally:

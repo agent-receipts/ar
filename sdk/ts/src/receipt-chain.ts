@@ -95,6 +95,8 @@ export class ReceiptChain {
 	#active = 0;
 	/** Whether the concurrency warning has already fired (warn at most once). */
 	#warned = false;
+	/** Set once a terminal receipt is signed; rejects further emit() calls. */
+	#closed = false;
 
 	constructor(options: ReceiptChainOptions) {
 		if (!options.chainId) {
@@ -151,6 +153,10 @@ export class ReceiptChain {
 	 * Rejects (after the head has advanced) if the underlying emitter rejects:
 	 * the receipt was signed and the chain head moved on, so use a WAL-backed
 	 * emitter when delivery durability matters.
+	 *
+	 * Emitting a receipt with `terminal: true` closes the chain: any later
+	 * `emit()` rejects rather than linking a receipt after the terminal one
+	 * (which {@link verifyChain} would reject as a protocol violation).
 	 */
 	emit(input: ReceiptChainEmitInput): Promise<AgentReceipt> {
 		if (this.#active > 0 && !this.#warned) {
@@ -171,6 +177,11 @@ export class ReceiptChain {
 	}
 
 	async #build(input: ReceiptChainEmitInput): Promise<AgentReceipt> {
+		if (this.#closed) {
+			throw new Error(
+				"ReceiptChain: terminal receipt already emitted; chain is closed",
+			);
+		}
 		const chain: Chain = {
 			sequence: this.#sequence,
 			previous_receipt_hash: this.#previousReceiptHash,
@@ -186,6 +197,10 @@ export class ReceiptChain {
 		// delivery failure cannot fork or stall the chain (ADR-0020 WAL model).
 		this.#previousReceiptHash = hashReceipt(signed);
 		this.#sequence += 1;
+		// A terminal receipt closes the chain: nothing may link after it.
+		if (input.terminal) {
+			this.#closed = true;
+		}
 		await this.#emitter.emit(signed);
 		return signed;
 	}
