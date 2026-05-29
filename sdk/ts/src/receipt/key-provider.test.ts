@@ -55,24 +55,22 @@ describe("GeneratingKeyProvider", () => {
 	});
 
 	it("emits exactly one stderr warning per process", async () => {
-		// Fresh module so the once-per-process latch starts unset.
+		// Fresh module so the once-per-process latch starts unset. The
+		// beforeEach `stderr` spy already covers process.stderr (a global
+		// singleton), so it captures writes from the re-imported module too.
 		vi.resetModules();
 		const { GeneratingKeyProvider: FreshProvider } = await import(
 			"./key-provider.js"
 		);
-		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-		try {
-			new FreshProvider();
-			new FreshProvider();
-			new FreshProvider();
 
-			const warnings = spy.mock.calls.filter(([chunk]) =>
-				String(chunk).includes("GeneratingKeyProvider is dev-only"),
-			);
-			expect(warnings).toHaveLength(1);
-		} finally {
-			spy.mockRestore();
-		}
+		new FreshProvider();
+		new FreshProvider();
+		new FreshProvider();
+
+		const warnings = stderr.mock.calls.filter(([chunk]) =>
+			String(chunk).includes("GeneratingKeyProvider is dev-only"),
+		);
+		expect(warnings).toHaveLength(1);
 	});
 
 	it("exports a named error class", () => {
