@@ -44,8 +44,17 @@ the daemon are caught in the same PR that introduces them.
 
 ## Run
 
-The daemon takes config from flags (preferred) or environment variables. All
-fields have sensible per-OS defaults.
+The daemon takes config from a TOML config file, environment variables, or
+flags, in **precedence order file < env < flags** (lowest to highest): a key
+omitted from the file leaves the env/flag/default value untouched, and any
+matching env var or explicit flag overrides a file value. All fields have
+sensible per-OS defaults. The config file defaults to
+`$XDG_DATA_HOME/agent-receipts/daemon.toml` (falling back to
+`~/.local/share/agent-receipts/daemon.toml`) — a missing default-path file is
+fine; override the path with `--config` or `AGENTRECEIPTS_CONFIG`, where a
+missing file, malformed TOML, or an unknown key is an error. `--print-config`
+prints the fully resolved config (paths only — never key material) in the same
+shape, so it doubles as a starting `daemon.toml`.
 
 ```sh
 agent-receipts-daemon \
@@ -68,6 +77,8 @@ agent-receipts-daemon \
 | `--public-key` | `AGENTRECEIPTS_PUBLIC_KEY` | `<--key>.pub` |
 | `--verification-method` | `AGENTRECEIPTS_VERIFICATION_METHOD` | `did:agent-receipts-daemon:local#k1` |
 | `--shutdown-deadline` | — | `200ms` — time budget for emitting interrupted-chain terminators on SIGTERM/SIGINT (see [Graceful shutdown](#graceful-shutdown)). |
+| `--config` | `AGENTRECEIPTS_CONFIG` | `$XDG_DATA_HOME/agent-receipts/daemon.toml` (falls back to `~/.local/share/agent-receipts/daemon.toml`) — TOML config file; a missing default-path file is fine, but a missing `--config`/`AGENTRECEIPTS_CONFIG` path, malformed TOML, or an unknown key is an error. |
+| `--print-config` | — | `false` — print the fully resolved config (paths only — never key material) and exit; the output doubles as a starting `daemon.toml`. |
 
 The signing key file must be a PKCS#8-encoded Ed25519 private key (the format
 `receipt.GenerateKeyPair()` in `sdk/go` produces) with permissions no looser
