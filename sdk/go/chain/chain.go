@@ -124,6 +124,11 @@ func New(opts Options) (*ReceiptChain, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	var prevHash *string
+	if opts.PreviousReceiptHash != nil {
+		s := *opts.PreviousReceiptHash
+		prevHash = &s
+	}
 	return &ReceiptChain{
 		chainID:            opts.ChainID,
 		privateKeyPEM:      opts.PrivateKeyPEM,
@@ -131,7 +136,7 @@ func New(opts Options) (*ReceiptChain, error) {
 		emitter:            opts.Emitter,
 		logger:             logger,
 		sequence:           seq,
-		previousHash:       opts.PreviousReceiptHash,
+		previousHash:       prevHash,
 	}, nil
 }
 
