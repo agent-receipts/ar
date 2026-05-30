@@ -246,18 +246,12 @@ Linux environments without `$XDG_RUNTIME_DIR`.
 ## Version compatibility
 
 The daemon and the `sdk/go` module are versioned independently — their version
-numbers do not have to match. Each daemon release pins a specific `sdk/go`
-version in its own `go.mod`, and that pin is the compatibility source of truth.
-Pinning a daemon version in CI automatically gets you the `sdk/go` version it
-was built against: `go install` of the daemon resolves its `go.mod`, so you
-never need to match the numbers by hand. The rows below are examples of that
-independently-pinned mapping, not a rule that the numbers stay equal.
-
-| Daemon version | sdk/go version | Notes |
-|----------------|---------------|-------|
-| v0.13.0 | v0.13.0 | Spec v0.4.0: `idempotency_key`; `chain.status="interrupted"` on shutdown; unsafe-socket-path guard |
-| v0.10.0 | v0.9.0 | Pipeline redaction; `agent-receipts list` |
-| v0.8.0 | v0.8.0 | Initial daemon release |
+numbers do not have to match. When you pin a daemon version in CI (for example,
+`go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@vX.Y.Z`),
+`go install` resolves the daemon release's own `go.mod` and pulls the exact
+`sdk/go` it was built against. There is nothing to match by hand, and you never
+install or pin `sdk/go` yourself. To find the exact SDK version a given daemon
+release used, read that release's `go.mod` — it is the authoritative source.
 
 **Emitter SDKs** (TypeScript, Python, Go) connect to the daemon over the Unix
 socket using the same frame protocol regardless of daemon version, as long as
