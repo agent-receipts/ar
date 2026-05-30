@@ -64,7 +64,7 @@ The default `--addr` binds loopback only (`127.0.0.1:8787`) — opt in explicitl
 
 ### SQLite (default, v0)
 
-The default store. A single file on local disk. No external dependencies, no server to manage. The store opens with `PRAGMA journal_mode=WAL`, which improves concurrent read performance and reduces lock contention, but does not by itself change fsync behaviour — durability on crash depends on the OS and filesystem defaults.
+The default store. A single file on local disk. No external dependencies, no server to manage. The store opens with `PRAGMA journal_mode=WAL`, which improves concurrency and journaling — readers and the single writer no longer block each other, and commits append to a write-ahead log instead of locking the main file. WAL alone does **not** guarantee fsync-level durability: the collector does not set `PRAGMA synchronous`, so commits run at SQLite's WAL default (`synchronous=NORMAL`), which fsyncs at checkpoints rather than on every commit. Crash durability therefore depends on a `synchronous` setting the collector does not currently configure, plus the OS and filesystem defaults — a power loss can lose the most recent commits.
 
 **When it fits:** low-to-moderate volume, single-node deployments, development, single-agent pipelines. SQLite handles thousands of receipts per second on commodity hardware without tuning.
 
@@ -148,13 +148,13 @@ GET /healthz
 
 Wire `/healthz` to your load balancer's health check. An instance that returns `503` should be taken out of rotation — it will reject all writes until the store comes back.
 
-`/healthz` probes store reachability only; it is not a write-safety probe. A full disk, for example, can still allow reads while insert operations fail — the health check may return `200` while `POST /receipts` begins returning `500`. Monitor `5xx` rates on the ingest path as a separate signal.
+`/healthz` probes store reachability only — it runs a read-only presence lookup (a `SELECT` against the store) and never attempts a write. A `200` therefore confirms the store is reachable, **not** that writes will succeed. A full disk, for example, can still satisfy the read probe while insert operations fail — the health check returns `200` while `POST /receipts` begins returning `500`. Monitor `5xx` rates on the ingest path as a separate write-safety signal.
 
 ### Structured logging
 
-The collector emits structured JSON logs (`log/slog`) to stdout. Each record carries the standard slog `level`, `time`, and `msg` fields. Records for successfully parsed receipts add `id` (when available — early-rejection paths such as body-too-large or malformed JSON log without it); the accept path also adds `chain_id` and `sequence`. The collector does **not** emit an HTTP status field — derive status-code signals from the `msg` value (or from your proxy's access logs, see [Metrics](#metrics)).
+The collector emits structured JSON logs (`log/slog`) to stdout. Each record carries the standard slog `level`, `time`, and `msg` fields. The `id` field is **best-effort, present only when available**: the accept path, the duplicate (`409`) path, and the structural-validation and insert-failure paths attach it (and the accept path also adds `chain_id` and `sequence`), but the early-rejection paths that fail before a receipt id can be decoded do not. The collector does **not** emit an HTTP status field — derive status-code signals from the `msg` value (or from your proxy's access logs, see [Metrics](#metrics)).
 
-Some early-rejection paths (empty body, trailing-data) return `400` without emitting a structured log record; when the body cannot be parsed, the log line will also lack an `id` field. Use proxy access logs as the authoritative source for error-rate counts — collector log counts will undercount `400` traffic. Key things to filter on for audit-relevant events:
+Not every `400` produces a log record. The empty-body and trailing-data (multiple JSON objects) rejections return `400` with no structured log line at all, while the body-too-large, body-read-failure, and malformed-JSON rejections log a `WARN` but carry no `id`. Because of this, **do not derive client-error metrics from collector logs alone** — they will miss some `400`s entirely. Use proxy access logs as the authoritative source for error-rate counts. Key things to filter on for audit-relevant events:
 
 | Filter | What to watch |
 |--------|---------------|
@@ -170,7 +170,9 @@ For audit purposes, `msg="receipt accepted"` log lines — with their `id`, `cha
 
 ### Metrics
 
-There is no built-in Prometheus metrics endpoint in v0. The collector logs no HTTP status field, so derive status-code metrics from your proxy/load-balancer access logs (which record the response status directly), or by counting the specific collector `msg` values that map to each outcome:
+There is no built-in Prometheus metrics endpoint in v0. The collector logs no HTTP status field, so derive status-code metrics from your proxy/load-balancer access logs (which record the response status directly), or by counting the specific collector `msg` values that map to each outcome.
+
+When deriving rates from access logs, **filter by route and method (`POST /receipts`)**. The collector also serves `GET /healthz`, and load-balancer probes against it produce a steady stream of `200`s — counting all `2xx` regardless of route would conflate health-check traffic with receipt ingest and skew the rates. Each row below is already scoped to `POST /receipts` for this reason:
 
 | Metric | How to derive |
 |--------|---------------|
@@ -185,7 +187,7 @@ If you add a message queue (SQS, Pub/Sub, Kafka) in front of the collector as a 
 
 ## Trust boundary
 
-**The collector is not a trusted component for chain construction.** Every receipt arrives already signed and chained client-side, before it leaves the SDK. The collector stores wire bytes verbatim — it does not re-sign, reorder, recompute chain linkage (`previous_receipt_hash`), or verify signatures. (It does compute a `receipt_hash` of the raw body for storage and indexing, but this is independent of chain construction.)
+**The collector is not a trusted component for chain construction.** Every receipt arrives already signed and chained client-side, before it leaves the SDK. The collector stores wire bytes verbatim — it does not re-sign, reorder, recompute chain linkage (`previous_receipt_hash`), or verify signatures. It **does** compute a canonical `receipt_hash` over the raw body, which it stores for indexing and returns in the `201 Created` response, but that is a content digest of the bytes as received — it is independent of chain construction and is not a signature or linkage check.
 
 This has two important operational consequences:
 
