@@ -125,6 +125,37 @@ func TestResolveConfig_BoolPrecedence(t *testing.T) {
 			t.Error("flag should enable unsafe_socket_path")
 		}
 	})
+	t.Run("flag false over file true", func(t *testing.T) {
+		path := writeConfig(t, "unsafe_socket_path = true\n")
+		r, err := resolveConfig([]string{"--config", path, "--unsafe-socket-path=false"}, noEnv, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.cfg.UnsafeSocketPath {
+			t.Error("explicit --unsafe-socket-path=false should override file true")
+		}
+	})
+	t.Run("env false over file true", func(t *testing.T) {
+		path := writeConfig(t, "unsafe_socket_path = true\n")
+		env := envMap(map[string]string{"AGENTRECEIPTS_UNSAFE_SOCKET_PATH": "0"})
+		r, err := resolveConfig([]string{"--config", path}, env, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.cfg.UnsafeSocketPath {
+			t.Error("AGENTRECEIPTS_UNSAFE_SOCKET_PATH=0 should override file true")
+		}
+	})
+	t.Run("default false", func(t *testing.T) {
+		path := writeConfig(t, "chain_id = \"x\"\n")
+		r, err := resolveConfig([]string{"--config", path}, noEnv, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.cfg.UnsafeSocketPath {
+			t.Error("unsafe_socket_path default = true, want false (safe)")
+		}
+	})
 }
 
 // TestResolveConfig_DefaultPathLoaded: when no --config is given, the loader

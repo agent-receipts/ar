@@ -120,7 +120,6 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	initKeys := fs.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
 	showVersion := fs.Bool("version", false, "Print version and exit")
 	printConfigFlag := fs.Bool("print-config", false, "Print the resolved config (file < env < flags) and exit")
-	unsafeSocket := fs.Bool("unsafe-socket-path", false, "Permit a --socket/AGENTRECEIPTS_SOCKET path outside the per-platform safe set (logs a warning; does not override TCP rejection)")
 
 	// Layer 1 + 2: start from per-OS defaults, then overlay the config file
 	// (if any), then environment variables. The resulting values become the
@@ -135,7 +134,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 		ShutdownDeadline:     200 * time.Millisecond,
 	}
 
-	fc, fcUnsafe, err := loadConfigLayer(args, getenv)
+	fc, err := loadConfigLayer(args, getenv)
 	if err != nil {
 		return resolved{}, err
 	}
@@ -151,6 +150,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	fs.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	fs.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
 	fs.BoolVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "No-op as of v0.3.0 envelope migration (ADR-0012 amendment); plaintext-in-body shape removed. Encrypted disclosure pending in #280. (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
+	fs.BoolVar(&cfg.UnsafeSocketPath, "unsafe-socket-path", cfg.UnsafeSocketPath, "Permit a --socket/AGENTRECEIPTS_SOCKET path outside the per-platform safe set (logs a warning; does not override TCP rejection) (env: AGENTRECEIPTS_UNSAFE_SOCKET_PATH)")
 	fs.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults) (env: AGENTRECEIPTS_REDACT_PATTERNS)")
 	fs.DurationVar(&cfg.ShutdownDeadline, "shutdown-deadline", cfg.ShutdownDeadline, "Best-effort time budget for emitting interrupted-chain terminators on SIGTERM/SIGINT (cannot preempt in-progress SQLite I/O)")
 
@@ -164,15 +164,6 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 		return resolved{}, err
 	}
 
-	// unsafe-socket-path: a file value seeds the default; an explicit flag
-	// overrides it. Boolean precedence mirrors the string flags above.
-	unsafeDefault := fcUnsafe
-	if v := getenv("AGENTRECEIPTS_UNSAFE_SOCKET_PATH"); v == "1" {
-		unsafeDefault = true
-	}
-	unsafeResolved := unsafeDefault || *unsafeSocket
-	cfg.UnsafeSocketPath = unsafeResolved
-
 	return resolved{
 		cfg:         cfg,
 		showVersion: *showVersion,
@@ -184,9 +175,8 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 // loadConfigLayer resolves the config-file path (--config flag or the default
 // XDG path) and loads it. An explicit --config naming a missing file is an
 // error; a missing file at the default path is tolerated (returns a nil
-// FileConfig). The returned bool is the file's unsafe_socket_path value (false
-// when unset) so the boolean flag layering in resolveConfig stays in one place.
-func loadConfigLayer(args []string, getenv func(string) string) (*daemon.FileConfig, bool, error) {
+// FileConfig).
+func loadConfigLayer(args []string, getenv func(string) string) (*daemon.FileConfig, error) {
 	// First pass: read only --config so we know which file to load before
 	// registering the rest of the flags (whose defaults depend on the file).
 	// We can't use flag.Parse here — it stops at the first unknown flag — so we
@@ -205,19 +195,15 @@ func loadConfigLayer(args []string, getenv func(string) string) (*daemon.FileCon
 		path = daemon.DefaultConfigPath()
 		if path == "" {
 			// No XDG data home and no home dir: skip the file layer entirely.
-			return nil, false, nil
+			return nil, nil
 		}
 	}
 
 	fc, err := daemon.LoadConfigFile(path, required)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	if fc == nil {
-		return nil, false, nil
-	}
-	unsafe := fc.UnsafeSocketPath != nil && *fc.UnsafeSocketPath
-	return fc, unsafe, nil
+	return fc, nil
 }
 
 // scanConfigFlag extracts the --config value from args, accepting both the
@@ -279,6 +265,9 @@ func applyFileConfig(cfg *daemon.Config, fc *daemon.FileConfig) {
 	if fc.ParameterDisclosure != nil {
 		cfg.ParameterDisclosure = *fc.ParameterDisclosure
 	}
+	if fc.UnsafeSocketPath != nil {
+		cfg.UnsafeSocketPath = *fc.UnsafeSocketPath
+	}
 	if fc.RedactPatterns != nil {
 		cfg.RedactPatternsPath = *fc.RedactPatterns
 	}
@@ -314,6 +303,9 @@ func envOverlay(cfg *daemon.Config, getenv func(string) string) {
 	}
 	if v := getenv("AGENTRECEIPTS_PARAMETER_DISCLOSURE"); v != "" {
 		cfg.ParameterDisclosure = v == "1"
+	}
+	if v := getenv("AGENTRECEIPTS_UNSAFE_SOCKET_PATH"); v != "" {
+		cfg.UnsafeSocketPath = v == "1"
 	}
 	if v := getenv("AGENTRECEIPTS_REDACT_PATTERNS"); v != "" {
 		cfg.RedactPatternsPath = v
