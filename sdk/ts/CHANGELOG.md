@@ -15,6 +15,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 - **`DaemonEmitter.emit` surfaces transport failure by default** ([#599](https://github.com/agent-receipts/ar/issues/599), ADR-0025). When the daemon is unreachable or a write fails, `emit()` now resolves with the new `EmitTransportError` (a subclass of `Error`, exported from the package root) instead of `null`. Check `err instanceof EmitTransportError` to distinguish it from the plain `Error` returned for caller bugs. Pass `bestEffort: true` to the constructor to opt back into loss-tolerant emission (`emit()` resolves with `null` on transport failure).
 
+### Added
+
+- **`ReceiptChain`** ([#488](https://github.com/agent-receipts/ar/issues/488), ADR-0020). Stateful, serialised builder for a single hash-linked chain, exported from the package root with its options (`ReceiptChainOptions`) and per-receipt input type (`ReceiptChainEmitInput`). It owns the chain head (`sequence` + `previous_receipt_hash`) and runs build → sign → hash → link → deliver through an internal promise queue, so concurrent `emit()` calls are sequenced at the receipt layer even when the tool calls that triggered them ran in parallel. The first overlapping call fires a one-shot warning (`console.warn` by default; override via `onConcurrentEmit`). The head advances before delivery so a transient emitter failure cannot fork or stall the chain. Parallel sub-chains remain out of scope for v1.
+
 ### Changed
 
 - **Dropped the `@hpke/core` runtime dependency** ([#473](https://github.com/agent-receipts/ar/issues/473)). The HPKE disclosure envelope (`encryptDisclosure` / `decryptDisclosure` / `generateForensicKeyPair`) now uses an in-tree RFC 9180 base-mode implementation built on `node:crypto` (`src/receipt/hpke.ts`), removing a third-party crypto dependency from a cryptographic protocol's supply chain. The public API and the on-the-wire envelope are unchanged — the deterministic cross-SDK test vectors still pass byte-for-byte.

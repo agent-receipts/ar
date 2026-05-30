@@ -220,6 +220,63 @@ production"* caveat below. (Wiring the `Signer` into `sign_receipt` so it signs
 canonical receipts end-to-end is tracked separately; this ships the key-custody
 half.)
 
+## Sequential receipt construction (parallel tool calls)
+
+Hash chaining is inherently sequential: receipt *N* must be fully signed and its
+hash computed **before** receipt *N+1* is constructed, or the
+`previous_receipt_hash` link cannot be formed. A single-threaded agent satisfies
+this for free, but an agent that fires **parallel tool calls** (across threads)
+would race on the shared chain head (`sequence` + `previous_receipt_hash`) and
+produce colliding sequence numbers or a forked chain.
+
+`ReceiptChain` owns that head and serialises the whole build → sign → hash →
+link → deliver pipeline under a lock, so concurrent `emit()` calls are sequenced
+**at the receipt layer** even when the tool calls that triggered them ran in
+parallel. Concurrent emission is not supported as parallel chains in v1 (a
+future ADR may add forked sub-chains); overlapping calls from other threads
+block until the in-flight one completes, and the first overlap logs a one-shot
+warning so the misuse is visible.
+
+```python
+from agent_receipts import (
+    ChainEmitInput,
+    InMemoryEmitter,
+    ReceiptChain,
+    generate_key_pair,
+)
+from agent_receipts.receipt.create import ActionInput
+from agent_receipts.receipt.types import Issuer, Outcome, Principal
+
+keys = generate_key_pair()
+
+# One ReceiptChain per logical chain (e.g. per agent session). It owns the
+# chain head; pass any Emitter — here the in-memory test double, in production
+# an HttpEmitter or a WAL-backed emitter.
+chain = ReceiptChain(
+    chain_id="session-1",
+    private_key=keys.private_key,
+    verification_method="did:agent:my-agent#key-1",
+    emitter=InMemoryEmitter(),
+)
+
+# Every emit() is sequenced: receipt N is signed and hashed before N+1 is
+# built, even if your tool calls run on parallel threads.
+receipt = chain.emit(
+    ChainEmitInput(
+        issuer=Issuer(id="did:agent:my-agent"),
+        principal=Principal(id="did:user:alice"),
+        action=ActionInput(type="filesystem.file.read", risk_level="low"),
+        outcome=Outcome(status="success"),
+    )
+)
+
+print(receipt.credentialSubject.chain.sequence)  # 1
+```
+
+The head advances as soon as a receipt is signed and hashed — *before* delivery
+— so a transient emitter failure does not fork or stall the chain; wrap a
+`WalEmitter` around your transport for at-least-once delivery.
+
 ## Appendix: in-process signing (tutorial and testing only)
 
 The SDK can also create and sign a receipt entirely in your process, with no
