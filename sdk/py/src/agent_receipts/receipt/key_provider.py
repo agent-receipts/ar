@@ -50,7 +50,8 @@ class KeyProvider(Protocol):
     (see ADR-0018).
     """
 
-    def get_key_pair(self) -> KeyPair: ...
+    def get_key_pair(self) -> KeyPair:
+        raise NotImplementedError
 
 
 class GeneratingKeyProvider:
