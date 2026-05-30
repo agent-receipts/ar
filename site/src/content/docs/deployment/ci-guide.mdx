@@ -21,9 +21,9 @@ A CI job that uses Agent Receipts follows this shape:
 4. **Start the daemon** in the background.
 5. **Poll for socket readiness** before launching any emitter.
 6. **Run your agent** under audit.
-7. **Verify the chain** with `agent-receipts verify`.
-8. **Collect artefacts** (DB and public key) on failure.
-9. **Tear down** the daemon.
+7. **Tear down** the daemon so it writes the terminal receipt (runs even on failure).
+8. **Verify the chain** with `agent-receipts verify` (runs even on failure).
+9. **Collect artefacts** (DB and public key) on failure.
 
 ## Working GitHub Actions workflow
 
@@ -46,8 +46,9 @@ env:
   # Explicit socket path inside the runner's home directory.
   # GitHub-hosted runners do not set $XDG_RUNTIME_DIR, so the daemon's default
   # Linux path falls back to /run/agentreceipts/events.sock (requires root).
-  # We pick a home-rooted path and pass --unsafe-socket-path to opt in.
-  # Remove this workaround once daemon #538 ships user-writable safe paths.
+  # We pick a home-rooted path and pass --unsafe-socket-path: this is the
+  # supported escape hatch for runners with no per-user runtime dir.
+  # See the socket-path section below and daemon #538 for the policy.
   AGENTRECEIPTS_SOCKET: /home/runner/.local/share/agent-receipts/events.sock
   AGENTRECEIPTS_DB: /home/runner/.local/share/agent-receipts/receipts.db
 
@@ -115,19 +116,15 @@ jobs:
           #   npx my-agent
           echo "Replace with your agent command"
 
-      # 6. Verify the receipt chain.
-      #    agent-receipts verify reads AGENTRECEIPTS_DB from the environment
-      #    and derives the public-key path from the default signing.key.pub
-      #    location. Exit 0 = chain valid; exit 1 = chain broken; exit 2 = usage error.
-      - name: Verify receipt chain
-        run: |
-          agent-receipts verify \
-            --chain-id "ci-run-${{ github.run_id }}"
-
-      # 7. Gracefully stop the daemon so it writes the terminal receipt.
-      #    The terminal receipt records chain.status="interrupted" when the
-      #    daemon is stopped mid-run, or omits status (equivalent to "complete")
-      #    when signalled after a clean session end.
+      # 6. Gracefully stop the daemon so it writes the terminal receipt.
+      #    if: always() so the daemon is stopped — and the chain finalised —
+      #    even when the agent step fails. On SIGTERM the daemon emits a terminal
+      #    receipt with chain.status="interrupted" for the open chain, so the
+      #    verifier can classify the chain rather than report "unknown". Stopping
+      #    before the verify step means verification runs against the finalised
+      #    chain. (If the shutdown deadline expires before the terminator is
+      #    written, no terminal receipt is emitted and the verifier reports
+      #    "unknown" instead.)
       - name: Stop daemon
         if: always()
         run: |
@@ -135,6 +132,20 @@ jobs:
             kill "${DAEMON_PID}" 2>/dev/null || true
             wait "${DAEMON_PID}" 2>/dev/null || true
           fi
+
+      # 7. Verify the receipt chain.
+      #    if: always() so verification runs even when the agent step fails —
+      #    that is exactly when proving the chain matters most. A failed agent
+      #    step has already marked the job failed; a broken chain (exit 1) fails
+      #    this step too, so the job ends red on either condition.
+      #    agent-receipts verify reads AGENTRECEIPTS_DB from the environment
+      #    and derives the public-key path from the default signing.key.pub
+      #    location. Exit 0 = chain valid; exit 1 = chain broken; exit 2 = usage error.
+      - name: Verify receipt chain
+        if: always()
+        run: |
+          agent-receipts verify \
+            --chain-id "ci-run-${{ github.run_id }}"
 
       # 8. Upload artefacts on failure for post-incident review.
       #    The DB and public key together are sufficient for offline verification:
@@ -164,11 +175,20 @@ root to create and is outside the `runner` user's writable scope.
 
 Any `$HOME`-rooted path (e.g. `~/.local/share/agent-receipts/events.sock`) is
 also **outside the Linux safe set** (`$XDG_RUNTIME_DIR`, `/run`, `/var/run`),
-so the daemon rejects it unless `--unsafe-socket-path` is passed. This flag is
-a boolean that also accepts the `AGENTRECEIPTS_UNSAFE_SOCKET_PATH` environment
+so the daemon rejects it unless `--unsafe-socket-path` is passed. This guard is
+[daemon issue #538](https://github.com/agent-receipts/ar/issues/538): the daemon
+refuses to start when `--socket` / `AGENTRECEIPTS_SOCKET` resolves outside the
+per-platform safe set unless the override flag is given. When `$XDG_RUNTIME_DIR`
+is unset — exactly the GitHub-hosted runner case — the daemon treats it as "no
+per-user runtime dir available" and **deliberately does not synthesize a
+fallback**, so any home-rooted override requires `--unsafe-socket-path`. The flag
+is a boolean that also accepts the `AGENTRECEIPTS_UNSAFE_SOCKET_PATH` environment
 variable.
 
-The workaround used in the recipe above:
+`--unsafe-socket-path` is the **intended, supported escape hatch** for exactly
+this situation. It exists so legitimate edge cases — CI runners and containers
+without a per-user runtime dir — can opt out of the safe-path guard. The recipe
+above uses it like this:
 
 ```yaml
 env:
@@ -178,16 +198,15 @@ env:
   run: agent-receipts-daemon --unsafe-socket-path ...
 ```
 
-`--unsafe-socket-path` unblocks the legitimate CI case; the daemon logs a
-`level=warn` line at startup and every 60 seconds as a reminder that the
-path is outside the trusted safe set. This warning is expected and can be
+With the flag, the daemon starts, logs a `level=warn` line naming the path at
+startup, and re-emits that warning every 60 seconds. These warnings are expected
+on a CI runner — they record the deliberate opt-out, not a fault — and can be
 filtered from your logs.
 
-**This workaround will not be needed once
-[daemon issue #538](https://github.com/agent-receipts/ar/issues/538) lands**,
-which adds user-writable paths to the Linux safe set. Until then,
-`--unsafe-socket-path` is the documented path for unprivileged Linux
-environments without `$XDG_RUNTIME_DIR`.
+This is the current, shipped behavior: there is no per-user safe path on a
+GitHub-hosted runner, so `--unsafe-socket-path` is the documented way to run the
+daemon there. Do not expect the flag requirement to disappear for unprivileged
+Linux environments without `$XDG_RUNTIME_DIR`.
 
 <Aside type="tip">
   If your runner image is systemd-based and sets `$XDG_RUNTIME_DIR` (for
@@ -241,5 +260,5 @@ exit 1 means it is broken (output lists per-receipt status and the failing cause
 
 - [Daemon Setup](/getting-started/daemon-setup/) — install, init, and start the daemon locally
 - [CLI Commands](/reference/cli-commands/) — full flag reference for `agent-receipts verify`, `verify-event`, `doctor`, `list`, and `show`
-- [daemon issue #538](https://github.com/agent-receipts/ar/issues/538) — planned user-writable safe socket paths (removes the need for `--unsafe-socket-path` on unprivileged Linux)
+- [daemon issue #538](https://github.com/agent-receipts/ar/issues/538) — the shipped safe-path guard that refuses out-of-safe-set socket overrides unless `--unsafe-socket-path` is passed
 - [daemon CHANGELOG](https://github.com/agent-receipts/ar/blob/main/daemon/CHANGELOG.md) — version history and per-feature version map
