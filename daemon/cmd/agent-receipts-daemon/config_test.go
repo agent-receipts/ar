@@ -260,6 +260,21 @@ func TestResolveConfig_EnvConfigPath(t *testing.T) {
 	}
 }
 
+// TestResolveConfig_RepeatedConfigFlagLastWins: a repeated --config loads the
+// LAST occurrence, matching Go's flag package (last-wins) so the file actually
+// loaded agrees with what fs.Parse records for the registered --config flag.
+func TestResolveConfig_RepeatedConfigFlagLastWins(t *testing.T) {
+	first := writeConfig(t, `chain_id = "first"`+"\n")
+	second := writeConfig(t, `chain_id = "second"`+"\n")
+	r, err := resolveConfig([]string{"--config", first, "--config", second}, noEnv, io.Discard)
+	if err != nil {
+		t.Fatalf("resolveConfig: %v", err)
+	}
+	if r.cfg.ChainID != "second" {
+		t.Errorf("chain_id = %q, want last --config (%q) to win", r.cfg.ChainID, "second")
+	}
+}
+
 // TestPrintConfig_OutputShape: --print-config emits every key in config-file
 // form so the output doubles as a starting daemon.toml, and reflects the merged
 // values.

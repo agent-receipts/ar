@@ -52,7 +52,7 @@ type resolved struct {
 func main() {
 	r, err := resolveConfig(os.Args[1:], os.Getenv, os.Stderr)
 	if err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
 		fmt.Fprintf(os.Stderr, "agent-receipts-daemon: %v\n", err)
@@ -158,9 +158,9 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	fs.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults) (env: AGENTRECEIPTS_REDACT_PATTERNS)")
 	fs.DurationVar(&cfg.ShutdownDeadline, "shutdown-deadline", cfg.ShutdownDeadline, "Best-effort time budget for emitting interrupted-chain terminators on SIGTERM/SIGINT (cannot preempt in-progress SQLite I/O)")
 
-	// configPath is registered on the real set so Parse accepts --config and
-	// -h lists it; its value was already consumed by loadConfigLayer's early
-	// pass, so we don't read it again here.
+	// scanConfigFlag (via loadConfigLayer) is the source of truth for --config:
+	// it has already consumed the value, so we never read *configPath. The flag
+	// is registered on fs only so Parse accepts --config and -h lists it.
 	_ = configPath
 
 	// Layer 3: explicit flags override file+env.
@@ -224,26 +224,35 @@ func loadConfigLayer(args []string, getenv func(string) string) (*daemon.FileCon
 // the caller can distinguish "explicit --config" (missing file is an error)
 // from "no --config" (fall back to the default path, where a missing file is
 // fine). Stops at "--" so it never reads past the flag terminator.
+//
+// This is the source of truth for --config: it loads the file before any other
+// flag is registered. When --config is repeated it returns the LAST occurrence,
+// matching Go's flag package (last-wins) so the file we load agrees with what
+// fs.Parse would record for the registered --config flag.
 func scanConfigFlag(args []string) (string, bool) {
+	value := ""
+	found := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
-			return "", false
+			break
 		}
-		if a == "--config" || a == "-config" {
+		switch {
+		case a == "--config" || a == "-config":
+			found = true
 			if i+1 < len(args) {
-				return args[i+1], true
+				value = args[i+1]
+				i++
+			} else {
+				value = ""
 			}
-			return "", true
-		}
-		if v, ok := strings.CutPrefix(a, "--config="); ok {
-			return v, true
-		}
-		if v, ok := strings.CutPrefix(a, "-config="); ok {
-			return v, true
+		case strings.HasPrefix(a, "--config="):
+			value, found = strings.TrimPrefix(a, "--config="), true
+		case strings.HasPrefix(a, "-config="):
+			value, found = strings.TrimPrefix(a, "-config="), true
 		}
 	}
-	return "", false
+	return value, found
 }
 
 // applyFileConfig overlays a FileConfig onto cfg. Only keys present in the file
