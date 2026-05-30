@@ -13,7 +13,7 @@ receipt chain. It assumes you have already read [Daemon Setup](/getting-started/
 
 A CI job that uses Agent Receipts follows this shape:
 
-1. **Install** both daemon binaries from a pinned version.
+1. **Pin the Go toolchain** to the version the daemon's `go.mod` requires, then **install** both daemon binaries from a pinned version (`go install` needs a toolchain that satisfies the daemon's `go` directive; the runner's preinstalled Go may lag it).
 2. **Init keys** (one-time per workflow run — keys are not persisted between runs; each run is an independent chain).
 3. **Configure the socket path** — GitHub-hosted runners do not set `$XDG_RUNTIME_DIR`,
    so the daemon's default Linux socket path falls back to `/run/agentreceipts/events.sock`,
@@ -60,7 +60,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 1. Install both daemon binaries at a pinned version.
+      # 1. Pin the Go toolchain. The daemon module declares `go 1.26.1` in its
+      #    go.mod, and `go install ...@version` needs a toolchain that satisfies
+      #    that directive. The Go version preinstalled on `ubuntu-latest` drifts
+      #    with the runner image and may lag the daemon's requirement, so pin it
+      #    explicitly here rather than relying on the runner default.
+      #    Do not use `go-version-file`: this workflow does not check out the
+      #    agent-receipts repo, so there is no local go.mod to point it at.
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+
+      # 2. Install both daemon binaries at a pinned version.
       #    go install writes them to $(go env GOPATH)/bin, which is not
       #    guaranteed to be on $PATH in later steps on GitHub-hosted runners.
       #    Append it to $GITHUB_PATH so subsequent steps can find the binaries.
@@ -70,14 +82,14 @@ jobs:
           go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@${DAEMON_VERSION}
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # 2. Generate the signing key pair for this run.
+      # 3. Generate the signing key pair for this run.
       #    --init writes signing.key and signing.key.pub to the default
       #    XDG_DATA_HOME path (~/.local/share/agent-receipts/ on this runner).
       #    The receipt DB is created automatically when the daemon first starts.
       - name: Initialise signing key
         run: agent-receipts-daemon --init
 
-      # 3. Start the daemon in the background.
+      # 4. Start the daemon in the background.
       #    --unsafe-socket-path is required because $HOME-rooted paths are
       #    outside the Linux safe set ($XDG_RUNTIME_DIR / /run / /var/run).
       #    See "Sharp edge" below.
@@ -90,7 +102,7 @@ jobs:
             >> /tmp/ar-daemon.log 2>&1 &
           echo "DAEMON_PID=$!" >> "$GITHUB_ENV"
 
-      # 4. Poll for socket readiness before launching any emitter.
+      # 5. Poll for socket readiness before launching any emitter.
       #    The daemon creates the socket file once it is ready to accept
       #    connections; a -S test confirms the socket file exists.
       - name: Wait for daemon socket
@@ -109,7 +121,7 @@ jobs:
             exit 1
           fi
 
-      # 5. Run your agent under audit.
+      # 6. Run your agent under audit.
       #    The agent's emitter SDK reads AGENTRECEIPTS_SOCKET from the
       #    environment set above; no extra configuration is needed.
       - name: Run agent
@@ -119,7 +131,7 @@ jobs:
           #   npx my-agent
           echo "Replace with your agent command"
 
-      # 6. Gracefully stop the daemon so it writes the terminal receipt.
+      # 7. Gracefully stop the daemon so it writes the terminal receipt.
       #    if: always() so the daemon is stopped — and the chain finalised —
       #    even when the agent step fails. On SIGTERM the daemon emits a terminal
       #    receipt with chain.status="interrupted" for the open chain, so the
@@ -149,7 +161,7 @@ jobs:
             fi
           fi
 
-      # 7. Verify the receipt chain.
+      # 8. Verify the receipt chain.
       #    if: always() so verification runs even when the agent step fails —
       #    that is exactly when proving the chain matters most. A failed agent
       #    step has already marked the job failed; a broken chain (exit 1) fails
@@ -163,7 +175,7 @@ jobs:
           agent-receipts verify \
             --chain-id "ci-run-${{ github.run_id }}"
 
-      # 8. Upload artefacts on failure for post-incident review.
+      # 9. Upload artefacts on failure for post-incident review.
       #    The DB and public key together are sufficient for offline verification:
       #    agent-receipts verify --db receipts.db --public-key signing.key.pub
       - name: Upload receipt artefacts on failure
