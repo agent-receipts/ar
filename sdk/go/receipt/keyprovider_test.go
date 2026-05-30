@@ -100,6 +100,19 @@ func TestGeneratingKeyProviderWarnsExactlyOncePerProcess(t *testing.T) {
 	}
 }
 
+func TestGeneratingKeyProviderOnlyExactTrueIsProduction(t *testing.T) {
+	resetDevWarning(t, io.Discard)
+	t.Setenv(productionEnvVar, "1")
+
+	provider, err := NewGeneratingKeyProvider()
+	if err != nil {
+		t.Fatalf("expected no error for AGENTRECEIPTS_PRODUCTION=1, got %v", err)
+	}
+	if provider == nil {
+		t.Error("expected a valid provider when AGENTRECEIPTS_PRODUCTION is not exactly \"true\"")
+	}
+}
+
 func TestGeneratingKeyProviderDoesNotWarnInProduction(t *testing.T) {
 	var buf bytes.Buffer
 	resetDevWarning(t, &buf)

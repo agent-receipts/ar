@@ -56,8 +56,8 @@ class TestKeyGeneration:
 
         assert kp.public_key.startswith("-----BEGIN PUBLIC KEY-----")
         assert kp.private_key.startswith("-----BEGIN PRIVATE KEY-----")
-        # Stable for the lifetime of the provider.
-        assert provider.get_key_pair() is kp
+        # Stable for the lifetime of the provider (value equality, not identity).
+        assert provider.get_key_pair() == kp
 
         # The generated keypair must produce a verifiable signature.
         unsigned = make_unsigned(1, None)

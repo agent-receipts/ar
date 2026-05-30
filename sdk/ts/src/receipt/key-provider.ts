@@ -70,6 +70,6 @@ export class GeneratingKeyProvider implements KeyProvider {
 	}
 
 	getKeyPair(): Promise<KeyPair> {
-		return Promise.resolve(this.keyPair);
+		return Promise.resolve({ ...this.keyPair });
 	}
 }

@@ -5,9 +5,13 @@ from __future__ import annotations
 import os
 import sys
 import threading
-from typing import Protocol, runtime_checkable
+from dataclasses import replace
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from agent_receipts.receipt.signing import KeyPair, generate_key_pair
+from agent_receipts.receipt.signing import generate_key_pair
+
+if TYPE_CHECKING:
+    from agent_receipts.receipt.signing import KeyPair
 
 _PRODUCTION_ENV_VAR = "AGENTRECEIPTS_PRODUCTION"
 """Environment variable that marks a production deployment. A
@@ -79,4 +83,4 @@ class GeneratingKeyProvider:
 
     def get_key_pair(self) -> KeyPair:
         """Return the keypair generated when the provider was constructed."""
-        return self._key_pair
+        return replace(self._key_pair)
