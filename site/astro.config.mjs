@@ -118,6 +118,10 @@ export default defineConfig({
               label: "Ephemeral Compute",
               slug: "deployment/ephemeral-compute",
             },
+            {
+              label: "Collector Operations",
+              slug: "deployment/collector-operations",
+            },
           ],
         },
         {
