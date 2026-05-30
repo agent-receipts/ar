@@ -64,7 +64,7 @@ The default `--addr` binds loopback only (`127.0.0.1:8787`) — opt in explicitl
 
 ### SQLite (default, v0)
 
-The default store. A single file on local disk. No external dependencies, no server to manage, immediate durability via WAL mode.
+The default store. A single file on local disk. No external dependencies, no server to manage. The store opens with `PRAGMA journal_mode=WAL`, which improves concurrent read performance and reduces lock contention, but does not by itself change fsync behaviour — durability on crash depends on the OS and filesystem defaults.
 
 **When it fits:** low-to-moderate volume, single-node deployments, development, single-agent pipelines. SQLite handles thousands of receipts per second on commodity hardware without tuning.
 
@@ -152,7 +152,7 @@ Wire `/healthz` to your load balancer's health check. An instance that returns `
 
 ### Structured logging
 
-The collector emits structured JSON logs (`log/slog`) to stdout. Each record carries the standard slog `level`, `time`, and `msg` fields; receipt-handling records add `id`, and the accept path also adds `chain_id` and `sequence`. The collector does **not** emit an HTTP status field — derive status-code signals from the `msg` value (or from your proxy's access logs, see [Metrics](#metrics)).
+The collector emits structured JSON logs (`log/slog`) to stdout. Each record carries the standard slog `level`, `time`, and `msg` fields. Records for successfully parsed receipts add `id` (when available — early-rejection paths such as body-too-large or malformed JSON log without it); the accept path also adds `chain_id` and `sequence`. The collector does **not** emit an HTTP status field — derive status-code signals from the `msg` value (or from your proxy's access logs, see [Metrics](#metrics)).
 
 Some early-rejection paths (empty body, trailing-data) return `400` without emitting a structured log record; when the body cannot be parsed, the log line will also lack an `id` field. Use proxy access logs as the authoritative source for error-rate counts — collector log counts will undercount `400` traffic. Key things to filter on for audit-relevant events:
 
