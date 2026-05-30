@@ -61,11 +61,14 @@ jobs:
         uses: actions/checkout@v4
 
       # 1. Install both daemon binaries at a pinned version.
-      #    $GOPATH/bin is already on $PATH on GitHub-hosted runners.
+      #    go install writes them to $(go env GOPATH)/bin, which is not
+      #    guaranteed to be on $PATH in later steps on GitHub-hosted runners.
+      #    Append it to $GITHUB_PATH so subsequent steps can find the binaries.
       - name: Install agent-receipts binaries
         run: |
           go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@${DAEMON_VERSION}
           go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@${DAEMON_VERSION}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       # 2. Generate the signing key pair for this run.
       #    --init writes signing.key and signing.key.pub to the default
@@ -125,12 +128,25 @@ jobs:
       #    chain. (If the shutdown deadline expires before the terminator is
       #    written, no terminal receipt is emitted and the verifier reports
       #    "unknown" instead.)
+      #
+      #    The daemon was backgrounded in a different step's shell, so `wait`
+      #    cannot reap it here — it is not a child of this shell. Instead, poll
+      #    with `kill -0` (which works across steps on the same runner) until
+      #    the process has actually exited, so verification does not run before
+      #    the SIGTERM handler has finished writing the terminal receipt.
       - name: Stop daemon
         if: always()
         run: |
           if [ -n "${DAEMON_PID}" ]; then
-            kill "${DAEMON_PID}" 2>/dev/null || true
-            wait "${DAEMON_PID}" 2>/dev/null || true
+            kill -TERM "${DAEMON_PID}" 2>/dev/null || true
+            for _ in $(seq 1 50); do
+              kill -0 "${DAEMON_PID}" 2>/dev/null || break
+              sleep 0.2
+            done
+            if kill -0 "${DAEMON_PID}" 2>/dev/null; then
+              echo "Daemon did not exit within 10s; sending SIGKILL" >&2
+              kill -KILL "${DAEMON_PID}" 2>/dev/null || true
+            fi
           fi
 
       # 7. Verify the receipt chain.
