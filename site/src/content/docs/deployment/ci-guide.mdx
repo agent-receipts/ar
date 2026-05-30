@@ -20,7 +20,7 @@ A CI job that uses Agent Receipts follows this shape:
    which requires root to create. See [Sharp edge: socket paths on GitHub runners](#sharp-edge-socket-paths-on-github-runners) below.
 4. **Start the daemon** in the background.
 5. **Poll for socket readiness** before launching any emitter.
-6. **Run your agent** under audit.
+6. **Run your agent** under audit. The recipe ships a minimal sample emitter here so the chain is non-empty when copied verbatim; replace it with your real agent command.
 7. **Tear down** the daemon so it writes the terminal receipt (runs even on failure).
 8. **Verify the chain** with `agent-receipts verify`, then **fail on an empty chain** so a missing audit trail cannot pass CI (both run even on failure).
 9. **Collect artefacts** (DB and public key) on failure.
@@ -124,12 +124,27 @@ jobs:
       # 6. Run your agent under audit.
       #    The agent's emitter SDK reads AGENTRECEIPTS_SOCKET from the
       #    environment set above; no extra configuration is needed.
+      #
+      #    The placeholder below is a real, minimal emitter so the recipe
+      #    produces a non-empty chain when copied verbatim — the verify step
+      #    fails an empty chain (step 8), so a no-op here would fail CI before
+      #    you wire in your agent. It installs the Python SDK and emits one
+      #    tool-call event to the running daemon over AGENTRECEIPTS_SOCKET.
+      #    Replace this with your real agent command — it just needs to emit
+      #    receipts to the daemon.
       - name: Run agent
         run: |
-          # Replace this with your actual agent command, e.g.:
-          #   python my_agent.py
-          #   npx my-agent
-          echo "Replace with your agent command"
+          pip install agent-receipts
+          python -c '
+          from agent_receipts import DaemonEmitter
+
+          with DaemonEmitter() as e:  # reads AGENTRECEIPTS_SOCKET set above
+              e.emit(
+                  channel="ci",
+                  tool_name="ci.placeholder.run",
+                  decision="allowed",
+              )
+          '
 
       # 7. Gracefully stop the daemon so it writes the terminal receipt.
       #    if: always() so the daemon is stopped — and the chain finalised —
@@ -171,11 +186,12 @@ jobs:
       #    location. Exit 0 = chain valid; exit 1 = chain broken; exit 2 = usage error.
       #
       #    An empty chain is a special case: agent-receipts verify reports
-      #    `VALID (0 receipts)` and exits 0, so a placeholder command or a
-      #    misconfigured emitter that wrote nothing would let this step pass
-      #    without proving any audit trail exists. Capture the output, honour
-      #    verify's own exit code, then fail explicitly when the receipt count
-      #    is zero — CI must prove the chain is both intact and non-empty.
+      #    `VALID (0 receipts)` and exits 0, so an agent that emitted nothing —
+      #    a misconfigured emitter, or one dialling the wrong socket — would let
+      #    this step pass without proving any audit trail exists. Capture the
+      #    output, honour verify's own exit code, then fail explicitly when the
+      #    receipt count is zero — CI must prove the chain is both intact and
+      #    non-empty.
       - name: Verify receipt chain
         if: always()
         run: |
