@@ -143,14 +143,18 @@ Receipt `id` values are URNs of the form `urn:receipt:<uuid-v4>` (a UUID v4 in a
 ```sh
 GET /healthz
 → 200  store is reachable
-→ 503  store is unreachable (database connection lost, disk full)
+→ 503  store is unreachable (database connection lost)
 ```
 
 Wire `/healthz` to your load balancer's health check. An instance that returns `503` should be taken out of rotation — it will reject all writes until the store comes back.
 
+`/healthz` probes store reachability only; it is not a write-safety probe. A full disk, for example, can still allow reads while insert operations fail — the health check may return `200` while `POST /receipts` begins returning `500`. Monitor `5xx` rates on the ingest path as a separate signal.
+
 ### Structured logging
 
-The collector emits structured JSON logs (`log/slog`) to stdout. Each record carries the standard slog `level`, `time`, and `msg` fields; receipt-handling records add `id`, and the accept path also adds `chain_id` and `sequence`. The collector does **not** emit an HTTP status field — derive status-code signals from the `msg` value (or from your proxy's access logs, see [Metrics](#metrics)). Key things to filter on for audit-relevant events:
+The collector emits structured JSON logs (`log/slog`) to stdout. Each record carries the standard slog `level`, `time`, and `msg` fields; receipt-handling records add `id`, and the accept path also adds `chain_id` and `sequence`. The collector does **not** emit an HTTP status field — derive status-code signals from the `msg` value (or from your proxy's access logs, see [Metrics](#metrics)).
+
+Some early-rejection paths (empty body, trailing-data) return `400` without emitting a structured log record; when the body cannot be parsed, the log line will also lack an `id` field. Use proxy access logs as the authoritative source for error-rate counts — collector log counts will undercount `400` traffic. Key things to filter on for audit-relevant events:
 
 | Filter | What to watch |
 |--------|---------------|
@@ -170,10 +174,10 @@ There is no built-in Prometheus metrics endpoint in v0. The collector logs no HT
 
 | Metric | How to derive |
 |--------|---------------|
-| Ingest rate (receipts/s) | Count proxy `2xx` responses, or `msg="receipt accepted"` log lines, per second |
-| Conflict rate | Count proxy `409` responses, or `msg="receipt already exists, returning 409"` log lines, per second — elevated rate signals retry loops |
-| Client error rate | Count proxy `400` responses, or `msg="receipt rejected: …"` log lines, per second — unexpected spikes indicate SDK misconfiguration |
-| Server error rate | Count proxy `5xx` responses, or `level=ERROR` log lines (e.g. `msg="receipt insert failed"`), per second — correlate with store health |
+| Ingest rate (receipts/s) | Count proxy `2xx` on `POST /receipts`, or `msg="receipt accepted"` log lines, per second |
+| Conflict rate | Count proxy `409` on `POST /receipts`, or `msg="receipt already exists, returning 409"` log lines, per second — elevated rate signals retry loops |
+| Client error rate | Count proxy `400` on `POST /receipts`, or `msg="receipt rejected: …"` log lines, per second — unexpected spikes indicate SDK misconfiguration; note that some early-rejection `400`s are not logged (see above) |
+| Server error rate | Count proxy `5xx` on `POST /receipts`, or `level=ERROR` log lines (e.g. `msg="receipt insert failed"`), per second — correlate with store health |
 | Store write latency | Instrument at the proxy layer or derive from response-time fields in access logs |
 | Queue depth | Only applicable if you add a message queue in front of the collector; monitor at the queue layer |
 
@@ -181,7 +185,7 @@ If you add a message queue (SQS, Pub/Sub, Kafka) in front of the collector as a 
 
 ## Trust boundary
 
-**The collector is not a trusted component for chain construction.** Every receipt arrives already signed and chained client-side, before it leaves the SDK. The collector stores wire bytes verbatim — it does not re-sign, reorder, recompute hashes, or verify signatures.
+**The collector is not a trusted component for chain construction.** Every receipt arrives already signed and chained client-side, before it leaves the SDK. The collector stores wire bytes verbatim — it does not re-sign, reorder, recompute chain linkage (`previous_receipt_hash`), or verify signatures. (It does compute a `receipt_hash` of the raw body for storage and indexing, but this is independent of chain construction.)
 
 This has two important operational consequences:
 
