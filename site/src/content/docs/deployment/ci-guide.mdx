@@ -22,7 +22,7 @@ A CI job that uses Agent Receipts follows this shape:
 5. **Poll for socket readiness** before launching any emitter.
 6. **Run your agent** under audit.
 7. **Tear down** the daemon so it writes the terminal receipt (runs even on failure).
-8. **Verify the chain** with `agent-receipts verify` (runs even on failure).
+8. **Verify the chain** with `agent-receipts verify`, then **fail on an empty chain** so a missing audit trail cannot pass CI (both run even on failure).
 9. **Collect artefacts** (DB and public key) on failure.
 
 ## Working GitHub Actions workflow
@@ -169,11 +169,32 @@ jobs:
       #    agent-receipts verify reads AGENTRECEIPTS_DB from the environment
       #    and derives the public-key path from the default signing.key.pub
       #    location. Exit 0 = chain valid; exit 1 = chain broken; exit 2 = usage error.
+      #
+      #    An empty chain is a special case: agent-receipts verify reports
+      #    `VALID (0 receipts)` and exits 0, so a placeholder command or a
+      #    misconfigured emitter that wrote nothing would let this step pass
+      #    without proving any audit trail exists. Capture the output, honour
+      #    verify's own exit code, then fail explicitly when the receipt count
+      #    is zero — CI must prove the chain is both intact and non-empty.
       - name: Verify receipt chain
         if: always()
         run: |
-          agent-receipts verify \
-            --chain-id "ci-run-${{ github.run_id }}"
+          set +e
+          output="$(agent-receipts verify --chain-id "ci-run-${{ github.run_id }}")"
+          status=$?
+          set -e
+          echo "${output}"
+          if [ "${status}" -ne 0 ]; then
+            exit "${status}"
+          fi
+          # A VALID chain prints `Chain <id>: VALID (<n> receipts)`; pull out <n>.
+          # `|| true` keeps a no-match (unexpected output) from aborting under
+          # set -e so the explicit guard below produces the clear error instead.
+          count="$(printf '%s\n' "${output}" | grep -oE 'VALID \([0-9]+ receipts\)' | grep -oE '[0-9]+' || true)"
+          if [ -z "${count}" ] || [ "${count}" -eq 0 ]; then
+            echo "::error::Receipt chain is empty (0 receipts): no audit trail was produced. Check that your agent emitted receipts to the daemon." >&2
+            exit 1
+          fi
 
       # 9. Upload artefacts on failure for post-incident review.
       #    The DB and public key together are sufficient for offline verification:
