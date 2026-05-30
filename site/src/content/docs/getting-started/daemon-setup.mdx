@@ -74,6 +74,39 @@ Start the daemon before launching any agent session. By default, emitters that c
 
 To run as a persistent service on macOS, use the launchd plist available at [`daemon/packaging/macos/`](https://github.com/agent-receipts/ar/tree/main/daemon/packaging/macos) on GitHub and included in the release tarball. A Linux systemd unit is included in the release tarball but is not yet committed to the repository.
 
+### Configuration file
+
+Instead of (or alongside) flags and environment variables, the daemon reads a TOML config file. By default it looks at `$XDG_DATA_HOME/agent-receipts/daemon.toml` (falling back to `~/.local/share/agent-receipts/daemon.toml` when `$XDG_DATA_HOME` is unset or not an absolute path) — the same directory as `receipts.db` and the signing key. Point at a different file with `--config /path/to/daemon.toml`, or set `AGENTRECEIPTS_CONFIG`.
+
+A missing file at the default path is fine — the daemon runs on flags and environment variables alone. A `--config` (or `AGENTRECEIPTS_CONFIG`) path that does not exist is an error, as is a malformed file or an unknown key, so a typo never silently leaves the daemon on a different config than you intended.
+
+**Precedence (lowest to highest): config file → environment variables → command-line flags.** The file is the lowest-priority layer: a key omitted from the file leaves the default/env/flag value untouched, and any matching env var or explicit flag overrides a file value.
+
+The keys mirror the flag names with dashes replaced by underscores:
+
+```toml
+# ~/.local/share/agent-receipts/daemon.toml
+socket = "/run/user/1000/agentreceipts/events.sock"  # --socket
+db = "/home/me/.local/share/agent-receipts/receipts.db"  # --db
+key = "/home/me/.local/share/agent-receipts/signing.key"  # --key
+public_key = "/home/me/.local/share/agent-receipts/signing.key.pub"  # --public-key
+chain_id = "default"                  # --chain-id
+issuer_id = "did:agent-receipts-daemon:local"          # --issuer-id
+verification_method = "did:agent-receipts-daemon:local#k1"  # --verification-method
+parameter_disclosure = false          # --parameter-disclosure
+redact_patterns = "/etc/agent-receipts/redact.yaml"   # --redact-patterns
+unsafe_socket_path = false            # --unsafe-socket-path
+shutdown_deadline = "200ms"           # --shutdown-deadline (Go duration string)
+```
+
+Print the fully resolved config (after merging file, env, and flags) for debugging:
+
+```bash
+agent-receipts-daemon --print-config
+```
+
+The output is in the same `key = value` shape, so it doubles as a starting `daemon.toml`. Only filesystem paths are printed — the daemon never logs key material.
+
 ## Connect your emitters
 
 Point each SDK or plugin at the daemon socket. On macOS and Linux, all components resolve a platform default socket path automatically (see the table above). Set `AGENTRECEIPTS_SOCKET` to override that default. Other platforms have no platform default, but `AGENTRECEIPTS_SOCKET` (or the SDK's explicit socket-path option, e.g. Go's `WithSocketPath`) still supplies one; the emitter constructor only errors when neither is provided.
