@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -102,12 +101,4 @@ func LoadConfigFile(path string, required bool) (*FileConfig, error) {
 		return nil, fmt.Errorf("config %s: unknown key(s): %v", path, keys)
 	}
 	return &fc, nil
-}
-
-// configFileExists reports whether path exists as a regular file. Callers use
-// it to log whether the default config was picked up; LoadConfigFile itself
-// already tolerates a missing default-path file.
-func configFileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
 }

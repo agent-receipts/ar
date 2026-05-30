@@ -156,6 +156,41 @@ func TestResolveConfig_BoolPrecedence(t *testing.T) {
 			t.Error("unsafe_socket_path default = true, want false (safe)")
 		}
 	})
+	t.Run("env true (word) over file false", func(t *testing.T) {
+		// strconv.ParseBool accepts "true"/"yes"-style spellings beyond "1";
+		// previously only "1" enabled it and any other value coerced to false.
+		path := writeConfig(t, "unsafe_socket_path = false\n")
+		env := envMap(map[string]string{"AGENTRECEIPTS_UNSAFE_SOCKET_PATH": "true"})
+		r, err := resolveConfig([]string{"--config", path}, env, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !r.cfg.UnsafeSocketPath {
+			t.Error("AGENTRECEIPTS_UNSAFE_SOCKET_PATH=true should enable over file false")
+		}
+	})
+	t.Run("malformed env rejected, not coerced to false over file true", func(t *testing.T) {
+		path := writeConfig(t, "unsafe_socket_path = true\n")
+		env := envMap(map[string]string{"AGENTRECEIPTS_UNSAFE_SOCKET_PATH": "banana"})
+		if _, err := resolveConfig([]string{"--config", path}, env, io.Discard); err == nil {
+			t.Fatal("expected error for malformed AGENTRECEIPTS_UNSAFE_SOCKET_PATH, got nil")
+		}
+	})
+	t.Run("malformed parameter-disclosure env rejected", func(t *testing.T) {
+		path := writeConfig(t, "chain_id = \"x\"\n")
+		env := envMap(map[string]string{"AGENTRECEIPTS_PARAMETER_DISCLOSURE": "yep"})
+		if _, err := resolveConfig([]string{"--config", path}, env, io.Discard); err == nil {
+			t.Fatal("expected error for malformed AGENTRECEIPTS_PARAMETER_DISCLOSURE, got nil")
+		}
+	})
+}
+
+// TestResolveConfig_BareConfigFlagIsError: --config with no value must be
+// rejected rather than silently falling back to the default path.
+func TestResolveConfig_BareConfigFlagIsError(t *testing.T) {
+	if _, err := resolveConfig([]string{"--config"}, noEnv, io.Discard); err == nil {
+		t.Fatal("expected error for bare --config with no path, got nil")
+	}
 }
 
 // TestResolveConfig_DefaultPathLoaded: when no --config is given, the loader

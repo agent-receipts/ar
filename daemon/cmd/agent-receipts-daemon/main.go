@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -140,7 +142,9 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	}
 	applyFileConfig(&cfg, fc)
 
-	envOverlay(&cfg, getenv)
+	if err := envOverlay(&cfg, getenv); err != nil {
+		return resolved{}, err
+	}
 
 	fs.StringVar(&cfg.SocketPath, "socket", cfg.SocketPath, "Unix-domain socket path (env: AGENTRECEIPTS_SOCKET)")
 	fs.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
@@ -187,6 +191,14 @@ func loadConfigLayer(args []string, getenv func(string) string) (*daemon.FileCon
 			configPath = v
 			explicit = true
 		}
+	}
+
+	if explicit && configPath == "" {
+		// --config (or AGENTRECEIPTS_CONFIG) was given with no value. Falling
+		// back to the default path here would either error against a path the
+		// operator never named or silently load the default as if explicit;
+		// both are confusing, so reject it outright.
+		return nil, errors.New("--config requires a path")
 	}
 
 	path := configPath
@@ -278,8 +290,12 @@ func applyFileConfig(cfg *daemon.Config, fc *daemon.FileConfig) {
 
 // envOverlay applies AGENTRECEIPTS_* environment variables over cfg. An unset
 // (empty) variable leaves the existing value — already merged from defaults and
-// the file — in place.
-func envOverlay(cfg *daemon.Config, getenv func(string) string) {
+// the file — in place. A malformed boolean variable is rejected with an error
+// rather than silently degrading to false: env outranks the file, so coercing
+// e.g. AGENTRECEIPTS_UNSAFE_SOCKET_PATH=banana to false would quietly clobber a
+// file's unsafe_socket_path = true. This mirrors the config loader's
+// "reject malformed config rather than silently degrade" stance.
+func envOverlay(cfg *daemon.Config, getenv func(string) string) error {
 	if v := getenv("AGENTRECEIPTS_SOCKET"); v != "" {
 		cfg.SocketPath = v
 	}
@@ -302,14 +318,23 @@ func envOverlay(cfg *daemon.Config, getenv func(string) string) {
 		cfg.VerificationMethodID = v
 	}
 	if v := getenv("AGENTRECEIPTS_PARAMETER_DISCLOSURE"); v != "" {
-		cfg.ParameterDisclosure = v == "1"
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("invalid AGENTRECEIPTS_PARAMETER_DISCLOSURE %q: want a boolean (1/0, true/false)", v)
+		}
+		cfg.ParameterDisclosure = b
 	}
 	if v := getenv("AGENTRECEIPTS_UNSAFE_SOCKET_PATH"); v != "" {
-		cfg.UnsafeSocketPath = v == "1"
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("invalid AGENTRECEIPTS_UNSAFE_SOCKET_PATH %q: want a boolean (1/0, true/false)", v)
+		}
+		cfg.UnsafeSocketPath = b
 	}
 	if v := getenv("AGENTRECEIPTS_REDACT_PATTERNS"); v != "" {
 		cfg.RedactPatternsPath = v
 	}
+	return nil
 }
 
 // printConfig writes the resolved config in TOML-ish key=value form, mirroring
