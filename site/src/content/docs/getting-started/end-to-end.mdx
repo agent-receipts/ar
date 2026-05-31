@@ -3,8 +3,6 @@ title: End-to-End Walkthrough (TypeScript)
 description: Emit a receipt, list the chain, verify integrity — a complete loop using the TypeScript SDK and daemon.
 ---
 
-import { Steps } from '@astrojs/starlight/components';
-
 This walkthrough takes you through the complete receipt lifecycle: emit a signed
 receipt from a TypeScript agent, list the stored chain, and verify its integrity
 from the CLI. By the end you will have seen the full loop that makes receipts
@@ -33,14 +31,15 @@ import { DaemonEmitter } from '@agnt-rcpt/sdk-ts';
 
 const emitter = new DaemonEmitter();
 
-await emitter.emit({
+const err = await emitter.emit({
   channel: 'walkthrough',
-  tool_name: 'fs.write_file',
+  tool: { name: 'fs.write_file' },
   decision: 'allowed',
-  outcome: { status: 'success' },
 });
 
-await emitter.close();
+if (err) throw err;
+
+emitter.close();
 console.log('Receipt emitted.');
 ```
 
@@ -54,6 +53,10 @@ The daemon receives the event over its Unix socket, signs it with its Ed25519
 key, chains it to any previous receipt in the same chain, and persists it to the
 SQLite store. The emitter itself never touches the key.
 
+`emit()` returns `null` on success or an `Error` on failure — an
+`EmitTransportError` when the daemon is unreachable, a plain `Error` for caller
+bugs. `close()` is synchronous and releases the socket.
+
 ---
 
 ## 3. List the chain
@@ -62,11 +65,10 @@ SQLite store. The emitter itself never touches the key.
 agent-receipts list
 ```
 
-You should see one row with sequence `0`, action type `fs.write_file`, status
-`success`, and a non-null `previous_receipt_hash` of `null` (it is the chain
-head).
+You should see one row: sequence `0`, action type `fs.write_file`, and
+`previous_receipt_hash` of `null` (it is the chain head).
 
-To inspect a specific receipt in full:
+To inspect the full receipt:
 
 ```sh
 agent-receipts show 0
@@ -110,15 +112,10 @@ agent-receipts verify \
 
 ## 5. Emit a second receipt and re-verify
 
-Emit a second event — you can rerun `emit.ts` or change the `tool_name`:
+Rerun `emit.ts`:
 
 ```sh
 npx tsx emit.ts
-```
-
-Then verify again:
-
-```sh
 agent-receipts verify
 ```
 
@@ -127,8 +124,8 @@ Chain default: VALID (2 receipts)
 ```
 
 Run `agent-receipts show 1` and compare `chain.previous_receipt_hash` with the
-hash in `agent-receipts show 0` — they match. That linkage is what makes the
-chain tamper-evident: altering receipt 0 invalidates receipt 1's back-pointer,
+hash printed by `agent-receipts show 0` — they match. That linkage is what makes
+the chain tamper-evident: altering receipt 0 invalidates receipt 1's back-pointer,
 and verification catches it immediately.
 
 ---
