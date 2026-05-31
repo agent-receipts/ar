@@ -256,7 +256,11 @@ def _parse_emitted(lang: str, stdout: str) -> object | None:
         if line.startswith("{"):
             try:
                 return json.loads(line)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as exc:
+                print(
+                    f"ERROR: {lang} emit program produced a non-JSON receipt line: {exc}\n"
+                    f"  offending line: {line}"
+                )
                 return None
     print(f"ERROR: {lang} emit program produced no JSON receipt on stdout")
     return None
