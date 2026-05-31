@@ -791,7 +791,7 @@ func serveApprovals(ctx context.Context, ln net.Listener, handler http.Handler) 
 	go func() {
 		defer close(done)
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
+			errCh <- fmt.Errorf("serve on %s: %w", ln.Addr(), err)
 			return
 		}
 		errCh <- nil
