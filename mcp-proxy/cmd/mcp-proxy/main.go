@@ -144,6 +144,13 @@ func serve() {
 	// the daemon's store at the same directory is authoritative now.
 	noteLegacyAuditDB()
 
+	// Warn (every startup) if the agent-receipts data directory pre-exists with
+	// group/other-accessible perms. The directory is created 0o700, but
+	// os.MkdirAll won't tighten an existing one — so a dir left at e.g. 0o755
+	// would silently expose the daemon's store and keys to other local users.
+	// No-op on Windows (Unix perm bits don't apply there).
+	warnDataDirPerms(os.Stderr)
+
 	// Wire the daemon emitter (ADR-0010). The daemon is the sole receipt writer;
 	// the proxy is a thin emitter. Emit surfaces transport failure by default
 	// (ADR-0025), so an unreachable daemon propagates to the handler as a log
