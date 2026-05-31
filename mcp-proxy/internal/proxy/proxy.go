@@ -3,6 +3,7 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +35,7 @@ type Proxy struct {
 	handler Handler
 
 	cmd          *exec.Cmd
+	clientReader io.Reader // os.Stdin — reads from MCP client
 	clientWriter io.Writer // os.Stdout — writes to MCP client
 	startOnce    sync.Once
 	writerMu     sync.Mutex
@@ -49,8 +51,10 @@ func New(command string, args []string, handler Handler) *Proxy {
 }
 
 // Run starts the child MCP server and proxies stdin/stdout bidirectionally.
-// It blocks until the child process exits.
-func (p *Proxy) Run() error {
+// It blocks until the child process exits, either of the STDIO pumps closes
+// (stdin EOF ends a normal STDIO session), or ctx is cancelled. Cancellation
+// kills the upstream child so both pumps unblock and Run returns promptly.
+func (p *Proxy) Run(ctx context.Context) error {
 	var firstCall bool
 	p.startOnce.Do(func() {
 		firstCall = true
@@ -59,6 +63,12 @@ func (p *Proxy) Run() error {
 		return fmt.Errorf("proxy already started")
 	}
 
+	// Capture stdin/stdout once, synchronously, before launching the pump
+	// goroutines so the standard streams are read under Run's own goroutine
+	// (tests may inject clientReader to avoid touching the os.Stdin global).
+	if p.clientReader == nil {
+		p.clientReader = os.Stdin
+	}
 	p.clientWriter = os.Stdout
 
 	p.cmd = exec.Command(p.command, p.args...)
@@ -84,7 +94,7 @@ func (p *Proxy) Run() error {
 	// Client → Server
 	go func() {
 		defer serverIn.Close()
-		p.pipe(os.Stdin, serverIn, "client_to_server")
+		p.pipe(p.clientReader, serverIn, "client_to_server")
 		exits <- "client_to_server"
 	}()
 
@@ -94,21 +104,35 @@ func (p *Proxy) Run() error {
 		exits <- "server_to_client"
 	}()
 
-	// Wait for the first pipe to finish, then kill the upstream so the
-	// surviving pipe unblocks instead of blocking forever.
-	first := <-exits
-	log.Printf("mcp-proxy: pipe %s exited, shutting down", first)
+	// Wait for the first pipe to finish or for ctx to be cancelled, then kill
+	// the upstream so the surviving pipe (and any blocked reads) unblock
+	// instead of blocking forever. remaining tracks how many pump exits we
+	// still expect to drain: a pipe exit consumes one, a ctx cancel consumes
+	// none.
+	remaining := 2
+	select {
+	case first := <-exits:
+		log.Printf("mcp-proxy: pipe %s exited, shutting down", first)
+		remaining = 1
+	case <-ctx.Done():
+		log.Printf("mcp-proxy: context cancelled, shutting down")
+	}
 	if p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()
 	}
 
-	// Drain the second exit with a short timeout so we capture the reason
-	// but do not block forever.
-	select {
-	case second := <-exits:
-		log.Printf("mcp-proxy: pipe %s exited", second)
-	case <-time.After(2 * time.Second):
-		log.Printf("mcp-proxy: second pipe did not exit within timeout")
+	// Drain the remaining pipe exits with a short timeout so we capture the
+	// reason but do not block forever. Killing the child closes server stdout
+	// (server→client unblocks); the client→server pump may still be blocked on
+	// a read of os.Stdin with no pending data, so the timeout bounds the wait.
+	for ; remaining > 0; remaining-- {
+		select {
+		case dir := <-exits:
+			log.Printf("mcp-proxy: pipe %s exited", dir)
+		case <-time.After(2 * time.Second):
+			log.Printf("mcp-proxy: remaining pipe did not exit within timeout")
+			remaining = 1 // loop decrement ends the drain
+		}
 	}
 
 	return p.cmd.Wait()

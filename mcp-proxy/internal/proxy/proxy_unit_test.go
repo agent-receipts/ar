@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -352,7 +353,7 @@ func TestRun_SecondCallReturnsError(t *testing.T) {
 	p := New("true", nil, nil)
 	// Mark as started.
 	p.startOnce.Do(func() {})
-	err := p.Run()
+	err := p.Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error on second Run call")
 	}
