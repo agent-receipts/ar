@@ -52,6 +52,9 @@ env:
   AGENTRECEIPTS_SOCKET: /home/runner/.local/share/agent-receipts/events.sock
   AGENTRECEIPTS_DB: /home/runner/.local/share/agent-receipts/receipts.db
 
+permissions:
+  contents: read
+
 jobs:
   audit:
     runs-on: ubuntu-latest
