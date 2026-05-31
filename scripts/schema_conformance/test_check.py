@@ -142,8 +142,8 @@ class TestAssertConforms:
 # ---------------------------------------------------------------------------
 
 
-class TestSpecExamplesValidate:
-    def test_all_v04_capable_examples_validate(self) -> None:
+class TestCanonicalReceiptValidates:
+    def test_canonical_good_receipt_validates(self) -> None:
         # Sanity-check the validator against the canonical good fixture so a
         # broken validator (e.g. schema fails to load, refs unresolved) is
         # caught here rather than silently passing every release.
@@ -164,7 +164,7 @@ def _run_all() -> int:
         TestValidateReceipt,
         TestParseEmitted,
         TestAssertConforms,
-        TestSpecExamplesValidate,
+        TestCanonicalReceiptValidates,
     ]
     for suite_cls in suites:
         suite = suite_cls()
