@@ -112,3 +112,25 @@ jobs:
           python3 scripts/release_verify/check.py --lang py --version "$VERSION"
       - name: Run unit tests for release-verify gate
         run: python3 scripts/release_verify/test_check.py
+
+  # Gate #6: the receipt the just-published package emits must validate against
+  # the published JSON Schema. Emits via the package installed from PyPI and
+  # validates with spec/schema/agent-receipt.schema.json; output that drifts
+  # from the schema turns the release red.
+  schema-conformance:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - run: python3 -m pip install --quiet "jsonschema[format-nongpl]==4.26.0"
+      - name: Verify emitted receipt conforms to schema (Gate #6)
+        run: |
+          VERSION="${GITHUB_REF_NAME#sdk-py-v}"
+          python3 scripts/schema_conformance/check.py --lang py --version "$VERSION"
+      - name: Run unit tests for schema-conformance gate
+        run: python3 scripts/schema_conformance/test_check.py
