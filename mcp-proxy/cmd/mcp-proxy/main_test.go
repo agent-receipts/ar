@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log"
@@ -545,7 +546,7 @@ func TestApprovalHandlerApproveAfterConsumed(t *testing.T) {
 
 	result := make(chan audit.ApprovalStatus, 1)
 	go func() {
-		result <- approvals.WaitForApproval(approvalID, 3*time.Second)
+		result <- approvals.WaitForApproval(context.Background(), approvalID, 3*time.Second)
 	}()
 
 	// Spin until WaitForApproval has registered, consuming it via direct Approve.
@@ -590,7 +591,7 @@ func TestApprovalHandlerApproveFlowHTTP(t *testing.T) {
 	// We embed WaitForApproval inline: register via direct map access is internal,
 	// so instead start the goroutine and poll until it has registered.
 	go func() {
-		ch <- approvals.WaitForApproval(approvalID, 5*time.Second)
+		ch <- approvals.WaitForApproval(context.Background(), approvalID, 5*time.Second)
 	}()
 
 	// Poll via HTTP until the waiter registers; 10ms between attempts to avoid CPU churn.
@@ -628,7 +629,7 @@ func TestApprovalHandlerDenyFlow(t *testing.T) {
 
 	result := make(chan audit.ApprovalStatus, 1)
 	go func() {
-		result <- approvals.WaitForApproval(approvalID, 5*time.Second)
+		result <- approvals.WaitForApproval(context.Background(), approvalID, 5*time.Second)
 	}()
 
 	// Spin until the waiter goroutine has registered its channel, then send deny via HTTP.

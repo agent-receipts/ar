@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -29,9 +30,11 @@ func NewApprovalManager() *ApprovalManager {
 	}
 }
 
-// WaitForApproval blocks until the given approval ID is approved, denied, or
-// the timeout elapses.
-func (a *ApprovalManager) WaitForApproval(id string, timeout time.Duration) ApprovalStatus {
+// WaitForApproval blocks until the given approval ID is approved, denied, the
+// timeout elapses, or ctx is cancelled. A cancelled context (e.g. shutdown)
+// returns ApprovalTimedOut so the caller fails the paused call safely rather
+// than letting it proceed unapproved.
+func (a *ApprovalManager) WaitForApproval(ctx context.Context, id string, timeout time.Duration) ApprovalStatus {
 	ch := make(chan bool, 1)
 	a.mu.Lock()
 	a.pending[id] = ch
@@ -43,13 +46,18 @@ func (a *ApprovalManager) WaitForApproval(id string, timeout time.Duration) Appr
 		a.mu.Unlock()
 	}()
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
 	case approved := <-ch:
 		if approved {
 			return ApprovalApproved
 		}
 		return ApprovalDenied
-	case <-time.After(timeout):
+	case <-timer.C:
+		return ApprovalTimedOut
+	case <-ctx.Done():
 		return ApprovalTimedOut
 	}
 }

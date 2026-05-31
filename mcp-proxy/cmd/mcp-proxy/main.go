@@ -13,10 +13,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/agent-receipts/ar/mcp-proxy/internal/audit"
@@ -26,6 +28,10 @@ import (
 	"github.com/agent-receipts/ar/sdk/go/emitter"
 	"github.com/google/uuid"
 )
+
+// httpShutdownGrace bounds how long the approval HTTP server gets to finish
+// in-flight requests after a shutdown signal before it is forced closed.
+const httpShutdownGrace = 5 * time.Second
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
 // Falls back to the module version from Go's build info (set automatically
@@ -103,6 +109,13 @@ func serve() {
 
 	command := args[0]
 	commandArgs := args[1:]
+
+	// Drive shutdown off a signal-cancelled context. SIGINT/SIGTERM cancel ctx,
+	// which unblocks the proxy pumps, any in-flight approval wait, and triggers
+	// graceful shutdown of the approval HTTP server. The normal STDIO path
+	// (client closes stdin → EOF) is unaffected and still ends Run cleanly.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// Server name defaults to command basename.
 	if *serverName == "" {
@@ -212,7 +225,10 @@ func serve() {
 
 	// Start HTTP server for approvals only when the operator explicitly opts in
 	// via -http <addr>. "none" is the default — no listener, no port, no
-	// collision between concurrent sessions.
+	// collision between concurrent sessions. httpDone is closed once the
+	// approval server has fully shut down; it stays nil when no listener runs so
+	// the shutdown wait below is a no-op in the default STDIO-only flow.
+	var httpDone <-chan struct{}
 	approverDisabled := strings.EqualFold(strings.TrimSpace(*httpAddr), "none")
 	if !approverDisabled && *httpAddr != "" {
 		ln, err := net.Listen("tcp", *httpAddr)
@@ -234,7 +250,8 @@ func serve() {
 			endpointJSON = []byte(`{"event":"approval_endpoint"}`)
 		}
 		fmt.Fprintln(os.Stderr, string(endpointJSON))
-		go startHTTPServer(ln, approvals, approvalToken)
+
+		httpDone = serveApprovals(ctx, ln, buildApprovalMux(approvals, approvalToken))
 	}
 
 	// Boot-time summary: one line covers the bulk of "why did my call fail?"
@@ -307,7 +324,7 @@ func serve() {
 						// No approver wired up — fail fast instead of timing out.
 						approvalStatus = audit.ApprovalNoApprover
 					} else {
-						approvalStatus = approvals.WaitForApproval(approvalID, *approvalWait)
+						approvalStatus = approvals.WaitForApproval(ctx, approvalID, *approvalWait)
 					}
 					approvalWaitUs := time.Since(waitStart).Microseconds()
 					if approvalStatus != audit.ApprovalApproved {
@@ -390,11 +407,38 @@ func serve() {
 
 	p := proxy.New(command, commandArgs, handler)
 	log.Printf("mcp-proxy: session %s, server %s", sessionID, *serverName)
-	runErr := p.Run()
+	runErr := p.Run(ctx)
 	log.Printf("mcp-proxy: session %s ended", sessionID)
+
+	// When a signal cancelled ctx, Run returned because we killed the upstream;
+	// the resulting Wait error is expected, not a failure. Log a single clear
+	// shutdown line, wait for the approval server to finish its grace window,
+	// then return so the deferred emitter Close() runs last. The ordering is:
+	// signal → Run unblocks → approval server Shutdown(grace) → emitter Close().
+	if ctx.Err() != nil {
+		log.Printf("mcp-proxy: shutting down (signal received)")
+		waitForHTTPShutdown(httpDone)
+		return
+	}
 	if runErr != nil {
 		log.Printf("mcp-proxy: %v", runErr)
 		os.Exit(1)
+	}
+}
+
+// waitForHTTPShutdown blocks until the approval HTTP server has finished
+// shutting down, bounded by the grace window plus a small margin so a wedged
+// listener can never hang process exit. done is nil when no approval server
+// was started (the default STDIO-only flow), in which case this returns
+// immediately.
+func waitForHTTPShutdown(done <-chan struct{}) {
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(httpShutdownGrace + time.Second):
+		log.Printf("mcp-proxy: approval server did not stop within grace window")
 	}
 }
 
@@ -680,8 +724,35 @@ func buildApprovalMux(approvals *audit.ApprovalManager, token string) http.Handl
 	return mux
 }
 
-func startHTTPServer(ln net.Listener, approvals *audit.ApprovalManager, token string) {
-	if err := http.Serve(ln, buildApprovalMux(approvals, token)); err != nil {
-		log.Fatalf("mcp-proxy: http server: %v", err)
-	}
+// serveApprovals runs the approval HTTP server on ln and wires graceful
+// shutdown to ctx. The returned channel is closed once the server has fully
+// stopped (Serve has returned), so the caller can wait for the grace window to
+// elapse before tearing down the rest of the process.
+//
+// On ctx cancel the server stops accepting and drains in-flight requests for up
+// to httpShutdownGrace; if that window expires it is forced closed. Serve's
+// ErrServerClosed is the clean-exit signal and is not treated as a failure; any
+// other Serve error means the listener died unexpectedly and is fatal.
+func serveApprovals(ctx context.Context, ln net.Listener, handler http.Handler) <-chan struct{} {
+	srv := &http.Server{Handler: handler}
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("mcp-proxy: http server: %v", err)
+		}
+	}()
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownGrace)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("mcp-proxy: forced approval-server shutdown after %s: %v", httpShutdownGrace, err)
+			_ = srv.Close()
+		}
+	}()
+
+	return done
 }
