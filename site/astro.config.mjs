@@ -5,6 +5,13 @@ import rehypeMermaid from "rehype-mermaid";
 export default defineConfig({
   site: "https://agentreceipts.ai",
   markdown: {
+    // Astro 6 dropped the implicit `markdown.gfm` default, expecting the new
+    // `unified()` processor to supply it. @astrojs/mdx (5.x) is not yet
+    // processor-aware — it reads `markdown.gfm` directly — so without this it
+    // sees `undefined` and silently drops remark-gfm, breaking every table
+    // (and strikethrough/autolinks) in .mdx files. Set it explicitly until the
+    // MDX integration adopts the processor model.
+    gfm: true,
     syntaxHighlight: {
       type: "shiki",
       excludeLangs: ["mermaid"],
