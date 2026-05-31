@@ -153,3 +153,27 @@ jobs:
           python3 scripts/schema_conformance/check.py --lang ts --version "$VERSION"
       - name: Run unit tests for schema-conformance gate
         run: python3 scripts/schema_conformance/test_check.py
+
+  # Gate #7: the canonical JSON the just-published package produces must be
+  # byte-identical to the shared canonicalisation vectors (and therefore to the
+  # other SDKs). Runs the vectors through the package installed from npm and
+  # compares byte-for-byte; any divergence turns the release red.
+  byte-identity:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Verify canonicalisation is byte-identical to the vectors (Gate #7)
+        run: |
+          VERSION="${GITHUB_REF_NAME#sdk-ts-v}"
+          python3 scripts/byte_identity/check.py --lang ts --version "$VERSION"
+      - name: Run unit tests for byte-identity gate
+        run: python3 scripts/byte_identity/test_check.py
