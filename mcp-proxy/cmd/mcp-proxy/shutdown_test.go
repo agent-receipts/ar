@@ -61,12 +61,12 @@ func TestServeApprovalsGracefulShutdown(t *testing.T) {
 	}
 }
 
-// TestServeApprovalsCleanCancelShutsDown covers Finding B: on the clean
-// stdin-EOF path the proxy cancels a dedicated approval-server context (derived
-// from the signal ctx) WITHOUT any OS signal. Cancelling that context alone
-// must drive graceful shutdown — the done channel closes and the listener is
-// torn down — so serve() never falls through while the HTTP goroutine is still
-// accepting and racing the deferred emitter Close().
+// TestServeApprovalsCleanCancelShutsDown verifies that on the clean stdin-EOF
+// path the proxy cancels a dedicated approval-server context (derived from the
+// signal ctx) WITHOUT any OS signal. Cancelling that context alone must drive
+// graceful shutdown — the done channel closes and the listener is torn down —
+// so serve() never falls through while the HTTP goroutine is still accepting
+// and racing the deferred emitter Close().
 func TestServeApprovalsCleanCancelShutsDown(t *testing.T) {
 	token := generateToken(16)
 	approvals := audit.NewApprovalManager()
@@ -94,11 +94,11 @@ func TestServeApprovalsCleanCancelShutsDown(t *testing.T) {
 	}
 }
 
-// TestServeApprovalsPropagatesServeError covers Finding A: a non-ErrServerClosed
-// Serve error must be PROPAGATED back to the caller (via the handle's error
-// channel, surfaced by waitForHTTPShutdown) rather than crashing the process
-// with log.Fatalf, which would skip serve()'s deferred cleanup. We force Serve
-// to fail by closing the listener out from under it before any shutdown is
+// TestServeApprovalsPropagatesServeError verifies that a non-ErrServerClosed
+// Serve error is PROPAGATED back to the caller (via the handle's error channel,
+// surfaced by waitForHTTPShutdown) rather than crashing the process with
+// log.Fatalf, which would skip serve()'s deferred cleanup. We force Serve to
+// fail by closing the listener out from under it before any shutdown is
 // requested, then assert the error reaches the caller.
 func TestServeApprovalsPropagatesServeError(t *testing.T) {
 	token := generateToken(16)
