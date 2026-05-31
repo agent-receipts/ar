@@ -85,7 +85,7 @@ receipts from a previous session, the sequence number will be higher; use the
 To inspect the full receipt:
 
 ```sh
-agent-receipts show 1
+agent-receipts show 1 --chain-id default
 ```
 
 This prints a human-readable table of the receipt's fields. To see the full
@@ -93,7 +93,7 @@ W3C Verifiable Credential JSON — including the `proof` block with the Ed25519
 signature — pass `--json`:
 
 ```sh
-agent-receipts show 1 --json
+agent-receipts show 1 --chain-id default --json
 ```
 
 In the JSON output, `credentialSubject.chain.previous_receipt_hash` is `null`
@@ -147,8 +147,9 @@ Example output (count is one higher than after the first emit):
 Chain default: VALID (2 receipts)
 ```
 
-Run `agent-receipts show 2` (or the sequence of your second receipt from
-`agent-receipts list`) — unlike receipt 1 (the chain head), this receipt has a
+Run `agent-receipts show 2 --chain-id default` (or substitute the sequence of
+your second receipt from `agent-receipts list`) — unlike receipt 1 (the chain
+head), this receipt has a
 `Previous hash:` field containing the hash of receipt 1. That linkage is what
 makes the chain tamper-evident: altering receipt 1 changes its hash, invalidates
 receipt 2's back-pointer, and verification catches it immediately.
