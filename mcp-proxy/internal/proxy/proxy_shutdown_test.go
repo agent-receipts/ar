@@ -141,6 +141,9 @@ func TestRun_StdinEOFEndsRun(t *testing.T) {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
+	// Always close the write end too, even if the test fails before the happy
+	// path closes it below (closing an os.File twice is harmless here).
+	t.Cleanup(func() { _ = w.Close() })
 
 	// The copy helper keeps its stdout open until its stdin closes; the proxy
 	// closes the child's stdin when the client→server pump hits EOF, so the
@@ -169,10 +172,12 @@ func TestRun_StdinEOFEndsRun(t *testing.T) {
 	select {
 	case err := <-done:
 		// Run returned on EOF without any cancellation. After the first pump
-		// exits, Run kills the upstream child, so the child Wait reports
-		// "signal: killed" — not nil. The honest distinction from a false pass
+		// exits, Run kills the upstream child; depending on timing the child may
+		// already have exited cleanly on stdin close (Wait returns nil) or be
+		// killed first (Wait returns "signal: killed"), so either a nil or
+		// non-nil result is valid here. The honest distinction from a false pass
 		// is that this happened only after EOF (the guard above proved Run was
-		// live) and the error is the expected child-kill, not a startup error.
+		// live) and the result is not a startup error.
 		if err != nil && isStartupError(err) {
 			t.Fatalf("Run returned a startup error on the EOF path: %v", err)
 		}
