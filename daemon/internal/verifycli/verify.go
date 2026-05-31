@@ -131,7 +131,11 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	}
 
 	if result.Valid {
-		fmt.Fprintf(stdout, "Chain %s: VALID (%d receipts)\n", *chainID, result.Length)
+		noun := "receipts"
+		if result.Length == 1 {
+			noun = "receipt"
+		}
+		fmt.Fprintf(stdout, "Chain %s: VALID (%d %s)\n", *chainID, result.Length, noun)
 		return ExitOK
 	}
 	fmt.Fprintf(stdout, "Chain %s: BROKEN at receipt %d\n", *chainID, result.BrokenAt)

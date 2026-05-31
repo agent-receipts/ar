@@ -32,16 +32,17 @@ import { DaemonEmitter } from '@agnt-rcpt/sdk-ts';
 
 const emitter = new DaemonEmitter();
 
-const err = await emitter.emit({
-  channel: 'walkthrough',
-  tool: { name: 'fs.write_file' },
-  decision: 'allowed',
-});
-
-if (err) throw err;
-
-emitter.close();
-console.log('Receipt emitted.');
+try {
+  const err = await emitter.emit({
+    channel: 'walkthrough',
+    tool: { name: 'fs.write_file' },
+    decision: 'allowed',
+  });
+  if (err) throw err;
+  console.log('Receipt emitted.');
+} finally {
+  emitter.close();
+}
 ```
 
 Run it:
@@ -66,18 +67,21 @@ bugs. `close()` is synchronous and releases the socket.
 agent-receipts list
 ```
 
-You should see one row: sequence `0`, action type `fs.write_file`, and
-`previous_receipt_hash` of `null` (it is the chain head).
+You should see one row: sequence `1`, action type `fs.write_file`, in chain `default`.
 
 To inspect the full receipt:
 
 ```sh
-agent-receipts show 0
+agent-receipts show 1
 ```
 
-This prints the raw W3C Verifiable Credential JSON, including the `proof` block
-with the Ed25519 signature and the `chain` block with the `previous_receipt_hash`
-linkage.
+This prints a human-readable table of the receipt's fields. To see the full
+W3C Verifiable Credential JSON — including the `proof` block with the Ed25519
+signature and `credentialSubject.chain.previous_receipt_hash` — pass `--json`:
+
+```sh
+agent-receipts show 1 --json
+```
 
 ---
 
@@ -124,10 +128,9 @@ agent-receipts verify
 Chain default: VALID (2 receipts)
 ```
 
-Run `agent-receipts show 1` and compare `chain.previous_receipt_hash` with the
-hash printed by `agent-receipts show 0` — they match. That linkage is what makes
-the chain tamper-evident: altering receipt 0 invalidates receipt 1's back-pointer,
-and verification catches it immediately.
+Run `agent-receipts show 2` — the `Previous hash:` field shows the hash of
+receipt 1. That linkage is what makes the chain tamper-evident: altering receipt 1
+invalidates receipt 2's back-pointer, and verification catches it immediately.
 
 ---
 
