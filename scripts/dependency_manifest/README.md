@@ -1,77 +1,46 @@
-# Dependency-manifest gate (Gate #10)
+# dependency_manifest — Gate #10 (ADR-0024)
 
-Gate #10 of the project verification contract (ADR-0024).
+Verifies that the dependencies actually resolved into each SDK's published
+artifact match what the SDK declares, failing a release on any undeclared,
+non-allow-listed runtime dependency.
 
-For the SDK being released, compares the dependencies actually resolved into the
-artifact (the **installed** set) against the dependencies the SDK declares
-directly (the **declared** set). Any installed dependency that is neither
-declared nor allow-listed fails the gate. This catches "eager" transitive deps
-that creep into a published artifact — a supply-chain risk for a cryptographic
-protocol project (see AGENTS.md "Adding dependencies").
+## Usage
 
-The comparison is manifest-vs-manifest: it reads committed files only and needs
-no network and no package install.
+```sh
+# Validate a specific SDK's dependency manifest (run from the repo root)
+python3 scripts/dependency_manifest/check.py --lang go
+python3 scripts/dependency_manifest/check.py --lang py
+python3 scripts/dependency_manifest/check.py --lang ts
 
-## Run
-
-```
-python scripts/dependency_manifest/run.py <sdk>   # sdk = go | py | ts
+# Run the unit tests (no network, no install)
+python3 scripts/dependency_manifest/test_check.py
 ```
 
-Exits 0 when every installed runtime dependency is declared or allow-listed;
-exits 1 (with a GitHub `::error::` annotation) on the first unexplained
-dependency.
+`check.py` exits non-zero (with a `::error::` annotation) when an installed
+runtime dependency is neither declared in the SDK's manifest nor recorded in
+`allowlist.json`. It emits a non-fatal `::warning::` for stale allowlist
+entries (allow-listed but no longer installed).
 
-## What "installed" and "declared" mean per SDK
+## What it compares
 
-| SDK | Declared (documented) | Installed (resolved runtime) |
-|-----|-----------------------|------------------------------|
+Manifest-vs-manifest, using only the Python standard library — no network and
+no package install:
+
+| SDK | Declared | Installed (resolved runtime) |
+|-----|----------|------------------------------|
 | go  | direct `require`s in `go.mod` | direct + `// indirect` requires in `go.mod` |
-| py  | `[project].dependencies` in `pyproject.toml` | runtime closure of those deps resolved from `uv.lock` (dev/optional extras excluded) |
-| ts  | `dependencies` in `package.json` | runtime closure resolved from `pnpm-lock.yaml` snapshots (dev deps excluded); declared deps only if no lockfile |
-
-Scope is the **runtime closure**. Dev/test/build tooling is intentionally out of
-scope — it is not shipped to consumers, so an undeclared test tool is not a
-supply-chain risk in the published artifact.
+| py  | `[project].dependencies` in `pyproject.toml` | runtime closure from `uv.lock` (dev/optional extras excluded) |
+| ts  | `dependencies` in `package.json` | runtime closure from `pnpm-lock.yaml` snapshots (dev tree excluded) |
 
 ## Allowlist
 
-`allowlist.json` records intentional dependencies that are installed but not
-declared directly — legitimate transitive deps of the declared ones. Each entry
-carries a `name` and a `justification`. An allow-listed name suppresses the
-failure for that dependency. Anything installed-but-not-declared-and-not-
-allowlisted fails the gate.
+`allowlist.json` is keyed by SDK; each entry is `{ "name", "justification" }`.
+An allow-listed dependency suppresses the failure for that name, so adding a
+runtime dependency requires an allowlist entry with a justification — the
+release-time enforcement of the SDKs' "minimal runtime dependencies" claim.
 
-Format:
+## Relationship to the other gates
 
-```json
-{
-  "go": [ { "name": "<module-path>", "justification": "<why it ships>" } ],
-  "py": [ { "name": "<package>",     "justification": "<why it ships>" } ],
-  "ts": [ { "name": "<package>",     "justification": "<why it ships>" } ]
-}
-```
-
-The runner also emits a non-fatal `::warning::` for allow-listed names that are
-no longer installed, so stale entries get pruned.
-
-## Design choices (flagged for maintainer review)
-
-These defaults keep the gate minimal and dependency-light. They are judgement
-calls and may be revised:
-
-- **Manifest-vs-manifest instead of full SBOM tooling.** No SBOM generator
-  (Syft / CycloneDX / cyclonedx-py / cyclonedx-gomod) is pulled in — the gate
-  parses the manifests and lockfiles the repo already commits. If a signed SBOM
-  artifact later becomes a hard requirement, swap the resolver here for a pinned
-  generator; the allowlist/comparison logic can stay.
-- **Scope = runtime closure only.** Dev/test/build deps are excluded.
-- **"Declared" = direct manifest declarations, not README prose.** The SDK
-  READMEs describe dependencies in prose ("minimal runtime dependencies — zod
-  …") but do not enumerate them machine-readably, so the manifest's own direct
-  declarations are the documented set. If a structured per-README dependency
-  list becomes the source of truth, point the parser there.
-- **TS transitive resolution parses `pnpm-lock.yaml` directly** (no YAML
-  dependency, no `pnpm install`). It walks `snapshots:` `dependencies:` /
-  `optionalDependencies:` blocks from the runtime roots; dev-only packages keyed
-  under the importer's `devDependencies:` are never reached.
+Mirrors the `schema_conformance` (Gate #6) and `byte_identity` (Gate #7)
+helpers: a per-SDK release-blocking job in each `release-sdk-*.yml` that runs
+`check.py` then `test_check.py`.
