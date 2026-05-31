@@ -1,0 +1,330 @@
+---
+title: Using Agent Receipts in CI
+description: Run agent-receipts-daemon in a GitHub Actions workflow — key init, socket setup, daemon lifecycle, chain verification, and log upload on failure.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This guide shows how to run the `agent-receipts-daemon` in a GitHub Actions
+workflow so every CI agent session produces a cryptographically signed, verified
+receipt chain. It assumes you have already read [Daemon Setup](/getting-started/daemon-setup/).
+
+## Architecture overview
+
+A CI job that uses Agent Receipts follows this shape:
+
+1. **Pin the Go toolchain** to the version the daemon's `go.mod` requires, then **install** both daemon binaries from a pinned version (`go install` needs a toolchain that satisfies the daemon's `go` directive; the runner's preinstalled Go may lag it).
+2. **Init keys** (one-time per workflow run — keys are not persisted between runs; each run is an independent chain).
+3. **Configure the socket path** — GitHub-hosted runners do not set `$XDG_RUNTIME_DIR`,
+   so the daemon's default Linux socket path falls back to `/run/agentreceipts/events.sock`,
+   which requires root to create. See [Sharp edge: socket paths on GitHub runners](#sharp-edge-socket-paths-on-github-runners) below.
+4. **Start the daemon** in the background.
+5. **Poll for socket readiness** before launching any emitter.
+6. **Run your agent** under audit. The recipe ships a minimal sample emitter here so the chain is non-empty when copied verbatim; replace it with your real agent command.
+7. **Tear down** the daemon so it writes the terminal receipt (runs even on failure).
+8. **Verify the chain** with `agent-receipts verify`, then **fail on an empty chain** so a missing audit trail cannot pass CI (both run even on failure).
+9. **Collect artefacts** (DB and public key) on failure.
+
+## Working GitHub Actions workflow
+
+The workflow below is a complete, working recipe. Copy it into your own
+workflow file — do **not** place it under `.github/workflows/` of the
+Agent Receipts repo itself. Substitute your own agent command where indicated.
+
+```yaml
+# .github/workflows/my-agent-job.yml  — place this in YOUR repo, not agent-receipts/ar
+name: Agent job with receipt audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # Pinned daemon version. Bump deliberately; see Version compatibility below.
+  DAEMON_VERSION: v0.13.0
+  # Explicit socket path inside the runner's home directory.
+  # GitHub-hosted runners do not set $XDG_RUNTIME_DIR, so the daemon's default
+  # Linux path falls back to /run/agentreceipts/events.sock (requires root).
+  # We pick a home-rooted path and pass --unsafe-socket-path: this is the
+  # supported escape hatch for runners with no per-user runtime dir.
+  # See the socket-path section below and daemon #538 for the policy.
+  AGENTRECEIPTS_SOCKET: /home/runner/.local/share/agent-receipts/events.sock
+  AGENTRECEIPTS_DB: /home/runner/.local/share/agent-receipts/receipts.db
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 1. Pin the Go toolchain. The daemon module declares `go 1.26.1` in its
+      #    go.mod, and `go install ...@version` needs a toolchain that satisfies
+      #    that directive. The Go version preinstalled on `ubuntu-latest` drifts
+      #    with the runner image and may lag the daemon's requirement, so pin it
+      #    explicitly here rather than relying on the runner default.
+      #    Do not use `go-version-file`: this workflow does not check out the
+      #    agent-receipts repo, so there is no local go.mod to point it at.
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+
+      # 2. Install both daemon binaries at a pinned version.
+      #    go install writes them to $(go env GOPATH)/bin, which is not
+      #    guaranteed to be on $PATH in later steps on GitHub-hosted runners.
+      #    Append it to $GITHUB_PATH so subsequent steps can find the binaries.
+      - name: Install agent-receipts binaries
+        run: |
+          go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@${DAEMON_VERSION}
+          go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@${DAEMON_VERSION}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # 3. Generate the signing key pair for this run.
+      #    --init writes signing.key and signing.key.pub to the default
+      #    XDG_DATA_HOME path (~/.local/share/agent-receipts/ on this runner).
+      #    The receipt DB is created automatically when the daemon first starts.
+      - name: Initialise signing key
+        run: agent-receipts-daemon --init
+
+      # 4. Start the daemon in the background.
+      #    --unsafe-socket-path is required because $HOME-rooted paths are
+      #    outside the Linux safe set ($XDG_RUNTIME_DIR / /run / /var/run).
+      #    See "Sharp edge" below.
+      - name: Start daemon
+        run: |
+          mkdir -p "$(dirname "${AGENTRECEIPTS_SOCKET}")"
+          agent-receipts-daemon \
+            --unsafe-socket-path \
+            --chain-id "ci-run-${{ github.run_id }}" \
+            >> /tmp/ar-daemon.log 2>&1 &
+          echo "DAEMON_PID=$!" >> "$GITHUB_ENV"
+
+      # 5. Poll for socket readiness before launching any emitter.
+      #    The daemon creates the socket file once it is ready to accept
+      #    connections; a -S test confirms the socket file exists.
+      - name: Wait for daemon socket
+        run: |
+          for i in $(seq 1 20); do
+            if [ -S "${AGENTRECEIPTS_SOCKET}" ]; then
+              echo "Daemon socket ready after ${i}s"
+              break
+            fi
+            echo "Waiting for socket... (${i}/20)"
+            sleep 1
+          done
+          if [ ! -S "${AGENTRECEIPTS_SOCKET}" ]; then
+            echo "Daemon did not become ready within 20 seconds" >&2
+            cat /tmp/ar-daemon.log >&2
+            exit 1
+          fi
+
+      # 6. Run your agent under audit.
+      #    The agent's emitter SDK reads AGENTRECEIPTS_SOCKET from the
+      #    environment set above; no extra configuration is needed.
+      #
+      #    The placeholder below is a real, minimal emitter so the recipe
+      #    produces a non-empty chain when copied verbatim — the verify step
+      #    fails an empty chain (step 8), so a no-op here would fail CI before
+      #    you wire in your agent. It installs the Python SDK and emits one
+      #    tool-call event to the running daemon over AGENTRECEIPTS_SOCKET.
+      #    Replace this with your real agent command — it just needs to emit
+      #    receipts to the daemon.
+      - name: Run agent
+        run: |
+          pip install agent-receipts
+          python -c '
+          from agent_receipts import DaemonEmitter
+
+          with DaemonEmitter() as e:  # reads AGENTRECEIPTS_SOCKET set above
+              e.emit(
+                  channel="ci",
+                  tool_name="ci.placeholder.run",
+                  decision="allowed",
+              )
+          '
+
+      # 7. Gracefully stop the daemon so it writes the terminal receipt.
+      #    if: always() so the daemon is stopped — and the chain finalised —
+      #    even when the agent step fails. On SIGTERM the daemon emits a terminal
+      #    receipt with chain.status="interrupted" for the open chain, so the
+      #    verifier can classify the chain rather than report "unknown". Stopping
+      #    before the verify step means verification runs against the finalised
+      #    chain. (If the shutdown deadline expires before the terminator is
+      #    written, no terminal receipt is emitted and the verifier reports
+      #    "unknown" instead.)
+      #
+      #    The daemon was backgrounded in a different step's shell, so `wait`
+      #    cannot reap it here — it is not a child of this shell. Instead, poll
+      #    with `kill -0` (which works across steps on the same runner) until
+      #    the process has actually exited, so verification does not run before
+      #    the SIGTERM handler has finished writing the terminal receipt.
+      - name: Stop daemon
+        if: always()
+        run: |
+          if [ -n "${DAEMON_PID}" ]; then
+            kill -TERM "${DAEMON_PID}" 2>/dev/null || true
+            for _ in $(seq 1 50); do
+              kill -0 "${DAEMON_PID}" 2>/dev/null || break
+              sleep 0.2
+            done
+            if kill -0 "${DAEMON_PID}" 2>/dev/null; then
+              echo "Daemon did not exit within 10s; sending SIGKILL" >&2
+              kill -KILL "${DAEMON_PID}" 2>/dev/null || true
+            fi
+          fi
+
+      # 8. Verify the receipt chain.
+      #    if: always() so verification runs even when the agent step fails —
+      #    that is exactly when proving the chain matters most. A failed agent
+      #    step has already marked the job failed; a broken chain (exit 1) fails
+      #    this step too, so the job ends red on either condition.
+      #    agent-receipts verify reads AGENTRECEIPTS_DB from the environment
+      #    and derives the public-key path from the default signing.key.pub
+      #    location. Exit 0 = chain valid; exit 1 = chain broken; exit 2 = usage error.
+      #
+      #    An empty chain is a special case: agent-receipts verify reports
+      #    `VALID (0 receipts)` and exits 0, so an agent that emitted nothing —
+      #    a misconfigured emitter, or one dialling the wrong socket — would let
+      #    this step pass without proving any audit trail exists. Capture the
+      #    output, honour verify's own exit code, then fail explicitly when the
+      #    receipt count is zero — CI must prove the chain is both intact and
+      #    non-empty.
+      - name: Verify receipt chain
+        if: always()
+        run: |
+          set +e
+          output="$(agent-receipts verify --chain-id "ci-run-${{ github.run_id }}")"
+          status=$?
+          set -e
+          echo "${output}"
+          if [ "${status}" -ne 0 ]; then
+            exit "${status}"
+          fi
+          # A VALID chain prints `Chain <id>: VALID (<n> receipts)`; pull out <n>.
+          # `|| true` keeps a no-match (unexpected output) from aborting under
+          # set -e so the explicit guard below produces the clear error instead.
+          count="$(printf '%s\n' "${output}" | grep -oE 'VALID \([0-9]+ receipts\)' | grep -oE '[0-9]+' || true)"
+          if [ -z "${count}" ] || [ "${count}" -eq 0 ]; then
+            echo "::error::Receipt chain is empty (0 receipts): no audit trail was produced. Check that your agent emitted receipts to the daemon." >&2
+            exit 1
+          fi
+
+      # 9. Upload artefacts on failure for post-incident review.
+      #    The DB and public key together are sufficient for offline verification:
+      #    agent-receipts verify --db receipts.db --public-key signing.key.pub
+      - name: Upload receipt artefacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-receipts-${{ github.run_id }}
+          path: |
+            /home/runner/.local/share/agent-receipts/receipts.db
+            /home/runner/.local/share/agent-receipts/signing.key.pub
+            /tmp/ar-daemon.log
+          retention-days: 30
+```
+
+## Sharp edge: socket paths on GitHub runners
+
+On Linux the daemon's default socket path is
+`$XDG_RUNTIME_DIR/agentreceipts/events.sock`. When `$XDG_RUNTIME_DIR` is set
+(standard on systemd-based desktop Linux), this resolves to a per-user
+temporary directory — always inside the daemon's safe set.
+
+**GitHub-hosted `ubuntu-*` runners do not set `$XDG_RUNTIME_DIR`.** Without
+it the daemon falls back to `/run/agentreceipts/events.sock`, which requires
+root to create and is outside the `runner` user's writable scope.
+
+Any `$HOME`-rooted path (e.g. `~/.local/share/agent-receipts/events.sock`) is
+also **outside the Linux safe set** (`$XDG_RUNTIME_DIR`, `/run`, `/var/run`),
+so the daemon rejects it unless `--unsafe-socket-path` is passed. This guard is
+[daemon issue #538](https://github.com/agent-receipts/ar/issues/538): the daemon
+refuses to start when `--socket` / `AGENTRECEIPTS_SOCKET` resolves outside the
+per-platform safe set unless the override flag is given. When `$XDG_RUNTIME_DIR`
+is unset — exactly the GitHub-hosted runner case — the daemon treats it as "no
+per-user runtime dir available" and **deliberately does not synthesize a
+fallback**, so any home-rooted override requires `--unsafe-socket-path`. The flag
+is a boolean that also accepts the `AGENTRECEIPTS_UNSAFE_SOCKET_PATH` environment
+variable.
+
+`--unsafe-socket-path` is the **intended, supported escape hatch** for exactly
+this situation. It exists so legitimate edge cases — CI runners and containers
+without a per-user runtime dir — can opt out of the safe-path guard. The recipe
+above uses it like this:
+
+```yaml
+env:
+  AGENTRECEIPTS_SOCKET: /home/runner/.local/share/agent-receipts/events.sock
+
+- name: Start daemon
+  run: agent-receipts-daemon --unsafe-socket-path ...
+```
+
+With the flag, the daemon starts, logs a `level=warn` line naming the path at
+startup, and re-emits that warning every 60 seconds. These warnings are expected
+on a CI runner — they record the deliberate opt-out, not a fault — and can be
+filtered from your logs.
+
+This is the current, shipped behavior: there is no per-user safe path on a
+GitHub-hosted runner, so `--unsafe-socket-path` is the documented way to run the
+daemon there. Do not expect the flag requirement to disappear for unprivileged
+Linux environments without `$XDG_RUNTIME_DIR`.
+
+<Aside type="tip">
+  If your runner image is systemd-based and sets `$XDG_RUNTIME_DIR` (for
+  example, a self-hosted runner on a standard Linux VM), the daemon's default
+  path works without any override or `--unsafe-socket-path`. Confirm with
+  `echo $XDG_RUNTIME_DIR` in a step.
+</Aside>
+
+## Version compatibility
+
+The daemon and the `sdk/go` module are versioned independently — their version
+numbers do not have to match. When you pin a daemon version in CI (for example,
+`go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@vX.Y.Z`),
+`go install` resolves the daemon release's own `go.mod` and pulls the exact
+`sdk/go` it was built against. There is nothing to match by hand, and you never
+install or pin `sdk/go` yourself. To find the exact SDK version a given daemon
+release used, read that release's `go.mod` — it is the authoritative source.
+
+**Emitter SDKs** (TypeScript, Python, Go) connect to the daemon over the Unix
+socket using the same frame protocol regardless of daemon version, as long as
+both sides support frame version `"1"`. Newer daemon features (such as
+`idempotency_key` stamping) require a daemon at or above the version that
+introduced them; see the
+[daemon CHANGELOG](https://github.com/agent-receipts/ar/blob/main/daemon/CHANGELOG.md)
+for the per-feature version column.
+
+**Pin to a specific daemon version in CI** (`DAEMON_VERSION: v0.13.0` in the
+recipe above) rather than `@latest`. Daemon releases may introduce new
+behaviours or reject previously-accepted paths; a pinned version keeps your
+CI deterministic.
+
+## Offline verification
+
+The receipt DB and public key uploaded on failure are self-contained. An
+auditor with no running daemon can verify the chain offline:
+
+```sh
+agent-receipts verify \
+  --db         receipts.db \
+  --public-key signing.key.pub \
+  --chain-id   "ci-run-<run-id>"
+```
+
+`agent-receipts verify` opens the SQLite store **read-only** and does not
+require the daemon socket to be reachable. Exit 0 means the chain is intact;
+exit 1 means it is broken (output lists per-receipt status and the failing cause).
+
+## References
+
+- [Daemon Setup](/getting-started/daemon-setup/) — install, init, and start the daemon locally
+- [CLI Commands](/reference/cli-commands/) — full flag reference for `agent-receipts verify`, `verify-event`, `doctor`, `list`, and `show`
+- [daemon issue #538](https://github.com/agent-receipts/ar/issues/538) — the shipped safe-path guard that refuses out-of-safe-set socket overrides unless `--unsafe-socket-path` is passed
+- [daemon CHANGELOG](https://github.com/agent-receipts/ar/blob/main/daemon/CHANGELOG.md) — version history and per-feature version map

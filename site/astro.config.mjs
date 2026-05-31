@@ -122,6 +122,10 @@ export default defineConfig({
               label: "Collector Operations",
               slug: "deployment/collector-operations",
             },
+            {
+              label: "Using Agent Receipts in CI",
+              slug: "deployment/ci-guide",
+            },
           ],
         },
         {
