@@ -160,6 +160,23 @@ func TestRun_VerifiesGoodChain(t *testing.T) {
 	}
 }
 
+func TestRun_VerifiesSingleReceiptChain(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath := fixtureChain(t, dir, "chain-1", 1)
+
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--chain-id", "chain-1",
+	})
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (stderr=%s)", code, ExitOK, stderr)
+	}
+	if !strings.Contains(stdout, "VALID (1 receipt)") {
+		t.Errorf("stdout = %q, expected singular 'VALID (1 receipt)'", stdout)
+	}
+}
+
 func TestRun_FlagsIncompleteToolRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath, pubKeyPath := fixturePendingTailChain(t, dir, "chain-1", 3)

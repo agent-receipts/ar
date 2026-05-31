@@ -12,6 +12,11 @@ verified later.
 **Prerequisites:** the daemon is installed and running. If not, complete
 [Daemon Setup](/getting-started/daemon-setup/) first.
 
+**Fresh chain assumed:** sequence numbers below (`1`, `2`) are correct when the
+default chain has no prior receipts. If you have already emitted receipts, run
+`agent-receipts list` to find the current tail and substitute the actual
+sequence numbers.
+
 ---
 
 ## 1. Install the SDK
@@ -77,10 +82,7 @@ and releases the socket.
 agent-receipts list
 ```
 
-You should see a row for your newly emitted receipt — on a fresh chain it has
-sequence `1`, tool `fs.write_file`, chain `default`. If your store already has
-receipts from a previous session, the sequence number will be higher; use the
-`SEQ` value from `agent-receipts list` throughout this guide.
+You should see one row: sequence `1`, tool `fs.write_file`, chain `default`.
 
 To inspect the full receipt:
 
@@ -97,8 +99,8 @@ agent-receipts show 1 --chain-id default --json
 ```
 
 In the JSON output, `credentialSubject.chain.previous_receipt_hash` is `null`
-for receipt 1: it is the chain head with no predecessor. The hash linkage becomes
-visible once there is a second receipt to point back at it.
+for the first receipt in a chain — it has no predecessor. The hash linkage
+becomes visible once there is a second receipt to point back at it.
 
 ---
 

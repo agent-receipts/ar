@@ -152,7 +152,7 @@ agent-receipts verify \
 | `-public-key` | PEM-encoded SPKI public key path (env: `AGENTRECEIPTS_PUBLIC_KEY`; defaults to `<key>.pub` derived from `AGENTRECEIPTS_KEY`) |
 | `-chain-id` | Chain id to verify (default: `default`; env: `AGENTRECEIPTS_CHAIN_ID`) |
 
-A successful run prints `Chain <id>: VALID (<n> receipt(s))`. A tampered chain prints `Chain <id>: BROKEN at receipt <n>` with the failing cause and per-receipt status (`BAD SIGNATURE`, `BAD HASH LINK`, `BAD SEQUENCE`).
+A successful run prints `Chain <id>: VALID (<n> receipts)` (or `receipt` when n=1). A tampered chain prints `Chain <id>: BROKEN at receipt <n>` with the failing cause and per-receipt status (`BAD SIGNATURE`, `BAD HASH LINK`, `BAD SEQUENCE`).
 
 **Exit codes:** `0` chain verified; `1` chain failed verification; `2` bad flags or an unreadable DB/key file.
 
