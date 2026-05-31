@@ -55,9 +55,15 @@ The daemon receives the event over its Unix socket, signs it with its Ed25519
 key, chains it to any previous receipt in the same chain, and persists it to the
 SQLite store. The emitter itself never touches the key.
 
+`channel` is the integration namespace for this emitter — it becomes the prefix
+of the action type stored in the receipt (`walkthrough.fs.write_file` here). Use
+a stable, descriptive identifier for your integration: `mcp`, `claude-code`,
+`my-agent`, and so on.
+
 `emit()` returns `null` on success or an `Error` on failure — an
 `EmitTransportError` when the daemon is unreachable, a plain `Error` for caller
-bugs. `close()` is synchronous and releases the socket.
+bugs such as a missing tool name or invalid decision. `close()` is synchronous
+and releases the socket.
 
 ---
 
@@ -67,7 +73,7 @@ bugs. `close()` is synchronous and releases the socket.
 agent-receipts list
 ```
 
-You should see one row: sequence `1`, action type `fs.write_file`, in chain `default`.
+You should see one row: sequence `1`, tool `fs.write_file`, in chain `default`.
 
 To inspect the full receipt:
 
@@ -77,11 +83,15 @@ agent-receipts show 1
 
 This prints a human-readable table of the receipt's fields. To see the full
 W3C Verifiable Credential JSON — including the `proof` block with the Ed25519
-signature and `credentialSubject.chain.previous_receipt_hash` — pass `--json`:
+signature — pass `--json`:
 
 ```sh
 agent-receipts show 1 --json
 ```
+
+In the JSON output, `credentialSubject.chain.previous_receipt_hash` is `null`
+for receipt 1: it is the chain head with no predecessor. The hash linkage becomes
+visible once there is a second receipt to point back at it.
 
 ---
 
@@ -128,8 +138,9 @@ agent-receipts verify
 Chain default: VALID (2 receipts)
 ```
 
-Run `agent-receipts show 2` — the `Previous hash:` field shows the hash of
-receipt 1. That linkage is what makes the chain tamper-evident: altering receipt 1
+Run `agent-receipts show 2` — unlike receipt 1 (the chain head), this receipt
+has a `Previous hash:` field containing the hash of receipt 1. That linkage is
+what makes the chain tamper-evident: altering receipt 1 changes its hash,
 invalidates receipt 2's back-pointer, and verification catches it immediately.
 
 ---
