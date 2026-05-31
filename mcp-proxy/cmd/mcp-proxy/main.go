@@ -421,20 +421,25 @@ func serve() int {
 
 	p := proxy.New(command, commandArgs, handler)
 	log.Printf("mcp-proxy: session %s, server %s", sessionID, *serverName)
-	runErr := p.Run(ctx)
+
+	// Run the proxy in a goroutine so we can watch the approval server's health
+	// concurrently. If the approval HTTP listener dies mid-session (a
+	// non-ErrServerClosed Serve failure while the run loop is still blocked),
+	// awaitSessionEnd cancels the session so Run unblocks promptly and the proxy
+	// stops advertising an approval URL it can no longer honour — instead of
+	// leaving callers to time out in WaitForApproval (#691).
+	runErrCh := make(chan error, 1)
+	go func() { runErrCh <- p.Run(ctx) }()
+	outcome := awaitSessionEnd(runErrCh, httpSrv, stop, httpCancel)
 	log.Printf("mcp-proxy: session %s ended", sessionID)
 
-	// Wind down the approval server on EVERY path, before the deferred emitter
-	// Close() runs. The signal path already cancelled ctx (and thus httpCtx);
-	// the clean stdin-EOF path did not, so httpCancel() here is what drives the
-	// graceful Shutdown(grace) in that case. httpCancel is idempotent, so
-	// calling it on both paths is safe. waitForHTTPShutdown then blocks until
-	// Serve returns (bounded by the grace window) — a no-op when no approval
-	// server runs. The ordering is: Run unblocks → approval server
-	// Shutdown(grace) → emitter Close() (deferred).
-	httpCancel()
-	httpErr := waitForHTTPShutdown(httpSrv)
-
+	// A mid-session approval-server death is fatal: surface the wrapped error and
+	// exit non-zero. Checked before the signal branch because the fail-fast path
+	// cancels the session ctx itself, which would otherwise look like a signal.
+	if outcome.serverDied {
+		log.Printf("mcp-proxy: approval server: %v", outcome.httpErr)
+		return 1
+	}
 	// When a signal cancelled ctx, Run returned because we killed the upstream;
 	// the resulting Wait error is expected, not a failure. Log a single clear
 	// shutdown line and return so the deferred emitter Close() runs last.
@@ -447,15 +452,69 @@ func serve() int {
 	// non-ErrServerClosed Serve failure — propagated out of the goroutine via
 	// waitForHTTPShutdown rather than crashing it — is reported the same way as
 	// a Run failure.
-	if runErr != nil {
-		log.Printf("mcp-proxy: %v", runErr)
+	if outcome.runErr != nil {
+		log.Printf("mcp-proxy: %v", outcome.runErr)
 		return 1
 	}
-	if httpErr != nil {
-		log.Printf("mcp-proxy: approval server: %v", httpErr)
+	if outcome.httpErr != nil {
+		log.Printf("mcp-proxy: approval server: %v", outcome.httpErr)
 		return 1
 	}
 	return 0
+}
+
+// shutdownOutcome reports how a proxy session ended so serve() can choose the
+// exit code and shutdown log line.
+type shutdownOutcome struct {
+	runErr     error // result of p.Run; nil on a clean stdin-EOF
+	httpErr    error // non-ErrServerClosed approval-server Serve failure, if any
+	serverDied bool  // the approval server failed while the session was still live
+}
+
+// awaitSessionEnd coordinates the end of a proxy session. It blocks until
+// either the run loop finishes (signal or stdin-EOF) or the approval HTTP
+// server dies mid-session, whichever happens first, then winds the other side
+// down and reports the outcome. runErrCh receives exactly one value — the
+// result of p.Run. stopSession cancels the session context; httpCancel and
+// httpSrv drive and await the approval server's graceful shutdown.
+//
+// The approval handle's errCh is buffered (size 1) and carries exactly one
+// value, so this function reads it AT MOST once: on the run-completed branch it
+// leaves errCh for waitForHTTPShutdown to read; on the server-died branch it
+// consumes that value directly and must NOT also call waitForHTTPShutdown,
+// which would block re-reading an already-drained channel.
+//
+// When httpSrv is nil (the -http-off STDIO-only flow) the server-done channel
+// is nil and never fires, so the only path is run-completed and the helper is a
+// thin pass-through.
+func awaitSessionEnd(runErrCh <-chan error, httpSrv *approvalServer, stopSession, httpCancel context.CancelFunc) shutdownOutcome {
+	var serverDone <-chan struct{}
+	if httpSrv != nil {
+		serverDone = httpSrv.done
+	}
+
+	select {
+	case runErr := <-runErrCh:
+		// Normal end (signal or stdin-EOF). Wind the approval server down and
+		// await it exactly as before: httpCancel drives the graceful
+		// Shutdown(grace); waitForHTTPShutdown reads the single errCh value (a
+		// no-op when no approval server runs).
+		httpCancel()
+		return shutdownOutcome{runErr: runErr, httpErr: waitForHTTPShutdown(httpSrv)}
+	case <-serverDone:
+		// The approval server's Serve returned while the session was still live.
+		// Its errCh already holds the single Serve result; read it once here.
+		// During a live session this is genuinely a mid-session failure: the
+		// clean ErrServerClosed (nil) path only fires after httpCancel, which the
+		// run-completed branch above is the sole caller of. Guard on a non-nil
+		// error anyway so a clean stop never gets misreported as a death.
+		httpErr := <-httpSrv.errCh
+		// Unblock Run so the session tears down promptly rather than waiting for
+		// an independent end (signal/EOF).
+		stopSession()
+		runErr := <-runErrCh
+		return shutdownOutcome{runErr: runErr, httpErr: httpErr, serverDied: httpErr != nil}
+	}
 }
 
 // waitForHTTPShutdown blocks until the approval HTTP server has finished
