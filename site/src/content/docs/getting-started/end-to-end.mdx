@@ -3,8 +3,8 @@ title: End-to-End Walkthrough (TypeScript)
 description: Emit a receipt, list the chain, verify integrity — a complete loop using the TypeScript SDK and daemon.
 ---
 
-This walkthrough takes you through the complete receipt lifecycle: emit a signed
-receipt from a TypeScript agent, list the stored chain, and verify its integrity
+This walkthrough takes you through the complete receipt lifecycle: emit a receipt
+event from a TypeScript agent, list the stored chain, and verify its integrity
 from the CLI. By the end you will have seen the full loop that makes receipts
 meaningful — not just that a receipt was written, but that it can be independently
 verified later.
@@ -30,19 +30,23 @@ Create `emit.ts`:
 ```typescript
 import { DaemonEmitter } from '@agnt-rcpt/sdk-ts';
 
-const emitter = new DaemonEmitter();
+async function main() {
+  const emitter = new DaemonEmitter();
 
-try {
-  const err = await emitter.emit({
-    channel: 'walkthrough',
-    tool: { name: 'fs.write_file' },
-    decision: 'allowed',
-  });
-  if (err) throw err;
-  console.log('Receipt emitted.');
-} finally {
-  emitter.close();
+  try {
+    const err = await emitter.emit({
+      channel: 'walkthrough',
+      tool: { name: 'fs.write_file' },
+      decision: 'allowed',
+    });
+    if (err) throw err;
+    console.log('Receipt emitted.');
+  } finally {
+    emitter.close();
+  }
 }
+
+main().catch(console.error);
 ```
 
 Run it:
@@ -73,7 +77,10 @@ and releases the socket.
 agent-receipts list
 ```
 
-You should see one row: sequence `1`, tool `fs.write_file`, in chain `default`.
+You should see a row for your newly emitted receipt — on a fresh chain it has
+sequence `1`, tool `fs.write_file`, chain `default`. If your store already has
+receipts from a previous session, the sequence number will be higher; use the
+`SEQ` value from `agent-receipts list` throughout this guide.
 
 To inspect the full receipt:
 
@@ -101,7 +108,7 @@ visible once there is a second receipt to point back at it.
 agent-receipts verify
 ```
 
-Expected output:
+Example output (on a fresh chain):
 
 ```
 Chain default: VALID (1 receipt)
@@ -109,8 +116,8 @@ Chain default: VALID (1 receipt)
 
 The verifier re-derives the hash of each receipt, checks the signature against
 the daemon's public key, and confirms the `previous_receipt_hash` in each receipt
-matches the hash of its predecessor. An empty chain, a broken hash link, or a
-bad signature all produce a non-zero exit and a description of the failure.
+matches the hash of its predecessor. A broken hash link or bad signature produces
+a non-zero exit and a description of the failure.
 
 ### Verify offline
 
@@ -134,14 +141,17 @@ npx tsx emit.ts
 agent-receipts verify
 ```
 
+Example output (count is one higher than after the first emit):
+
 ```
 Chain default: VALID (2 receipts)
 ```
 
-Run `agent-receipts show 2` — unlike receipt 1 (the chain head), this receipt
-has a `Previous hash:` field containing the hash of receipt 1. That linkage is
-what makes the chain tamper-evident: altering receipt 1 changes its hash,
-invalidates receipt 2's back-pointer, and verification catches it immediately.
+Run `agent-receipts show 2` (or the sequence of your second receipt from
+`agent-receipts list`) — unlike receipt 1 (the chain head), this receipt has a
+`Previous hash:` field containing the hash of receipt 1. That linkage is what
+makes the chain tamper-evident: altering receipt 1 changes its hash, invalidates
+receipt 2's back-pointer, and verification catches it immediately.
 
 ---
 
