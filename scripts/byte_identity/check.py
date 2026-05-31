@@ -64,7 +64,7 @@ GO_MODULE = "github.com/agent-receipts/ar/sdk/go"
 TS_PACKAGE = "@agnt-rcpt/sdk-ts"
 PY_PACKAGE = "agent-receipts"
 
-# Default vectors location relative to the repo root (two levels up from here).
+# Default vectors location relative to the repo root (three levels up from here).
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_VECTORS = os.path.join(
     _REPO_ROOT, "cross-sdk-tests", "canonicalization_vectors.json"
