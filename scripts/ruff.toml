@@ -1,0 +1,28 @@
+# Lint config for the repo-root release-gate helpers under scripts/.
+#
+# The Python SDK has its own ruff config in sdk/py/pyproject.toml; this file
+# brings the otherwise-unlinted gate helpers (byte_identity/, schema_conformance/,
+# release_verify/, readme_snippets/) under the same lint posture. Run from the
+# repo root with `ruff check scripts/`.
+#
+# Rule selection mirrors sdk/py so the two Python surfaces stay consistent, with
+# one deliberate exception: the gate scripts print diagnostic lines and assemble
+# subprocess argv that intentionally exceed 88 columns, so E501 (line-length) is
+# left off. F-class (pyflakes) — the unused-import class that motivated this
+# config — is enforced.
+
+target-version = "py311"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "TCH", # type-checking imports
+]
+ignore = [
+    "E501", # line length — gate scripts intentionally exceed 88 cols
+]

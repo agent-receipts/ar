@@ -218,7 +218,7 @@ def run_go(units: list[extract.Unit], source: str, version: str | None, repo_roo
         return 1
 
     failures: list[extract.Unit] = []
-    for unit, run_dir in zip(runnable, run_dirs):
+    for unit, run_dir in zip(runnable, run_dirs, strict=True):
         if _run(["go", "run", "."], cwd=run_dir, env=_GO_ENV) != 0:
             failures.append(unit)
     return _summarize_run(failures, runnable, "Go")
