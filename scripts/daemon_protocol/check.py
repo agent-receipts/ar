@@ -388,7 +388,6 @@ def download_daemon(version: str, workdir: str) -> DaemonBinaries:
     url = daemon_asset_url(version)
     tarball = os.path.join(workdir, "daemon.tar.gz")
     print(f"\n--- Downloading the released daemon\n    {url}")
-    last_err: Exception | None = None
     for attempt in range(REGISTRY_RETRIES + 1):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "ar-gate8"})
@@ -397,7 +396,6 @@ def download_daemon(version: str, workdir: str) -> DaemonBinaries:
                     shutil.copyfileobj(resp, fh)
             break
         except urllib.error.URLError as exc:
-            last_err = exc
             if attempt == REGISTRY_RETRIES:
                 raise RuntimeError(f"failed to download {url}: {exc}") from exc
             wait = 2 ** (attempt + 1)

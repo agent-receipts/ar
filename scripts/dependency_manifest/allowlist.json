@@ -1,0 +1,71 @@
+{
+  "go": [
+    {
+      "name": "golang.org/x/crypto",
+      "justification": "Transitive dependency of github.com/cloudflare/circl (declared); circl builds on x/crypto primitives. Not imported directly by the SDK."
+    },
+    {
+      "name": "golang.org/x/sys",
+      "justification": "Transitive dependency of modernc.org/libc / modernc.org/sqlite (declared); provides low-level syscall primitives. Not imported directly by the SDK."
+    },
+    {
+      "name": "modernc.org/libc",
+      "justification": "Transitive dependency of modernc.org/sqlite (declared); the pure-Go libc shim sqlite is compiled against."
+    },
+    {
+      "name": "modernc.org/mathutil",
+      "justification": "Transitive dependency of modernc.org/sqlite (declared) via modernc.org/libc."
+    },
+    {
+      "name": "modernc.org/memory",
+      "justification": "Transitive dependency of modernc.org/sqlite (declared) via modernc.org/libc; arena allocator used by the pure-Go sqlite runtime."
+    },
+    {
+      "name": "github.com/dustin/go-humanize",
+      "justification": "Transitive dependency of modernc.org/sqlite (declared) via modernc.org/libc."
+    },
+    {
+      "name": "github.com/mattn/go-isatty",
+      "justification": "Transitive dependency of modernc.org/sqlite (declared) via modernc.org/libc; terminal detection."
+    },
+    {
+      "name": "github.com/ncruces/go-strftime",
+      "justification": "Transitive dependency of modernc.org/sqlite (declared); strftime formatting for sqlite date functions."
+    },
+    {
+      "name": "github.com/remyoudompheng/bigfft",
+      "justification": "Transitive dependency of modernc.org/sqlite (declared) via modernc.org/mathutil; big-integer FFT multiplication."
+    },
+    {
+      "name": "gopkg.in/yaml.v3",
+      "justification": "Transitive dependency of github.com/agent-receipts/ar/daemon (declared in-repo module); used by the daemon's config handling."
+    }
+  ],
+  "py": [
+    {
+      "name": "cffi",
+      "justification": "Transitive runtime dependency of cryptography (declared); cryptography's C bindings are built on cffi (on non-PyPy platforms)."
+    },
+    {
+      "name": "pycparser",
+      "justification": "Transitive runtime dependency of cryptography via cffi; cffi uses pycparser to parse C declarations."
+    },
+    {
+      "name": "pydantic-core",
+      "justification": "Transitive runtime dependency of pydantic (declared); the compiled validation core pydantic v2 is built on."
+    },
+    {
+      "name": "annotated-types",
+      "justification": "Transitive runtime dependency of pydantic (declared); provides the constraint types pydantic re-exports."
+    },
+    {
+      "name": "typing-extensions",
+      "justification": "Transitive runtime dependency of pydantic (declared); backports typing features for the supported Python range."
+    },
+    {
+      "name": "typing-inspection",
+      "justification": "Transitive runtime dependency of pydantic (declared); pydantic uses it to introspect type annotations at runtime."
+    }
+  ],
+  "ts": []
+}

@@ -418,7 +418,7 @@ func main() {
 
 def _parse_emitted(lang: str, stdout: str) -> dict | None:
     """Pull the single JSON output object out of a driver's stdout."""
-    for line in reversed(stdout.splitlines()):
+    for line in reversed(stdout.split("\n")):
         line = line.strip()
         if line.startswith("{"):
             try:
