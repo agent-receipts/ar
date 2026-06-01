@@ -69,13 +69,22 @@ unavailable rather than aborting the run.
    containers. Counts are cumulative per release (GitHub exposes no daily
    series), so this signal is about totals and platform mix, not weekday shape.
 
-   It also detects **CI sweeps**: a release-verification or supply-chain job
-   fetches the *whole* artifact set (the checksums manifest plus the Linux server
-   builds), whereas a human installs one desktop binary via brew and never pulls
-   `checksums.txt`. Any release with a checksums download alongside a Linux
-   download is flagged as swept; one download per binary artifact is attributed
-   to automation and subtracted, so the reported count discounts your own release
-   gates instead of crediting them as adopters.
+   It also discounts CI. **Linux downloads are treated as automation** — there
+   are no organic Linux users for a Homebrew-tap Mac CLI, and the release gates
+   pull Linux builds (e.g. Gate #8, the daemon ↔ SDK protocol check, downloads
+   `daemon_<v>_linux_amd64.tar.gz` on ubuntu on every daemon/SDK release). On top
+   of that it detects **CI sweeps**: a release-verification or supply-chain job
+   fetches the *whole* artifact set (checksums manifest plus Linux builds),
+   whereas a human installs one desktop binary via brew and never pulls
+   `checksums.txt`. A release with a checksums download alongside a Linux download
+   is flagged as swept, and one download per desktop artifact in it is also
+   attributed to automation. The reported install-event count therefore discounts
+   your own release gates instead of crediting them as adopters.
+
+   Note on the Homebrew tap's own CI: `agent-receipts/homebrew-tap` runs
+   `brew audit --strict --online` on `macos-latest`, but online audit does
+   URL-liveness HEAD checks, and GitHub increments `download_count` only on a GET
+   of the asset — so the macOS audit job does not inflate `darwin_arm64`.
 
    The headline figure is reported as **install events, not people** — GitHub's
    `download_count` is an undeduplicated event counter, so it multiplies across

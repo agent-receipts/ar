@@ -357,7 +357,7 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
         swept = is_ci_sweep(assets)
         if swept:
             ci_sweep_releases += 1
-        release_events = 0  # human install events for this single build
+        release_events = 0  # human (desktop) install events for this single build
         release_module = ""
         for name, count in assets:
             platform = parse_asset_platform(name)
@@ -367,8 +367,17 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
             module = _asset_module(name)
             by_module[module] = by_module.get(module, 0) + count
             release_module = release_module or module
+            if platform == "linux":
+                # Server platform: no organic users for a Homebrew-tap Mac CLI.
+                # Linux pulls are CI — sweeps, and release gates like Gate #8
+                # (daemon ↔ SDK protocol check) which fetches the linux_amd64
+                # daemon tarball on every daemon/SDK release.
+                ci_downloads += count
+                continue
+            # Desktop platform (darwin / windows). In a swept release the
+            # verification job also pulled one of each desktop artifact.
             if swept:
-                ci_downloads += 1  # the sweep pulled ~1 of each binary artifact
+                ci_downloads += 1
                 release_events += count - 1
             else:
                 release_events += count
@@ -407,8 +416,13 @@ def verdict_release(metrics: ReleaseMetrics | None) -> tuple[str, list[str]]:
     if metrics.ci_sweep_releases:
         notes.append(
             f"{metrics.ci_sweep_releases} release(s) show a CI sweep "
-            f"(checksums + Linux pulled together) — ~{metrics.ci_downloads} download(s) "
-            f"attributed to automation"
+            "(checksums + Linux pulled together) — full artifact set fetched by automation"
+        )
+    if metrics.server_downloads:
+        notes.append(
+            f"{metrics.server_downloads} Linux download(s) treated as CI (server platform; "
+            "release gates such as the daemon ↔ SDK protocol check pull the linux build) "
+            f"— {metrics.ci_downloads} download(s) total attributed to automation"
         )
     if metrics.install_events > 0 and metrics.desktop_fraction >= DESKTOP_FRACTION_HUMAN:
         label = "human-leaning — desktop installs (likely Homebrew on laptops)"

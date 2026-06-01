@@ -228,6 +228,26 @@ def test_release_assets_sweep_detected_and_discounted() -> None:
     assert any("not people" in n for n in notes)
 
 
+def test_release_assets_gate8_lone_linux_is_ci() -> None:
+    # Gate #8 (daemon protocol check) downloads daemon_<v>_linux_amd64.tar.gz on
+    # ubuntu on every daemon/SDK release — no checksums, no darwin. It must be
+    # attributed to CI even though it is not a full "sweep".
+    releases = [
+        [("daemon_0.13.0_darwin_arm64.tar.gz", 13)],  # real Mac humans
+        [
+            ("daemon_0.14.0_linux_amd64.tar.gz", 4),  # Gate #8 pulls
+            ("daemon_0.14.0_darwin_arm64.tar.gz", 0),
+        ],
+    ]
+    m = check.classify_release_assets(releases)
+    assert m is not None
+    assert m.server_downloads == 4
+    assert m.ci_sweep_releases == 0  # a lone Linux pull is not a sweep
+    assert m.ci_downloads == 4  # ...but still CI
+    assert m.install_events == 13  # only the darwin humans
+    assert m.peak_build == 13
+
+
 def test_release_assets_linux_dominated_is_ci() -> None:
     releases = [
         [
