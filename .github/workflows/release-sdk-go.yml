@@ -151,3 +151,22 @@ jobs:
           python3 scripts/byte_identity/check.py --lang go --version "$VERSION"
       - name: Run unit tests for byte-identity gate
         run: python3 scripts/byte_identity/test_check.py
+
+  # Gate #10: every dependency installed into the published artifact must be
+  # declared in go.mod or recorded in the gate's allowlist with a justification.
+  # An undeclared, un-allow-listed "eager" dependency turns the release red.
+  # Manifest-vs-manifest comparison — no network, no module download.
+  dependency-manifest:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Verify installed deps match declared deps (Gate #10)
+        run: python3 scripts/dependency_manifest/check.py --lang go
+      - name: Run unit tests for dependency-manifest gate
+        run: python3 scripts/dependency_manifest/test_check.py
