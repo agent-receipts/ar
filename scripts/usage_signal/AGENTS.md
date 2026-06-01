@@ -69,6 +69,14 @@ unavailable rather than aborting the run.
    containers. Counts are cumulative per release (GitHub exposes no daily
    series), so this signal is about totals and platform mix, not weekday shape.
 
+   It also detects **CI sweeps**: a release-verification or supply-chain job
+   fetches the *whole* artifact set (the checksums manifest plus the Linux server
+   builds), whereas a human installs one desktop binary via brew and never pulls
+   `checksums.txt`. Any release with a checksums download alongside a Linux
+   download is flagged as swept; one download per binary artifact is attributed
+   to automation and subtracted, so the reported human count discounts your own
+   release gates instead of crediting them as adopters.
+
 ## Reading the verdict
 
 `machine-dominated` is the **expected** baseline for a young package and is not

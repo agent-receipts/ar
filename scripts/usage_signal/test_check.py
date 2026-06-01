@@ -166,37 +166,76 @@ def test_parse_asset_platform_skips_non_binaries() -> None:
 
 
 def test_release_assets_desktop_dominated_is_human() -> None:
-    # the real hook + mcp-proxy v0.12.0 shape: all darwin_arm64, zero linux
-    assets = [
-        ("agent-receipts-hook_0.12.0_darwin_arm64.tar.gz", 11),
-        ("agent-receipts-hook_0.12.0_darwin_amd64.tar.gz", 1),
-        ("agent-receipts-hook_0.12.0_linux_amd64.tar.gz", 0),
-        ("mcp-proxy_0.12.0_darwin_arm64.tar.gz", 9),
-        ("mcp-proxy_0.12.0_linux_arm64.tar.gz", 0),
-        ("checksums.txt", 0),
+    # the real hook + mcp-proxy v0.12.0 shape: all darwin_arm64, zero linux,
+    # zero checksums -> no sweep, all human
+    releases = [
+        [
+            ("agent-receipts-hook_0.12.0_darwin_arm64.tar.gz", 11),
+            ("agent-receipts-hook_0.12.0_darwin_amd64.tar.gz", 1),
+            ("agent-receipts-hook_0.12.0_linux_amd64.tar.gz", 0),
+            ("checksums.txt", 0),
+        ],
+        [
+            ("mcp-proxy_0.12.0_darwin_arm64.tar.gz", 9),
+            ("mcp-proxy_0.12.0_linux_arm64.tar.gz", 0),
+            ("checksums.txt", 0),
+        ],
     ]
-    m = check.classify_release_assets(assets)
+    m = check.classify_release_assets(releases)
     assert m is not None
     assert m.total_downloads == 21
     assert m.server_downloads == 0
+    assert m.ci_sweep_releases == 0
+    assert m.human_downloads == 21
     assert m.by_module == {"agent-receipts-hook": 12, "mcp-proxy": 9}
     label, _ = check.verdict_release(m)
     assert label.startswith("human-leaning")
 
 
-def test_release_assets_linux_dominated_is_ci() -> None:
-    assets = [
-        ("mcp-proxy_1.0.0_linux_amd64.tar.gz", 80),
-        ("mcp-proxy_1.0.0_darwin_arm64.tar.gz", 3),
+def test_release_assets_sweep_detected_and_discounted() -> None:
+    # the real mcp-proxy/collector v0.13.0 shape: 1 of every platform + checksums
+    # (CI sweep) alongside the human darwin_arm64 column
+    releases = [
+        [
+            ("mcp-proxy_0.13.0_darwin_amd64.tar.gz", 1),
+            ("mcp-proxy_0.13.0_darwin_arm64.tar.gz", 3),
+            ("mcp-proxy_0.13.0_linux_amd64.tar.gz", 1),
+            ("mcp-proxy_0.13.0_linux_arm64.tar.gz", 1),
+            ("checksums.txt", 1),
+        ],
+        [
+            ("collector_0.13.0_darwin_amd64.tar.gz", 1),
+            ("collector_0.13.0_darwin_arm64.tar.gz", 7),
+            ("collector_0.13.0_linux_amd64.tar.gz", 1),
+            ("collector_0.13.0_linux_arm64.tar.gz", 1),
+            ("checksums.txt", 1),
+        ],
     ]
-    m = check.classify_release_assets(assets)
+    m = check.classify_release_assets(releases)
+    assert m is not None
+    assert m.ci_sweep_releases == 2
+    assert m.ci_downloads == 8  # 4 binary artifacts swept per release
+    assert m.human_downloads == 8  # 16 binary downloads - 8 swept
+    label, notes = check.verdict_release(m)
+    assert label.startswith("human-leaning")
+    assert any("CI sweep" in n for n in notes)
+
+
+def test_release_assets_linux_dominated_is_ci() -> None:
+    releases = [
+        [
+            ("mcp-proxy_1.0.0_linux_amd64.tar.gz", 80),
+            ("mcp-proxy_1.0.0_darwin_arm64.tar.gz", 3),
+        ]
+    ]
+    m = check.classify_release_assets(releases)
     assert m is not None
     label, _ = check.verdict_release(m)
     assert "Linux-dominated" in label
 
 
 def test_release_assets_none_when_undownloaded() -> None:
-    assert check.classify_release_assets([("x_1.0_linux_amd64.tar.gz", 0)]) is None
+    assert check.classify_release_assets([[("x_1.0_linux_amd64.tar.gz", 0)]]) is None
 
 
 # --- runner -----------------------------------------------------------------

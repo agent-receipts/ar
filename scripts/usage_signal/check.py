@@ -287,12 +287,15 @@ def verdict(
 class ReleaseMetrics:
     """GitHub Release asset download shape (the Homebrew / binary install path)."""
 
-    total_downloads: int
-    by_platform: dict[str, int]  # darwin / linux / windows / other
+    total_downloads: int  # binary downloads (checksums/sigs excluded)
+    by_platform: dict[str, int]  # darwin / linux / windows
     desktop_downloads: int  # darwin + windows
     server_downloads: int  # linux
     desktop_fraction: float
     by_module: dict[str, int]
+    ci_sweep_releases: int  # releases whose full artifact set was pulled by automation
+    ci_downloads: int  # binary downloads attributed to those sweeps
+    human_downloads: int  # total_downloads - ci_downloads
 
 
 def parse_asset_platform(name: str) -> str | None:
@@ -314,21 +317,50 @@ def _asset_module(name: str) -> str:
     return re.split(r"_v?\d", name, maxsplit=1)[0] or name
 
 
-def classify_release_assets(assets: list[tuple[str, int]]) -> ReleaseMetrics | None:
-    """Aggregate per-asset download counts by platform and module.
+def is_ci_sweep(assets: list[tuple[str, int]]) -> bool:
+    """True if a release's full artifact set was pulled by automation.
 
-    ``assets`` is a flat ``(asset_name, download_count)`` list across releases.
-    Non-binary assets (checksums, signatures) are ignored. Returns ``None`` if no
-    binary asset has ever been downloaded.
+    The fingerprint of a release-verification / supply-chain job (vs a human
+    installing via Homebrew) is that it fetches *everything*: the checksums
+    manifest plus the Linux server builds. A human is on one desktop platform,
+    installs via brew, and never downloads checksums.txt (brew verifies against
+    the sha256 pinned in the formula). So: a checksums download together with any
+    Linux download marks the release as swept.
+    """
+    checksums = any(
+        count > 0 and parse_asset_platform(name) is None and "checksum" in name.lower()
+        for name, count in assets
+    )
+    linux = any(count > 0 and parse_asset_platform(name) == "linux" for name, count in assets)
+    return checksums and linux
+
+
+def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMetrics | None:
+    """Aggregate per-asset download counts by platform and module across releases.
+
+    ``releases`` is a list of releases, each a ``(asset_name, download_count)``
+    list (including non-binary assets like checksums, which inform sweep
+    detection but are excluded from the download totals). For any release flagged
+    as a CI sweep (see ``is_ci_sweep``), one download per distinct binary artifact
+    is attributed to automation and subtracted from the human count. Returns
+    ``None`` if no binary asset has ever been downloaded.
     """
     by_platform: dict[str, int] = {}
     by_module: dict[str, int] = {}
-    for name, count in assets:
-        platform = parse_asset_platform(name)
-        if platform is None or count <= 0:
-            continue
-        by_platform[platform] = by_platform.get(platform, 0) + count
-        by_module[_asset_module(name)] = by_module.get(_asset_module(name), 0) + count
+    ci_sweep_releases = 0
+    ci_downloads = 0
+    for assets in releases:
+        swept = is_ci_sweep(assets)
+        if swept:
+            ci_sweep_releases += 1
+        for name, count in assets:
+            platform = parse_asset_platform(name)
+            if platform is None or count <= 0:
+                continue
+            by_platform[platform] = by_platform.get(platform, 0) + count
+            by_module[_asset_module(name)] = by_module.get(_asset_module(name), 0) + count
+            if swept:
+                ci_downloads += 1  # the sweep pulled ~1 of each binary artifact
 
     total = sum(by_platform.values())
     if total == 0:
@@ -342,23 +374,32 @@ def classify_release_assets(assets: list[tuple[str, int]]) -> ReleaseMetrics | N
         server_downloads=server,
         desktop_fraction=desktop / total,
         by_module=by_module,
+        ci_sweep_releases=ci_sweep_releases,
+        ci_downloads=ci_downloads,
+        human_downloads=total - ci_downloads,
     )
 
 
 def verdict_release(metrics: ReleaseMetrics | None) -> tuple[str, list[str]]:
-    """Lean on the desktop-vs-Linux split: desktop installs are humans, Linux is CI."""
+    """Lean on the desktop-vs-Linux split, discounting detected CI sweeps."""
     if metrics is None:
         return "no data", ["no release binaries downloaded yet"]
     notes = [
         f"{metrics.total_downloads} binary download(s): "
         + ", ".join(f"{p} {n}" for p, n in sorted(metrics.by_platform.items()))
     ]
-    if metrics.desktop_fraction >= DESKTOP_FRACTION_HUMAN:
+    if metrics.ci_sweep_releases:
+        notes.append(
+            f"{metrics.ci_sweep_releases} release(s) show a CI sweep "
+            f"(checksums + Linux pulled together) — ~{metrics.ci_downloads} download(s) "
+            f"attributed to automation, leaving ~{metrics.human_downloads} human"
+        )
+    if metrics.human_downloads > 0 and metrics.desktop_fraction >= DESKTOP_FRACTION_HUMAN:
         label = "human-leaning — desktop installs (likely Homebrew on laptops)"
         notes.append(
-            f"{metrics.desktop_fraction:.0%} of downloads are desktop (macOS/Windows) "
-            f"with {metrics.server_downloads} Linux — release binaries aren't "
-            "mirror-amplified, so this is real install activity, not CI or scanners"
+            f"~{metrics.human_downloads} human install(s) after discounting sweeps, "
+            "essentially all desktop (macOS/Windows) with no organic Linux — release "
+            "binaries aren't mirror-amplified, so this is real activity, not CI or scanners"
         )
     elif metrics.server_downloads > metrics.desktop_downloads:
         label = "Linux-dominated — likely CI / containers"
@@ -458,16 +499,17 @@ def go_imported_by(module: str) -> int | None:
     return int(m.group(1).replace(",", "")) if m else None
 
 
-def github_release_assets(repo: str) -> list[tuple[str, int]]:
-    """Every release asset's (name, download_count) for a repo, across all pages.
+def github_release_assets(repo: str) -> list[list[tuple[str, int]]]:
+    """Per-release lists of (asset_name, download_count), across all pages.
 
-    Uses the public REST API. A GITHUB_TOKEN / GH_TOKEN in the environment raises
-    the rate limit but is not required for a public repo.
+    Each element is one release's assets (including checksums, which inform sweep
+    detection). Uses the public REST API; a GITHUB_TOKEN / GH_TOKEN in the
+    environment raises the rate limit but is not required for a public repo.
     """
     import os
 
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    assets: list[tuple[str, int]] = []
+    releases: list[list[tuple[str, int]]] = []
     page = 1
     while True:
         url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
@@ -481,12 +523,13 @@ def github_release_assets(repo: str) -> list[tuple[str, int]]:
         if not batch:
             break
         for release in batch:
-            for asset in release.get("assets", []):
-                assets.append((asset["name"], int(asset["download_count"])))
+            releases.append(
+                [(asset["name"], int(asset["download_count"])) for asset in release.get("assets", [])]
+            )
         if len(batch) < 100:
             break
         page += 1
-    return assets
+    return releases
 
 
 # ---------------------------------------------------------------------------
