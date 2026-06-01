@@ -2,6 +2,8 @@ github.com/agent-receipts/ar/daemon v0.13.0 h1:NECeZJpShUmKAi0KufBptW6t6pDNN1nfj
 github.com/agent-receipts/ar/daemon v0.13.0/go.mod h1:ubwx/Cb2RGD9mHaSPMznPLYTRom4F0GksiWjtdc98Rc=
 github.com/agent-receipts/ar/sdk/go v0.13.0 h1:o/JDXuJrWuyyXuiei/TmC7p/8KRVsufNWS9SIPFhPJ8=
 github.com/agent-receipts/ar/sdk/go v0.13.0/go.mod h1:O4UZo83wzTJw08TsaxjEKjgmsSUq4bjYmSMQxDJTJZA=
+github.com/agent-receipts/ar/sdk/go v0.14.0 h1:07m7Rpr6musEIK6Wd1hom8GI8HHTWDCfOxPTTV3zw2s=
+github.com/agent-receipts/ar/sdk/go v0.14.0/go.mod h1:beOZmNsSk/I9KrU46xJcegIFN3Fo0bdXo8luHhUmeuc=
 github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
@@ -57,6 +59,8 @@ modernc.org/sortutil v1.2.1 h1:+xyoGf15mM3NMlPDnFqrteY07klSFxLElE2PVuWIJ7w=
 modernc.org/sortutil v1.2.1/go.mod h1:7ZI3a3REbai7gzCLcotuw9AC4VZVpYMjDzETGsSMqJE=
 modernc.org/sqlite v1.50.1 h1:l+cQvn0sd0zJJtfygGHuQJ5AjlrwXmWPw4KP3ZMwr9w=
 modernc.org/sqlite v1.50.1/go.mod h1:tcNzv5p84E0skkmJn038y+hWJbLQXQqEnQfeh5r2JLM=
+modernc.org/sqlite v1.51.0 h1:aH/MMSoayAIhozZ7uJbVTT9QO/VhzBf0J9tymmmuC/U=
+modernc.org/sqlite v1.51.0/go.mod h1:tcNzv5p84E0skkmJn038y+hWJbLQXQqEnQfeh5r2JLM=
 modernc.org/strutil v1.2.1 h1:UneZBkQA+DX2Rp35KcM69cSsNES9ly8mQWD71HKlOA0=
 modernc.org/strutil v1.2.1/go.mod h1:EHkiggD70koQxjVdSBM3JKM7k6L0FbGE5eymy9i3B9A=
 modernc.org/token v1.1.0 h1:Xl7Ap9dKaEs5kLoOQeQmPWevfnk/DM5qcLcYlA8ys6Y=
