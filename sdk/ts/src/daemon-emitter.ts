@@ -32,6 +32,16 @@ export const MAX_FRAME_SIZE = 1 << 20;
 /** Wire format version. Must match daemon's pipeline.SupportedFrameVersion. */
 export const SUPPORTED_FRAME_VERSION = "1";
 
+/**
+ * Inclusive range of emitter-frame schema versions this SDK can speak to the
+ * daemon — its declared daemon-protocol range in the ADR-0024 Gate #8 sense.
+ * Today the SDK emits exactly one version ({@link SUPPORTED_FRAME_VERSION}), so
+ * `min === max`. Gate #8 reads this range from the published SDK and asserts it
+ * intersects the released daemon's spoken range, so a release cannot ship an
+ * SDK/daemon pair that cannot talk to each other.
+ */
+export const DAEMON_PROTOCOL_RANGE = { min: 1, max: 1 } as const;
+
 /** Dial timeout in milliseconds — caps how long emit() blocks reaching the daemon. */
 const DIAL_TIMEOUT_MS = 25;
 

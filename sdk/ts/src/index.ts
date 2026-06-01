@@ -1,4 +1,5 @@
 export {
+	DAEMON_PROTOCOL_RANGE,
 	DaemonEmitter,
 	type DaemonEmitterOptions,
 	defaultSocketPath,

@@ -2,7 +2,9 @@
 
 from agent_receipts._version import VERSION
 from agent_receipts.daemon_emitter import (
+    DAEMON_PROTOCOL_RANGE,
     DaemonEmitter,
+    DaemonProtocolRange,
     EmitTransportError,
     default_socket_path,
 )
@@ -167,6 +169,9 @@ __all__ = [
     "DaemonEmitter",
     "EmitTransportError",
     "default_socket_path",
+    # Daemon-protocol range (ADR-0024 Gate #8)
+    "DAEMON_PROTOCOL_RANGE",
+    "DaemonProtocolRange",
     # Emitter abstraction (ADR-0020) — signed-receipt delivery
     "ApiKeyAuth",
     "BearerAuth",

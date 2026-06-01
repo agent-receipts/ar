@@ -69,6 +69,18 @@ const MaxIdentityFieldLen = 256
 // translator, so a single supported value is the only safe contract.
 const SupportedFrameVersion = "1"
 
+// DaemonProtocolMin and DaemonProtocolMax bound, inclusive, the emitter-frame
+// schema versions this SDK can speak to the daemon — its declared daemon-
+// protocol range in the ADR-0024 Gate #8 sense. Today the SDK emits exactly one
+// version (SupportedFrameVersion), so min == max and the value equals it. Gate
+// #8 reads this range from the published SDK and asserts it intersects the
+// released daemon's spoken range, so a release cannot ship an SDK/daemon pair
+// that cannot talk to each other.
+const (
+	DaemonProtocolMin = 1
+	DaemonProtocolMax = 1
+)
+
 // dialTimeout caps how long Emit blocks attempting to reach the daemon.
 // 25ms is well under the fire-and-forget budget but still tolerant of
 // slow filesystems on contended hosts; net.DialTimeout on AF_UNIX
