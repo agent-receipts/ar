@@ -82,3 +82,41 @@ jobs:
             daemon/dist/*.tar.gz \
             daemon/dist/checksums.txt \
             --clobber
+
+  # Gate #8: the just-released daemon must declare a protocol-version range that
+  # intersects each released SDK's declared range, and complete a live
+  # handshake with it. For each SDK language it reads the SDK's declared range
+  # from the latest published package and the daemon's spoken range from the
+  # tarball just uploaded to this release, asserts they intersect, then boots
+  # the released daemon and emits one event through the published SDK; a pair
+  # that cannot talk turns the release red. A language whose SDK has not been
+  # published yet is skipped (nothing to pair against).
+  daemon-protocol:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [go, ts, py]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - if: matrix.lang == 'go'
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.26"
+      - if: matrix.lang == 'ts'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Verify daemon ↔ SDK protocol compatibility (Gate #8)
+        run: |
+          VERSION="${GITHUB_REF_NAME#daemon/v}"
+          python3 scripts/daemon_protocol/check.py \
+            --sdk-lang ${{ matrix.lang }} --sdk-version latest --daemon-version "$VERSION"
+      - name: Run unit tests for daemon-protocol gate
+        run: python3 scripts/daemon_protocol/test_check.py

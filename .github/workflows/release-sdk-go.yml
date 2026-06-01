@@ -151,3 +151,31 @@ jobs:
           python3 scripts/byte_identity/check.py --lang go --version "$VERSION"
       - name: Run unit tests for byte-identity gate
         run: python3 scripts/byte_identity/test_check.py
+
+  # Gate #8: the just-published SDK and the latest released daemon must declare
+  # intersecting protocol-version ranges and complete a live handshake. Reads
+  # the SDK's declared range from the module fetched from the Go proxy and the
+  # daemon's spoken range from the released daemon tarball, asserts they
+  # intersect, then boots the daemon and emits one event through the published
+  # SDK; a pair that cannot talk turns the release red. Skips when no daemon has
+  # been released yet (nothing to pair against).
+  daemon-protocol:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Verify daemon ↔ SDK protocol compatibility (Gate #8)
+        run: |
+          VERSION="${GITHUB_REF_NAME#sdk/go/v}"
+          python3 scripts/daemon_protocol/check.py \
+            --sdk-lang go --sdk-version "$VERSION" --daemon-version latest
+      - name: Run unit tests for daemon-protocol gate
+        run: python3 scripts/daemon_protocol/test_check.py

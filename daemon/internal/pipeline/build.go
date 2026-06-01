@@ -38,6 +38,23 @@ const maxIdentityFieldLen = 256
 // misinterpret future fields.
 const SupportedFrameVersion = "1"
 
+// SpokenFrameVersionMin and SpokenFrameVersionMax bound, inclusive, the set of
+// emitter-frame schema versions this daemon can interpret — its "spoken range"
+// in the ADR-0024 Gate #8 sense. Today the daemon speaks exactly one version,
+// so min == max and the value equals SupportedFrameVersion; when a future
+// version ships with a daemon-side translator for an older shape, the max
+// widens and the accept check above widens with it. Gate #8 reads this range
+// (via `agent-receipts-daemon --protocol-version`) and asserts it intersects
+// the range each released SDK declares it can emit, so a release can never
+// ship an SDK/daemon pair that cannot talk to each other. Keeping these as the
+// single source of the daemon's spoken range — alongside a test that ties them
+// to SupportedFrameVersion — stops the declaration drifting from the bytes the
+// daemon actually accepts.
+const (
+	SpokenFrameVersionMin = 1
+	SpokenFrameVersionMax = 1
+)
+
 // actionTypeEventsDropped is the action type for the daemon-synthesised
 // events_dropped receipt. The "agent_receipts" namespace identifies the daemon
 // as the source rather than a user-facing tool channel.

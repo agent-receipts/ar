@@ -30,6 +30,7 @@ import struct
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
@@ -40,6 +41,24 @@ MAX_FRAME_SIZE = 1 << 20
 
 # SupportedFrameVersion mirrors the daemon's pipeline.SupportedFrameVersion.
 SUPPORTED_FRAME_VERSION = "1"
+
+
+@dataclass(frozen=True)
+class DaemonProtocolRange:
+    """Inclusive range of emitter-frame schema versions, ``min`` to ``max``."""
+
+    min: int
+    max: int
+
+
+# DAEMON_PROTOCOL_RANGE is the range of emitter-frame schema versions this SDK
+# can speak to the daemon — its declared daemon-protocol range in the ADR-0024
+# Gate #8 sense. Today the SDK emits exactly one version
+# (``SUPPORTED_FRAME_VERSION``), so ``min == max`` and the value equals it.
+# Gate #8 reads this range from the published SDK and asserts it intersects the
+# released daemon's spoken range, so a release cannot ship an SDK/daemon pair
+# that cannot talk to each other.
+DAEMON_PROTOCOL_RANGE = DaemonProtocolRange(min=1, max=1)
 
 # Dial timeout: 25ms. Well under the fire-and-forget budget.
 _DIAL_TIMEOUT = 0.025

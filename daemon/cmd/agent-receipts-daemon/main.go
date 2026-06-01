@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -43,10 +44,11 @@ func resolveVersion() string {
 // The action fields are mutually exclusive top-level requests that short-circuit
 // before the daemon starts; cfg is the merged daemon configuration.
 type resolved struct {
-	cfg         daemon.Config
-	showVersion bool
-	initKeys    bool
-	printConfig bool
+	cfg          daemon.Config
+	showVersion  bool
+	showProtocol bool
+	initKeys     bool
+	printConfig  bool
 }
 
 func main() {
@@ -61,6 +63,19 @@ func main() {
 
 	if r.showVersion {
 		fmt.Printf("agent-receipts-daemon %s\n", resolveVersion())
+		return
+	}
+
+	if r.showProtocol {
+		// Machine-readable spoken-range surface for ADR-0024 Gate #8. The gate
+		// reads this from the released binary and asserts it intersects the
+		// range each released SDK declares it can emit.
+		out, err := json.Marshal(daemon.SpokenProtocolVersion())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --protocol-version: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(out))
 		return
 	}
 
@@ -121,6 +136,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	configPath := fs.String("config", "", "Path to a TOML config file (default: $XDG_DATA_HOME/agent-receipts/daemon.toml; ignored if absent)")
 	initKeys := fs.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
 	showVersion := fs.Bool("version", false, "Print version and exit")
+	showProtocol := fs.Bool("protocol-version", false, "Print the daemon's spoken wire-protocol version range as JSON and exit")
 	printConfigFlag := fs.Bool("print-config", false, "Print the resolved config (file < env < flags) and exit")
 
 	// Layer 1 + 2: start from per-OS defaults, then overlay the config file
@@ -169,10 +185,11 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	}
 
 	return resolved{
-		cfg:         cfg,
-		showVersion: *showVersion,
-		initKeys:    *initKeys,
-		printConfig: *printConfigFlag,
+		cfg:          cfg,
+		showVersion:  *showVersion,
+		showProtocol: *showProtocol,
+		initKeys:     *initKeys,
+		printConfig:  *printConfigFlag,
 	}, nil
 }
 

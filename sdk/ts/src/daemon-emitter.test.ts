@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	DAEMON_PROTOCOL_RANGE,
 	DaemonEmitter,
 	defaultSocketPath,
 	type EmitEvent,
@@ -27,6 +28,24 @@ import {
 	type SocketPathDeps,
 	SUPPORTED_FRAME_VERSION,
 } from "./daemon-emitter.js";
+
+describe("DAEMON_PROTOCOL_RANGE — declared daemon-protocol range (Gate #8)", () => {
+	it("is well-formed (min <= max)", () => {
+		expect(DAEMON_PROTOCOL_RANGE.min).toBeLessThanOrEqual(
+			DAEMON_PROTOCOL_RANGE.max,
+		);
+	});
+
+	it("covers the version the SDK actually emits", () => {
+		// While the SDK emits a single version, min === max === that version.
+		// A mismatch would advertise a range that does not match the frames the
+		// SDK puts on the wire, defeating Gate #8.
+		const emitted = Number(SUPPORTED_FRAME_VERSION);
+		expect(Number.isInteger(emitted)).toBe(true);
+		expect(DAEMON_PROTOCOL_RANGE.min).toBe(emitted);
+		expect(DAEMON_PROTOCOL_RANGE.max).toBe(emitted);
+	});
+});
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

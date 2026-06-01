@@ -1,6 +1,39 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func discardEnv(string) string { return "" }
+
+// TestResolveConfig_ProtocolVersionFlag pins that --protocol-version is parsed
+// into the resolved action so main() can short-circuit and print the spoken
+// range Gate #8 reads.
+func TestResolveConfig_ProtocolVersionFlag(t *testing.T) {
+	r, err := resolveConfig([]string{"--protocol-version"}, discardEnv, &strings.Builder{})
+	if err != nil {
+		t.Fatalf("resolveConfig: %v", err)
+	}
+	if !r.showProtocol {
+		t.Error("showProtocol = false, want true with --protocol-version")
+	}
+	if r.showVersion || r.initKeys || r.printConfig {
+		t.Error("--protocol-version set an unrelated action flag")
+	}
+}
+
+// TestResolveConfig_NoProtocolByDefault is the negative: absent the flag, the
+// daemon starts normally rather than printing the protocol range.
+func TestResolveConfig_NoProtocolByDefault(t *testing.T) {
+	r, err := resolveConfig(nil, discardEnv, &strings.Builder{})
+	if err != nil {
+		t.Fatalf("resolveConfig: %v", err)
+	}
+	if r.showProtocol {
+		t.Error("showProtocol = true with no flags")
+	}
+}
 
 // TestResolveVersion_PrefersLDFlagInjection pins the precedence the
 // release pipeline relies on: a -ldflags "-X main.version=..." build
