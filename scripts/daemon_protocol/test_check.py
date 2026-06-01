@@ -147,12 +147,40 @@ class TestPickLatest:
     def test_allows_prerelease_when_only_option(self) -> None:
         assert check.pick_latest(["0.9.0-alpha.1", "0.9.0-alpha.2"], True) == "0.9.0-alpha.2"
 
-    def test_no_stable_candidate_raises(self) -> None:
+    def test_prerelease_numeric_identifiers_ordered_numerically(self) -> None:
+        # SemVer §11: alpha.2 < alpha.10 (numeric identifiers compared as
+        # numbers, not lexically). The lexical bug returned alpha.2.
+        assert check.pick_latest(["0.9.0-alpha.2", "0.9.0-alpha.10"], True) == "0.9.0-alpha.10"
+
+    def test_prerelease_alpha_below_beta(self) -> None:
+        assert check.pick_latest(["0.9.0-beta.1", "0.9.0-alpha.9"], True) == "0.9.0-beta.1"
+
+    def test_build_metadata_ignored(self) -> None:
+        # Build metadata (+...) does not affect precedence (SemVer §10); the
+        # higher core still wins and parsing must not choke on the '+'.
+        assert check.pick_latest(["0.9.0+ci.7", "0.10.0+ci.1"], False) == "0.10.0+ci.1"
+
+    def test_ignores_unparseable_tag_keeps_valid_latest(self) -> None:
+        # A stray non-semver tag must not break or silently disarm resolution;
+        # the well-formed versions still win.
+        assert check.pick_latest(["0.9.0", "nightly", "0.10.0"], False) == "0.10.0"
+
+    def test_no_stable_candidate_raises_typed(self) -> None:
+        # Must raise the dedicated NoStableReleaseError (which resolve_* maps to
+        # a skip), NOT a bare ValueError — a malformed-tag ValueError instead
+        # propagates and fails the gate closed.
         try:
             check.pick_latest(["0.9.0-alpha.1"], False)
-        except ValueError:
+        except check.NoStableReleaseError:
             return
-        raise AssertionError("expected ValueError when no stable version exists")
+        raise AssertionError("expected NoStableReleaseError when no stable version exists")
+
+    def test_all_unparseable_raises_no_stable(self) -> None:
+        try:
+            check.pick_latest(["nightly", "edge"], True)
+        except check.NoStableReleaseError:
+            return
+        raise AssertionError("expected NoStableReleaseError when no parseable version exists")
 
 
 # ---------------------------------------------------------------------------

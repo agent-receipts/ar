@@ -83,6 +83,14 @@ DAEMON_ASSET_ARCH = "amd64"
 # between "tag pushed" and "version installable".
 REGISTRY_RETRIES = 4
 
+# How many pages of the GitHub releases list to scan when resolving the latest
+# daemon. This repo cuts releases for several components into one newest-first
+# list, so the most recent daemon release can sit below 100 other-component
+# releases; scanning a single page would make the gate silently skip. We page
+# until daemon releases appear (or this many pages are exhausted) — 10×100 =
+# 1000 releases is far more history than "latest daemon" ever needs.
+MAX_RELEASE_PAGES = 10
+
 # How long to wait for the booted daemon's socket to appear, and for the emitted
 # receipt to land in the store. Generous because CI runners are contended; the
 # happy path resolves in well under a second.
@@ -179,18 +187,44 @@ def daemon_asset_url(version: str) -> str:
     return f"https://github.com/{REPO}/releases/download/daemon%2Fv{version}/{asset}"
 
 
-def _semver_key(version: str) -> tuple:
-    """Sort key for an X.Y.Z[-prerelease] version.
+class NoStableReleaseError(Exception):
+    """No version satisfying the stable/prerelease filter exists among candidates.
 
-    A release sorts above any prerelease of the same X.Y.Z (the ``(1,)`` vs
-    ``(0, ...)`` tuple tail), matching SemVer §11 ordering enough for "pick the
-    newest stable" selection.
+    Distinct from a malformed-tag parse error: this is the legitimate "nothing
+    to pick" outcome (e.g. only pre-releases exist and they are excluded), which
+    callers translate into a skip. A version string that is not dotted-numeric
+    semver is *not* this — such tags are ignored individually rather than
+    collapsing the whole selection.
     """
-    core, _, pre = version.partition("-")
+
+
+def _prerelease_id_key(ident: str) -> tuple:
+    """Per-identifier precedence key for a prerelease dot-identifier (SemVer §11).
+
+    Numeric identifiers compare numerically and rank below alphanumeric ones;
+    alphanumeric identifiers compare in ASCII order. The leading 0/1 flag keeps
+    int and str out of the same comparison slot (Python can't order them).
+    """
+    if ident.isdigit():
+        return (0, int(ident), "")
+    return (1, 0, ident)
+
+
+def _semver_key(version: str) -> tuple:
+    """Sort key for an X.Y.Z[-prerelease][+build] version (SemVer precedence).
+
+    A release sorts above any prerelease of the same core (the ``(1,)`` vs
+    ``(0, ...)`` tail). Prerelease identifiers are compared per SemVer §11 — so
+    ``alpha.2`` sorts *below* ``alpha.10`` (numeric identifiers compared
+    numerically, not lexically). Build metadata is ignored (SemVer §10). Raises
+    ``ValueError`` if the core is not dotted integers.
+    """
+    core = version.partition("-")[0].partition("+")[0]
     nums = tuple(int(p) for p in core.split("."))
+    pre = version.partition("-")[2].partition("+")[0]
     if not pre:
         return (nums, (1,))
-    return (nums, (0,) + tuple(pre.split(".")))
+    return (nums, (0,) + tuple(_prerelease_id_key(p) for p in pre.split(".")))
 
 
 def is_prerelease(version: str) -> bool:
@@ -200,14 +234,24 @@ def is_prerelease(version: str) -> bool:
 def pick_latest(versions: list[str], allow_prerelease: bool) -> str:
     """Return the newest version, excluding prereleases unless allowed.
 
-    Raises ``ValueError`` if no candidate remains after filtering.
+    A candidate whose string is not dotted-numeric semver is skipped
+    individually (so one stray tag like ``vnightly`` cannot break or silently
+    disarm resolution). Raises ``NoStableReleaseError`` if no parseable version
+    remains after filtering.
     """
-    candidates = [v for v in versions if allow_prerelease or not is_prerelease(v)]
-    if not candidates:
-        raise ValueError(
-            f"no {'' if allow_prerelease else 'stable '}version among {versions!r}"
+    keyed: list[tuple[tuple, str]] = []
+    for v in versions:
+        if not allow_prerelease and is_prerelease(v):
+            continue
+        try:
+            keyed.append((_semver_key(v), v))
+        except ValueError:
+            continue  # not dotted-numeric semver — ignore this tag, keep the rest
+    if not keyed:
+        raise NoStableReleaseError(
+            f"no {'' if allow_prerelease else 'stable '}semver version among {versions!r}"
         )
-    return max(candidates, key=_semver_key)
+    return max(keyed, key=lambda kv: kv[0])[1]
 
 
 # ---------------------------------------------------------------------------
@@ -263,20 +307,35 @@ def _http_json(url: str) -> dict | list:
 def resolve_latest_daemon(allow_prerelease: bool) -> str:
     """Newest released daemon version (no leading v) from the GitHub releases.
 
-    Raises ``NoReleaseError`` if no ``daemon/v*`` release exists at all (so the
-    gate skips rather than blocking a release with no daemon to pair against).
+    Pages the newest-first releases list until ``daemon/v*`` tags satisfying the
+    stable/prerelease filter appear (or ``MAX_RELEASE_PAGES`` are exhausted), so
+    the most recent daemon release is found even when many other-component
+    releases sit above it. Raises ``NoReleaseError`` if no such release exists
+    (so the gate skips rather than blocking a release with no daemon to pair
+    against). A network/HTTP error from the fetch is NOT caught here — it
+    propagates and fails the gate, rather than masquerading as "no release".
     """
-    releases = _http_json(f"https://api.github.com/repos/{REPO}/releases?per_page=100")
     versions: list[str] = []
-    for rel in releases if isinstance(releases, list) else []:
-        tag = rel.get("tag_name", "")
-        if tag.startswith("daemon/v"):
-            versions.append(tag[len("daemon/v") :])
+    for page in range(1, MAX_RELEASE_PAGES + 1):
+        batch = _http_json(
+            f"https://api.github.com/repos/{REPO}/releases?per_page=100&page={page}"
+        )
+        if not isinstance(batch, list) or not batch:
+            break  # ran off the end of the releases list
+        for rel in batch:
+            tag = rel.get("tag_name", "")
+            if tag.startswith("daemon/v"):
+                versions.append(tag[len("daemon/v") :])
+        # Releases are newest-first, so once a daemon version matching the filter
+        # has appeared we have the most recent ones — stop rather than page
+        # through the entire release history of every other component.
+        if any(allow_prerelease or not is_prerelease(v) for v in versions):
+            break
     if not versions:
-        raise NoReleaseError("no daemon/v* release exists yet")
+        raise NoReleaseError("no daemon/v* release found in recent releases")
     try:
         return pick_latest(versions, allow_prerelease)
-    except ValueError as exc:  # only pre-releases exist and they are excluded
+    except NoStableReleaseError as exc:  # only pre-releases exist, excluded
         raise NoReleaseError(str(exc)) from exc
 
 
