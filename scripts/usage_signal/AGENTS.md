@@ -74,8 +74,15 @@ unavailable rather than aborting the run.
    builds), whereas a human installs one desktop binary via brew and never pulls
    `checksums.txt`. Any release with a checksums download alongside a Linux
    download is flagged as swept; one download per binary artifact is attributed
-   to automation and subtracted, so the reported human count discounts your own
-   release gates instead of crediting them as adopters.
+   to automation and subtracted, so the reported count discounts your own release
+   gates instead of crediting them as adopters.
+
+   The headline figure is reported as **install events, not people** — GitHub's
+   `download_count` is an undeduplicated event counter, so it multiplies across
+   version upgrades, modules, machines, and reinstalls. The tool also reports the
+   **peak single (module, version) build** as a distinct-machines proxy (it
+   carries no version multiplier), but a true headcount needs server-side logs
+   where a client is identifiable, not this counter.
 
 ## Reading the verdict
 

@@ -186,7 +186,10 @@ def test_release_assets_desktop_dominated_is_human() -> None:
     assert m.total_downloads == 21
     assert m.server_downloads == 0
     assert m.ci_sweep_releases == 0
-    assert m.human_downloads == 21
+    assert m.install_events == 21
+    # peak single build is hook 0.12.0 at 12, the distinct-machines proxy
+    assert m.peak_build == 12
+    assert m.peak_build_module == "agent-receipts-hook"
     assert m.by_module == {"agent-receipts-hook": 12, "mcp-proxy": 9}
     label, _ = check.verdict_release(m)
     assert label.startswith("human-leaning")
@@ -215,10 +218,14 @@ def test_release_assets_sweep_detected_and_discounted() -> None:
     assert m is not None
     assert m.ci_sweep_releases == 2
     assert m.ci_downloads == 8  # 4 binary artifacts swept per release
-    assert m.human_downloads == 8  # 16 binary downloads - 8 swept
+    assert m.install_events == 8  # 16 binary downloads - 8 swept
+    # collector's 7 darwin_arm64 minus its 1 swept = 6, the peak human build
+    assert m.peak_build == 6
+    assert m.peak_build_module == "collector"
     label, notes = check.verdict_release(m)
     assert label.startswith("human-leaning")
     assert any("CI sweep" in n for n in notes)
+    assert any("not people" in n for n in notes)
 
 
 def test_release_assets_linux_dominated_is_ci() -> None:

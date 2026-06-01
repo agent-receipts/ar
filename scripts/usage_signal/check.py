@@ -295,7 +295,9 @@ class ReleaseMetrics:
     by_module: dict[str, int]
     ci_sweep_releases: int  # releases whose full artifact set was pulled by automation
     ci_downloads: int  # binary downloads attributed to those sweeps
-    human_downloads: int  # total_downloads - ci_downloads
+    install_events: int  # total_downloads - ci_downloads; download events, NOT people
+    peak_build: int  # most install events on a single (module, version) build
+    peak_build_module: str  # the module that peak belongs to
 
 
 def parse_asset_platform(name: str) -> str | None:
@@ -349,18 +351,30 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
     by_module: dict[str, int] = {}
     ci_sweep_releases = 0
     ci_downloads = 0
+    peak_build = 0
+    peak_build_module = ""
     for assets in releases:
         swept = is_ci_sweep(assets)
         if swept:
             ci_sweep_releases += 1
+        release_events = 0  # human install events for this single build
+        release_module = ""
         for name, count in assets:
             platform = parse_asset_platform(name)
             if platform is None or count <= 0:
                 continue
             by_platform[platform] = by_platform.get(platform, 0) + count
-            by_module[_asset_module(name)] = by_module.get(_asset_module(name), 0) + count
+            module = _asset_module(name)
+            by_module[module] = by_module.get(module, 0) + count
+            release_module = release_module or module
             if swept:
                 ci_downloads += 1  # the sweep pulled ~1 of each binary artifact
+                release_events += count - 1
+            else:
+                release_events += count
+        if release_events > peak_build:
+            peak_build = release_events
+            peak_build_module = release_module
 
     total = sum(by_platform.values())
     if total == 0:
@@ -376,7 +390,9 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
         by_module=by_module,
         ci_sweep_releases=ci_sweep_releases,
         ci_downloads=ci_downloads,
-        human_downloads=total - ci_downloads,
+        install_events=total - ci_downloads,
+        peak_build=peak_build,
+        peak_build_module=peak_build_module,
     )
 
 
@@ -392,14 +408,20 @@ def verdict_release(metrics: ReleaseMetrics | None) -> tuple[str, list[str]]:
         notes.append(
             f"{metrics.ci_sweep_releases} release(s) show a CI sweep "
             f"(checksums + Linux pulled together) — ~{metrics.ci_downloads} download(s) "
-            f"attributed to automation, leaving ~{metrics.human_downloads} human"
+            f"attributed to automation"
         )
-    if metrics.human_downloads > 0 and metrics.desktop_fraction >= DESKTOP_FRACTION_HUMAN:
+    if metrics.install_events > 0 and metrics.desktop_fraction >= DESKTOP_FRACTION_HUMAN:
         label = "human-leaning — desktop installs (likely Homebrew on laptops)"
         notes.append(
-            f"~{metrics.human_downloads} human install(s) after discounting sweeps, "
-            "essentially all desktop (macOS/Windows) with no organic Linux — release "
-            "binaries aren't mirror-amplified, so this is real activity, not CI or scanners"
+            f"~{metrics.install_events} install events after discounting sweeps, essentially "
+            "all desktop (macOS/Windows) with no organic Linux — release binaries aren't "
+            "mirror-amplified, so this is real activity, not CI or scanners"
+        )
+        notes.append(
+            "install events are DOWNLOADS, not people: each version upgrade, module, machine "
+            f"and reinstall counts separately. Peak single build ({metrics.peak_build_module} "
+            f"= {metrics.peak_build}) is the best distinct-machines proxy; a true headcount "
+            "needs server-side logs (download_count has no de-duplication)"
         )
     elif metrics.server_downloads > metrics.desktop_downloads:
         label = "Linux-dominated — likely CI / containers"
