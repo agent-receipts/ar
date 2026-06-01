@@ -20,7 +20,7 @@
 
 ## Last updated
 
-`2026-05-29` — #643 (emit-failure-contract / ADR-0025) merged, closing closure-2; #664 (Gate #2 release round-trip) merged, closes #651; #666 (Gate #1 execute mode for README snippets) merged, closes #650; #667 (Gate #5 MDX snippet execution) merged, closes #652; issue #599 closed manually; `collector-tagging` (#638) farmed off. Background sweep farmed off 7 additional items: #476, #473, #488, #462, #495, #622, #629 (all in-flight).
+`2026-05-31` — Wave-1 (7 items farmed 2026-05-29) all shipped: #669 (#495), #670 (#488), #671 (#476), #672 (#629), #673 (#473), #674 (#462), #675 (#622). `collector-tagging` (#638) and `d5-release-verification` (#639) both closed — closure-1 fully complete. Wave-2 (15 items farmed 2026-05-30): 13 done (#677 #678 #679 #680 #682 #690 #696 #698 + #153 #174 #480 #534 closed; #214 closed not-planned); #655 and #656 still open. Dep bumps + mcp-proxy hardening also landed (#683–#688, #693–#694).
 
 > **ADR numbering note.** The numbers settled after three landed in close succession: **ADR-0023** = canonical Go module path (#640/#642), **ADR-0024** = project verification contract (#658), **ADR-0025** = emit failure contract (#643, merged). Earlier snapshots had 0024/0025 swapped.
 
@@ -37,7 +37,7 @@ No decisions currently blocked. (`homepage-rewrite` shipped via #644 — if the 
 A closure is a coherent piece of work that retires a category of audit findings or installs a category of capability. Nodes group into closures; the DAG below is the dependency view.
 
 - **`closure-0` (spec/context versioning) — SHIPPED.**
-- **`closure-1` (Quick Start coherence + Go module identity) — ESSENTIALLY COMPLETE.** All Quick Start / README / ADR nodes shipped, including `homepage-rewrite` (#644) and `ADR-0023-go-module-path` (#640). Two ADR-0023 follow-ups remain in-flight: `collector-tagging` (#638) and `d5-release-verification` (#639, blocked on #638). Once both close, closure-1 (and its tracker #598) can close.
+- **`closure-1` (Quick Start coherence + Go module identity) — COMPLETE.** All Quick Start / README / ADR nodes shipped, including `homepage-rewrite` (#644) and `ADR-0023-go-module-path` (#640). ADR-0023 follow-ups `collector-tagging` (#638) and `d5-release-verification` (#639) both closed 2026-05-30. Tracker #598 can now close.
 - **`closure-2` (emit failure contract) — SHIPPED.** ADR-0025 implemented across all three SDKs (#643, merged 2026-05-28). Issue #599 closed.
 - **`verification-contract` (ADR-0024) — SHIPPED & BUILDING GATES.** ADR-0024 landed (#658). Gate #1 type-check shipped (#632); Gate #1 execute mode shipped (#666, closes #650). Gate #2 (release round-trip) shipped (#664, closes #651). Gate #5 (MDX snippet execution) shipped (#667, closes #652). Gates #3/#4/#6/#7 are future siblings.
 - **`v1-blockers`** (orthogonal to closures; tracked by `v1-blocker` label) — #534 (AWS KMS signers) shipped for TS + Python (#663); #535 (ephemeral-compute deployment guide) shipped (#660). Foreground for the v1 release path; not part of the audit response.
@@ -183,19 +183,17 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - notes: final deprecation release staged for the standalone `github.com/agent-receipts/sdk-go` module.
 
 #### `collector-tagging`
-- state: in-flight
+- state: shipped
 - depends_on: [`ADR-0023-go-module-path`]
-- issues: #638 (open)
-- prs: #648 (merged — release automation only)
-- farmable: yes (farmed off 2026-05-29)
-- notes: #648 landed the GoReleaser config + `collector/v*` release workflow. Still open in #638: actually push the `collector/v0.13.0` tag aligned to `sdk/go/v0.13.x` and verify `go install github.com/agent-receipts/ar/collector/cmd/collector@latest` builds against a fresh GOPATH.
+- issues: #638 (closed)
+- prs: #648 (merged — release automation); `collector/v0.13.0` tag pushed and verified
+- notes: GoReleaser config + release workflow in #648; tag push + `go install` verification completed, #638 closed 2026-05-30.
 
 #### `d5-release-verification`
-- state: blocked
+- state: shipped
 - depends_on: [`go-import-path-sweep`, `collector-tagging`]
-- issues: #639 (open)
-- farmable: no (blocked on `collector-tagging` #638 closing)
-- notes: run ADR-0023 D5 one-time verification — `go get @latest` resolves, collector `go install` builds, README hello-world compiles — and record results in #639.
+- issues: #639 (closed)
+- notes: ADR-0023 D5 one-time verification completed 2026-05-30 — `go get @latest` resolved, collector `go install` built, README hello-world compiled. Results recorded in #639.
 
 ---
 
@@ -265,62 +263,152 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 ---
 
-### Activated 2026-05-29 — background items now in-flight
+### Activated 2026-05-29 — wave-1 items (all shipped)
 
 #### `production-key-guard` (#476)
-- state: in-flight (farmed)
+- state: shipped
 - depends_on: []
-- issues: #476 (open)
-- farmable: yes
-- notes: throw `ProductionKeyProviderError` when `AGENTRECEIPTS_PRODUCTION=true`, loud warning otherwise. Fully spec'd in ADR-0019 §S2. All three SDKs.
+- issues: #476 (closed)
+- prs: #671 (merged)
+- notes: `GeneratingKeyProvider` with production guard across all three SDKs. ADR-0018/ADR-0019 §S2.
 
 #### `ts-hpke-hand-roll` (#473)
-- state: in-flight (farmed)
+- state: shipped
 - depends_on: []
-- issues: #473 (open)
-- farmable: yes
-- notes: replace `@hpke/core` with hand-rolled HPKE from `node:crypto`. RFC 9180 §7.1.3 DeriveKeyPair gotcha documented; existing test vectors to pin against. TS SDK only. 0.9.0 stable still ships `@hpke/core` lazy-loaded; this is the tracked removal.
+- issues: #473 (closed)
+- prs: #673 (merged)
+- notes: `@hpke/core` replaced with hand-rolled HPKE from `node:crypto`. RFC 9180 §7.1.3 DeriveKeyPair gotcha documented; existing test vectors pinned. TS SDK only.
 
 #### `sequential-emit-under-parallel` (#488)
-- state: in-flight (farmed)
+- state: shipped
 - depends_on: []
-- issues: #488 (open)
-- farmable: yes
-- notes: queue serialisation inside SDK + warning on concurrent `emit()` calls. Clear spec. All three SDKs.
+- issues: #488 (closed)
+- prs: #670 (merged)
+- artifacts: `ReceiptChain` for serialised receipt construction across all three SDKs.
 
 #### `env-marker-secondary-host` (#462)
-- state: in-flight (farmed)
+- state: shipped
 - depends_on: []
-- issues: #462 (open)
-- farmable: yes
-- notes: env-var-driven secondary host detection in mcp-proxy. Env var table and fallback logic fully specified; it's a TODO in `detect_linux.go`.
+- issues: #462 (closed)
+- prs: #674 (merged)
+- notes: env-var-driven secondary host detection in mcp-proxy.
 
 #### `editor-integration-guides` (#495)
-- state: in-flight (farmed)
+- state: shipped
 - depends_on: []
-- issues: #495 (open)
-- farmable: yes
-- notes: MCP proxy integration guides for Cursor, Windsurf, VS Code Copilot, JetBrains, Cline. Pure docs work using the Claude Code guide as template.
+- issues: #495 (closed)
+- prs: #669 (merged)
+- notes: CLI reference restructured for daemon separation (ADR-0010); MCP proxy editor integration guides for Cursor, Windsurf, VS Code Copilot, JetBrains, Cline.
 
 #### `aivs-cg-landscape` (#622)
-- state: in-flight (farmed)
+- state: shipped
 - depends_on: []
-- issues: #622 (open)
-- farmable: yes
-- notes: add W3C AIVS Community Group entry to `landscape.mdx`. Content and suggested framing given in the issue.
+- issues: #622 (closed)
+- prs: #675 (merged)
+- notes: landscape doc migrated to MDX; W3C AIVS CG entry added; review date updated.
 
 #### `codeql-advanced-setup` (#629)
-- state: in-flight (farmed)
+- state: shipped
 - depends_on: []
-- issues: #629 (open)
+- issues: #629 (closed)
+- prs: #672 (merged)
+- notes: CodeQL migrated to advanced setup with `paths-ignore` for docs-only PRs.
+
+---
+
+### Activated 2026-05-30 — wave-2 items (all shipped or closed)
+
+#### `pkg-doc-go` (#73)
+- state: shipped
+- issues: #73 (closed)
+- prs: #677 (merged)
+
+#### `daemon-toml-config` (#441)
+- state: shipped
+- issues: #441 (closed)
+- prs: #679 (merged)
+- notes: daemon accepts a TOML config file; XDG-aware default path.
+
+#### `mcp-proxy-graceful-shutdown` (#172)
+- state: shipped
+- issues: #172 (closed)
+- prs: #690 (merged)
+- notes: signal handling + graceful shutdown for mcp-proxy. Spawned #691/#692 (hardening), immediately resolved via #693/#694.
+
+#### `mcp-proxy-world-accessible-warn` (#213)
+- state: shipped
+- issues: #213 (closed)
+- prs: #682 (merged)
+- notes: warn on world/group-accessible `~/.agent-receipts`.
+
+#### `collector-operator-guide` (#536)
+- state: shipped
+- issues: #536 (closed)
+- prs: #678 (merged), #681 (merged — accuracy fixes)
+
+#### `ci-agent-receipts-guide` (#631)
+- state: shipped
+- issues: #631 (closed)
+- prs: #680 (merged), #695 (merged — replaced with end-to-end TS walkthrough)
+
+#### `sdk-schema-conformance-gate` (#653)
+- state: shipped
+- depends_on: [`ADR-0024-verification-contract`]
+- issues: #653 (closed)
+- prs: #696 (merged)
+- notes: Gate #X — SDK output schema-conformance CI gate at release time.
+
+#### `cross-sdk-byte-identity-gate` (#654)
+- state: shipped
+- depends_on: [`ADR-0024-verification-contract`]
+- issues: #654 (closed)
+- prs: #698 (merged)
+- notes: Gate #X — cross-SDK byte-identity CI gate at release time.
+
+#### `idempotency-key` (#480)
+- state: shipped
+- issues: #480 (closed 2026-05-31)
+- notes: optional `idempotencyKey` field for retry deduplication; verifier surfaces duplicates as warning. All three SDKs + mcp-proxy. PR reference TBD.
+
+#### `sql-keyword-risk-tighten` (#174)
+- state: shipped
+- issues: #174 (closed 2026-05-31)
+- notes: word-boundary SQL pattern matching in mcp-proxy risk scorer; eliminates false positives on `update_user` style tool names. PR reference TBD.
+
+#### `cloud-kms-signers-go` (#534 — Go module)
+- state: shipped
+- issues: #534 (closed 2026-05-31 — umbrella closed; TS+Py shipped in #663)
+- notes: Go KMS signer adapters completed, closing the umbrella. PR reference TBD.
+
+#### `response-hash` (#153)
+- state: shipped
+- issues: #153 (closed 2026-05-31)
+- notes: optional `response_hash` (SHA-256, RFC 8785) in receipt outcome; hashed after redaction; verifier validates when present. PR reference TBD.
+
+#### `mcp-proxy-db-path-fallback` (#214)
+- state: closed-wontfix
+- issues: #214 (closed not-planned 2026-05-31)
+- notes: fail-loud on bare-filename DB path fallback. Closed as not-planned.
+
+#### `daemon-sdk-protocol-compat-gate` (#655)
+- state: open
+- depends_on: []
+- issues: #655 (open)
 - farmable: yes
-- notes: migrate CodeQL from default to advanced setup with `paths-ignore` for docs-only PRs. CI workflow change — goes through a PR per convention.
+- notes: Gate #8 (ADR-0024) — declare daemon-protocol version ranges on SDK and daemon sides; assert intersection at release time. Needs protocol-version surface work as part of scope.
+
+#### `sbom-deps-match-gate` (#656)
+- state: open
+- depends_on: []
+- issues: #656 (open)
+- farmable: yes
+- notes: Gate #10 (ADR-0024) — generate per-SDK SBOM at release time; assert installed deps match declared deps; fail on unexplained eager dependencies. Supply-chain gate.
 
 ---
 
 ## Background — not in the active graph but worth noting
 
-- **`v1-blocker` work:** #534 (AWS KMS signers) shipped for TS + Python (#663) — confirm whether Go KMS coverage is in scope/remaining. #535 (ephemeral-compute deployment guide) shipped (#660).
+- **`v1-blocker` work:** #534 (AWS KMS signers) fully shipped — TS + Python via #663, Go module closed 2026-05-31. #535 (ephemeral-compute deployment guide) shipped (#660).
 - **Operator tooling — SHIPPED:** #539 `agent-receipts doctor` (#661), #540 `verify-event` (#659), #552 `agent-receipts show <seq>` (#662). Outgrowth of the Max-forged-a-receipt incident.
 - **Standards/positioning:** #555 (v0.3.0 blog post), #556/#557/#558 (AIVS CG contributions), #559 (draft-sharif review comment), #561 (ADR on adjacent format posture). Cadence-driven, not blocker-driven.
 - **Blog campaign (Posts 3–7):** #541, #542, #543, #544 + draft PRs #442/#444 — contingent on Otto having writing time.
@@ -331,21 +419,12 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 ## Next farmable (computed)
 
-As of `2026-05-29`, applying the "open + dependencies-met + no in-flight conflicts" rule:
+As of `2026-05-31`, all wave-1 and wave-2 items are shipped except two open verification gates:
 
-All currently farmable nodes have been dispatched. In-flight:
+- **`daemon-sdk-protocol-compat-gate` (#655)** — Gate #8: protocol-version range declaration + release-time intersection check. Needs protocol-version surface work scoped as part of the issue.
+- **`sbom-deps-match-gate` (#656)** — Gate #10: per-SDK SBOM at release time + declared-vs-installed assertion.
 
-- `collector-tagging` (#638) — tag push + go install verify; unblocks `d5-release-verification` (#639)
-- `production-key-guard` (#476) — production guard across all 3 SDKs
-- `ts-hpke-hand-roll` (#473) — replace `@hpke/core` in TS SDK
-- `sequential-emit-under-parallel` (#488) — serialised emit under concurrent calls, all 3 SDKs
-- `env-marker-secondary-host` (#462) — mcp-proxy secondary host detection
-- `editor-integration-guides` (#495) — editor integration docs
-- `aivs-cg-landscape` (#622) — landscape.mdx W3C AIVS CG entry
-- `codeql-advanced-setup` (#629) — CodeQL advanced config with paths-ignore
-
-Unlocks when `collector-tagging` closes:
-- **`d5-release-verification` (#639)**
+Both are farmable and independent of each other. No other active nodes are blocked on either.
 
 ---
 
