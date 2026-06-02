@@ -19,10 +19,21 @@ uv add agent-receipts
 
 - Python 3.11+
 
+## You also need the daemon
+
+`pip install agent-receipts` installs the library only. Receipts are signed by a
+separate `agent-receipts-daemon` process, which also ships the `agent-receipts`
+CLI (`list`, `show`, `verify`). Install it on macOS or Linux — Windows is not
+supported yet:
+
+```bash
+brew install agent-receipts/tap/agent-receipts-daemon
+```
+
+See [Daemon Setup](/getting-started/daemon-setup/) for other install methods,
+socket paths, and running the daemon as a service.
+
 ## Next steps
 
+- [Quick Start](/getting-started/quick-start/) — start the daemon, emit your first receipt, and verify it
 - [API Reference](/sdk-py/api-reference/) for the full API surface
-
-:::note
-This page will be expanded with detailed usage examples as the SDK matures.
-:::
