@@ -178,6 +178,76 @@ func DefaultPublicKeyPath(keyPath string) string {
 	return keyPath + ".pub"
 }
 
+// DefaultForensicKeyPath returns the default forensic private-key path,
+// co-located with the signing key and receipt store. Empty when the XDG data
+// home cannot be resolved, matching the other Default*Path helpers.
+func DefaultForensicKeyPath() string {
+	dh := xdgDataHome()
+	if dh == "" {
+		return ""
+	}
+	return filepath.Join(dh, "agent-receipts", "forensic.key")
+}
+
+// DefaultForensicPublicKeyPath returns the default forensic public-key path:
+// keyPath with the ".pub" suffix. Empty when keyPath is empty.
+func DefaultForensicPublicKeyPath(keyPath string) string {
+	if keyPath == "" {
+		return ""
+	}
+	return keyPath + ".pub"
+}
+
+// GenerateForensicKey creates a new X25519 forensic key pair (ADR-0012) and
+// writes the raw 32-byte private key to keyPath (mode 0600) and the raw 32-byte
+// public key to publicKeyPath (mode 0644). It returns the public key's canonical
+// fingerprint (ADR-0015, sha256:<hex>) for display so an operator can confirm
+// the key the daemon will encrypt to matches the private key they keep for
+// recovery.
+//
+// Like GenerateKey, it refuses to overwrite or follow a symlink at either path,
+// and rolls back the private key if the public-key write fails. The two keys
+// have deliberately separate lifecycles: the public key goes in daemon config;
+// the private key is kept offline by the forensic responder and never given to
+// the daemon.
+func GenerateForensicKey(keyPath, publicKeyPath string) (string, error) {
+	if keyPath == "" {
+		return "", errors.New("keyPath is required")
+	}
+	if publicKeyPath == "" {
+		publicKeyPath = DefaultForensicPublicKeyPath(keyPath)
+	}
+	if keyPath == publicKeyPath {
+		return "", fmt.Errorf("keyPath and publicKeyPath must differ; both are %s", keyPath)
+	}
+
+	fk, err := receipt.GenerateForensicKeyPair()
+	if err != nil {
+		return "", fmt.Errorf("generate forensic key pair: %w", err)
+	}
+	fingerprint, err := receipt.ForensicKeyFingerprint(fk.PublicKey)
+	if err != nil {
+		return "", fmt.Errorf("fingerprint forensic public key: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
+		return "", fmt.Errorf("create forensic key dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(publicKeyPath), 0o750); err != nil {
+		return "", fmt.Errorf("create forensic public-key dir: %w", err)
+	}
+
+	if err := writeNewSecretFile(keyPath, fk.PrivateKey, 0o600); err != nil {
+		return "", fmt.Errorf("write forensic private key %s: %w", keyPath, err)
+	}
+	if err := writeNewSecretFile(publicKeyPath, fk.PublicKey, 0o644); err != nil {
+		_ = os.Remove(keyPath)
+		return "", fmt.Errorf("write forensic public key %s: %w", publicKeyPath, err)
+	}
+
+	return fingerprint, nil
+}
+
 // GenerateKey creates a new Ed25519 key pair and saves the private key to
 // keyPath (mode 0600) and public key to publicKeyPath (mode 0644). Refuses
 // to overwrite an existing file at either path, and refuses to follow a
