@@ -191,4 +191,4 @@ SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
 
 **Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `agent-receipts-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
 
-**No receipts appearing?** The daemon must be running *before* Claude Desktop launches the proxied server, or emits fail. Confirm with `pgrep agent-receipts-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.
+**No receipts appearing?** The daemon must be running *before* Claude Desktop launches the proxied server, or emits fail. Confirm with `pgrep -f agent-receipts-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.

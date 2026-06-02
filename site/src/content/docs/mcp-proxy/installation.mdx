@@ -21,7 +21,7 @@ Download a tarball for your platform (darwin/linux, amd64/arm64) from the [relea
 go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
 ```
 
-Requires Go 1.26+. No CGO or external C libraries — the proxy uses pure Go SQLite.
+Requires Go 1.26.1+. No CGO or external C libraries needed — the proxy builds as a single static binary. (It holds no store of its own; the receipt database lives in `agent-receipts-daemon`.)
 
 ## Verify installation
 
