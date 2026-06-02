@@ -159,10 +159,11 @@ here — otherwise `verify` reads the `default` chain at the default paths.
 ### 1. Install
 
 Install `agent-receipts-daemon` (see [Daemon Setup](/getting-started/daemon-setup/)
-for your platform), then the Go SDK:
+for your platform), then add the Go SDK to a module:
 
 ```bash
-go get github.com/agent-receipts/ar/sdk/go
+go mod init example.com/myapp   # in a fresh directory, if you don't already have a module
+go get github.com/agent-receipts/ar/sdk/go/emitter
 ```
 
 ### 2. Start the daemon
@@ -208,6 +209,12 @@ func main() {
 		log.Fatal(err)
 	}
 }
+```
+
+Run it:
+
+```bash
+go run .
 ```
 
 ### 4. Verify
