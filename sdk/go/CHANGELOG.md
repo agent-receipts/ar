@@ -15,13 +15,11 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Added
 
-- **HPKE parameter disclosure helpers** ([#722](https://github.com/agent-receipts/ar/pull/722), ADR-0012, ADR-0015) — new `receipt.ForensicKeyFingerprint(publicKey []byte) string` computes the canonical SHA256 fingerprint of an X25519 public key, suitable for matching against receipt envelope `kid` values. New `receipt.ForensicPublicFromPrivate(privateKey []byte) ([]byte, error)` derives the public key from a private key (X25519 or Ed25519), enabling operators to load only a private key and reconstruct the matching fingerprint. Intended for dashboard decryption workflows where an operator loads a private key locally and decrypts parameter envelopes inline.
-- **Optional `action_type` field in `EmitterFrame`** ([#722](https://github.com/agent-receipts/ar/pull/722)) — emitters can now populate `action_type` in the JSON-RPC frame to help the daemon's risk-based disclosure policy route correctly. When present, the daemon uses the explicit type to resolve action risk (via the taxonomy); when absent, the daemon synthesizes a fallback `<channel>.<tool>` type (medium risk). This field does not appear in the final receipt — it is used only for policy routing during the daemon's receipt-build phase.
-- **Cross-SDK HPKE test vectors in v030_vectors.json** ([#722](https://github.com/agent-receipts/ar/pull/722)) — deterministic HPKE test cases covering X25519 KEM with AES-256-GCM, validating that Go, TypeScript, and Python SDKs produce identical ciphertexts and can decrypt each other's envelopes. Vectors include test forensic keypairs and sample parameters.
+- **HPKE forensic-key helpers** ([#722](https://github.com/agent-receipts/ar/pull/722), ADR-0012, ADR-0015) — new `receipt.ForensicKeyFingerprint(publicKey []byte) (string, error)` returns the ADR-0015 canonical fingerprint (`sha256:<hex>` over the raw 32-byte X25519 public key) used as the recipient `kid` in a `DisclosureEnvelope`. New `receipt.ForensicPublicFromPrivate(privateKey []byte) ([]byte, error)` derives the matching X25519 public key from a 32-byte forensic private key, so a responder or dashboard that only holds the private key can recompute the fingerprint and locate the receipts encrypted to it without a separate key registry. Both helpers are X25519-only and reject any input that is not exactly 32 bytes.
 
 ### Dependencies
 
-- (None — new helpers are pure stdlib)
+- No new dependencies; the new helpers reuse the existing `github.com/cloudflare/circl/hpke` import.
 
 ## [0.14.0] - 2026-06-01
 
