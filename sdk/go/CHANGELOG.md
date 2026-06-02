@@ -11,6 +11,16 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-02
+
+### Added
+
+- **HPKE forensic-key helpers** ([#722](https://github.com/agent-receipts/ar/pull/722), ADR-0012, ADR-0015) — new `receipt.ForensicKeyFingerprint(publicKey []byte) (string, error)` returns the ADR-0015 canonical fingerprint (`sha256:<hex>` over the raw 32-byte X25519 public key) used as the recipient `kid` in a `DisclosureEnvelope`. New `receipt.ForensicPublicFromPrivate(privateKey []byte) ([]byte, error)` derives the matching X25519 public key from a 32-byte forensic private key, so a responder or dashboard that only holds the private key can recompute the fingerprint and locate the receipts encrypted to it without a separate key registry. Both helpers are X25519-only and reject any input that is not exactly 32 bytes.
+
+### Dependencies
+
+- No new dependencies; the new helpers reuse the existing `github.com/cloudflare/circl/hpke` import.
+
 ## [0.14.0] - 2026-06-01
 
 ### Breaking Changes

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-02
+
+### Added
+
+- **HPKE parameter disclosure** ([#722](https://github.com/agent-receipts/ar/pull/722), ADR-0012, ADR-0015) — receipts now support optionally encrypting sensitive action parameters using HPKE (RFC 9180) v1 with X25519 KEM and AES-256-GCM. A `parameters_disclosure` envelope (alg, ct, recipients[{kid, enc}], v) attaches to receipts when a forensic public key is configured and a disclosure policy permits the action type. Operators can encrypt parameters per action-type risk level (`"high"` for high/critical actions, `true` for all, `false`/default for none, or a comma-separated allowlist like `system.command.execute,file.write`). The envelope `kid` is the ADR-0015 canonical fingerprint of the recipient X25519 public key (`sha256:<hex>` over the raw 32 bytes). Inputs remain hashed in `action.parameters_hash` regardless — the disclosure envelope is opaque without the private key. Encryption failures fall back to hash-only receipts (no audit gaps). See [Parameter Disclosure spec](https://agent-receipts.github.io/specification/parameter-disclosure/) for threat model, GDPR context, and implementation details.
+- **Forensic key configuration** — new daemon CLI flag `--forensic-public-key` (path to a file containing 32 raw bytes), environment variable `AGENTRECEIPTS_FORENSIC_PUBLIC_KEY`, and TOML key `forensic_public_key` allow operators to load a forensic public key. The daemon never reads the private key at runtime — it is held offline by the forensic responder. The new `--init-forensic-key` one-shot flag generates an X25519 keypair (private key mode `0600`, public key co-located), prints its fingerprint, and exits; it is not run on first start.
+- **Risk-based disclosure policy** ([#722](https://github.com/agent-receipts/ar/pull/722)) — the `parameter_disclosure` config accepts `false` (default, no disclosure), `true` (all action types), `"high"` (high/critical risk only, as defined by the taxonomy), or a comma-separated action-type allowlist (e.g. `system.command.execute,file.write`). Supported via `--parameter-disclosure` CLI flag, `AGENTRECEIPTS_PARAMETER_DISCLOSURE` env var, and TOML `parameter_disclosure` key. TOML backwards-compatible unmarshaling accepts bool or string; CLI and env accept string only.
+- **Action-type routing in disclosure policy** — the daemon's JSON-RPC frame now carries an optional `action_type` field. When set, the daemon stamps it verbatim as the receipt's `action.type` and resolves risk from the taxonomy; when empty it synthesizes a fallback `<channel>[.<server>].<tool>` type (which rarely matches the taxonomy, so risk defaults to medium). Emitters that know the real taxonomic action type SHOULD set this — it is what makes risk-based controls (e.g. `parameter_disclosure="high"`) effective. The daemon always resolves risk itself, so an emitter cannot downgrade risk to evade disclosure.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.15.0`.
+
 ## [0.14.0] - 2026-06-02
 
 ### Added
