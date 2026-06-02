@@ -165,7 +165,7 @@ In TOML, `parameter_disclosure` accepts a boolean, a keyword string, or an array
 parameter_disclosure = "high"
 
 # Path to the forensic X25519 public key file (the raw 32-byte key)
-forensic_public_key = "/home/me/.local/share/agent-receipts/forensic.pub"
+forensic_public_key = "/home/me/.local/share/agent-receipts/forensic.key.pub"
 ```
 
 ### Environment variables / flags
@@ -215,6 +215,10 @@ Plaintext is never persisted. It exists only transiently in the forensic respond
 </Aside>
 
 The dashboard feature is the intended forensic-recovery UX for the envelope. CLI-based recovery for automated forensic pipelines is also planned (see ADR-0012 Phase B).
+
+### Recover from code today
+
+You don't need the dashboard (or the planned forensic CLI) to read an envelope. The **Python SDK** ships a decrypt helper that works today: the file `--init-forensic-key` wrote is the raw 32-byte X25519 private key (no PEM, no decoding), and you pass it together with the envelope from `agent-receipts show <seq> --json` — found at `credentialSubject.action.parameters_disclosure` — to [`decrypt_disclosure`](/sdk-py/api-reference/#recovering-a-stored-disclosure). The plaintext lives only in your process; nothing is written back to the store.
 
 ## GDPR and data handling
 
