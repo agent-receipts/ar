@@ -328,7 +328,7 @@ func applyFileConfig(cfg *daemon.Config, fc *daemon.FileConfig) {
 		cfg.VerificationMethodID = *fc.VerificationMethod
 	}
 	if fc.ParameterDisclosure != nil {
-		cfg.ParameterDisclosure = *fc.ParameterDisclosure
+		cfg.ParameterDisclosure = fc.ParameterDisclosure.Value
 	}
 	if fc.UnsafeSocketPath != nil {
 		cfg.UnsafeSocketPath = *fc.UnsafeSocketPath

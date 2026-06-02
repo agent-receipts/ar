@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/agent-receipts/ar/sdk/go/receipt"
@@ -109,6 +110,9 @@ func (p DisclosurePolicy) String() string {
 		for t := range p.allowlist {
 			types = append(types, t)
 		}
+		// Sort for a stable rendering — the allowlist is map-backed, so without
+		// this the startup log and printed config would vary across runs.
+		sort.Strings(types)
 		return strings.Join(types, ",")
 	default:
 		return "off"

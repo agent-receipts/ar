@@ -112,16 +112,20 @@ Never reuse the Ed25519 signing key as an encryption key. They have different pu
 
 ## Disclosure modes
 
-The `parameter_disclosure` config key controls which actions get an encrypted envelope attached. The value space is the same across the daemon config and the OpenClaw plugin:
+The `parameter_disclosure` setting controls which actions get an encrypted envelope attached. The daemon and the OpenClaw plugin offer the same four modes; only the *spelling of the allowlist* differs by config surface (see the note below):
 
-| Value | Behavior |
+| Mode | Behavior |
 |-------|----------|
-| `false` | Hash only — no envelope (default) |
-| `true` | Envelope for every action |
-| `"high"` | Envelope for `high` and `critical` risk actions only |
-| `["system.command.execute", "filesystem.file.delete"]` | Envelope for the listed action types only |
+| off (`false`) | Hash only — no envelope (default) |
+| all (`true`) | Envelope for every action |
+| high (`"high"`) | Envelope for `high` and `critical` risk actions only |
+| allowlist | Envelope for the listed action types only |
 
-The `"high"` mode uses the taxonomy's risk classification. The array form is an explicit allowlist of action-type strings; see the [Action Taxonomy](/specification/action-taxonomy/) for the full list.
+The `"high"` mode uses the taxonomy's risk classification. The allowlist is a set of action-type strings; see the [Action Taxonomy](/specification/action-taxonomy/) for the full list.
+
+<Aside type="note">
+**Allowlist spelling depends on the config surface.** The OpenClaw plugin (JSON config) and the daemon's TOML file accept a real array — `["system.command.execute", "filesystem.file.delete"]`. The daemon's `--parameter-disclosure` flag and `AGENTRECEIPTS_PARAMETER_DISCLOSURE` environment variable have no array type, so there the allowlist is a **comma-separated string**: `system.command.execute,filesystem.file.delete`. The daemon's TOML key also accepts the boolean `true`/`false` for backwards compatibility.
+</Aside>
 
 <Aside type="caution">
 Risk-based `"high"` only works when the emitter declares a taxonomic `action_type`. The daemon resolves an action's risk from its type via the taxonomy; if the emitter sends only a raw tool name, the daemon constructs a synthetic `<channel>.<tool>` type that does not match the taxonomy and resolves to `medium` — so `"high"` will not fire. Emitters that forward the resolved action type (the SDK, MCP proxy, and hook do this where they can) make `"high"` effective. If your emitter does not, prefer the explicit action-type allowlist or `true`. The daemon always resolves risk itself and never trusts an emitter-supplied risk, so an emitter cannot downgrade risk to dodge disclosure.
@@ -150,10 +154,14 @@ Keep the **private** key offline — the daemon never reads it. Only the **publi
 
 ### Config file
 
+In TOML, `parameter_disclosure` accepts a boolean, a keyword string, or an array of action types:
+
 ```toml
 # ~/.local/share/agent-receipts/daemon.toml
 
-# Disclosure mode: false | true | "high" | ["action.type", ...]
+# Disclosure mode. Accepts: false | true | "high"
+#   | an action-type array  ["system.command.execute", "filesystem.file.delete"]
+#   | a comma-separated string "system.command.execute,filesystem.file.delete"
 parameter_disclosure = "high"
 
 # Path to the forensic X25519 public key file (the raw 32-byte key)
@@ -162,13 +170,21 @@ forensic_public_key = "/home/me/.local/share/agent-receipts/forensic.pub"
 
 ### Environment variables / flags
 
+The flag and environment variable have no array type, so the allowlist form is a comma-separated string:
+
 ```bash
+# keyword mode
 AGENTRECEIPTS_PARAMETER_DISCLOSURE=high \
 AGENTRECEIPTS_FORENSIC_PUBLIC_KEY=/path/to/forensic.pub \
   agent-receipts-daemon
+
+# allowlist mode (comma-separated)
+agent-receipts-daemon \
+  --forensic-public-key /path/to/forensic.pub \
+  --parameter-disclosure system.command.execute,filesystem.file.delete
 ```
 
-The daemon will not start with `parameter_disclosure != false` and no `forensic_public_key` configured — an envelope requires a recipient.
+The daemon will not start when the disclosure policy is enabled (anything other than `off`/`false`) and no `forensic_public_key` is configured — an envelope requires a recipient.
 
 When both are present, the daemon logs the forensic key fingerprint at startup so you can confirm it matches the private key you intend to use for recovery:
 
