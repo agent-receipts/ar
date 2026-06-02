@@ -85,6 +85,16 @@ type EmitterFrame struct {
 	SessionID      string          `json:"session_id"`
 	Channel        string          `json:"channel"`
 	Tool           EmitterTool     `json:"tool"`
+	// ActionType, when set, is the taxonomic action type the emitter has already
+	// resolved (e.g. "filesystem.file.delete"). The daemon uses it verbatim as
+	// action.type and resolves risk_level from it via the taxonomy. When empty,
+	// the daemon falls back to a synthetic "<channel>.<tool>" type that rarely
+	// matches the taxonomy (so risk defaults to medium). Emitters that know the
+	// real action type SHOULD set this — it is what makes risk-based controls
+	// (e.g. parameter-disclosure "high") effective. The daemon resolves risk
+	// itself rather than trusting an emitter-supplied risk, so an emitter cannot
+	// downgrade risk to evade disclosure.
+	ActionType     string          `json:"action_type,omitempty"`
 	Input          json.RawMessage `json:"input,omitempty"`
 	Output         json.RawMessage `json:"output,omitempty"`
 	Error          string          `json:"error,omitempty"`
@@ -123,14 +133,18 @@ type Pipeline struct {
 	TraceLog io.Writer            // Optional trace log for testing; nil = silent
 	ErrorLog func(string, ...any) // Optional error logger; nil = silent
 
-	// ParameterDisclosure is the historical opt-in for plaintext tool
-	// input/output in the legacy string-map shape of parameters_disclosure.
-	// As of the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18) that
-	// shape is no longer representable — the receipt type only accepts an
-	// HPKE-encrypted *DisclosureEnvelope. Until the daemon learns to encrypt
-	// and attach an envelope itself (tracked under #280), this field is a
-	// no-op preserved so the CLI/env knob does not vanish silently on operators.
-	ParameterDisclosure bool
+	// ForensicPublicKey is the X25519 public key used to encrypt action
+	// parameters with HPKE (ADR-0012 envelope v1). 32 bytes; nil/empty means
+	// parameters are hashed only (the default). When set, the parameters of
+	// actions elected by DisclosurePolicy are encrypted before signing and
+	// attached as action.parameters_disclosure. The private key is held offline
+	// by the forensic responder.
+	ForensicPublicKey []byte
+
+	// DisclosurePolicy governs which actions disclose their parameters when a
+	// ForensicPublicKey is configured (false | true | "high" | string[], per
+	// ADR-0012). The zero value discloses nothing.
+	DisclosurePolicy DisclosurePolicy
 
 	// Redactor is applied to text fields before they are persisted in the
 	// receipt body. Today that means outcome.error only; input and output are
@@ -416,6 +430,35 @@ func canonicalSHA256(raw json.RawMessage) (string, error) {
 	return receipt.SHA256Hash(canonical), nil
 }
 
+// encryptDisclosure encrypts the emitter input into an HPKE disclosure envelope
+// addressed to the configured forensic public key (ADR-0012). The recipient kid
+// is the key's canonical fingerprint (ADR-0015), so a forensic tool holding the
+// matching private key can locate this receipt without a key registry.
+//
+// It returns nil on any failure (non-object input, HPKE error) after logging,
+// so the caller falls back to a hash-only receipt rather than dropping the
+// event. The hash is computed independently by the caller and is unaffected.
+func (p *Pipeline) encryptDisclosure(input json.RawMessage) *receipt.DisclosureEnvelope {
+	var params map[string]any
+	if err := json.Unmarshal(input, &params); err != nil {
+		// Disclosure requires a JSON object (HPKE plaintext is the canonical
+		// object); arrays/primitives cannot be disclosed. Hash-only fallback.
+		p.logError("disclosure skipped (input is not a JSON object): %v", err)
+		return nil
+	}
+	kid, err := receipt.ForensicKeyFingerprint(p.ForensicPublicKey)
+	if err != nil {
+		p.logError("disclosure skipped (forensic key fingerprint failed): %v", err)
+		return nil
+	}
+	env, err := receipt.EncryptDisclosure(params, p.ForensicPublicKey, kid)
+	if err != nil {
+		p.logError("disclosure skipped (encryption failed): %v", err)
+		return nil
+	}
+	return env
+}
+
 func (p *Pipeline) buildAndSign(
 	f *EmitterFrame,
 	peer socket.PeerCred,
@@ -449,9 +492,17 @@ func (p *Pipeline) buildAndSign(
 		status = receipt.StatusPending
 	}
 
-	actionType := f.Channel + "." + f.Tool.Name
-	if f.Tool.Server != "" {
-		actionType = f.Channel + "." + f.Tool.Server + "." + f.Tool.Name
+	// Prefer an emitter-declared taxonomic action type; it is what lets the
+	// daemon resolve a real risk level (and thus makes risk-based disclosure
+	// effective). Fall back to a synthetic "<channel>[.<server>].<tool>" type
+	// when the emitter does not declare one — that type rarely matches the
+	// taxonomy, so risk defaults to medium (see below).
+	actionType := f.ActionType
+	if actionType == "" {
+		actionType = f.Channel + "." + f.Tool.Name
+		if f.Tool.Server != "" {
+			actionType = f.Channel + "." + f.Tool.Server + "." + f.Tool.Name
+		}
 	}
 
 	// OS-attested peer credentials populate action.peer_credential — the
@@ -461,12 +512,12 @@ func (p *Pipeline) buildAndSign(
 	// (where the SDK has no privileged channel to attest peer identity).
 	peerCred := buildPeerCred(peer)
 
-	// Risk derives from the taxonomy. Daemon-constructed action types like
-	// "mcp_proxy.github.list_repos" do not match any built-in entry, so
-	// ResolveActionType falls back to UnknownAction (RiskMedium). That's the
-	// safer default than always emitting RiskLow — Phase 2 emitters that
-	// know the taxonomic action type can override it via the action.type
-	// field once the emitter SDKs land.
+	// Risk derives from the taxonomy. A synthetic fallback type like
+	// "mcp_proxy.github.list_repos" does not match any built-in entry, so
+	// ResolveActionType falls back to UnknownAction (RiskMedium) — a safer
+	// default than RiskLow. An emitter-declared action_type (above) that maps to
+	// a taxonomy entry yields its real risk, which is what makes risk-based
+	// disclosure ("high") fire correctly.
 	risk := taxonomy.ResolveActionType(actionType).RiskLevel
 
 	action := receipt.Action{
@@ -483,15 +534,26 @@ func (p *Pipeline) buildAndSign(
 			return receipt.AgentReceipt{}, "", fmt.Errorf("hash input: %w", err)
 		}
 		action.ParametersHash = hash
-	}
 
-	// NOTE: the legacy "--parameter-disclosure" flag (`p.ParameterDisclosure`)
-	// is currently a no-op. It used to write plaintext input/output into a
-	// string-map shape of action.parameters_disclosure; that shape was removed
-	// by the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18). The
-	// field is now *DisclosureEnvelope and only accepts the HPKE-encrypted
-	// envelope. Daemon-side encrypt-then-attach is tracked in #280. The
-	// outcome.error redaction path below is independent of the flag.
+		// Forensic disclosure (ADR-0012): when a forensic public key is
+		// configured and the policy elects this action, encrypt the parameters
+		// to that key and attach the HPKE envelope. The hash above always
+		// commits to the original canonical bytes, so tamper-evidence does not
+		// depend on disclosure; the envelope is additive, recoverable only by
+		// the holder of the matching private key.
+		//
+		// Encryption is best-effort: any failure (bad key, non-object input,
+		// HPKE error) falls back to hash-only for this receipt and logs, rather
+		// than dropping the event. A privacy-preserving hash-only receipt keeps
+		// the chain gap-free; refusing the event would punch a hole in the audit
+		// trail, which is the worse outcome for an audit system.
+		if len(p.ForensicPublicKey) == 32 &&
+			p.DisclosurePolicy.ShouldDisclose(actionType, risk) {
+			if env := p.encryptDisclosure(f.Input); env != nil {
+				action.ParametersDisclosure = env
+			}
+		}
+	}
 
 	// Redaction MUST happen AFTER hashing. The hash commits to the raw
 	// canonical bytes; redaction only sanitises the human-readable string

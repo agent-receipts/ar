@@ -44,11 +44,13 @@ func resolveVersion() string {
 // The action fields are mutually exclusive top-level requests that short-circuit
 // before the daemon starts; cfg is the merged daemon configuration.
 type resolved struct {
-	cfg          daemon.Config
-	showVersion  bool
-	showProtocol bool
-	initKeys     bool
-	printConfig  bool
+	cfg             daemon.Config
+	showVersion     bool
+	showProtocol    bool
+	initKeys        bool
+	initForensicKey bool
+	forensicKeyPath string
+	printConfig     bool
 }
 
 func main() {
@@ -89,6 +91,23 @@ func main() {
 		}
 		fmt.Printf("generated signing key: %s\n", r.cfg.KeyPath)
 		fmt.Printf("public key: %s\n", r.cfg.PublicKeyPath)
+		return
+	}
+
+	if r.initForensicKey {
+		if r.cfg.ForensicPublicKeyPath == "" {
+			r.cfg.ForensicPublicKeyPath = daemon.DefaultForensicPublicKeyPath(r.forensicKeyPath)
+		}
+		fingerprint, err := daemon.GenerateForensicKey(r.forensicKeyPath, r.cfg.ForensicPublicKeyPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --init-forensic-key: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("generated forensic private key: %s (keep this offline; the daemon never reads it)\n", r.forensicKeyPath)
+		fmt.Printf("forensic public key:           %s\n", r.cfg.ForensicPublicKeyPath)
+		fmt.Printf("fingerprint (kid):             %s\n", fingerprint)
+		fmt.Printf("\nTo enable disclosure, start the daemon with:\n")
+		fmt.Printf("  --forensic-public-key %s --parameter-disclosure <true|high|action.types>\n", r.cfg.ForensicPublicKeyPath)
 		return
 	}
 
@@ -135,6 +154,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 
 	configPath := fs.String("config", "", "Path to a TOML config file (default: $XDG_DATA_HOME/agent-receipts/daemon.toml; ignored if absent)")
 	initKeys := fs.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
+	initForensicKey := fs.Bool("init-forensic-key", false, "Generate a new X25519 forensic key pair (ADR-0012) and exit. Writes the private key to --forensic-key and the public key to --forensic-public-key (must not exist)")
 	showVersion := fs.Bool("version", false, "Print version and exit")
 	showProtocol := fs.Bool("protocol-version", false, "Print the daemon's spoken wire-protocol version range as JSON and exit")
 	printConfigFlag := fs.Bool("print-config", false, "Print the resolved config (file < env < flags) and exit")
@@ -166,10 +186,12 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	fs.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	fs.StringVar(&cfg.KeyPath, "key", cfg.KeyPath, "Ed25519 PEM private key path, mode 0600 (env: AGENTRECEIPTS_KEY)")
 	fs.StringVar(&cfg.PublicKeyPath, "public-key", cfg.PublicKeyPath, "Path to publish the SPKI public key as PEM, mode 0644 (default: <--key>.pub) (env: AGENTRECEIPTS_PUBLIC_KEY)")
+	fs.StringVar(&cfg.ForensicPublicKeyPath, "forensic-public-key", cfg.ForensicPublicKeyPath, "Path to the X25519 forensic public key (32 raw bytes) for HPKE parameter encryption (ADR-0012). When set, tool parameters are encrypted before signing (env: AGENTRECEIPTS_FORENSIC_PUBLIC_KEY)")
+	forensicKeyPath := fs.String("forensic-key", daemon.DefaultForensicKeyPath(), "Forensic private-key output path for --init-forensic-key (raw 32 bytes, mode 0600). Not read at runtime — the daemon never holds the private key")
 	fs.StringVar(&cfg.ChainID, "chain-id", cfg.ChainID, "Chain id to write under (env: AGENTRECEIPTS_CHAIN_ID)")
 	fs.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	fs.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
-	fs.BoolVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "No-op as of v0.3.0 envelope migration (ADR-0012 amendment); plaintext-in-body shape removed. Encrypted disclosure pending in #280. (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
+	fs.StringVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "Which actions encrypt their parameters into parameters_disclosure (ADR-0012): false|true|high|<comma-separated action types>. Requires --forensic-public-key. (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
 	fs.BoolVar(&cfg.UnsafeSocketPath, "unsafe-socket-path", cfg.UnsafeSocketPath, "Permit a --socket/AGENTRECEIPTS_SOCKET path outside the per-platform safe set (logs a warning; does not override TCP rejection) (env: AGENTRECEIPTS_UNSAFE_SOCKET_PATH)")
 	fs.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults) (env: AGENTRECEIPTS_REDACT_PATTERNS)")
 	fs.DurationVar(&cfg.ShutdownDeadline, "shutdown-deadline", cfg.ShutdownDeadline, "Best-effort time budget for emitting interrupted-chain terminators on SIGTERM/SIGINT (cannot preempt in-progress SQLite I/O)")
@@ -185,11 +207,13 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	}
 
 	return resolved{
-		cfg:          cfg,
-		showVersion:  *showVersion,
-		showProtocol: *showProtocol,
-		initKeys:     *initKeys,
-		printConfig:  *printConfigFlag,
+		cfg:             cfg,
+		showVersion:     *showVersion,
+		showProtocol:    *showProtocol,
+		initKeys:        *initKeys,
+		initForensicKey: *initForensicKey,
+		forensicKeyPath: *forensicKeyPath,
+		printConfig:     *printConfigFlag,
 	}, nil
 }
 
@@ -291,6 +315,9 @@ func applyFileConfig(cfg *daemon.Config, fc *daemon.FileConfig) {
 	if fc.PublicKey != nil {
 		cfg.PublicKeyPath = *fc.PublicKey
 	}
+	if fc.ForensicPublicKey != nil {
+		cfg.ForensicPublicKeyPath = *fc.ForensicPublicKey
+	}
 	if fc.ChainID != nil {
 		cfg.ChainID = *fc.ChainID
 	}
@@ -301,7 +328,7 @@ func applyFileConfig(cfg *daemon.Config, fc *daemon.FileConfig) {
 		cfg.VerificationMethodID = *fc.VerificationMethod
 	}
 	if fc.ParameterDisclosure != nil {
-		cfg.ParameterDisclosure = *fc.ParameterDisclosure
+		cfg.ParameterDisclosure = fc.ParameterDisclosure.Value
 	}
 	if fc.UnsafeSocketPath != nil {
 		cfg.UnsafeSocketPath = *fc.UnsafeSocketPath
@@ -334,6 +361,9 @@ func envOverlay(cfg *daemon.Config, getenv func(string) string) error {
 	if v := getenv("AGENTRECEIPTS_PUBLIC_KEY"); v != "" {
 		cfg.PublicKeyPath = v
 	}
+	if v := getenv("AGENTRECEIPTS_FORENSIC_PUBLIC_KEY"); v != "" {
+		cfg.ForensicPublicKeyPath = v
+	}
 	if v := getenv("AGENTRECEIPTS_CHAIN_ID"); v != "" {
 		cfg.ChainID = v
 	}
@@ -344,11 +374,7 @@ func envOverlay(cfg *daemon.Config, getenv func(string) string) error {
 		cfg.VerificationMethodID = v
 	}
 	if v := getenv("AGENTRECEIPTS_PARAMETER_DISCLOSURE"); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return fmt.Errorf("invalid AGENTRECEIPTS_PARAMETER_DISCLOSURE %q: want a boolean (1/0, true/false)", v)
-		}
-		cfg.ParameterDisclosure = b
+		cfg.ParameterDisclosure = v
 	}
 	if v := getenv("AGENTRECEIPTS_UNSAFE_SOCKET_PATH"); v != "" {
 		b, err := strconv.ParseBool(v)
@@ -372,10 +398,11 @@ func printConfig(w io.Writer, cfg daemon.Config) {
 	fmt.Fprintf(w, "db = %q\n", cfg.DBPath)
 	fmt.Fprintf(w, "key = %q\n", cfg.KeyPath)
 	fmt.Fprintf(w, "public_key = %q\n", cfg.PublicKeyPath)
+	fmt.Fprintf(w, "forensic_public_key = %q\n", cfg.ForensicPublicKeyPath)
 	fmt.Fprintf(w, "chain_id = %q\n", cfg.ChainID)
 	fmt.Fprintf(w, "issuer_id = %q\n", cfg.IssuerID)
 	fmt.Fprintf(w, "verification_method = %q\n", cfg.VerificationMethodID)
-	fmt.Fprintf(w, "parameter_disclosure = %t\n", cfg.ParameterDisclosure)
+	fmt.Fprintf(w, "parameter_disclosure = %q\n", cfg.ParameterDisclosure)
 	fmt.Fprintf(w, "redact_patterns = %q\n", cfg.RedactPatternsPath)
 	fmt.Fprintf(w, "unsafe_socket_path = %t\n", cfg.UnsafeSocketPath)
 	fmt.Fprintf(w, "shutdown_deadline = %q\n", cfg.ShutdownDeadline.String())

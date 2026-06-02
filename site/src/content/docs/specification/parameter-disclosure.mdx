@@ -1,0 +1,249 @@
+---
+title: Parameter Disclosure
+description: How the Agent Receipts daemon controls whether tool-call parameters are recoverable, and how HPKE encryption keeps them opaque until a forensic responder decrypts them.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every Agent Receipt commits to its tool-call parameters via `parameters_hash` — a SHA-256 digest that proves what happened without retaining the raw payload. That is the privacy-preserving baseline and the default for every emitter.
+
+Parameter disclosure is the opt-in mechanism that lets an operator also make the raw parameters *recoverable* — but only by the holder of a specific private key, and only on demand. The parameters are encrypted inside the signed receipt body using [HPKE](https://www.rfc-editor.org/rfc/rfc9180) (Hybrid Public Key Encryption). The daemon, the SDKs, every storage adapter, and every downstream sink all see opaque ciphertext. Plaintext never hits the wire.
+
+## Privacy by default
+
+Out of the box, with no disclosure configuration, the daemon stores only `parameters_hash`:
+
+```json
+"action": {
+  "type": "system.command.execute",
+  "risk_level": "high",
+  "parameters_hash": "sha256:9c84a8c9d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1"
+}
+```
+
+The hash is authoritative for integrity — it binds the signed receipt to the exact parameters object. `parameters_disclosure` is always additive; enabling disclosure never replaces the hash.
+
+<Aside type="tip">
+Hash-only is the right choice for most deployments. Tamper-evidence does not depend on disclosure being enabled — the chain stays fully verifiable either way.
+</Aside>
+
+## The disclosure envelope
+
+When disclosure is enabled and the daemon is given a forensic X25519 public key, it encrypts each qualifying parameters object and attaches the result as `parameters_disclosure`:
+
+<div style="background: #181a24; border: 1px solid #2a2d3a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto;">
+<svg viewBox="0 0 600 130" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+  <defs>
+    <marker id="pd-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7c93f5" />
+    </marker>
+    <marker id="pd-lock" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-auto">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#a5d6a7" />
+    </marker>
+  </defs>
+  <rect x="10" y="20" width="120" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="70" y="37" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">Parameters JSON</text>
+  <text x="70" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">RFC 8785 canonical</text>
+  <line x1="130" y1="40" x2="158" y2="40" stroke="#7c93f5" stroke-width="1" marker-end="url(#pd-arrow)"/>
+  <rect x="166" y="20" width="120" height="40" rx="4" fill="#181a24" stroke="#7c93f5" stroke-width="1"/>
+  <text x="226" y="37" text-anchor="middle" fill="#e0e0e6" font-family="'SF Mono', monospace" font-size="9">HPKE encrypt</text>
+  <text x="226" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">X25519 forensic pubkey</text>
+  <line x1="286" y1="40" x2="314" y2="40" stroke="#7c93f5" stroke-width="1" marker-end="url(#pd-arrow)"/>
+  <rect x="322" y="20" width="120" height="40" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
+  <text x="382" y="37" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="9">parameters_disclosure</text>
+  <text x="382" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">opaque ciphertext</text>
+  <line x1="442" y1="40" x2="470" y2="40" stroke="#a5d6a7" stroke-width="1" marker-end="url(#pd-lock)"/>
+  <rect x="478" y="20" width="112" height="40" rx="4" fill="#181a24" stroke="#a5d6a7" stroke-width="1"/>
+  <text x="534" y="37" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="9">Signed Receipt</text>
+  <text x="534" y="50" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">Ed25519 proof</text>
+  <text x="70" y="95" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">plaintext (transient)</text>
+  <text x="226" y="95" text-anchor="middle" fill="#8b8fa3" font-family="'SF Mono', monospace" font-size="8">daemon only; not stored</text>
+  <text x="382" y="95" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="8">stored; recoverable by</text>
+  <text x="382" y="107" text-anchor="middle" fill="#a5d6a7" font-family="'SF Mono', monospace" font-size="8">private-key holder only</text>
+</svg>
+</div>
+
+The v1 envelope uses HPKE base mode (RFC 9180) with ciphersuite `hpke-x25519-hkdf-sha256-aes-256-gcm` — KEM = DHKEM(X25519, HKDF-SHA256), KDF = HKDF-SHA256, AEAD = AES-256-GCM. Both `info` and the AEAD additional-data field are the empty string. There is no `nonce` field; HPKE single-shot derives it internally from the KEM output.
+
+A concrete envelope as it appears in a receipt:
+
+```json
+"action": {
+  "type": "system.command.execute",
+  "risk_level": "high",
+  "parameters_hash": "sha256:9c84a8c9d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1",
+  "parameters_disclosure": {
+    "v": "1",
+    "alg": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+    "recipients": [
+      {
+        "kid": "sha256:3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4",
+        "enc": "N_2jVnvb1ijohmjDyNfpfR0SU7bU6m1EwVD3QfG_RDE"
+      }
+    ],
+    "ct": "YGn3i4NpiZxHjeZVggTP8lTxb0ZVdLl-2HjW31qsvo28PjQ_Lt_UQgAMidEXjzwhJPHM7OM"
+  }
+}
+```
+
+All binary fields (`enc`, `ct`) are unpadded base64url (no `=`, `+`, or `/`). The `kid` value is the key fingerprint: `sha256:` followed by the lowercase hex SHA-256 of the raw 32-byte X25519 public key. This lets a forensic tool derive the fingerprint from a held private key and locate matching receipts without any key registry.
+
+The `parameters_hash` is always present, whether or not disclosure is enabled. The envelope is additive metadata; removing it has no effect on chain verification.
+
+For the full field reference, see the [Agent Receipt Schema — `parameters_disclosure` envelope](/specification/agent-receipt-schema/#parameters_disclosure-envelope-hpke).
+
+## Two keys, two purposes
+
+The signing key (Ed25519) and the forensic key (X25519) are different keys with different purposes and different holders:
+
+| | Signing key | Forensic key |
+|---|---|---|
+| **Algorithm** | Ed25519 (signing) | X25519 (HPKE) |
+| **Held by** | Daemon (private key never leaves) | Public key: daemon config. Private key: forensic responder. |
+| **Purpose** | Proves the receipt is authentic and unmodified | Allows parameters to be recovered on demand |
+| **Can read disclosures?** | No | Private-key holder only |
+| **Can forge receipts?** | No (public key only in config) | No |
+
+The daemon holds only the forensic *public* key and genuinely cannot read its own past disclosures — the same trust model as the agent not owning its own audit trail (per ADR-0010). Signing-key holders cannot read disclosures; forensic private-key holders cannot forge receipts.
+
+<Aside type="caution">
+Never reuse the Ed25519 signing key as an encryption key. They have different purposes and different lifecycle requirements.
+</Aside>
+
+## Disclosure modes
+
+The `parameter_disclosure` setting controls which actions get an encrypted envelope attached. The daemon and the OpenClaw plugin offer the same four modes; only the *spelling of the allowlist* differs by config surface (see the note below):
+
+| Mode | Behavior |
+|-------|----------|
+| off (`false`) | Hash only — no envelope (default) |
+| all (`true`) | Envelope for every action |
+| high (`"high"`) | Envelope for `high` and `critical` risk actions only |
+| allowlist | Envelope for the listed action types only |
+
+The `"high"` mode uses the taxonomy's risk classification. The allowlist is a set of action-type strings; see the [Action Taxonomy](/specification/action-taxonomy/) for the full list.
+
+<Aside type="note">
+**Allowlist spelling depends on the config surface.** The OpenClaw plugin (JSON config) and the daemon's TOML file accept a real array — `["system.command.execute", "filesystem.file.delete"]`. The daemon's `--parameter-disclosure` flag and `AGENTRECEIPTS_PARAMETER_DISCLOSURE` environment variable have no array type, so there the allowlist is a **comma-separated string**: `system.command.execute,filesystem.file.delete`. The daemon's TOML key also accepts the boolean `true`/`false` for backwards compatibility.
+</Aside>
+
+<Aside type="caution">
+Risk-based `"high"` only works when the emitter declares a taxonomic `action_type`. The daemon resolves an action's risk from its type via the taxonomy; if the emitter sends only a raw tool name, the daemon constructs a synthetic `<channel>.<tool>` type that does not match the taxonomy and resolves to `medium` — so `"high"` will not fire. Emitters that forward the resolved action type (the SDK, MCP proxy, and hook do this where they can) make `"high"` effective. If your emitter does not, prefer the explicit action-type allowlist or `true`. The daemon always resolves risk itself and never trusts an emitter-supplied risk, so an emitter cannot downgrade risk to dodge disclosure.
+</Aside>
+
+## Daemon configuration
+
+Disclosure is controlled by operator config — never by agent-supplied input. The daemon reads the forensic public key and the disclosure granularity from its config file, environment, or flags.
+
+### Generate a forensic key pair
+
+The daemon ships a one-shot generator. It writes the raw 32-byte private key (mode `0600`) and public key (mode `0644`), and prints the fingerprint so you can confirm the key the daemon encrypts to matches the private key you keep for recovery:
+
+```bash
+agent-receipts-daemon --init-forensic-key \
+  --forensic-key ~/.local/share/agent-receipts/forensic.key
+```
+
+```
+generated forensic private key: ~/.local/share/agent-receipts/forensic.key (keep this offline; the daemon never reads it)
+forensic public key:           ~/.local/share/agent-receipts/forensic.key.pub
+fingerprint (kid):             sha256:c1102522e88e2511…
+```
+
+Keep the **private** key offline — the daemon never reads it. Only the **public** key goes into daemon config. Like signing-key generation, the command refuses to overwrite an existing key file.
+
+### Config file
+
+In TOML, `parameter_disclosure` accepts a boolean, a keyword string, or an array of action types:
+
+```toml
+# ~/.local/share/agent-receipts/daemon.toml
+
+# Disclosure mode. Accepts: false | true | "high"
+#   | an action-type array  ["system.command.execute", "filesystem.file.delete"]
+#   | a comma-separated string "system.command.execute,filesystem.file.delete"
+parameter_disclosure = "high"
+
+# Path to the forensic X25519 public key file (the raw 32-byte key)
+forensic_public_key = "/home/me/.local/share/agent-receipts/forensic.pub"
+```
+
+### Environment variables / flags
+
+The flag and environment variable have no array type, so the allowlist form is a comma-separated string:
+
+```bash
+# keyword mode
+AGENTRECEIPTS_PARAMETER_DISCLOSURE=high \
+AGENTRECEIPTS_FORENSIC_PUBLIC_KEY=/path/to/forensic.pub \
+  agent-receipts-daemon
+
+# allowlist mode (comma-separated)
+agent-receipts-daemon \
+  --forensic-public-key /path/to/forensic.pub \
+  --parameter-disclosure system.command.execute,filesystem.file.delete
+```
+
+The daemon will not start when the disclosure policy is enabled (anything other than `off`/`false`) and no `forensic_public_key` is configured — an envelope requires a recipient.
+
+When both are present, the daemon logs the forensic key fingerprint at startup so you can confirm it matches the private key you intend to use for recovery:
+
+```
+Parameter disclosure ACTIVE: policy=high, forensic key sha256:3b4c5d6e… — matching parameters will be HPKE-encrypted to that key (recoverable only with the private key)
+```
+
+See [Daemon Setup](/getting-started/daemon-setup/) for the full configuration reference.
+
+## Encrypt-failure behaviour
+
+If HPKE encryption fails for a given event — for example, due to a malformed key or a transient error — the daemon falls back to hash-only for that receipt and logs a warning. The receipt is still stored and the audit chain stays intact and gap-free. A persistent failure at startup (unreadable key file, wrong key format) is a fatal error; the daemon will not start.
+
+## Forensic recovery
+
+When an operator holds the forensic private key, they can decrypt the `parameters_disclosure` envelope for any matching receipt.
+
+A solo operator generates a forensic keypair, configures the daemon with the public key, and later loads their private key into the dashboard or a CLI tool. The workflow:
+
+1. Generate a forensic keypair (X25519) with `agent-receipts-daemon --init-forensic-key` (see [Generate a forensic key pair](#generate-a-forensic-key-pair) above).
+2. Configure the daemon with the public key path and the desired disclosure mode.
+3. During an incident or audit, load the private key into the dashboard.
+4. The dashboard derives the key fingerprint (`sha256:<hex of raw public key>`), queries receipts by `kid`, and decrypts each matching `parameters_disclosure` inline.
+5. The operator sees the original parameters in the receipt detail view.
+
+<Aside type="note">
+Plaintext is never persisted. It exists only transiently in the forensic responder's process during decryption. Close the dashboard session and the plaintext is gone — only ciphertext remains in the database.
+</Aside>
+
+The dashboard feature is the intended forensic-recovery UX for the envelope. CLI-based recovery for automated forensic pipelines is also planned (see ADR-0012 Phase B).
+
+## GDPR and data handling
+
+Enabling disclosure on payloads that contain personal data makes the operator a **data controller** for that data under GDPR and equivalent regulations. The encrypted ciphertext is still personal data if the corresponding private key is held within the jurisdiction.
+
+The right-to-erasure story is **crypto-shredding**: destroy the forensic private key and every `parameters_disclosure` envelope becomes permanently unreadable, while the receipt chain — and its hash-based tamper-evidence — stays fully intact. No rows are deleted; no chain integrity is broken.
+
+<Aside type="danger">
+Do not enable disclosure on payloads that may contain secrets (API keys, passwords, tokens) or PII unless you have verified your workload and you accept the data-controller obligations. Hash-only storage avoids these obligations entirely.
+</Aside>
+
+Practical checklist before enabling:
+
+- Inventory which action types produce sensitive parameters in your deployment.
+- Confirm the forensic private key is stored securely, with appropriate access controls and backup.
+- Document a key-rotation and crypto-shredding procedure before enabling disclosure in production.
+- If your jurisdiction has data-residency requirements, confirm the database (and any SIEM fan-out) is located appropriately.
+
+## Key rotation and key accumulation
+
+Public keys can rotate freely — configure the daemon with a new forensic public key and new receipts use it. Private keys accumulate: because receipts are immutable, you cannot re-encrypt historical disclosures when the forensic private key rotates. Retain all historical forensic private keys alongside the receipt database or you will permanently lose the ability to recover older disclosures.
+
+## Threat model
+
+| Threat | Mitigated? | How |
+|--------|-----------|-----|
+| Agent reads its own parameters from the receipt store | Yes | Daemon holds only the public key; private key lives with the forensic responder |
+| Storage adapter or SIEM sees plaintext parameters | Yes | Only ciphertext is stored or forwarded; adapters need no key-management |
+| Attacker modifies the ciphertext in the database | Yes | Ed25519 signature over the full receipt (including `parameters_disclosure`) detects any tampering |
+| Forensic responder forges a receipt | No (by design) | Signing and forensic keys are separate; the forensic private key has no signing capability |
+| Disclosure gap caused by an encryption failure | Mitigated | Encrypt-failure falls back to hash-only; the receipt is stored and the chain stays valid |
+| PII leakage via plaintext window | Mitigated (daemon mode) | Daemon minimises the plaintext window to a single process that doesn't hold the signing key; SDK-direct mode keeps it in the agent process |

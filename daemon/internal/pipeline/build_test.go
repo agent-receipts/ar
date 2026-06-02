@@ -84,11 +84,11 @@ func sampleFrame(t *testing.T) socket.Frame {
 // and non-POSIX platforms must leave both nil.
 func TestBuildPeerCred(t *testing.T) {
 	cases := []struct {
-		name     string
-		peer     socket.PeerCred
-		wantUID  *uint32
-		wantGID  *uint32
-		wantNil  bool
+		name    string
+		peer    socket.PeerCred
+		wantUID *uint32
+		wantGID *uint32
+		wantNil bool
 	}{
 		{
 			name:    "linux non-root",
@@ -1012,40 +1012,28 @@ func TestProcess_DropCountChainContinues(t *testing.T) {
 	}
 }
 
-// TestProcess_ParameterDisclosureFlagIsNoOp verifies that the legacy
-// --parameter-disclosure opt-in is a no-op as of the v0.3.0 envelope migration
-// (ADR-0012 amendment 2026-05-18). The receipt type only accepts the HPKE
-// envelope shape now, so plaintext-in-body input/output has nowhere to go.
-// The flag stays in place so operators do not see a sudden config error, but
-// it must not produce a parameters_disclosure value in either direction.
-// Encrypted disclosure is tracked in #280.
-func TestProcess_ParameterDisclosureFlagIsNoOp(t *testing.T) {
-	cases := []struct {
-		name    string
-		enabled bool
-	}{
-		{"enabled", true},
-		{"disabled", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+// TestProcess_NoDisclosureWithoutKey verifies the privacy-preserving default:
+// with no forensic public key (regardless of policy), no parameters_disclosure
+// envelope is produced — only the hash. There is nothing to encrypt to.
+func TestProcess_NoDisclosureWithoutKey(t *testing.T) {
+	for _, policy := range []string{"", "true", "high", "fs.read"} {
+		t.Run("policy="+policy, func(t *testing.T) {
 			ks := newTestKeySource(t)
 			st := newTestStore(t)
-			state := chain.New("chain-1")
-			p := New(state, ks, st, "did:agent-receipts-daemon:test")
-			p.ParameterDisclosure = tc.enabled
+			p := New(chain.New("chain-1"), ks, st, "did:agent-receipts-daemon:test")
+			pol, err := ParseDisclosurePolicy(policy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.DisclosurePolicy = pol
+			// No ForensicPublicKey set.
 
-			inputJSON := json.RawMessage(`{"path":"/tmp/file","mode":"r"}`)
-			outputJSON := json.RawMessage(`{"bytes":42}`)
 			body, err := json.Marshal(EmitterFrame{
-				Version:   "1",
-				TsEmit:    "2026-05-03T00:00:00Z",
-				SessionID: "s",
-				Channel:   "sdk",
-				Tool:      EmitterTool{Name: "fs.read"},
-				Input:     inputJSON,
-				Output:    outputJSON,
-				Decision:  "allowed",
+				Version: "1", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s",
+				Channel: "sdk", Tool: EmitterTool{Name: "fs.read"},
+				Input:    json.RawMessage(`{"path":"/tmp/file","mode":"r"}`),
+				Output:   json.RawMessage(`{"bytes":42}`),
+				Decision: "allowed",
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1058,19 +1046,158 @@ func TestProcess_ParameterDisclosureFlagIsNoOp(t *testing.T) {
 				t.Fatal(err)
 			}
 			r := receipts[0]
-
 			if r.CredentialSubject.Action.ParametersDisclosure != nil {
-				t.Errorf("ParametersDisclosure must be nil regardless of flag (envelope wiring pending #280); got %#v", r.CredentialSubject.Action.ParametersDisclosure)
+				t.Errorf("ParametersDisclosure must be nil without a forensic key; got %#v",
+					r.CredentialSubject.Action.ParametersDisclosure)
 			}
-			// Hashes are unaffected by the flag — they always commit to the raw
-			// emitter payload.
 			if r.CredentialSubject.Action.ParametersHash == "" {
 				t.Error("parameters_hash must be present when input is set")
 			}
-			if r.CredentialSubject.Outcome.ResponseHash == "" {
-				t.Error("response_hash must be present when output is set")
-			}
 		})
+	}
+}
+
+// TestProcess_DisclosurePolicyGatesEncryption verifies that, with a forensic key
+// configured, the policy decides whether each action discloses. A high-risk and
+// a low-risk action are sent under policy "high"; only the high-risk one gets an
+// envelope, and it decrypts back to the original parameters.
+func TestProcess_DisclosurePolicyGatesEncryption(t *testing.T) {
+	fk, err := receipt.GenerateForensicKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	p := New(chain.New("chain-1"), ks, st, "did:agent-receipts-daemon:test")
+	p.ForensicPublicKey = fk.PublicKey
+	pol, err := ParseDisclosurePolicy("high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.DisclosurePolicy = pol
+
+	// The daemon constructs action types as "<channel>.<tool.name>", so to hit a
+	// high-risk taxonomy entry (filesystem.file.delete) we set channel and tool
+	// name accordingly. A separate low-risk action uses an unknown type.
+	send := func(channel, toolName string, input json.RawMessage) {
+		body, err := json.Marshal(EmitterFrame{
+			Version: "1", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s",
+			Channel: channel, Tool: EmitterTool{Name: toolName},
+			Input: input, Decision: "allowed",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Process(socket.Frame{Payload: body}); err != nil {
+			t.Fatalf("Process(%s.%s): %v", channel, toolName, err)
+		}
+	}
+	send("filesystem", "file.delete", json.RawMessage(`{"command":"rm -rf /tmp/x"}`)) // high risk
+	send("sdk", "noop", json.RawMessage(`{"path":"/tmp/x"}`))                         // unknown -> medium
+
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 2 {
+		t.Fatalf("got %d receipts, want 2", len(receipts))
+	}
+
+	// Find each receipt by action type (order is by sequence but be explicit).
+	var highRec, lowRec *receipt.AgentReceipt
+	for i := range receipts {
+		switch receipts[i].CredentialSubject.Action.Type {
+		case "filesystem.file.delete":
+			highRec = &receipts[i]
+		case "sdk.noop":
+			lowRec = &receipts[i]
+		}
+	}
+	if highRec == nil || lowRec == nil {
+		t.Fatalf("missing expected receipts: high=%v low=%v", highRec != nil, lowRec != nil)
+	}
+
+	// High-risk action discloses under policy "high".
+	if highRec.CredentialSubject.Action.RiskLevel != receipt.RiskHigh &&
+		highRec.CredentialSubject.Action.RiskLevel != receipt.RiskCritical {
+		t.Fatalf("expected system.command.execute to be high/critical risk, got %q",
+			highRec.CredentialSubject.Action.RiskLevel)
+	}
+	env := highRec.CredentialSubject.Action.ParametersDisclosure
+	if env == nil {
+		t.Fatal("high-risk action must have a disclosure envelope under policy=high")
+	}
+	// The kid must be the ADR-0015 fingerprint of the forensic public key.
+	wantKID, _ := receipt.ForensicKeyFingerprint(fk.PublicKey)
+	if env.Recipients[0].KID != wantKID {
+		t.Errorf("kid = %q, want %q (ADR-0015 fingerprint)", env.Recipients[0].KID, wantKID)
+	}
+	dec, err := receipt.DecryptDisclosure(env, fk.PrivateKey)
+	if err != nil {
+		t.Fatalf("DecryptDisclosure: %v", err)
+	}
+	if dec["command"] != "rm -rf /tmp/x" {
+		t.Errorf("decrypted command = %v, want rm -rf /tmp/x", dec["command"])
+	}
+
+	// Low-risk action does NOT disclose under policy "high".
+	if lowRec.CredentialSubject.Action.ParametersDisclosure != nil {
+		t.Errorf("low-risk action must not disclose under policy=high; got %#v",
+			lowRec.CredentialSubject.Action.ParametersDisclosure)
+	}
+	// But its hash is still present.
+	if lowRec.CredentialSubject.Action.ParametersHash == "" {
+		t.Error("low-risk action still needs parameters_hash")
+	}
+}
+
+// TestProcess_DisclosureFallsBackToHashOnNonObjectInput verifies the fail-open
+// behaviour: when disclosure is on but the input is not a JSON object (so it
+// cannot be encrypted as an HPKE parameters object), the receipt is still
+// produced with the hash — the event is not dropped and the chain stays intact.
+func TestProcess_DisclosureFallsBackToHashOnNonObjectInput(t *testing.T) {
+	fk, err := receipt.GenerateForensicKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	p := New(chain.New("chain-1"), ks, st, "did:agent-receipts-daemon:test")
+	p.ForensicPublicKey = fk.PublicKey
+	pol, err := ParseDisclosurePolicy("true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.DisclosurePolicy = pol
+
+	// Input is a JSON array, not an object — valid JSON payload (so it is
+	// hashed) but not encryptable as a parameters object.
+	body, err := json.Marshal(EmitterFrame{
+		Version: "1", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s",
+		Channel: "sdk", Tool: EmitterTool{Name: "system.command.execute"},
+		Input:    json.RawMessage(`["arg1","arg2"]`),
+		Decision: "allowed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts, want 1 (event must not be dropped)", len(receipts))
+	}
+	r := receipts[0]
+	if r.CredentialSubject.Action.ParametersDisclosure != nil {
+		t.Errorf("non-object input must fall back to hash-only; got envelope %#v",
+			r.CredentialSubject.Action.ParametersDisclosure)
+	}
+	if r.CredentialSubject.Action.ParametersHash == "" {
+		t.Error("parameters_hash must still be present on the fallback receipt")
 	}
 }
 
@@ -1305,5 +1432,193 @@ func TestValidateFrame_RejectsPartialOperator(t *testing.T) {
 	}
 	if len(receipts) != 0 {
 		t.Errorf("got %d receipts, want 0 (frame was rejected)", len(receipts))
+	}
+}
+
+// TestBuild_ForensicPublicKeyEncryptsParameters demonstrates HPKE parameter
+// encryption end-to-end via the daemon's Process API. When a forensic public
+// key is configured, the daemon encrypts tool input to that key and attaches
+// the HPKE v1 envelope as action.parameters_disclosure. The hash still commits
+// to the original plaintext (tamper-evident), but parameters are opaque on the
+// wire. Only the forensic responder holding the private key can decrypt.
+func TestBuild_ForensicPublicKeyEncryptsParameters(t *testing.T) {
+	// Generate a forensic key pair (ADR-0012).
+	fk, err := receipt.GenerateForensicKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up the pipeline with the forensic public key.
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	pp := New(chain.New("chain-1"), ks, st, "did:agent-receipts-daemon:test")
+	pp.ForensicPublicKey = fk.PublicKey
+	pol, err := ParseDisclosurePolicy("true") // disclose all actions
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp.DisclosurePolicy = pol
+
+	// Build a frame with JSON parameters.
+	emitterFrame := EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "sess-123",
+		Channel:   "mcp_proxy",
+		Tool:      EmitterTool{Server: "github", Name: "list_repos"},
+		Input:     json.RawMessage(`{"command":"rm -rf /tmp/old-report.pdf"}`),
+		Output:    json.RawMessage(`{"status":"success"}`),
+		Decision:  "allowed",
+	}
+	body, err := json.Marshal(emitterFrame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := socket.Frame{
+		Payload: body,
+		Peer: socket.PeerCred{
+			Platform: "linux",
+			PID:      4242,
+			UID:      1000,
+			GID:      1000,
+			ExePath:  "/usr/bin/mcp-proxy",
+		},
+	}
+
+	// Process the frame through the pipeline.
+	if err := pp.Process(frame); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	// Retrieve the stored receipt.
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatalf("GetChain: %v", err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts, want 1", len(receipts))
+	}
+	rec := receipts[0]
+
+	// Verify parameters_disclosure envelope is present and opaque.
+	if rec.CredentialSubject.Action.ParametersDisclosure == nil {
+		t.Fatal("parameters_disclosure is nil; expected HPKE envelope")
+	}
+	env := rec.CredentialSubject.Action.ParametersDisclosure
+	if env.V != "1" {
+		t.Errorf("envelope version: got %q, want %q", env.V, "1")
+	}
+	if env.Alg != "hpke-x25519-hkdf-sha256-aes-256-gcm" {
+		t.Errorf("algorithm: got %q, want hpke-x25519-...", env.Alg)
+	}
+	if len(env.Recipients) != 1 {
+		t.Errorf("recipients: got %d, want 1", len(env.Recipients))
+	}
+	// enc and ct are opaque base64url-encoded HPKE material.
+	if env.Recipients[0].Enc == "" {
+		t.Fatal("enc is empty")
+	}
+	if env.CT == "" {
+		t.Fatal("ct is empty")
+	}
+
+	// Verify parameters_hash still commits to the original canonical bytes.
+	// The hash is tamper-evident even though parameters are encrypted.
+	if rec.CredentialSubject.Action.ParametersHash == "" {
+		t.Fatal("parameters_hash is empty")
+	}
+	if !strings.HasPrefix(rec.CredentialSubject.Action.ParametersHash, "sha256:") {
+		t.Errorf("parameters_hash format: got %q, want sha256:...",
+			rec.CredentialSubject.Action.ParametersHash)
+	}
+
+	// Verify the receipt is signed.
+	if rec.Proof.ProofValue == "" {
+		t.Fatal("proof.proofValue is empty")
+	}
+
+	// Decrypt the envelope using the private key and verify round-trip.
+	decrypted, err := receipt.DecryptDisclosure(env, fk.PrivateKey)
+	if err != nil {
+		t.Fatalf("DecryptDisclosure: %v", err)
+	}
+
+	// Verify decrypted params match the original input.
+	command, ok := decrypted["command"]
+	if !ok {
+		t.Fatalf("decrypted params missing 'command' key: %+v", decrypted)
+	}
+	if command != "rm -rf /tmp/old-report.pdf" {
+		t.Errorf("command: got %v, want rm -rf /tmp/old-report.pdf", command)
+	}
+}
+
+// TestProcess_EmitterDeclaredActionTypeDrivesRisk verifies the fix for
+// risk-based disclosure through the daemon: when an emitter declares a taxonomic
+// action_type, the daemon uses it as action.type and resolves risk from it, so a
+// "high" policy fires. Without the declaration, the synthetic channel.tool type
+// resolves to medium and "high" would not fire — proven by the negative case.
+func TestProcess_EmitterDeclaredActionTypeDrivesRisk(t *testing.T) {
+	fk, err := receipt.GenerateForensicKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol, err := ParseDisclosurePolicy("high")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(declaredType string) receipt.AgentReceipt {
+		ks := newTestKeySource(t)
+		st := newTestStore(t)
+		p := New(chain.New("chain-1"), ks, st, "did:agent-receipts-daemon:test")
+		p.ForensicPublicKey = fk.PublicKey
+		p.DisclosurePolicy = pol
+
+		body, err := json.Marshal(EmitterFrame{
+			Version: "1", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s",
+			Channel: "sdk", Tool: EmitterTool{Name: "rm"},
+			ActionType: declaredType, // may be empty
+			Input:      json.RawMessage(`{"command":"rm -rf /tmp/x"}`),
+			Decision:   "allowed",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Process(socket.Frame{Payload: body}); err != nil {
+			t.Fatalf("Process: %v", err)
+		}
+		receipts, err := st.GetChain("chain-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return receipts[0]
+	}
+
+	// Declared high-risk taxonomic type → action.type is used, risk is high,
+	// disclosure fires.
+	r := run("filesystem.file.delete")
+	if r.CredentialSubject.Action.Type != "filesystem.file.delete" {
+		t.Errorf("action.type = %q, want filesystem.file.delete (emitter-declared)",
+			r.CredentialSubject.Action.Type)
+	}
+	if r.CredentialSubject.Action.RiskLevel != receipt.RiskHigh {
+		t.Errorf("risk = %q, want high", r.CredentialSubject.Action.RiskLevel)
+	}
+	if r.CredentialSubject.Action.ParametersDisclosure == nil {
+		t.Error("high-risk declared action must disclose under policy=high")
+	}
+
+	// No declared type → synthetic "sdk.rm" type resolves to medium, so "high"
+	// does NOT fire. This is the limitation the action_type field addresses.
+	r = run("")
+	if r.CredentialSubject.Action.Type != "sdk.rm" {
+		t.Errorf("action.type = %q, want synthetic sdk.rm", r.CredentialSubject.Action.Type)
+	}
+	if r.CredentialSubject.Action.RiskLevel == receipt.RiskHigh {
+		t.Error("synthetic type unexpectedly resolved to high risk")
+	}
+	if r.CredentialSubject.Action.ParametersDisclosure != nil {
+		t.Error("medium-risk action must not disclose under policy=high")
 	}
 }
