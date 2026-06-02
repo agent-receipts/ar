@@ -3,6 +3,106 @@ title: API Reference
 description: Python SDK API reference.
 ---
 
+## Daemon emitter
+
+The canonical way to record receipts: send tool-call events to a running
+`agent-receipts-daemon`, which holds the signing key, builds the receipt, signs
+it, and chains it. Your process never touches the key. See
+[Daemon Setup](/getting-started/daemon-setup/) to start the daemon and
+[Quick Start](/getting-started/quick-start/) for the full emit → list → verify loop.
+
+```python
+from agent_receipts import DaemonEmitter, EmitTransportError, default_socket_path
+```
+
+### `DaemonEmitter`
+
+```python
+class DaemonEmitter:
+    def __init__(
+        self,
+        *,
+        socket_path: str = "",
+        session_id: str = "",
+        log: logging.Logger | None = None,
+        best_effort: bool = False,
+    ) -> None: ...
+```
+
+Connect to the daemon socket. With `socket_path=""` the emitter resolves
+`default_socket_path()` (the per-OS default, or `AGENTRECEIPTS_SOCKET` if set).
+If neither yields a path — for example on Windows, or on macOS/Linux when `$HOME`
+is unset and `AGENTRECEIPTS_SOCKET` is not configured — the constructor raises
+`ValueError`; pass an explicit `socket_path` in those cases. Supply `session_id`
+to propagate the host's session id across frames — a UUID v4 is generated
+otherwise. By default a transport failure raises `EmitTransportError` (the emit
+failure contract, ADR-0025); pass `best_effort=True` to drop unreachable-daemon
+events silently instead. Use it as a context manager, or call `close()` when done.
+
+#### `emit`
+
+```python
+def emit(
+    self,
+    *,
+    channel: str,
+    tool_name: str,
+    decision: str,
+    tool_server: str = "",
+    input: bytes | str | None = None,
+    output: bytes | str | None = None,
+    error: str = "",
+) -> None
+```
+
+Send one tool-call event. `channel` is your integration namespace and becomes the
+prefix of the stored action type (e.g. `my-app.filesystem.file.read`). `decision`
+is one of `"allowed"`, `"denied"`, or `"pending"`. `input` / `output` accept raw
+JSON (passed verbatim; the daemon hashes them). Returns `None`.
+
+Raises `ValueError` for caller bugs (empty `channel` / `tool_name`, invalid
+`decision`, invalid JSON, oversized frame), `RuntimeError` if the emitter is
+closed, and `EmitTransportError` when the daemon is unreachable — unless the
+emitter was constructed with `best_effort=True`.
+
+{/* snippet-check: no-run */}
+```python
+from agent_receipts import DaemonEmitter
+
+with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
+    e.emit(
+        channel="my-app",
+        tool_name="filesystem.file.read",
+        decision="allowed",
+    )
+```
+
+#### `close`
+
+```python
+def close(self) -> None
+```
+
+Release the underlying socket connection. Safe to call multiple times. After
+`close()`, any subsequent `emit()` call raises `RuntimeError`. The context
+manager calls `close()` automatically on exit.
+
+### `EmitTransportError`
+
+Raised by `emit()` when the daemon socket cannot be dialled or the write fails,
+unless the emitter was constructed with `best_effort=True`.
+
+### `default_socket_path`
+
+```python
+def default_socket_path() -> str
+```
+
+The per-OS default daemon socket path (an empty string on platforms without one).
+Honours `AGENTRECEIPTS_SOCKET` when set.
+
+---
+
 ## Receipts
 
 ```python
@@ -255,7 +355,7 @@ OutcomeStatus = Literal["success", "failure", "pending"]
 
 CONTEXT: list[str]          # ["https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"]
 CREDENTIAL_TYPE: list[str]  # ["VerifiableCredential", "AgentReceipt"]
-RECEIPT_VERSION: str        # "0.3.0" (receipt schema)
+RECEIPT_VERSION: str        # "0.4.0" (receipt schema)
 VERSION: str                # current package version
 ```
 

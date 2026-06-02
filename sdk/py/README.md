@@ -84,9 +84,10 @@ agent-receipts-daemon          # start the daemon (leave it running)
 signs, and chains the receipt. By default `emit()` surfaces transport failure
 (ADR-0025): an unreachable daemon is logged at `DEBUG` and raised as
 `EmitTransportError` rather than dropped silently, so start the daemon before
-your app. The call stays non-blocking (bounded by the dial + write timeout);
-pass `best_effort=True` to opt into loss-tolerant emission (`emit()` returns
-`None` on transport failure).
+your app. The call stays non-blocking (bounded by the dial + write timeout); construct the
+emitter as `DaemonEmitter(best_effort=True)` to opt into loss-tolerant emission
+(`emit()` swallows the error and returns `None` instead of raising). `best_effort` is a
+constructor argument, not an `emit()` argument.
 
 <!-- snippet-check: no-run -->
 ```python
@@ -395,13 +396,16 @@ from agent_receipts import (
 
 ```python
 from agent_receipts import (
-    ActionReceipt,        # Signed receipt with proof
-    UnsignedActionReceipt,  # Receipt before signing
+    AgentReceipt,         # Signed receipt with proof
+    UnsignedAgentReceipt,  # Receipt before signing
     Action, ActionTarget, Authorization, Chain,
     CredentialSubject, Intent, Issuer, Operator,
     Outcome, Principal, Proof, StateChange,
 )
 ```
+
+`ActionReceipt` / `UnsignedActionReceipt` remain as deprecated aliases for
+backwards compatibility — prefer `AgentReceipt` / `UnsignedAgentReceipt`.
 
 ### Subpackage imports
 
