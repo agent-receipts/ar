@@ -10,7 +10,7 @@ download count at all. So the raw total is close to meaningless on its own — y
 have to read the *shape* of the traffic, not its size.
 
 This tool pulls the shape for every package this monorepo ships and prints a
-machine-vs-human verdict per ecosystem. The three signals it reads:
+machine-vs-human verdict per ecosystem. The four signals it reads:
 
 1. Daily-series shape (npm, PyPI). Real human adoption leaves a persistent,
    weekday-skewed baseline that does not drop to zero and does not consist of
@@ -27,15 +27,23 @@ machine-vs-human verdict per ecosystem. The three signals it reads:
    manifest. PyPI's ``without_mirrors`` series strips mirror noise outright; Go
    has no counter but ``pkg.go.dev`` reports an imported-by count.
 
+4. Homebrew / GitHub Release assets. Binaries installed via a custom Homebrew tap
+   are downloaded straight from GitHub Releases, so per-asset download counts are
+   a clean install signal (not mirror-amplified). Linux pulls are CI (release
+   gates), full-artifact "sweeps" are discounted, and the desktop-platform count
+   reads as real installs — reported as events, not people.
+
 The classification core (``classify_series``, ``classify_versions``,
-``verdict``) is pure and takes no network, so the unit tests exercise it
+``classify_release_assets``, ``verdict``) is pure and takes no network, so the
+unit tests exercise it
 directly with synthetic machine- and human-shaped inputs. The fetchers are thin
 I/O wrappers, best-effort: a source that fails to fetch is reported as
 unavailable rather than aborting the run.
 
 Usage:
     check.py [--npm PKG ...] [--pypi PKG ...] [--go MODULE ...]
-             [--no-npm] [--no-pypi] [--go-off] [--json]
+             [--github OWNER/REPO ...] [--no-npm] [--no-pypi] [--go-off]
+             [--no-github] [--json]
 
 With no package flags it uses this repo's published packages. Network egress to
 api.npmjs.org, pypistats.org, and pkg.go.dev is required for live data; the
@@ -51,6 +59,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import re
 import statistics
 import subprocess
@@ -659,8 +668,6 @@ def github_releases(repo: str) -> list[ReleaseInfo]:
     Uses the public REST API; a GITHUB_TOKEN / GH_TOKEN in the environment raises
     the rate limit but is not required for a public repo.
     """
-    import os
-
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     releases: list[ReleaseInfo] = []
     page = 1

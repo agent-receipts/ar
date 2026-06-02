@@ -44,7 +44,7 @@ Live mode needs egress to `api.npmjs.org`, `pypistats.org`, `pkg.go.dev`, and
 is not required for a public repo. A source that fails to fetch is reported as
 unavailable rather than aborting the run.
 
-## The three signals it reads
+## The four signals it reads
 
 1. **Daily-series shape** (npm, PyPI). Real adoption leaves a persistent,
    weekday-skewed baseline that does not hit zero and is not made of one-day
