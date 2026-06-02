@@ -77,12 +77,14 @@ type Config struct {
 	// what frames were received, receipts signed, etc.
 	TraceLog io.Writer
 
-	// ParameterDisclosure is the historical opt-in for plaintext tool
-	// input/output in the legacy string-map shape of parameters_disclosure.
-	// As of the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18) that
-	// shape is no longer representable; this flag is a documented no-op
-	// pending the daemon-side HPKE envelope wiring tracked in #280.
-	ParameterDisclosure bool
+	// ParameterDisclosure selects which actions have their parameters encrypted
+	// into the parameters_disclosure envelope (ADR-0012). Value space mirrors the
+	// OpenClaw plugin: "false"/"off"/"" (default, hash only), "true"/"all",
+	// "high" (high- and critical-risk actions), or a comma-separated allowlist of
+	// action types. Disclosure also requires ForensicPublicKeyPath — without a
+	// key there is nothing to encrypt to. Parsed via
+	// pipeline.ParseDisclosurePolicy at startup.
+	ParameterDisclosure string
 
 	// RedactPatternsPath is an optional path to a YAML file of additional
 	// redaction patterns applied to receipt body fields after hashing. When
@@ -387,31 +389,40 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 
-	if cfg.ParameterDisclosure {
-		cfg.Logger.Printf("NOTICE: --parameter-disclosure is enabled but currently a no-op.")
-		cfg.Logger.Printf("NOTICE: The legacy plaintext-in-body shape was removed by the v0.3.0")
-		cfg.Logger.Printf("NOTICE: envelope migration (ADR-0012 amendment 2026-05-18). Encrypted")
-		cfg.Logger.Printf("NOTICE: disclosure pending — tracked in #280.")
+	// Resolve the forensic disclosure configuration (ADR-0012): a disclosure
+	// policy (which actions disclose) plus the forensic public key (the
+	// encryption target). The two are coupled — a policy without a key has
+	// nothing to encrypt to, and a key without a policy never fires.
+	policy, err := pipeline.ParseDisclosurePolicy(cfg.ParameterDisclosure)
+	if err != nil {
+		return fmt.Errorf("parameter disclosure policy: %w", err)
 	}
 
-	// Load forensic public key if provided (ADR-0012 HPKE parameter encryption)
 	var forensicPublicKey []byte
 	if cfg.ForensicPublicKeyPath != "" {
-		var err error
 		forensicPublicKey, err = os.ReadFile(cfg.ForensicPublicKeyPath)
 		if err != nil {
 			return fmt.Errorf("load forensic public key from %s: %w", cfg.ForensicPublicKeyPath, err)
 		}
 		if len(forensicPublicKey) != 32 {
-			return fmt.Errorf("forensic public key must be 32 bytes, got %d from %s", len(forensicPublicKey), cfg.ForensicPublicKeyPath)
+			return fmt.Errorf("forensic public key must be 32 raw bytes, got %d from %s", len(forensicPublicKey), cfg.ForensicPublicKeyPath)
 		}
-		cfg.Logger.Printf("Using forensic public key from %s for HPKE parameter encryption", cfg.ForensicPublicKeyPath)
+	}
+
+	switch {
+	case policy.Enabled() && len(forensicPublicKey) == 0:
+		return fmt.Errorf("parameter disclosure %q requires a forensic public key (--forensic-public-key); without one there is nothing to encrypt to", cfg.ParameterDisclosure)
+	case policy.Enabled():
+		fp, _ := receipt.ForensicKeyFingerprint(forensicPublicKey)
+		cfg.Logger.Printf("Parameter disclosure ACTIVE: policy=%s, forensic key %s — matching parameters will be HPKE-encrypted to that key (recoverable only with the private key)", policy.String(), fp)
+	case len(forensicPublicKey) > 0:
+		cfg.Logger.Printf("NOTICE: a forensic public key is set but parameter disclosure policy is off; no parameters will be disclosed. Set --parameter-disclosure (true|high|<action-types>) to enable.")
 	}
 
 	pp := pipeline.New(state, ks, st, cfg.IssuerID)
 	pp.TraceLog = cfg.TraceLog
 	pp.ErrorLog = cfg.Logger.Printf
-	pp.ParameterDisclosure = cfg.ParameterDisclosure
+	pp.DisclosurePolicy = policy
 	pp.ForensicPublicKey = forensicPublicKey
 
 	// Always enable redaction with the built-in patterns. If the operator

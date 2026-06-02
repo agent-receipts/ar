@@ -170,7 +170,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	fs.StringVar(&cfg.ChainID, "chain-id", cfg.ChainID, "Chain id to write under (env: AGENTRECEIPTS_CHAIN_ID)")
 	fs.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	fs.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
-	fs.BoolVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "No-op as of v0.3.0 envelope migration (ADR-0012 amendment); plaintext-in-body shape removed. Encrypted disclosure pending in #280. (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
+	fs.StringVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "Which actions encrypt their parameters into parameters_disclosure (ADR-0012): false|true|high|<comma-separated action types>. Requires --forensic-public-key. (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
 	fs.BoolVar(&cfg.UnsafeSocketPath, "unsafe-socket-path", cfg.UnsafeSocketPath, "Permit a --socket/AGENTRECEIPTS_SOCKET path outside the per-platform safe set (logs a warning; does not override TCP rejection) (env: AGENTRECEIPTS_UNSAFE_SOCKET_PATH)")
 	fs.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults) (env: AGENTRECEIPTS_REDACT_PATTERNS)")
 	fs.DurationVar(&cfg.ShutdownDeadline, "shutdown-deadline", cfg.ShutdownDeadline, "Best-effort time budget for emitting interrupted-chain terminators on SIGTERM/SIGINT (cannot preempt in-progress SQLite I/O)")
@@ -351,11 +351,7 @@ func envOverlay(cfg *daemon.Config, getenv func(string) string) error {
 		cfg.VerificationMethodID = v
 	}
 	if v := getenv("AGENTRECEIPTS_PARAMETER_DISCLOSURE"); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return fmt.Errorf("invalid AGENTRECEIPTS_PARAMETER_DISCLOSURE %q: want a boolean (1/0, true/false)", v)
-		}
-		cfg.ParameterDisclosure = b
+		cfg.ParameterDisclosure = v
 	}
 	if v := getenv("AGENTRECEIPTS_UNSAFE_SOCKET_PATH"); v != "" {
 		b, err := strconv.ParseBool(v)
@@ -383,7 +379,7 @@ func printConfig(w io.Writer, cfg daemon.Config) {
 	fmt.Fprintf(w, "chain_id = %q\n", cfg.ChainID)
 	fmt.Fprintf(w, "issuer_id = %q\n", cfg.IssuerID)
 	fmt.Fprintf(w, "verification_method = %q\n", cfg.VerificationMethodID)
-	fmt.Fprintf(w, "parameter_disclosure = %t\n", cfg.ParameterDisclosure)
+	fmt.Fprintf(w, "parameter_disclosure = %q\n", cfg.ParameterDisclosure)
 	fmt.Fprintf(w, "redact_patterns = %q\n", cfg.RedactPatternsPath)
 	fmt.Fprintf(w, "unsafe_socket_path = %t\n", cfg.UnsafeSocketPath)
 	fmt.Fprintf(w, "shutdown_deadline = %q\n", cfg.ShutdownDeadline.String())

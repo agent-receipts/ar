@@ -176,11 +176,20 @@ func TestResolveConfig_BoolPrecedence(t *testing.T) {
 			t.Fatal("expected error for malformed AGENTRECEIPTS_UNSAFE_SOCKET_PATH, got nil")
 		}
 	})
-	t.Run("malformed parameter-disclosure env rejected", func(t *testing.T) {
+	t.Run("parameter-disclosure env is a free-form policy string", func(t *testing.T) {
+		// As of the ADR-0012 envelope wiring, parameter_disclosure is no longer a
+		// bool: it is a policy (false|true|high|<action-type list>). A non-keyword
+		// value is a valid single-entry allowlist, so it is accepted here and
+		// passed through verbatim; malformed policies (e.g. reserved keyword in a
+		// list) are rejected later in daemon.Run via ParseDisclosurePolicy.
 		path := writeConfig(t, "chain_id = \"x\"\n")
-		env := envMap(map[string]string{"AGENTRECEIPTS_PARAMETER_DISCLOSURE": "yep"})
-		if _, err := resolveConfig([]string{"--config", path}, env, io.Discard); err == nil {
-			t.Fatal("expected error for malformed AGENTRECEIPTS_PARAMETER_DISCLOSURE, got nil")
+		env := envMap(map[string]string{"AGENTRECEIPTS_PARAMETER_DISCLOSURE": "filesystem.file.delete"})
+		r, err := resolveConfig([]string{"--config", path}, env, io.Discard)
+		if err != nil {
+			t.Fatalf("resolveConfig: %v", err)
+		}
+		if r.cfg.ParameterDisclosure != "filesystem.file.delete" {
+			t.Errorf("ParameterDisclosure = %q, want %q", r.cfg.ParameterDisclosure, "filesystem.file.delete")
 		}
 	})
 }
@@ -282,7 +291,7 @@ func TestPrintConfig_OutputShape(t *testing.T) {
 	path := writeConfig(t, `
 socket = "/run/agentreceipts/p.sock"
 chain_id = "printed"
-parameter_disclosure = true
+parameter_disclosure = "high"
 `)
 	r, err := resolveConfig([]string{"--config", path, "--print-config"}, noEnv, io.Discard)
 	if err != nil {
@@ -297,7 +306,7 @@ parameter_disclosure = true
 	for _, want := range []string{
 		`socket = "/run/agentreceipts/p.sock"`,
 		`chain_id = "printed"`,
-		`parameter_disclosure = true`,
+		`parameter_disclosure = "high"`,
 		`db = `,
 		`key = `,
 		`shutdown_deadline = "200ms"`,
