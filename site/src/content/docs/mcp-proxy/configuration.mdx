@@ -204,3 +204,7 @@ mcp-proxy -name github -http 127.0.0.1:8082 ... /path/to/server
 `127.0.0.1:0` picks a random free port automatically — fine when the approver parses the stderr discovery event at startup.
 
 All proxy instances forward to the same `agent-receipts-daemon`, so every client's calls land in one unified, hash-chained receipt store. Point a proxy at a different daemon — and thus a separate audit trail — with `--socket` (or `AGENTRECEIPTS_SOCKET`); see [Daemon Setup](/getting-started/daemon-setup/).
+
+### `data directory … has mode 0750` warning at startup
+
+The proxy logs `[WARNING] data directory … has mode 0750 (group/other-accessible)` when the daemon's data directory (the signing key and `receipts.db`) is readable by group or other. It is **advisory, not fatal** — the proxy still starts and emits normally. To restrict the directory to your user, run `chmod 0700 "${XDG_DATA_HOME:-$HOME/.local/share}/agent-receipts"`. The check exists because that directory holds the signing key and receipt store, which should not be readable by other local accounts.
