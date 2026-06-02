@@ -84,11 +84,11 @@ func sampleFrame(t *testing.T) socket.Frame {
 // and non-POSIX platforms must leave both nil.
 func TestBuildPeerCred(t *testing.T) {
 	cases := []struct {
-		name     string
-		peer     socket.PeerCred
-		wantUID  *uint32
-		wantGID  *uint32
-		wantNil  bool
+		name    string
+		peer    socket.PeerCred
+		wantUID *uint32
+		wantGID *uint32
+		wantNil bool
 	}{
 		{
 			name:    "linux non-root",
@@ -1435,7 +1435,6 @@ func TestValidateFrame_RejectsPartialOperator(t *testing.T) {
 	}
 }
 
-
 // TestBuild_ForensicPublicKeyEncryptsParameters demonstrates HPKE parameter
 // encryption end-to-end via the daemon's Process API. When a forensic public
 // key is configured, the daemon encrypts tool input to that key and attaches
@@ -1551,5 +1550,75 @@ func TestBuild_ForensicPublicKeyEncryptsParameters(t *testing.T) {
 	}
 	if command != "rm -rf /tmp/old-report.pdf" {
 		t.Errorf("command: got %v, want rm -rf /tmp/old-report.pdf", command)
+	}
+}
+
+// TestProcess_EmitterDeclaredActionTypeDrivesRisk verifies the fix for
+// risk-based disclosure through the daemon: when an emitter declares a taxonomic
+// action_type, the daemon uses it as action.type and resolves risk from it, so a
+// "high" policy fires. Without the declaration, the synthetic channel.tool type
+// resolves to medium and "high" would not fire — proven by the negative case.
+func TestProcess_EmitterDeclaredActionTypeDrivesRisk(t *testing.T) {
+	fk, err := receipt.GenerateForensicKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol, err := ParseDisclosurePolicy("high")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(declaredType string) receipt.AgentReceipt {
+		ks := newTestKeySource(t)
+		st := newTestStore(t)
+		p := New(chain.New("chain-1"), ks, st, "did:agent-receipts-daemon:test")
+		p.ForensicPublicKey = fk.PublicKey
+		p.DisclosurePolicy = pol
+
+		body, err := json.Marshal(EmitterFrame{
+			Version: "1", TsEmit: "2026-05-03T00:00:00Z", SessionID: "s",
+			Channel: "sdk", Tool: EmitterTool{Name: "rm"},
+			ActionType: declaredType, // may be empty
+			Input:      json.RawMessage(`{"command":"rm -rf /tmp/x"}`),
+			Decision:   "allowed",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Process(socket.Frame{Payload: body}); err != nil {
+			t.Fatalf("Process: %v", err)
+		}
+		receipts, err := st.GetChain("chain-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return receipts[0]
+	}
+
+	// Declared high-risk taxonomic type → action.type is used, risk is high,
+	// disclosure fires.
+	r := run("filesystem.file.delete")
+	if r.CredentialSubject.Action.Type != "filesystem.file.delete" {
+		t.Errorf("action.type = %q, want filesystem.file.delete (emitter-declared)",
+			r.CredentialSubject.Action.Type)
+	}
+	if r.CredentialSubject.Action.RiskLevel != receipt.RiskHigh {
+		t.Errorf("risk = %q, want high", r.CredentialSubject.Action.RiskLevel)
+	}
+	if r.CredentialSubject.Action.ParametersDisclosure == nil {
+		t.Error("high-risk declared action must disclose under policy=high")
+	}
+
+	// No declared type → synthetic "sdk.rm" type resolves to medium, so "high"
+	// does NOT fire. This is the limitation the action_type field addresses.
+	r = run("")
+	if r.CredentialSubject.Action.Type != "sdk.rm" {
+		t.Errorf("action.type = %q, want synthetic sdk.rm", r.CredentialSubject.Action.Type)
+	}
+	if r.CredentialSubject.Action.RiskLevel == receipt.RiskHigh {
+		t.Error("synthetic type unexpectedly resolved to high risk")
+	}
+	if r.CredentialSubject.Action.ParametersDisclosure != nil {
+		t.Error("medium-risk action must not disclose under policy=high")
 	}
 }

@@ -85,6 +85,16 @@ type EmitterFrame struct {
 	SessionID      string          `json:"session_id"`
 	Channel        string          `json:"channel"`
 	Tool           EmitterTool     `json:"tool"`
+	// ActionType, when set, is the taxonomic action type the emitter has already
+	// resolved (e.g. "filesystem.file.delete"). The daemon uses it verbatim as
+	// action.type and resolves risk_level from it via the taxonomy. When empty,
+	// the daemon falls back to a synthetic "<channel>.<tool>" type that rarely
+	// matches the taxonomy (so risk defaults to medium). Emitters that know the
+	// real action type SHOULD set this — it is what makes risk-based controls
+	// (e.g. parameter-disclosure "high") effective. The daemon resolves risk
+	// itself rather than trusting an emitter-supplied risk, so an emitter cannot
+	// downgrade risk to evade disclosure.
+	ActionType     string          `json:"action_type,omitempty"`
 	Input          json.RawMessage `json:"input,omitempty"`
 	Output         json.RawMessage `json:"output,omitempty"`
 	Error          string          `json:"error,omitempty"`
@@ -482,9 +492,17 @@ func (p *Pipeline) buildAndSign(
 		status = receipt.StatusPending
 	}
 
-	actionType := f.Channel + "." + f.Tool.Name
-	if f.Tool.Server != "" {
-		actionType = f.Channel + "." + f.Tool.Server + "." + f.Tool.Name
+	// Prefer an emitter-declared taxonomic action type; it is what lets the
+	// daemon resolve a real risk level (and thus makes risk-based disclosure
+	// effective). Fall back to a synthetic "<channel>[.<server>].<tool>" type
+	// when the emitter does not declare one — that type rarely matches the
+	// taxonomy, so risk defaults to medium (see below).
+	actionType := f.ActionType
+	if actionType == "" {
+		actionType = f.Channel + "." + f.Tool.Name
+		if f.Tool.Server != "" {
+			actionType = f.Channel + "." + f.Tool.Server + "." + f.Tool.Name
+		}
 	}
 
 	// OS-attested peer credentials populate action.peer_credential — the
@@ -494,12 +512,12 @@ func (p *Pipeline) buildAndSign(
 	// (where the SDK has no privileged channel to attest peer identity).
 	peerCred := buildPeerCred(peer)
 
-	// Risk derives from the taxonomy. Daemon-constructed action types like
-	// "mcp_proxy.github.list_repos" do not match any built-in entry, so
-	// ResolveActionType falls back to UnknownAction (RiskMedium). That's the
-	// safer default than always emitting RiskLow — Phase 2 emitters that
-	// know the taxonomic action type can override it via the action.type
-	// field once the emitter SDKs land.
+	// Risk derives from the taxonomy. A synthetic fallback type like
+	// "mcp_proxy.github.list_repos" does not match any built-in entry, so
+	// ResolveActionType falls back to UnknownAction (RiskMedium) — a safer
+	// default than RiskLow. An emitter-declared action_type (above) that maps to
+	// a taxonomy entry yields its real risk, which is what makes risk-based
+	// disclosure ("high") fire correctly.
 	risk := taxonomy.ResolveActionType(actionType).RiskLevel
 
 	action := receipt.Action{
