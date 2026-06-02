@@ -27,7 +27,12 @@ CLI (`list`, `show`, `verify`). Install it on macOS or Linux — Windows is not
 supported yet:
 
 ```bash
+# macOS (Homebrew)
 brew install agent-receipts/tap/agent-receipts-daemon
+
+# Linux / from source (requires Go 1.26.1+) — builds the daemon and the agent-receipts CLI
+go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@latest
+go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@latest
 ```
 
 See [Daemon Setup](/getting-started/daemon-setup/) for other install methods,
