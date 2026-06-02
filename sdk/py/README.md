@@ -86,7 +86,7 @@ signs, and chains the receipt. By default `emit()` surfaces transport failure
 `EmitTransportError` rather than dropped silently, so start the daemon before
 your app. The call stays non-blocking (bounded by the dial + write timeout); construct the
 emitter as `DaemonEmitter(best_effort=True)` to opt into loss-tolerant emission
-(`emit()` then returns `None` on transport failure). `best_effort` is a
+(`emit()` swallows the error and returns `None` instead of raising). `best_effort` is a
 constructor argument, not an `emit()` argument.
 
 <!-- snippet-check: no-run -->

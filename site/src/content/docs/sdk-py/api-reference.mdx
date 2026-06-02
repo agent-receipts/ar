@@ -30,8 +30,10 @@ class DaemonEmitter:
 ```
 
 Connect to the daemon socket. With `socket_path=""` the emitter resolves
-`default_socket_path()` (the per-OS default, or `AGENTRECEIPTS_SOCKET` if set);
-pass an explicit path on platforms other than macOS/Linux. Supply `session_id`
+`default_socket_path()` (the per-OS default, or `AGENTRECEIPTS_SOCKET` if set).
+If neither yields a path — for example on Windows, or on macOS/Linux when `$HOME`
+is unset and `AGENTRECEIPTS_SOCKET` is not configured — the constructor raises
+`ValueError`; pass an explicit `socket_path` in those cases. Supply `session_id`
 to propagate the host's session id across frames — a UUID v4 is generated
 otherwise. By default a transport failure raises `EmitTransportError` (the emit
 failure contract, ADR-0025); pass `best_effort=True` to drop unreachable-daemon
@@ -56,7 +58,7 @@ def emit(
 Send one tool-call event. `channel` is your integration namespace and becomes the
 prefix of the stored action type (e.g. `my-app.filesystem.file.read`). `decision`
 is one of `"allowed"`, `"denied"`, or `"pending"`. `input` / `output` accept raw
-JSON (passed verbatim; the daemon hashes them). Returns `None` on success.
+JSON (passed verbatim; the daemon hashes them). Returns `None`.
 
 Raises `ValueError` for caller bugs (empty `channel` / `tool_name`, invalid
 `decision`, invalid JSON, oversized frame), `RuntimeError` if the emitter is
@@ -74,6 +76,16 @@ with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
         decision="allowed",
     )
 ```
+
+#### `close`
+
+```python
+def close(self) -> None
+```
+
+Release the underlying socket connection. Safe to call multiple times. After
+`close()`, any subsequent `emit()` call raises `RuntimeError`. The context
+manager calls `close()` automatically on exit.
 
 ### `EmitTransportError`
 
