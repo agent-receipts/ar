@@ -37,19 +37,22 @@ const (
 // ParseDisclosurePolicy parses an operator-supplied policy string into a
 // DisclosurePolicy. Accepted forms (case-insensitive for the keywords):
 //
-//   - "" / "false" / "off" → disclose nothing (default)
-//   - "true" / "all"       → disclose all actions
-//   - "high"               → disclose high- and critical-risk actions
-//   - comma-separated list → disclose only those action types
+//   - "" / "false" / "off" / "0" → disclose nothing (default)
+//   - "true" / "all" / "1"       → disclose all actions
+//   - "high"                      → disclose high- and critical-risk actions
+//   - comma-separated list        → disclose only those action types
 //     (e.g. "system.command.execute,filesystem.file.delete")
+//
+// "1" and "0" are accepted as legacy boolean spellings (previously the env var
+// was parsed with strconv.ParseBool) so existing configs upgrade cleanly.
 //
 // A list entry equal to one of the reserved keywords is rejected, so an operator
 // cannot accidentally smuggle "all" into an allowlist and disclose everything.
 func ParseDisclosurePolicy(s string) (DisclosurePolicy, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "false", "off":
+	case "", "false", "off", "0":
 		return DisclosurePolicy{mode: disclosureOff}, nil
-	case "true", "all":
+	case "true", "all", "1":
 		return DisclosurePolicy{mode: disclosureAll}, nil
 	case "high":
 		return DisclosurePolicy{mode: disclosureHigh}, nil
@@ -63,7 +66,7 @@ func ParseDisclosurePolicy(s string) (DisclosurePolicy, error) {
 			return DisclosurePolicy{}, fmt.Errorf("disclosure policy %q: empty action type in list", s)
 		}
 		switch strings.ToLower(tok) {
-		case "true", "false", "all", "off", "high":
+		case "true", "false", "all", "off", "high", "0", "1":
 			return DisclosurePolicy{}, fmt.Errorf(
 				"disclosure policy %q: reserved keyword %q cannot appear in an action-type allowlist", s, tok)
 		}

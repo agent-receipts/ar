@@ -88,9 +88,30 @@ func TestParseDisclosurePolicy(t *testing.T) {
 				want       bool
 			}{{"a", receipt.RiskHigh, true}},
 		},
+		{
+			in: "1", // legacy boolean: strconv.ParseBool("1") used to mean true
+			probes: []struct {
+				actionType string
+				risk       receipt.RiskLevel
+				want       bool
+			}{
+				{"system.command.execute", receipt.RiskCritical, true},
+				{"filesystem.file.read", receipt.RiskLow, true},
+			},
+		},
+		{
+			in: "0", // legacy boolean: strconv.ParseBool("0") used to mean false
+			probes: []struct {
+				actionType string
+				risk       receipt.RiskLevel
+				want       bool
+			}{{"anything", receipt.RiskCritical, false}},
+		},
 		{in: "all,system.command.execute", wantErr: true}, // reserved keyword in list
 		{in: "true,foo", wantErr: true},                   // reserved keyword in list
 		{in: "foo,,bar", wantErr: true},                   // empty entry
+		{in: "1,system.command.execute", wantErr: true},   // reserved legacy keyword in list
+		{in: "0,system.command.execute", wantErr: true},   // reserved legacy keyword in list
 	}
 
 	for _, tc := range cases {
@@ -121,9 +142,11 @@ func TestDisclosurePolicyEnabled(t *testing.T) {
 		"":      false,
 		"false": false,
 		"off":   false,
+		"0":     false,
 		"true":  true,
 		"all":   true,
 		"high":  true,
+		"1":     true,
 		"system.command.execute": true,
 	}
 	for in, want := range cases {
