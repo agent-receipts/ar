@@ -85,6 +85,8 @@ All configuration is optional. Defaults are shown below:
 
 By default, action parameters are hashed but not stored in plaintext. Enable `parameterDisclosure` to selectively disclose specific fields per action type — useful for auditing high-risk commands without exposing sensitive data on lower-risk calls.
 
+For the protocol-level model behind this setting — the HPKE envelope, the two-key separation, forensic recovery, and the threat/GDPR considerations — see [Parameter Disclosure](/specification/parameter-disclosure/).
+
 ```jsonc
 {
   "plugins": {

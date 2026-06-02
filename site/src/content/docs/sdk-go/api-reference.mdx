@@ -235,6 +235,151 @@ const (
 )
 ```
 
+### Parameter disclosure (HPKE)
+
+{/* snippet-check: skip */}
+```go
+import receipt "github.com/agent-receipts/ar/sdk/go/receipt"
+```
+
+HPKE-based envelope for encrypting tool-call parameters into a receipt's
+`parameters_disclosure` field (ADR-0012, ciphersuite
+`hpke-x25519-hkdf-sha256-aes-256-gcm`). The emitter holds only the forensic
+public key and never sees the plaintext again after encryption; the private key
+stays offline. For the threat model and operator configuration see the
+[Parameter Disclosure specification](/specification/parameter-disclosure/).
+For the envelope JSON shape see the [schema reference](/specification/agent-receipt-schema/#parameters_disclosure-envelope-hpke).
+
+This is the SDK-direct path. When emitting through the daemon the operator
+provides the public key in daemon config; the daemon calls these helpers
+automatically (ADR-0012 §"Operator config").
+
+#### `GenerateForensicKeyPair`
+
+```go
+func GenerateForensicKeyPair() (ForensicKeyPair, error)
+```
+
+Generate an X25519 key pair for forensic disclosure. `PublicKey` (32 raw bytes)
+is shared with emitters so they can encrypt disclosures. `PrivateKey` (32 raw
+bytes) must be kept offline — separate from the Ed25519 signing key (ADR-0001 /
+ADR-0012). Returns an error if the system CSPRNG fails.
+
+#### `ForensicKeyFingerprint`
+
+```go
+func ForensicKeyFingerprint(publicKey []byte) (string, error)
+```
+
+Return the canonical fingerprint of an X25519 forensic public key in
+`sha256:<lowercase hex>` form (ADR-0015): SHA-256 over the raw 32-byte key.
+This is the value the daemon writes as the recipient `kid` in a
+`DisclosureEnvelope`, and the value a forensic tool recomputes from a held key
+to match receipts. `publicKey` must be the raw 32-byte X25519 key (not
+SPKI/PEM). Returns an error if `len(publicKey) != 32`.
+
+**Go SDK only.** The TS and Py SDKs do not yet export this helper.
+
+#### `ForensicPublicFromPrivate`
+
+```go
+func ForensicPublicFromPrivate(privateKey []byte) ([]byte, error)
+```
+
+Derive the X25519 public key (32 raw bytes) from a 32-byte forensic private
+key. A forensic responder typically holds only the private key; this function
+lets it compute the matching `ForensicKeyFingerprint` and locate receipts
+encrypted to that key without a separate key registry. Returns an error if
+`len(privateKey) != 32` or the key bytes are invalid.
+
+**Go SDK only.** The TS and Py SDKs do not yet export this helper.
+
+#### `EncryptDisclosure`
+
+```go
+func EncryptDisclosure(params map[string]any, recipientPublicKey []byte, kid string) (*DisclosureEnvelope, error)
+```
+
+Encrypt `params` as a v1 HPKE disclosure envelope. `params` is
+RFC 8785 JCS-canonicalized before encryption so all SDKs produce the same
+ciphertext for the same parameters object. `recipientPublicKey` must be 32 raw
+bytes; `kid` is the recipient key identifier (a `sha256:<hex>` fingerprint from
+`ForensicKeyFingerprint`, or a `did:key` DID URL). Returns an error if any
+argument is invalid or if the system CSPRNG fails.
+
+#### `DecryptDisclosure`
+
+```go
+func DecryptDisclosure(env *DisclosureEnvelope, recipientPrivateKey []byte) (map[string]any, error)
+```
+
+Recover the plaintext parameters from a v1 HPKE disclosure envelope.
+`recipientPrivateKey` must be 32 raw bytes. Returns an error if the envelope
+version or algorithm is unsupported, if the key or ciphertext is invalid, or if
+AEAD authentication fails.
+
+#### Usage example
+
+{/* snippet-check: skip */}
+```go
+// Key management (run once offline, store private key securely)
+kp, err := receipt.GenerateForensicKeyPair()
+fingerprint, err := receipt.ForensicKeyFingerprint(kp.PublicKey)
+// fingerprint == "sha256:..." — use as kid and in daemon config
+
+// Emitter side (holds only the public key)
+env, err := receipt.EncryptDisclosure(
+    map[string]any{"path": "/etc/passwd", "mode": "r"},
+    kp.PublicKey,
+    fingerprint,
+)
+// embed env in action.ParametersDisclosure, then sign the receipt
+
+// Forensic / audit side (holds the offline private key)
+params, err := receipt.DecryptDisclosure(env, kp.PrivateKey)
+// params == map[string]any{"mode": "r", "path": "/etc/passwd"}
+
+// Deriving a public key from only the private key (forensic tooling)
+pub, err := receipt.ForensicPublicFromPrivate(kp.PrivateKey)
+fp2, err := receipt.ForensicKeyFingerprint(pub)
+// fp2 == fingerprint
+```
+
+### Types (disclosure)
+
+#### `ForensicKeyPair`
+
+```go
+type ForensicKeyPair struct {
+    PublicKey  []byte // 32 bytes; share with emitters
+    PrivateKey []byte // 32 bytes; keep offline
+}
+```
+
+Raw X25519 key bytes. Unlike `KeyPair` (Ed25519, PEM), these are raw bytes
+because X25519 has no widespread PKCS8 PEM convention and raw bytes compose
+naturally with HPKE library APIs.
+
+#### `DisclosureEnvelope`
+
+```go
+type DisclosureEnvelope struct {
+    V          string                `json:"v"`
+    Alg        string                `json:"alg"`
+    Recipients []DisclosureRecipient `json:"recipients"`
+    CT         string                `json:"ct"`
+}
+
+type DisclosureRecipient struct {
+    KID string `json:"kid"`
+    Enc string `json:"enc"` // unpadded base64url, 43 chars for X25519
+}
+```
+
+v1 HPKE envelope stored in `action.parameters_disclosure`. `CT` is the
+base64url-encoded AEAD ciphertext. Field names in `DisclosureRecipient` follow
+RFC 9180 §4.1 (`enc`, not `encap`).
+
 ---
 
 ## Package `taxonomy`
