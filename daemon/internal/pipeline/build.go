@@ -123,22 +123,18 @@ type Pipeline struct {
 	TraceLog io.Writer            // Optional trace log for testing; nil = silent
 	ErrorLog func(string, ...any) // Optional error logger; nil = silent
 
-	// ParameterDisclosure is the historical opt-in for plaintext tool
-	// input/output in the legacy string-map shape of parameters_disclosure.
-	// As of the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18) that
-	// shape is no longer representable — the receipt type only accepts an
-	// HPKE-encrypted *DisclosureEnvelope. Until the daemon learns to encrypt
-	// and attach an envelope itself (tracked under #280), this field is a
-	// no-op preserved so the CLI/env knob does not vanish silently on operators.
-	ParameterDisclosure bool
-
 	// ForensicPublicKey is the X25519 public key used to encrypt action
 	// parameters with HPKE (ADR-0012 envelope v1). 32 bytes; nil/empty means
-	// parameters are hashed only (the default). When set, incoming tool
-	// parameters are encrypted before signing and attached as
-	// action.parameters_disclosure. The private key is held offline by the
-	// forensic responder.
+	// parameters are hashed only (the default). When set, the parameters of
+	// actions elected by DisclosurePolicy are encrypted before signing and
+	// attached as action.parameters_disclosure. The private key is held offline
+	// by the forensic responder.
 	ForensicPublicKey []byte
+
+	// DisclosurePolicy governs which actions disclose their parameters when a
+	// ForensicPublicKey is configured (false | true | "high" | string[], per
+	// ADR-0012). The zero value discloses nothing.
+	DisclosurePolicy DisclosurePolicy
 
 	// Redactor is applied to text fields before they are persisted in the
 	// receipt body. Today that means outcome.error only; input and output are
@@ -424,6 +420,35 @@ func canonicalSHA256(raw json.RawMessage) (string, error) {
 	return receipt.SHA256Hash(canonical), nil
 }
 
+// encryptDisclosure encrypts the emitter input into an HPKE disclosure envelope
+// addressed to the configured forensic public key (ADR-0012). The recipient kid
+// is the key's canonical fingerprint (ADR-0015), so a forensic tool holding the
+// matching private key can locate this receipt without a key registry.
+//
+// It returns nil on any failure (non-object input, HPKE error) after logging,
+// so the caller falls back to a hash-only receipt rather than dropping the
+// event. The hash is computed independently by the caller and is unaffected.
+func (p *Pipeline) encryptDisclosure(input json.RawMessage) *receipt.DisclosureEnvelope {
+	var params map[string]any
+	if err := json.Unmarshal(input, &params); err != nil {
+		// Disclosure requires a JSON object (HPKE plaintext is the canonical
+		// object); arrays/primitives cannot be disclosed. Hash-only fallback.
+		p.logError("disclosure skipped (input is not a JSON object): %v", err)
+		return nil
+	}
+	kid, err := receipt.ForensicKeyFingerprint(p.ForensicPublicKey)
+	if err != nil {
+		p.logError("disclosure skipped (forensic key fingerprint failed): %v", err)
+		return nil
+	}
+	env, err := receipt.EncryptDisclosure(params, p.ForensicPublicKey, kid)
+	if err != nil {
+		p.logError("disclosure skipped (encryption failed): %v", err)
+		return nil
+	}
+	return env
+}
+
 func (p *Pipeline) buildAndSign(
 	f *EmitterFrame,
 	peer socket.PeerCred,
@@ -492,22 +517,23 @@ func (p *Pipeline) buildAndSign(
 		}
 		action.ParametersHash = hash
 
-		// If forensic public key is configured, encrypt the parameters (ADR-0012).
-		// The hash commits to the original canonical bytes; the encrypted
-		// envelope is additional metadata for forensic recovery.
-		if len(p.ForensicPublicKey) == 32 {
-			var params map[string]any
-			if err := json.Unmarshal(f.Input, &params); err != nil {
-				return receipt.AgentReceipt{}, "", fmt.Errorf("unmarshal input for encryption: %w", err)
+		// Forensic disclosure (ADR-0012): when a forensic public key is
+		// configured and the policy elects this action, encrypt the parameters
+		// to that key and attach the HPKE envelope. The hash above always
+		// commits to the original canonical bytes, so tamper-evidence does not
+		// depend on disclosure; the envelope is additive, recoverable only by
+		// the holder of the matching private key.
+		//
+		// Encryption is best-effort: any failure (bad key, non-object input,
+		// HPKE error) falls back to hash-only for this receipt and logs, rather
+		// than dropping the event. A privacy-preserving hash-only receipt keeps
+		// the chain gap-free; refusing the event would punch a hole in the audit
+		// trail, which is the worse outcome for an audit system.
+		if len(p.ForensicPublicKey) == 32 &&
+			p.DisclosurePolicy.ShouldDisclose(actionType, risk) {
+			if env := p.encryptDisclosure(f.Input); env != nil {
+				action.ParametersDisclosure = env
 			}
-			// Use the issuer ID as the key identifier (kid). In future this could
-			// be made operator-configurable per-receipt.
-			kid := "issuer:" + p.IssuerID
-			env, err := receipt.EncryptDisclosure(params, p.ForensicPublicKey, kid)
-			if err != nil {
-				return receipt.AgentReceipt{}, "", fmt.Errorf("encrypt parameters: %w", err)
-			}
-			action.ParametersDisclosure = env
 		}
 	}
 

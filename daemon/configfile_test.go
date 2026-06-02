@@ -40,7 +40,7 @@ public_key = "/data/signing.key.pub"
 chain_id = "prod"
 issuer_id = "did:agent-receipts-daemon:host"
 verification_method = "did:agent-receipts-daemon:host#k1"
-parameter_disclosure = true
+parameter_disclosure = "high"
 redact_patterns = "/etc/agent-receipts/redact.yaml"
 unsafe_socket_path = true
 shutdown_deadline = "500ms"
@@ -68,7 +68,7 @@ shutdown_deadline = "500ms"
 	if fc.ChainID == nil || *fc.ChainID != "prod" {
 		t.Errorf("chain_id = %v", fc.ChainID)
 	}
-	if fc.ParameterDisclosure == nil || !*fc.ParameterDisclosure {
+	if fc.ParameterDisclosure == nil || *fc.ParameterDisclosure != "high" {
 		t.Errorf("parameter_disclosure = %v", fc.ParameterDisclosure)
 	}
 	if fc.UnsafeSocketPath == nil || !*fc.UnsafeSocketPath {
