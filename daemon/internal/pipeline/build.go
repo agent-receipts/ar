@@ -132,6 +132,14 @@ type Pipeline struct {
 	// no-op preserved so the CLI/env knob does not vanish silently on operators.
 	ParameterDisclosure bool
 
+	// ForensicPublicKey is the X25519 public key used to encrypt action
+	// parameters with HPKE (ADR-0012 envelope v1). 32 bytes; nil/empty means
+	// parameters are hashed only (the default). When set, incoming tool
+	// parameters are encrypted before signing and attached as
+	// action.parameters_disclosure. The private key is held offline by the
+	// forensic responder.
+	ForensicPublicKey []byte
+
 	// Redactor is applied to text fields before they are persisted in the
 	// receipt body. Today that means outcome.error only; input and output are
 	// never stored as raw text — only their SHA-256 hashes go into
@@ -483,15 +491,25 @@ func (p *Pipeline) buildAndSign(
 			return receipt.AgentReceipt{}, "", fmt.Errorf("hash input: %w", err)
 		}
 		action.ParametersHash = hash
-	}
 
-	// NOTE: the legacy "--parameter-disclosure" flag (`p.ParameterDisclosure`)
-	// is currently a no-op. It used to write plaintext input/output into a
-	// string-map shape of action.parameters_disclosure; that shape was removed
-	// by the v0.3.0 envelope migration (ADR-0012 amendment 2026-05-18). The
-	// field is now *DisclosureEnvelope and only accepts the HPKE-encrypted
-	// envelope. Daemon-side encrypt-then-attach is tracked in #280. The
-	// outcome.error redaction path below is independent of the flag.
+		// If forensic public key is configured, encrypt the parameters (ADR-0012).
+		// The hash commits to the original canonical bytes; the encrypted
+		// envelope is additional metadata for forensic recovery.
+		if len(p.ForensicPublicKey) == 32 {
+			var params map[string]any
+			if err := json.Unmarshal(f.Input, &params); err != nil {
+				return receipt.AgentReceipt{}, "", fmt.Errorf("unmarshal input for encryption: %w", err)
+			}
+			// Use the issuer ID as the key identifier (kid). In future this could
+			// be made operator-configurable per-receipt.
+			kid := "issuer:" + p.IssuerID
+			env, err := receipt.EncryptDisclosure(params, p.ForensicPublicKey, kid)
+			if err != nil {
+				return receipt.AgentReceipt{}, "", fmt.Errorf("encrypt parameters: %w", err)
+			}
+			action.ParametersDisclosure = env
+		}
+	}
 
 	// Redaction MUST happen AFTER hashing. The hash commits to the raw
 	// canonical bytes; redaction only sanitises the human-readable string
