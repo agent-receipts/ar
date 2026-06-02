@@ -1,19 +1,27 @@
 # Doc e2e personas
 
 The adopter journeys the documentation fleet walks. Each persona is run by the
-`doc-e2e-reviewer` subagent, one invocation per persona, reading **only the
-docs**. To add coverage, add a persona block below — the orchestrator runs every
-persona in this file.
+`doc-e2e-runner` subagent, one invocation per persona. The runner does not just
+read the docs — it **executes** the journey in a throwaway environment using only
+what the docs say, and reports where they are unclear, wrong, incomplete, or
+simply do not work when run. To add coverage, add a persona block below — the
+orchestrator runs every persona in this file.
 
-Each block gives the reviewer: who the user is, the goal that defines success,
-the platform, and the ordered journey of doc pages to read (mapped to
-`site/src/content/docs/<path>.mdx`). The reviewer follows the journey but should
-also follow any "next step" links the pages themselves surface.
+Each block gives the runner: who the user is, the goal that defines success, a
+platform preference, and the ordered journey of doc pages (mapped to
+`site/src/content/docs/<path>.mdx`). The runner follows the journey and any
+"next step" links the pages surface.
+
+**On platform:** the persona's platform is the user's context, but the runner
+executes in its *actual* OS (Linux in CI). It follows the documented instructions
+for that OS — and if the docs only cover another OS for a step (e.g. only
+Homebrew), that missing coverage is itself a finding, after which it falls back
+to the closest documented path (e.g. "from source") to keep the journey going.
 
 ---
 
-## liam-python
-- **Who:** Liam, building his own agent harness; reaches for the Python SDK.
+## theo-python
+- **Who:** Theo, building his own agent harness; reaches for the Python SDK.
 - **Platform:** macOS.
 - **Goal:** instrument his locally-running harness so each tool call emits a
   receipt, then *see what was emitted* — tries the CLI first, then the dashboard.
