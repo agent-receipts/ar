@@ -89,6 +89,10 @@ export default defineConfig({
               label: "Receipt Chain Verification",
               slug: "specification/receipt-chain-verification",
             },
+            {
+              label: "Parameter Disclosure",
+              slug: "specification/parameter-disclosure",
+            },
           ],
         },
         {
