@@ -7,14 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-02
+
 ### Added
 
+- **`agent-receipts verify-event`** ([#659](https://github.com/agent-receipts/ar/pull/659), closes [#540](https://github.com/agent-receipts/ar/issues/540)) — read-only CLI subcommand for end-to-end pipeline-provenance evidence. Where `verify` answers "is this chain internally consistent?", `verify-event` answers "was this receipt produced by the documented emitter→daemon→chain pipeline, or written to the store by some other path?" (ADR-0010 § Permissions and trust). Resolves receipts by `--id`, `--chain-head`, or `--since` window and runs six checks per receipt: signature, hash linkage, peer-credential presence, emitter-identity allowlist (warns, never fails), schema-version compatibility, and sequence contiguity. Exit `0` verified / `1` unverified / `2` usage. `--json` for CI. Safe to run against a live daemon's DB or a forensic snapshot — never emits.
 - **TOML config file support** ([#441](https://github.com/agent-receipts/ar/issues/441)) — the daemon now reads a TOML config file, by default `$XDG_DATA_HOME/agent-receipts/daemon.toml` (falling back to `~/.local/share/agent-receipts/daemon.toml`), co-located with `receipts.db` and the signing key. Override the path with `--config` or `AGENTRECEIPTS_CONFIG`. Keys mirror the flag names (dashes → underscores): `socket`, `db`, `key`, `public_key`, `chain_id`, `issuer_id`, `verification_method`, `parameter_disclosure`, `redact_patterns`, `unsafe_socket_path`, `shutdown_deadline`. Precedence is **file < env < flags** — the file is the lowest-priority layer, so an absent key never clobbers an env var or flag. A missing default-path file is tolerated; a missing `--config` path, malformed TOML, or an unknown key is rejected rather than silently degrading. New `--print-config` prints the fully resolved config (paths only — never key material) in the same shape, so it doubles as a starting `daemon.toml`.
 - **`agent-receipts doctor`** ([#539](https://github.com/agent-receipts/ar/issues/539)) — read CLI subcommand that diagnoses the whole pipeline (emitter → socket → daemon → SQLite → verify) end-to-end and reports an actionable per-step result. Eight checks: daemon reachability, socket presence/mode, emitter-vs-daemon dial-path agreement, DB permissions (`0640` per ADR-0010 § Read interface), schema readability + public-key fingerprint, OS peer-credential capability, chain-head verification (surfacing the verifier's `unknown` status as a warning per [#475](https://github.com/agent-receipts/ar/issues/475)), and a load-bearing **round-trip**: a synthetic event fired through the real socket must land in the DB with a fresh peer credential matching the doctor process. `--json` for CI, `--warn-as-error` for stricter gates, `--no-roundtrip` to skip writing a synthetic event. Exit `0` healthy / `1` unhealthy / `2` usage. The synthetic event is deliberately visible in the chain (channel `doctor`, tool `agent-receipts-doctor.roundtrip`, recorded as `action.type` `doctor.agent-receipts-doctor.roundtrip` — a low-risk diagnostic self-check operators can filter on).
 
 ### Changed
 
 - **Boolean environment variables now parse via `strconv.ParseBool`** ([#441](https://github.com/agent-receipts/ar/issues/441)) — `AGENTRECEIPTS_PARAMETER_DISCLOSURE` and the new `AGENTRECEIPTS_UNSAFE_SOCKET_PATH` previously treated only the literal `1` as true and silently ignored everything else. They now accept the full `strconv.ParseBool` set (`1`/`0`, `t`/`f`, `true`/`false`, `TRUE`/`FALSE`, …) and **reject** unparseable garbage with a startup error instead of degrading to false. Operators upgrading should know: values like `true`/`false` now take effect as expected, a previously-ignored non-`1` truthy value (e.g. `yes`) will now error rather than silently being treated as false, and `AGENTRECEIPTS_PARAMETER_DISCLOSURE=true` is now honoured.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.14.0`.
 
 ## [0.13.0] - 2026-05-24
 
