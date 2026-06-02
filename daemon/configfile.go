@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -26,11 +27,57 @@ type FileConfig struct {
 	ChainID             *string `toml:"chain_id"`
 	IssuerID            *string `toml:"issuer_id"`
 	VerificationMethod  *string `toml:"verification_method"`
-	ParameterDisclosure *string `toml:"parameter_disclosure"`
-	RedactPatterns      *string `toml:"redact_patterns"`
-	UnsafeSocketPath    *bool   `toml:"unsafe_socket_path"`
+	ParameterDisclosure *DisclosureConfig `toml:"parameter_disclosure"`
+	RedactPatterns      *string           `toml:"redact_patterns"`
+	UnsafeSocketPath    *bool             `toml:"unsafe_socket_path"`
 	// ShutdownDeadline accepts a Go duration string, e.g. "200ms" or "1s".
 	ShutdownDeadline *Duration `toml:"shutdown_deadline"`
+}
+
+// DisclosureConfig is the parsed `parameter_disclosure` config-file value. It
+// normalises three accepted TOML shapes into the policy string consumed by
+// pipeline.ParseDisclosurePolicy:
+//
+//   - boolean: true → "true", false → "false". Preserves backwards
+//     compatibility with configs (and the documented default) written when
+//     parameter_disclosure was a bool, instead of failing to decode.
+//   - string: a policy keyword ("false"/"true"/"high") or a comma-separated
+//     action-type allowlist, used verbatim.
+//   - array of strings: an action-type allowlist, joined with commas — the
+//     natural TOML/JSON spelling of the list form.
+//
+// The flag and environment-variable layers only accept the string spelling
+// (they have no array type); the array form is a TOML convenience.
+type DisclosureConfig struct {
+	Value string
+}
+
+// UnmarshalTOML implements toml.Unmarshaler so the parameter_disclosure key can
+// be a boolean, a string, or an array of strings.
+func (d *DisclosureConfig) UnmarshalTOML(v any) error {
+	switch x := v.(type) {
+	case bool:
+		if x {
+			d.Value = "true"
+		} else {
+			d.Value = "false"
+		}
+	case string:
+		d.Value = x
+	case []any:
+		parts := make([]string, 0, len(x))
+		for _, e := range x {
+			s, ok := e.(string)
+			if !ok {
+				return fmt.Errorf("parameter_disclosure array entries must be strings, got %T", e)
+			}
+			parts = append(parts, s)
+		}
+		d.Value = strings.Join(parts, ",")
+	default:
+		return fmt.Errorf("parameter_disclosure must be a boolean, string, or array of strings, got %T", v)
+	}
+	return nil
 }
 
 // Duration wraps time.Duration so it decodes from a TOML string such as

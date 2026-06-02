@@ -68,7 +68,7 @@ shutdown_deadline = "500ms"
 	if fc.ChainID == nil || *fc.ChainID != "prod" {
 		t.Errorf("chain_id = %v", fc.ChainID)
 	}
-	if fc.ParameterDisclosure == nil || *fc.ParameterDisclosure != "high" {
+	if fc.ParameterDisclosure == nil || fc.ParameterDisclosure.Value != "high" {
 		t.Errorf("parameter_disclosure = %v", fc.ParameterDisclosure)
 	}
 	if fc.UnsafeSocketPath == nil || !*fc.UnsafeSocketPath {
@@ -171,5 +171,55 @@ func TestLoadConfigFile_EmptyPathIsError(t *testing.T) {
 	}
 	if _, err := LoadConfigFile("", false); err != nil && errors.Is(err, os.ErrNotExist) {
 		t.Fatal("empty-path error should not be a fs.ErrNotExist")
+	}
+}
+
+// TestLoadConfigFile_ParameterDisclosureShapes verifies the parameter_disclosure
+// key accepts a boolean (backwards compatibility with the pre-policy bool flag
+// and the documented `= false` default), a string policy, and an array of
+// action types (the natural TOML spelling of the allowlist) — all normalised to
+// the policy string consumed by ParseDisclosurePolicy.
+func TestLoadConfigFile_ParameterDisclosureShapes(t *testing.T) {
+	cases := []struct {
+		name string
+		toml string
+		want string
+	}{
+		{"bool false (legacy default)", `parameter_disclosure = false`, "false"},
+		{"bool true (legacy)", `parameter_disclosure = true`, "true"},
+		{"string keyword", `parameter_disclosure = "high"`, "high"},
+		{"string allowlist", `parameter_disclosure = "a.b,c.d"`, "a.b,c.d"},
+		{"array allowlist", `parameter_disclosure = ["a.b", "c.d"]`, "a.b,c.d"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "daemon.toml")
+			if err := os.WriteFile(path, []byte(tc.toml+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			fc, err := LoadConfigFile(path, true)
+			if err != nil {
+				t.Fatalf("LoadConfigFile: %v", err)
+			}
+			if fc.ParameterDisclosure == nil {
+				t.Fatal("parameter_disclosure decoded as nil")
+			}
+			if fc.ParameterDisclosure.Value != tc.want {
+				t.Errorf("Value = %q, want %q", fc.ParameterDisclosure.Value, tc.want)
+			}
+		})
+	}
+}
+
+// TestLoadConfigFile_ParameterDisclosureRejectsNonStringArray ensures a
+// malformed array (non-string entries) is rejected rather than silently
+// mishandled.
+func TestLoadConfigFile_ParameterDisclosureRejectsNonStringArray(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daemon.toml")
+	if err := os.WriteFile(path, []byte("parameter_disclosure = [1, 2]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfigFile(path, true); err == nil {
+		t.Fatal("expected error for non-string array entries")
 	}
 }
