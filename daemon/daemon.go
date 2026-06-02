@@ -50,6 +50,14 @@ type Config struct {
 	// the daemon's signing surface. Defaults to KeyPath + ".pub" when empty.
 	PublicKeyPath string
 
+	// ForensicPublicKeyPath is the path to the X25519 forensic public key
+	// (32 raw bytes) used to encrypt action parameters (ADR-0012, HPKE envelope).
+	// When set, incoming tool parameters are encrypted before signing and
+	// attached as action.parameters_disclosure. When empty, parameters are
+	// hashed only (the default, privacy-preserving). The private key is held
+	// offline by the forensic responder. Set from --forensic-public-key.
+	ForensicPublicKeyPath string
+
 	// ChainID is the chain id all incoming frames are written under. Phase 1
 	// supports one chain per daemon process.
 	ChainID string
@@ -386,10 +394,25 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.Logger.Printf("NOTICE: disclosure pending — tracked in #280.")
 	}
 
+	// Load forensic public key if provided (ADR-0012 HPKE parameter encryption)
+	var forensicPublicKey []byte
+	if cfg.ForensicPublicKeyPath != "" {
+		var err error
+		forensicPublicKey, err = os.ReadFile(cfg.ForensicPublicKeyPath)
+		if err != nil {
+			return fmt.Errorf("load forensic public key from %s: %w", cfg.ForensicPublicKeyPath, err)
+		}
+		if len(forensicPublicKey) != 32 {
+			return fmt.Errorf("forensic public key must be 32 bytes, got %d from %s", len(forensicPublicKey), cfg.ForensicPublicKeyPath)
+		}
+		cfg.Logger.Printf("Using forensic public key from %s for HPKE parameter encryption", cfg.ForensicPublicKeyPath)
+	}
+
 	pp := pipeline.New(state, ks, st, cfg.IssuerID)
 	pp.TraceLog = cfg.TraceLog
 	pp.ErrorLog = cfg.Logger.Printf
 	pp.ParameterDisclosure = cfg.ParameterDisclosure
+	pp.ForensicPublicKey = forensicPublicKey
 
 	// Always enable redaction with the built-in patterns. If the operator
 	// supplied a patterns file, load and merge the custom patterns.

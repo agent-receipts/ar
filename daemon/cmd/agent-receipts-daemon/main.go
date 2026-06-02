@@ -166,6 +166,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	fs.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	fs.StringVar(&cfg.KeyPath, "key", cfg.KeyPath, "Ed25519 PEM private key path, mode 0600 (env: AGENTRECEIPTS_KEY)")
 	fs.StringVar(&cfg.PublicKeyPath, "public-key", cfg.PublicKeyPath, "Path to publish the SPKI public key as PEM, mode 0644 (default: <--key>.pub) (env: AGENTRECEIPTS_PUBLIC_KEY)")
+	fs.StringVar(&cfg.ForensicPublicKeyPath, "forensic-public-key", cfg.ForensicPublicKeyPath, "Path to the X25519 forensic public key (32 raw bytes) for HPKE parameter encryption (ADR-0012). When set, tool parameters are encrypted before signing (env: AGENTRECEIPTS_FORENSIC_PUBLIC_KEY)")
 	fs.StringVar(&cfg.ChainID, "chain-id", cfg.ChainID, "Chain id to write under (env: AGENTRECEIPTS_CHAIN_ID)")
 	fs.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	fs.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
@@ -291,6 +292,9 @@ func applyFileConfig(cfg *daemon.Config, fc *daemon.FileConfig) {
 	if fc.PublicKey != nil {
 		cfg.PublicKeyPath = *fc.PublicKey
 	}
+	if fc.ForensicPublicKey != nil {
+		cfg.ForensicPublicKeyPath = *fc.ForensicPublicKey
+	}
 	if fc.ChainID != nil {
 		cfg.ChainID = *fc.ChainID
 	}
@@ -334,6 +338,9 @@ func envOverlay(cfg *daemon.Config, getenv func(string) string) error {
 	if v := getenv("AGENTRECEIPTS_PUBLIC_KEY"); v != "" {
 		cfg.PublicKeyPath = v
 	}
+	if v := getenv("AGENTRECEIPTS_FORENSIC_PUBLIC_KEY"); v != "" {
+		cfg.ForensicPublicKeyPath = v
+	}
 	if v := getenv("AGENTRECEIPTS_CHAIN_ID"); v != "" {
 		cfg.ChainID = v
 	}
@@ -372,6 +379,7 @@ func printConfig(w io.Writer, cfg daemon.Config) {
 	fmt.Fprintf(w, "db = %q\n", cfg.DBPath)
 	fmt.Fprintf(w, "key = %q\n", cfg.KeyPath)
 	fmt.Fprintf(w, "public_key = %q\n", cfg.PublicKeyPath)
+	fmt.Fprintf(w, "forensic_public_key = %q\n", cfg.ForensicPublicKeyPath)
 	fmt.Fprintf(w, "chain_id = %q\n", cfg.ChainID)
 	fmt.Fprintf(w, "issuer_id = %q\n", cfg.IssuerID)
 	fmt.Fprintf(w, "verification_method = %q\n", cfg.VerificationMethodID)

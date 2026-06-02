@@ -22,6 +22,7 @@ type FileConfig struct {
 	DB                  *string `toml:"db"`
 	Key                 *string `toml:"key"`
 	PublicKey           *string `toml:"public_key"`
+	ForensicPublicKey   *string `toml:"forensic_public_key"`
 	ChainID             *string `toml:"chain_id"`
 	IssuerID            *string `toml:"issuer_id"`
 	VerificationMethod  *string `toml:"verification_method"`
