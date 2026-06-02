@@ -41,7 +41,7 @@ regulated industries.
 | `CheckpointPublisher` with object-lock reference backend (elevated from v2) | ADR-0019 § O2 | #484 | planned |
 | Content-addressed payload storage (GDPR erasure) | ADR-0019 § S3 (extends) | #731 | planned |
 | Standalone verifier service (separable from SDK) | new ADR needed | #490 | planned |
-| Downloadable conformance test suite (base vectors shipped in #474; packaged downloadable suite unfiled) | ADR-0019 § S1 (extends) | #474 | planned |
+| Downloadable conformance test suite (packaged suite extending the base vectors shipped in #474) | ADR-0019 § S1 (extends) | not filed | planned |
 | Multi-tenancy guidance — key management at scale | docs | #491 | planned |
 | Regional TSA support (eIDAS, ICP-Brasil, etc.) | new ADR needed | #492 | planned |
 
