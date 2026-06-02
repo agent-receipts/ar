@@ -131,7 +131,7 @@ Tool-call inputs and outputs are **not stored as plaintext** — the daemon stor
 
 ## Payload disclosure
 
-By default the daemon stores only a cryptographic hash of each tool call's input and output — the receipt proves what happened without retaining the raw payload. Opt-in plaintext disclosure and the forthcoming HPKE-encrypted disclosure envelope ([ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md), [#280](https://github.com/agent-receipts/ar/issues/280)) are daemon-side concerns — see [Daemon Setup → Payload disclosure](/getting-started/daemon-setup/#payload-disclosure).
+By default the daemon stores only a cryptographic hash of each tool call's input and output — the receipt proves what happened without retaining the raw payload. The daemon can optionally encrypt parameters to a forensic public key (HPKE, [ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md)) so they are recoverable only by the holder of the matching private key, never stored as plaintext. This is a daemon-side, operator-controlled concern — see [Parameter Disclosure](/specification/parameter-disclosure/) for the model and [Daemon Setup → Payload disclosure](/getting-started/daemon-setup/#payload-disclosure) for configuration.
 
 ## Troubleshooting
 
