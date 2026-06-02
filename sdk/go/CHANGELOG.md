@@ -15,13 +15,8 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Added
 
-- **HPKE parameter disclosure helpers** ([#722](https://github.com/agent-receipts/ar/pull/722), ADR-0012, ADR-0015) — new `receipt.ForensicKeyFingerprint(publicKey []byte) string` computes the canonical SHA256 fingerprint of an X25519 public key, suitable for matching against receipt envelope `kid` values. New `receipt.ForensicPublicFromPrivate(privateKey []byte) ([]byte, error)` derives the public key from a private key (X25519 or Ed25519), enabling operators to load only a private key and reconstruct the matching fingerprint. Intended for dashboard decryption workflows where an operator loads a private key locally and decrypts parameter envelopes inline.
-- **Optional `action_type` field in `EmitterFrame`** ([#722](https://github.com/agent-receipts/ar/pull/722)) — emitters can now populate `action_type` in the JSON-RPC frame to help the daemon's risk-based disclosure policy route correctly. When present, the daemon uses the explicit type to resolve action risk (via the taxonomy); when absent, the daemon synthesizes a fallback `<channel>.<tool>` type (medium risk). This field does not appear in the final receipt — it is used only for policy routing during the daemon's receipt-build phase.
-- **Cross-SDK HPKE test vectors in v030_vectors.json** ([#722](https://github.com/agent-receipts/ar/pull/722)) — deterministic HPKE test cases covering X25519 KEM with AES-256-GCM, validating that Go, TypeScript, and Python SDKs produce identical ciphertexts and can decrypt each other's envelopes. Vectors include test forensic keypairs and sample parameters.
-
-### Dependencies
-
-- (None — new helpers are pure stdlib)
+- **HPKE parameter disclosure helpers** ([#722](https://github.com/agent-receipts/ar/pull/722), ADR-0012, ADR-0015) — new `receipt.ForensicKeyFingerprint(publicKey []byte) (string, error)` computes the canonical SHA256 fingerprint of an X25519 public key (validates 32-byte length), suitable for matching against receipt envelope `kid` values. New `receipt.ForensicPublicFromPrivate(privateKey []byte) ([]byte, error)` derives the X25519 public key from a 32-byte private key, enabling operators to load only a private key and reconstruct the matching fingerprint. Intended for dashboard decryption workflows where an operator loads a private key locally and decrypts parameter envelopes inline.
+- **Daemon-side risk-based parameter disclosure** ([#722](https://github.com/agent-receipts/ar/pull/722)) — the daemon now supports optional HPKE encryption of sensitive action parameters (RFC 9180 v1, X25519 KEM, AES-256-GCM). When a forensic public key is configured and a disclosure policy permits the action type, the daemon encrypts parameters into a `parameters_disclosure` envelope attached to the receipt. The envelope is opaque without the private key. Encryption failures fall back to hash-only receipts (no audit gaps). See [Parameter Disclosure spec](https://agent-receipts.github.io/specification/parameter-disclosure/) for threat model and implementation details.
 
 ## [0.14.0] - 2026-06-01
 
