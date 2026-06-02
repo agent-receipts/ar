@@ -208,10 +208,10 @@ agent-receipts-hook [--format=<name>]
 
 | Flag | Description |
 |---|---|
-| `--format` | Force a specific input format (default: auto-detected from environment variables). Currently supported: `claude-code`. |
+| `--format` | Force a specific input format (default: auto-detected from the stdin frame's `hook_event_name` or the `CLAUDE_SESSION_ID` environment variable). Currently supported: `claude-code`. |
 
 **Exit behaviour:** Exits 0 silently when the stdin frame is unreadable or the calling runtime isn't recognised (the event isn't ours). Once the runtime is identified, a failure to record the receipt (daemon not running, socket missing, malformed frame) exits 1 with a message on stderr — surfacing a broken audit pipeline rather than silently losing receipts. The hook never pauses or modifies the tool call itself.
 
-**Auto-detection:** When `--format` is omitted, the binary inspects environment variables to identify the calling runtime. `CLAUDE_SESSION_ID` set → `claude-code` format.
+**Auto-detection:** When `--format` is omitted, the binary identifies the calling runtime from two signals: the `CLAUDE_SESSION_ID` environment variable, or the stdin frame's `hook_event_name` (`PostToolUse` / `PreToolUse`). Either resolves to the `claude-code` format — Claude Code itself uses the stdin `hook_event_name` route, since it does not set `CLAUDE_SESSION_ID` in the environment.
 
 See [Hook: Claude Code](/hook/claude-code/) for wiring instructions.
