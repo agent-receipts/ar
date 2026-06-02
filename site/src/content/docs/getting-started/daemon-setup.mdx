@@ -303,7 +303,7 @@ Exit codes are stable for scripting: `0` when the receipt is found and printed, 
 The most common cause is that the daemon is not running when the emitter starts. By default, emitters surface an error when the socket is unreachable, so check your application logs for emit failures — then confirm `agent-receipts-daemon` is running and that the socket path matches. Confirm the daemon is alive and the socket exists:
 
 ```bash
-pgrep agent-receipts-daemon
+pgrep -f agent-receipts-daemon   # -f matches the full command line; the name exceeds pgrep's 15-char limit
 ls -la ~/.local/share/agent-receipts/events.sock             # macOS (default fallback)
 ls -la "${XDG_RUNTIME_DIR:-/run}/agentreceipts/events.sock"  # Linux
 ```

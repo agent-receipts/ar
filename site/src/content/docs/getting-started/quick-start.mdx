@@ -49,8 +49,8 @@ pip install agent-receipts
 ### 2. Start the daemon
 
 Generate the signing key once, then run the daemon. It listens on the per-OS default
-socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths and
-service installation.
+socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths (on Linux
+without `XDG_RUNTIME_DIR`, that's under `/run`) and service installation.
 
 ```bash
 agent-receipts-daemon --init   # one-time: creates the signing key
@@ -102,8 +102,8 @@ npm install @agnt-rcpt/sdk-ts
 ### 2. Start the daemon
 
 Generate the signing key once, then run the daemon. It listens on the per-OS default
-socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths and
-service installation.
+socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths (on Linux
+without `XDG_RUNTIME_DIR`, that's under `/run`) and service installation.
 
 ```bash
 agent-receipts-daemon --init   # one-time: creates the signing key
@@ -168,8 +168,8 @@ go get github.com/agent-receipts/ar/sdk/go
 ### 2. Start the daemon
 
 Generate the signing key once, then run the daemon. It listens on the per-OS default
-socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths and
-service installation.
+socket — see [Daemon Setup](/getting-started/daemon-setup/) for socket paths (on Linux
+without `XDG_RUNTIME_DIR`, that's under `/run`) and service installation.
 
 ```bash
 agent-receipts-daemon --init   # one-time: creates the signing key

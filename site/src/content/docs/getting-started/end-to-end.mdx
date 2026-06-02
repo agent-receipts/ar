@@ -54,11 +54,17 @@ async function main() {
 main().catch(console.error);
 ```
 
-Run it:
+Run it. This walkthrough uses [`tsx`](https://www.npmjs.com/package/tsx), a
+zero-config TypeScript runner — `npx` fetches it on first use, so this step needs
+network access:
 
 ```sh
 npx tsx emit.ts
 ```
+
+Any TypeScript runtime works just as well: `bun emit.ts`, Node 22.6+'s native
+`node --experimental-strip-types emit.ts`, or compile with `tsc` and run the
+emitted `.js` with `node`.
 
 The daemon receives the event over its Unix socket, signs it with its Ed25519
 key, chains it to any previous receipt in the same chain, and persists it to the
