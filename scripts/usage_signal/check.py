@@ -337,15 +337,54 @@ def is_ci_sweep(assets: list[tuple[str, int]]) -> bool:
     return checksums and linux
 
 
+@dataclass
+class ReleaseSplit:
+    """A single release's downloads split into human (desktop) vs CI."""
+
+    module: str
+    human: int  # desktop install events, minus any sweep-pulled desktop artifact
+    ci: int  # Linux pulls + sweep-pulled desktop artifacts
+    swept: bool
+    by_platform: dict[str, int]  # gross darwin / linux / windows for this release
+
+
+def split_release(assets: list[tuple[str, int]]) -> ReleaseSplit:
+    """Split one release's assets into human-desktop installs and CI downloads.
+
+    Linux is always CI (no organic users for a Homebrew-tap Mac CLI, and release
+    gates like Gate #8 pull the linux_amd64 daemon tarball). In a swept release
+    (see ``is_ci_sweep``) the verification job also pulled one of each desktop
+    artifact, so one download per desktop artifact is attributed to CI too.
+    """
+    swept = is_ci_sweep(assets)
+    by_platform: dict[str, int] = {}
+    human = 0
+    ci = 0
+    module = ""
+    for name, count in assets:
+        platform = parse_asset_platform(name)
+        if platform is None or count <= 0:
+            continue
+        by_platform[platform] = by_platform.get(platform, 0) + count
+        module = module or _asset_module(name)
+        if platform == "linux":
+            ci += count
+        elif swept:
+            ci += 1
+            human += count - 1
+        else:
+            human += count
+    return ReleaseSplit(module=module, human=human, ci=ci, swept=swept, by_platform=by_platform)
+
+
 def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMetrics | None:
     """Aggregate per-asset download counts by platform and module across releases.
 
     ``releases`` is a list of releases, each a ``(asset_name, download_count)``
     list (including non-binary assets like checksums, which inform sweep
-    detection but are excluded from the download totals). For any release flagged
-    as a CI sweep (see ``is_ci_sweep``), one download per distinct binary artifact
-    is attributed to automation and subtracted from the human count. Returns
-    ``None`` if no binary asset has ever been downloaded.
+    detection but are excluded from the download totals). Linux pulls and the
+    desktop artifacts of a CI sweep are attributed to automation. Returns ``None``
+    if no binary asset has ever been downloaded.
     """
     by_platform: dict[str, int] = {}
     by_module: dict[str, int] = {}
@@ -354,36 +393,17 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
     peak_build = 0
     peak_build_module = ""
     for assets in releases:
-        swept = is_ci_sweep(assets)
-        if swept:
+        split = split_release(assets)
+        if split.swept:
             ci_sweep_releases += 1
-        release_events = 0  # human (desktop) install events for this single build
-        release_module = ""
-        for name, count in assets:
-            platform = parse_asset_platform(name)
-            if platform is None or count <= 0:
-                continue
+        ci_downloads += split.ci
+        for platform, count in split.by_platform.items():
             by_platform[platform] = by_platform.get(platform, 0) + count
-            module = _asset_module(name)
-            by_module[module] = by_module.get(module, 0) + count
-            release_module = release_module or module
-            if platform == "linux":
-                # Server platform: no organic users for a Homebrew-tap Mac CLI.
-                # Linux pulls are CI — sweeps, and release gates like Gate #8
-                # (daemon ↔ SDK protocol check) which fetches the linux_amd64
-                # daemon tarball on every daemon/SDK release.
-                ci_downloads += count
-                continue
-            # Desktop platform (darwin / windows). In a swept release the
-            # verification job also pulled one of each desktop artifact.
-            if swept:
-                ci_downloads += 1
-                release_events += count - 1
-            else:
-                release_events += count
-        if release_events > peak_build:
-            peak_build = release_events
-            peak_build_module = release_module
+        if split.module:
+            by_module[split.module] = by_module.get(split.module, 0) + sum(split.by_platform.values())
+        if split.human > peak_build:
+            peak_build = split.human
+            peak_build_module = split.module
 
     total = sum(by_platform.values())
     if total == 0:
@@ -403,6 +423,56 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
         peak_build=peak_build,
         peak_build_module=peak_build_module,
     )
+
+
+@dataclass
+class ReleaseInfo:
+    """One GitHub release: its tag and its (asset_name, download_count) list."""
+
+    tag: str
+    assets: list[tuple[str, int]]
+
+
+def module_version_from_tag(tag: str) -> tuple[str, str]:
+    """Split a release tag into (module, version).
+
+    Binary-module tags look like ``hook/v0.12.0`` or ``mcp-proxy/v0.13.0``; SDK
+    tags like ``sdk-ts-v0.10.0``. Returns ("", tag) if no version is found.
+    """
+    m = re.match(r"^(.*?)[/-]v?(\d[\w.\-]*)$", tag)
+    if not m:
+        return "", tag
+    return m.group(1).rstrip("/-"), m.group(2)
+
+
+def _version_key(version: str) -> list:
+    """Sort key: numeric segments ascending, a pre-release sorting before its release."""
+    base, _, pre = version.partition("-")
+    parts: list = [int(p) if p.isdigit() else p for p in base.split(".")]
+    # a release (no pre-release suffix) sorts after its pre-releases
+    parts.append("" if pre else "~")
+    parts.append(pre)
+    return parts
+
+
+def release_timeline(releases: list[ReleaseInfo]) -> dict[str, list[tuple[str, ReleaseSplit]]]:
+    """Per-module list of (version, ReleaseSplit), version-sorted ascending.
+
+    Only releases that carry downloaded binary assets appear (SDK source-only
+    tags drop out). The module label comes from the tag, falling back to the
+    asset-derived module so the two always agree.
+    """
+    timeline: dict[str, list[tuple[str, ReleaseSplit]]] = {}
+    for rel in releases:
+        split = split_release(rel.assets)
+        if not split.by_platform:
+            continue  # no binary downloads for this release
+        module, version = module_version_from_tag(rel.tag)
+        module = module or split.module
+        timeline.setdefault(module, []).append((version, split))
+    for versions in timeline.values():
+        versions.sort(key=lambda vs: _version_key(vs[0]))
+    return timeline
 
 
 def verdict_release(metrics: ReleaseMetrics | None) -> tuple[str, list[str]]:
@@ -535,17 +605,16 @@ def go_imported_by(module: str) -> int | None:
     return int(m.group(1).replace(",", "")) if m else None
 
 
-def github_release_assets(repo: str) -> list[list[tuple[str, int]]]:
-    """Per-release lists of (asset_name, download_count), across all pages.
+def github_releases(repo: str) -> list[ReleaseInfo]:
+    """All releases (tag + asset download counts) for a repo, across all pages.
 
-    Each element is one release's assets (including checksums, which inform sweep
-    detection). Uses the public REST API; a GITHUB_TOKEN / GH_TOKEN in the
-    environment raises the rate limit but is not required for a public repo.
+    Uses the public REST API; a GITHUB_TOKEN / GH_TOKEN in the environment raises
+    the rate limit but is not required for a public repo.
     """
     import os
 
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    releases: list[list[tuple[str, int]]] = []
+    releases: list[ReleaseInfo] = []
     page = 1
     while True:
         url = f"https://api.github.com/repos/{repo}/releases?per_page=100&page={page}"
@@ -559,9 +628,8 @@ def github_release_assets(repo: str) -> list[list[tuple[str, int]]]:
         if not batch:
             break
         for release in batch:
-            releases.append(
-                [(asset["name"], int(asset["download_count"])) for asset in release.get("assets", [])]
-            )
+            assets = [(a["name"], int(a["download_count"])) for a in release.get("assets", [])]
+            releases.append(ReleaseInfo(tag=release.get("tag_name", ""), assets=assets))
         if len(batch) < 100:
             break
         page += 1
@@ -666,28 +734,60 @@ def report_go(module: str) -> dict:
     return {"module": module, "ecosystem": "go", "imported_by": count}
 
 
+def _platform_str(by_platform: dict[str, int]) -> str:
+    order = ("darwin", "windows", "linux")
+    parts = [f"{p}={by_platform[p]}" for p in order if by_platform.get(p)]
+    return " ".join(parts) if parts else "-"
+
+
 def report_github_releases(repo: str) -> dict:
     print(f"\nHomebrew / GitHub Releases  {repo}")
     try:
-        assets = github_release_assets(repo)
+        releases = github_releases(repo)
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         print(f"    unavailable: {exc}")
         return {"repo": repo, "ecosystem": "github-releases", "error": str(exc)}
 
-    metrics = classify_release_assets(assets)
+    metrics = classify_release_assets([r.assets for r in releases])
+    timeline = release_timeline(releases)
     label, notes = verdict_release(metrics)
-    if metrics:
-        top = sorted(metrics.by_module.items(), key=lambda kv: kv[1], reverse=True)
-        print("    by module: " + ", ".join(f"{m} {n}" for m, n in top))
+
+    # Install-base anchor: per-module peak human build, and the overall superset.
+    per_module_peak = {
+        module: max((s.human for _, s in versions), default=0)
+        for module, versions in timeline.items()
+    }
+    if per_module_peak:
+        base_module = max(per_module_peak, key=lambda m: per_module_peak[m])
+        base = per_module_peak[base_module]
+        print(
+            f"    install base (distinct Macs ≈ peak single build of the superset "
+            f"module): ~{base}  [{base_module}]"
+        )
+        ladder = ", ".join(
+            f"{m} {n}" for m, n in sorted(per_module_peak.items(), key=lambda kv: -kv[1])
+        )
+        print(f"    per-module peak (overlapping subsets of the same base): {ladder}")
+
+    for module, versions in sorted(timeline.items()):
+        print(f"    {module}:")
+        for version, split in versions:
+            flags = "  ⚠ CI sweep" if split.swept else ""
+            human = f"{split.human} human" if split.human else "0 human"
+            print(f"      {version:<14} {human:<10} [{_platform_str(split.by_platform)}]{flags}")
+
     _print_verdict(label, notes)
     print(
-        "    note: counts are cumulative per release (no daily series), and a custom "
-        "Homebrew tap gets no formulae.brew.sh analytics — this asset count is the signal."
+        "    note: counts are cumulative per release (no daily series); a custom Homebrew "
+        "tap gets no formulae.brew.sh analytics. 'human' = desktop install EVENTS (not "
+        "people): version upgrades, machines, and reinstalls each count once."
     )
     return {
         "repo": repo,
         "ecosystem": "github-releases",
         "metrics": asdict(metrics) if metrics else None,
+        "install_base_estimate": max(per_module_peak.values(), default=0),
+        "per_module_peak": per_module_peak,
         "verdict": label,
         "notes": notes,
     }

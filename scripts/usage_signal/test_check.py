@@ -265,6 +265,44 @@ def test_release_assets_none_when_undownloaded() -> None:
     assert check.classify_release_assets([[("x_1.0_linux_amd64.tar.gz", 0)]]) is None
 
 
+def test_module_version_from_tag() -> None:
+    assert check.module_version_from_tag("hook/v0.12.0") == ("hook", "0.12.0")
+    assert check.module_version_from_tag("mcp-proxy/v0.13.0") == ("mcp-proxy", "0.13.0")
+    assert check.module_version_from_tag("daemon/v0.12.1-alpha.1") == ("daemon", "0.12.1-alpha.1")
+    assert check.module_version_from_tag("sdk-ts-v0.10.0") == ("sdk-ts", "0.10.0")
+
+
+def test_version_key_orders_patches_and_prereleases() -> None:
+    versions = ["0.13.0", "0.12.0", "0.12.1", "0.12.1-alpha.1"]
+    assert sorted(versions, key=check._version_key) == [
+        "0.12.0",
+        "0.12.1-alpha.1",  # pre-release sorts before its release
+        "0.12.1",
+        "0.13.0",
+    ]
+
+
+def test_release_timeline_groups_and_sorts_by_module_and_version() -> None:
+    # the real daemon patch shape, fetched out of order
+    releases = [
+        check.ReleaseInfo("daemon/v0.13.0", [("daemon_0.13.0_darwin_arm64.tar.gz", 13)]),
+        check.ReleaseInfo("daemon/v0.12.0", [("daemon_0.12.0_darwin_arm64.tar.gz", 10),
+                                             ("daemon_0.12.0_linux_arm64.tar.gz", 1)]),
+        check.ReleaseInfo("daemon/v0.12.1", [("daemon_0.12.1_darwin_arm64.tar.gz", 4)]),
+        check.ReleaseInfo("sdk-ts-v0.11.0", []),  # source-only release: no binaries, dropped
+    ]
+    tl = check.release_timeline(releases)
+    assert list(tl.keys()) == ["daemon"]  # sdk-ts dropped (no binary assets)
+    versions = [v for v, _ in tl["daemon"]]
+    assert versions == ["0.12.0", "0.12.1", "0.13.0"]  # version-sorted ascending
+    humans = {v: s.human for v, s in tl["daemon"]}
+    assert humans == {"0.12.0": 10, "0.12.1": 4, "0.13.0": 13}
+    # the lone linux_arm64 on 0.12.0 is CI, not a human install
+    split_0120 = dict(tl["daemon"])["0.12.0"]
+    assert split_0120.ci == 1
+    assert split_0120.human == 10
+
+
 # --- runner -----------------------------------------------------------------
 
 

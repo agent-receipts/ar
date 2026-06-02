@@ -93,6 +93,14 @@ unavailable rather than aborting the run.
    carries no version multiplier), but a true headcount needs server-side logs
    where a client is identifiable, not this counter.
 
+   The Homebrew section prints a **per-module patch-level timeline** (each
+   version's human-desktop installs, platform split, and a `⚠ CI sweep` flag) and
+   an **install-base estimate**: the peak single build of the *superset* module
+   (the daemon — everyone needs it, since the hook forwards to it), with a
+   per-module peak ladder showing the others as overlapping subsets of the same
+   base. Reading the same ~N across independently-versioned modules is the
+   strongest evidence it's one coherent user base rather than separate pockets.
+
 ## Reading the verdict
 
 `machine-dominated` is the **expected** baseline for a young package and is not
