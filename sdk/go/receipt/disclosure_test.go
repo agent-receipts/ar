@@ -1,6 +1,7 @@
 package receipt
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -458,4 +459,108 @@ func TestEnvelopeJSONRoundTrip(t *testing.T) {
 	if got["key"] != "value" {
 		t.Errorf("decrypted key = %v, want value", got["key"])
 	}
+}
+
+// TestForensicKeyFingerprint verifies the ADR-0015 canonical fingerprint form:
+// sha256:<lowercase hex of SHA-256(raw 32-byte X25519 public key)>. The expected
+// values are computed independently from the well-known RFC 7748 §6.1 test keys.
+func TestForensicKeyFingerprint(t *testing.T) {
+	cases := []struct {
+		name   string
+		pubHex string
+		// want = sha256: + hex(sha256(raw pubkey bytes)), computed independently.
+		want string
+	}{
+		{
+			name:   "alice",
+			pubHex: alicePubHex,
+			want:   "sha256:" + hexSHA256(mustDecodeHex(t, alicePubHex)),
+		},
+		{
+			name:   "bob",
+			pubHex: bobPubHex,
+			want:   "sha256:" + hexSHA256(mustDecodeHex(t, bobPubHex)),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ForensicKeyFingerprint(mustDecodeHex(t, tc.pubHex))
+			if err != nil {
+				t.Fatalf("ForensicKeyFingerprint: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("fingerprint = %q, want %q", got, tc.want)
+			}
+			if !strings.HasPrefix(got, "sha256:") {
+				t.Errorf("fingerprint %q must start with sha256:", got)
+			}
+		})
+	}
+}
+
+// TestForensicKeyFingerprintRejectsBadLength ensures a non-32-byte key is rejected
+// rather than silently producing a fingerprint over the wrong bytes.
+func TestForensicKeyFingerprintRejectsBadLength(t *testing.T) {
+	for _, n := range []int{0, 16, 31, 33, 64} {
+		if _, err := ForensicKeyFingerprint(make([]byte, n)); err == nil {
+			t.Errorf("ForensicKeyFingerprint(%d bytes): want error, got nil", n)
+		}
+	}
+}
+
+// TestForensicPublicFromPrivate verifies that the public key derived from a
+// private key matches the known public key for the RFC 7748 test pairs. This is
+// the operation a dashboard performs: load the private key, derive the public
+// key, compute the fingerprint, and match it against receipts' kid values.
+func TestForensicPublicFromPrivate(t *testing.T) {
+	cases := []struct {
+		name    string
+		privHex string
+		wantPub string
+	}{
+		{"alice", alicePrivHex, alicePubHex},
+		{"bob", bobPrivHex, bobPubHex},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pub, err := ForensicPublicFromPrivate(mustDecodeHex(t, tc.privHex))
+			if err != nil {
+				t.Fatalf("ForensicPublicFromPrivate: %v", err)
+			}
+			if got := hex.EncodeToString(pub); got != tc.wantPub {
+				t.Errorf("derived public = %s, want %s", got, tc.wantPub)
+			}
+		})
+	}
+}
+
+// TestFingerprintMatchesAcrossKeyPair is the end-to-end dashboard check: a
+// fingerprint computed from a public key equals the fingerprint computed from
+// the public key derived from the matching private key.
+func TestFingerprintMatchesAcrossKeyPair(t *testing.T) {
+	kp, err := GenerateForensicKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateForensicKeyPair: %v", err)
+	}
+	fromPub, err := ForensicKeyFingerprint(kp.PublicKey)
+	if err != nil {
+		t.Fatalf("fingerprint from public: %v", err)
+	}
+	derivedPub, err := ForensicPublicFromPrivate(kp.PrivateKey)
+	if err != nil {
+		t.Fatalf("derive public from private: %v", err)
+	}
+	fromPriv, err := ForensicKeyFingerprint(derivedPub)
+	if err != nil {
+		t.Fatalf("fingerprint from derived public: %v", err)
+	}
+	if fromPub != fromPriv {
+		t.Errorf("fingerprint mismatch: from public %q != from derived %q", fromPub, fromPriv)
+	}
+}
+
+// hexSHA256 is a test helper computing the lowercase hex of SHA-256(data).
+func hexSHA256(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
 }

@@ -72,6 +72,44 @@ func GenerateForensicKeyPair() (ForensicKeyPair, error) {
 	return ForensicKeyPair{PublicKey: pubBytes, PrivateKey: privBytes}, nil
 }
 
+// ForensicKeyFingerprint returns the canonical fingerprint of an X25519 forensic
+// public key in the form sha256:<lowercase hex>, per ADR-0015 ("Fingerprint
+// canonical form"): SHA-256 over the raw 32-byte public key. This is the value
+// the daemon writes as the recipient kid in a DisclosureEnvelope, and the value
+// a forensic tool or dashboard recomputes from a held key to match receipts.
+//
+// publicKey MUST be the 32-byte raw X25519 public key — not an SPKI/PEM wrapper
+// or a backend-specific handle, which would hash to a different (and adapter-
+// dependent) value.
+func ForensicKeyFingerprint(publicKey []byte) (string, error) {
+	if len(publicKey) != 32 {
+		return "", fmt.Errorf("forensic public key must be 32 bytes, got %d", len(publicKey))
+	}
+	return SHA256Hash(string(publicKey)), nil
+}
+
+// ForensicPublicFromPrivate derives the X25519 public key (32 raw bytes) from a
+// 32-byte forensic private key. A forensic responder or dashboard typically holds
+// only the private key; deriving the public key lets it compute the matching
+// ForensicKeyFingerprint and locate the receipts encrypted to that key without a
+// separate key registry.
+func ForensicPublicFromPrivate(privateKey []byte) ([]byte, error) {
+	if len(privateKey) != 32 {
+		return nil, fmt.Errorf("forensic private key must be 32 bytes, got %d", len(privateKey))
+	}
+	suite := disclosureSuite()
+	kemID, _, _ := suite.Params()
+	priv, err := kemID.Scheme().UnmarshalBinaryPrivateKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal forensic private key: %w", err)
+	}
+	pubBytes, err := priv.Public().MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("marshal derived public key: %w", err)
+	}
+	return pubBytes, nil
+}
+
 // EncryptDisclosure encrypts params as a v1 HPKE disclosure envelope
 // (ADR-0012, ciphersuite hpke-x25519-hkdf-sha256-aes-256-gcm).
 //
