@@ -39,9 +39,9 @@ regulated industries.
 | RFC 3161 TSA timestamp anchoring (elevated from v2) | ADR-0019 § P3 | #482 | planned |
 | Revocation list format and reference implementation (elevated from v2) | ADR-0019 § O1 | #483 | planned |
 | `CheckpointPublisher` with object-lock reference backend (elevated from v2) | ADR-0019 § O2 | #484 | planned |
-| Content-addressed payload storage (GDPR erasure) | ADR-0019 § S3 (extends) | #478 | planned |
+| Content-addressed payload storage (GDPR erasure) | ADR-0019 § S3 (extends) | #731 | planned |
 | Standalone verifier service (separable from SDK) | new ADR needed | #490 | planned |
-| Downloadable conformance test suite | ADR-0019 § S1 (extends) | #474 | planned |
+| Downloadable conformance test suite (base vectors shipped in #474; packaged downloadable suite unfiled) | ADR-0019 § S1 (extends) | #474 | planned |
 | Multi-tenancy guidance — key management at scale | docs | #491 | planned |
 | Regional TSA support (eIDAS, ICP-Brasil, etc.) | new ADR needed | #492 | planned |
 
@@ -60,10 +60,10 @@ this and undermine the protocol's credibility?"
 
 | # | Item | ADR | Issue | Status |
 |---|---|---|---|---|
-| 1 | Cross-SDK canonicalisation conformance vectors | ADR-0019 § S1 | #474 | planned |
-| 2 | Silent chain termination — `status` field on `agent_end` | ADR-0019 § P1 | #475 | planned |
-| 3 | `GeneratingKeyProvider` unreachable in production | ADR-0019 § S2 | #476 | planned |
-| 4 | Sequential receipt construction enforced under parallel tool calls | ADR-0020 | #488 | planned |
+| 1 | Cross-SDK canonicalisation conformance vectors | ADR-0019 § S1 | #474 | done |
+| 2 | Silent chain termination — `status` field on `agent_end` | ADR-0019 § P1 | #475 | done |
+| 3 | `GeneratingKeyProvider` unreachable in production | ADR-0019 § S2 | #476 | in-progress |
+| 4 | Sequential receipt construction enforced under parallel tool calls | ADR-0020 | #488 | in-progress |
 
 Item 4 is in this list because the OpenClaw plugin may fire concurrent tool
 invocations during the demo. If concurrent emission produces a broken chain
@@ -81,46 +81,46 @@ across workstreams they can be parallelised.
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Explicit `sessionId` binding in verifier | ADR-0019 § P4 | #477 | planned |
-| Strict `sequenceNumber` contiguity in verifier | ADR-0019 § P5 | #479 | planned |
-| `idempotencyKey` field for retry deduplication | ADR-0019 § S5 | #480 | planned |
+| Explicit `sessionId` binding in verifier | ADR-0019 § P4 | #477 | done |
+| Strict `sequenceNumber` contiguity in verifier | ADR-0019 § P5 | #479 | done |
+| `idempotencyKey` field for retry deduplication | ADR-0019 § S5 | #480 | done |
 
 ### SDK emitter layer
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| `HttpEmitter` with sync / fire-and-forget strategies | ADR-0020 | #486 | planned |
-| WAL for at-least-once delivery (long-lived + ephemeral) | ADR-0020 | #487 | planned |
-| Verifier-side `incomplete_tool_roundtrip` classification | ADR-0019 § O3 → ADR-0020 | (folded into WAL issue) | planned |
-| Deployment guide for ephemeral compute (Lambda, Cloud Run, Fargate, Azure Functions) | ADR-0018/0019/0020 | #535 | planned |
+| `HttpEmitter` with sync / fire-and-forget strategies | ADR-0020 | #486 | done |
+| WAL for at-least-once delivery (long-lived + ephemeral) | ADR-0020 | #487 | done |
+| Verifier-side `incomplete_tool_roundtrip` classification | ADR-0019 § O3 → ADR-0020 | (folded into WAL issue) | done |
+| Deployment guide for ephemeral compute (Lambda, Cloud Run, Fargate, Azure Functions) | ADR-0018/0019/0020 | #535 | done |
 
 ### Collector (receiver)
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Reference collector service implementing `POST /receipts` contract | ADR-0020 | #533 | in review (#537) |
-| Operator guide for the reference collector | ADR-0020 | #536 | planned |
+| Reference collector service implementing `POST /receipts` contract | ADR-0020 | #533 | done |
+| Operator guide for the reference collector | ADR-0020 | #536 | done |
 
 ### SDK cloud key management
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Cloud KMS `Signer` adapters (AWS KMS, GCP Cloud KMS, Azure Key Vault) | ADR-0018 | #534 | planned |
+| Cloud KMS `Signer` adapters (AWS KMS, GCP Cloud KMS, Azure Key Vault) | ADR-0018 | #534 | done |
 
 ### SDK payload handling
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Bounded `input`/`output` payload via `PayloadStrategy` | ADR-0019 § S3 | #478 | planned |
-| `parameterDisclosure` Phase A — cross-SDK + OpenClaw migration (envelope already shipped in Go #468 / TS #472; Python SDK envelope, OpenClaw rename, cross-SDK tests remain) | ADR-0012 | #280 | planned |
+| Bounded `input`/`output` payload via `PayloadStrategy` (truncation; content-addressed/GDPR erasure split to #731, v1.5) | ADR-0019 § S3 | #478 | planned |
+| `parameterDisclosure` Phase A — cross-SDK + OpenClaw migration (envelope already shipped in Go #468 / TS #472; Python SDK envelope, OpenClaw rename, cross-SDK tests remain) | ADR-0012 | #280 | in-progress |
 
 ### Cross-SDK parity
 
 | Item | ADR | Issue | Status |
 |---|---|---|---|
-| Python SDK `eventType` naming alignment | ADR-0019 § S1 | (folded into conformance vectors) | planned |
+| Python SDK `eventType` naming alignment | ADR-0019 § S1 | (folded into conformance vectors) | done |
 | `KeyProvider` / `Signer` parity across TS, Python, Go | ADR-0018 | tracked per-SDK | planned |
-| `HttpEmitter` parity across TS, Python, Go | ADR-0020 | tracked per-SDK | planned |
+| `HttpEmitter` parity across TS, Python, Go | ADR-0020 | tracked per-SDK | done |
 
 ---
 
