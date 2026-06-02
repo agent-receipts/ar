@@ -175,12 +175,12 @@ The flag and environment variable have no array type, so the allowlist form is a
 ```bash
 # keyword mode
 AGENTRECEIPTS_PARAMETER_DISCLOSURE=high \
-AGENTRECEIPTS_FORENSIC_PUBLIC_KEY=/path/to/forensic.pub \
+AGENTRECEIPTS_FORENSIC_PUBLIC_KEY=/path/to/forensic.key.pub \
   agent-receipts-daemon
 
 # allowlist mode (comma-separated)
 agent-receipts-daemon \
-  --forensic-public-key /path/to/forensic.pub \
+  --forensic-public-key /path/to/forensic.key.pub \
   --parameter-disclosure system.command.execute,filesystem.file.delete
 ```
 
