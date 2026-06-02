@@ -1,0 +1,86 @@
+name: "Docs: e2e drift audit"
+
+# Scheduled documentation end-to-end audit. A fleet of persona "new users"
+# (defined in .claude/doc-e2e/personas.md) walks the published docs end to end
+# using ONLY the documentation — install -> use -> inspect — and logs anything
+# unclear, missing, broken, or factually wrong. Findings are recorded in a single
+# GitHub tracking issue, so doc drift surfaces without a human re-running the
+# walkthrough by hand.
+#
+# This is the repository's first workflow that runs Claude in CI. Before it can
+# do anything it requires HUMAN REVIEW of:
+#   1. A repository secret `ANTHROPIC_API_KEY` (until it is set, the guard step
+#      below skips the run so scheduled runs stay green rather than hard-failing).
+#   2. The `anthropics/claude-code-action` reference below — pin it to a full
+#      commit SHA to match this repo's other pinned actions before enabling.
+#   3. The `permissions` block (issues: write is needed to file the report).
+#
+# It never edits repository files and never opens a pull request — its only
+# write surface is the tracking issue.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Mondays 09:00 UTC, weekly
+  workflow_dispatch: {} # allow manual runs for testing
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: doc-e2e
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard — require ANTHROPIC_API_KEY
+        id: guard
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY is not set — skipping the docs e2e audit. Add the secret to enable."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # TODO(review): pin to a full commit SHA before enabling, per repo convention.
+      - name: Run the docs e2e persona fleet
+        if: steps.guard.outputs.enabled == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Run the documentation end-to-end audit fleet for this repository.
+
+            For EACH persona defined in `.claude/doc-e2e/personas.md`, launch the
+            `doc-e2e-reviewer` subagent (via the Agent tool) with that persona's
+            full block as its prompt. Run the personas concurrently where possible.
+            Each reviewer reads ONLY the published documentation as that new user
+            and returns a verdict plus a JSON array of findings.
+
+            Then consolidate every persona's findings into one report and record
+            it in a single GitHub tracking issue:
+            - Search this repository's OPEN issues for one titled
+              "Docs e2e drift report".
+            - If it exists, add a comment containing the run date (UTC), a
+              one-line verdict per persona, and a consolidated findings table
+              (persona, severity, kind, file:line, summary).
+            - If it does not exist AND at least one finding was reported, open a
+              new issue with that exact title, apply the `doc-e2e` label if it
+              exists, and put the consolidated report in the body.
+            - If every persona reached its goal with zero findings, and an issue
+              exists, add a short "clean run, no findings (<date>)" comment; if no
+              issue exists, do nothing.
+
+            Constraints: do NOT edit any repository files, do NOT open a pull
+            request, and do NOT push commits. The tracking issue is your only
+            output.
