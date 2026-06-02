@@ -356,16 +356,23 @@ of the receipt JSON at `credentialSubject.action.parameters_disclosure`:
 ```go
 import (
     "encoding/json"
+    "log"
     "os"
 
     receipt "github.com/agent-receipts/ar/sdk/go/receipt"
 )
 
 // raw 32-byte private key written by --init-forensic-key (kept offline)
-priv, _ := os.ReadFile("/path/to/forensic.key")
+priv, err := os.ReadFile("/path/to/forensic.key")
+if err != nil {
+    log.Fatal(err)
+}
 
 // from: agent-receipts show <seq> --chain-id default --json > receipt.json
-data, _ := os.ReadFile("receipt.json")
+data, err := os.ReadFile("receipt.json")
+if err != nil {
+    log.Fatal(err)
+}
 var rec struct {
     CredentialSubject struct {
         Action struct {
@@ -373,9 +380,14 @@ var rec struct {
         } `json:"action"`
     } `json:"credentialSubject"`
 }
-_ = json.Unmarshal(data, &rec)
+if err := json.Unmarshal(data, &rec); err != nil {
+    log.Fatal(err)
+}
 
 params, err := receipt.DecryptDisclosure(rec.CredentialSubject.Action.ParametersDisclosure, priv)
+if err != nil {
+    log.Fatal(err)
+}
 // params holds the original tool-call parameters
 ```
 

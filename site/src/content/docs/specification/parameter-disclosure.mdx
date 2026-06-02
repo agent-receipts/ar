@@ -218,7 +218,7 @@ The dashboard feature is the intended forensic-recovery UX for the envelope. CLI
 
 ### Recover from code today
 
-You don't need the dashboard (or the planned forensic CLI) to read an envelope. **All three SDKs ship a decrypt helper that works today** — Python [`decrypt_disclosure`](/sdk-py/api-reference/#recovering-a-stored-disclosure), Go [`DecryptDisclosure`](/sdk-go/api-reference/#recovering-a-stored-disclosure), and TypeScript [`decryptDisclosure`](/sdk-ts/api-reference/#recovering-a-stored-disclosure). The file `--init-forensic-key` wrote is the raw 32-byte X25519 private key (no PEM, no decoding); pass it together with the envelope from `agent-receipts show <seq> --json` — found at `credentialSubject.action.parameters_disclosure` — to your SDK's helper. The plaintext lives only in your process; nothing is written back to the store.
+You don't need the dashboard (or the planned forensic CLI) to read an envelope. **All three SDKs ship a decrypt helper that works today** — Python [`decrypt_disclosure`](/sdk-py/api-reference/#recovering-a-stored-disclosure), Go [`DecryptDisclosure`](/sdk-go/api-reference/#recovering-a-stored-disclosure), and TypeScript [`decryptDisclosure`](/sdk-ts/api-reference/#recovering-a-stored-disclosure). The file `--init-forensic-key` wrote is the raw 32-byte X25519 private key (no PEM, no decoding); pass it together with the envelope from `agent-receipts show <seq> --chain-id <id> --json` — found at `credentialSubject.action.parameters_disclosure` — to your SDK's helper. The plaintext lives only in your process; nothing is written back to the store.
 
 ## GDPR and data handling
 

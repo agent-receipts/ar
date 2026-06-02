@@ -474,10 +474,12 @@ import json
 from agent_receipts import decrypt_disclosure
 
 # raw 32-byte private key written by --init-forensic-key (kept offline)
-priv = open("/path/to/forensic.key", "rb").read()
+with open("/path/to/forensic.key", "rb") as f:
+    priv = f.read()
 
 # from: agent-receipts show <seq> --chain-id default --json > receipt.json
-receipt = json.load(open("receipt.json"))
+with open("receipt.json") as f:
+    receipt = json.load(f)
 envelope = receipt["credentialSubject"]["action"]["parameters_disclosure"]
 
 params = decrypt_disclosure(envelope, priv)
