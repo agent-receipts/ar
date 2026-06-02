@@ -123,9 +123,30 @@ The `parameter_disclosure` config key controls which actions get an encrypted en
 
 The `"high"` mode uses the taxonomy's risk classification. The array form is an explicit allowlist of action-type strings; see the [Action Taxonomy](/specification/action-taxonomy/) for the full list.
 
+<Aside type="caution">
+Risk-based `"high"` only works when the emitter declares a taxonomic `action_type`. The daemon resolves an action's risk from its type via the taxonomy; if the emitter sends only a raw tool name, the daemon constructs a synthetic `<channel>.<tool>` type that does not match the taxonomy and resolves to `medium` — so `"high"` will not fire. Emitters that forward the resolved action type (the SDK, MCP proxy, and hook do this where they can) make `"high"` effective. If your emitter does not, prefer the explicit action-type allowlist or `true`. The daemon always resolves risk itself and never trusts an emitter-supplied risk, so an emitter cannot downgrade risk to dodge disclosure.
+</Aside>
+
 ## Daemon configuration
 
 Disclosure is controlled by operator config — never by agent-supplied input. The daemon reads the forensic public key and the disclosure granularity from its config file, environment, or flags.
+
+### Generate a forensic key pair
+
+The daemon ships a one-shot generator. It writes the raw 32-byte private key (mode `0600`) and public key (mode `0644`), and prints the fingerprint so you can confirm the key the daemon encrypts to matches the private key you keep for recovery:
+
+```bash
+agent-receipts-daemon --init-forensic-key \
+  --forensic-key ~/.local/share/agent-receipts/forensic.key
+```
+
+```
+generated forensic private key: ~/.local/share/agent-receipts/forensic.key (keep this offline; the daemon never reads it)
+forensic public key:           ~/.local/share/agent-receipts/forensic.key.pub
+fingerprint (kid):             sha256:c1102522e88e2511…
+```
+
+Keep the **private** key offline — the daemon never reads it. Only the **public** key goes into daemon config. Like signing-key generation, the command refuses to overwrite an existing key file.
 
 ### Config file
 
@@ -167,7 +188,7 @@ When an operator holds the forensic private key, they can decrypt the `parameter
 
 A solo operator generates a forensic keypair, configures the daemon with the public key, and later loads their private key into the dashboard or a CLI tool. The workflow:
 
-1. Generate a forensic keypair (X25519) — the daemon or CLI ships a helper for this.
+1. Generate a forensic keypair (X25519) with `agent-receipts-daemon --init-forensic-key` (see [Generate a forensic key pair](#generate-a-forensic-key-pair) above).
 2. Configure the daemon with the public key path and the desired disclosure mode.
 3. During an incident or audit, load the private key into the dashboard.
 4. The dashboard derives the key fingerprint (`sha256:<hex of raw public key>`), queries receipts by `kid`, and decrypts each matching `parameters_disclosure` inline.
