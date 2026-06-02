@@ -1,15 +1,15 @@
 ---
 title: Daemon Setup
-description: Set up the agent-receipts-daemon for v0.8.0 and connect your emitters.
+description: Set up the agent-receipts-daemon and connect your emitters.
 ---
 
-Starting with v0.8.0, Agent Receipts moves from in-process signing — where each SDK or plugin owned its own Ed25519 key and SQLite database — to a daemon-backed architecture. A single `agent-receipts-daemon` process now holds the signing key and manages the receipt chain for all emitters on the machine. This centralisation is what makes the tamper-evidence guarantee meaningful: a compromised SDK process cannot silently rewrite the chain, because it never holds the key.
+Agent Receipts signs receipts in a separate `agent-receipts-daemon` process rather than in-process — no SDK or plugin holds an Ed25519 key or SQLite database of its own. A single daemon process holds the signing key and manages the receipt chain for all emitters on the machine. This centralisation is what makes the tamper-evidence guarantee meaningful: a compromised SDK process cannot silently rewrite the chain, because it never holds the key.
 
 ## Prerequisites
 
-- `agent-receipts-daemon` v0.8.0 installed (see below)
+- `agent-receipts-daemon` installed (see below)
 - Key initialised with `agent-receipts-daemon --init` (one-time, see below)
-- Emitter SDK or plugin at v0.8.0 or later (see [Connect your emitters](#connect-your-emitters))
+- An emitter SDK or plugin installed (see [Connect your emitters](#connect-your-emitters))
 
 ## Install and start
 
@@ -26,8 +26,17 @@ Homebrew installs both the `agent-receipts-daemon` and `agent-receipts` (verify)
 **From source (macOS/Linux, requires Go 1.26.1+):**
 
 ```bash
-go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@v0.8.0
-go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@v0.8.0
+go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@latest
+go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@latest
+```
+
+Install both from the same `@latest` so the daemon and the `agent-receipts` CLI
+are the same version — they share one module, and a version mismatch can make
+`verify` reject a chain the other wrote. `go install` drops the binaries in
+`$(go env GOPATH)/bin`; add it to your `PATH` if it isn't already:
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
 ### Initialise (one-time)
@@ -117,7 +126,7 @@ There is no in-process fallback: if the daemon is unreachable, emit surfaces the
 export AGENTRECEIPTS_SOCKET=/path/to/events.sock   # overrides the platform default
 ```
 
-### Go SDK (v0.8.0)
+### Go SDK
 
 **Option A: explicit socket path**
 
@@ -195,7 +204,7 @@ from agent_receipts import DaemonEmitter
 e = DaemonEmitter()
 ```
 
-### MCP Proxy (v0.8.0-alpha.1)
+### MCP Proxy
 
 Pass `--socket` or set `AGENTRECEIPTS_SOCKET`:
 

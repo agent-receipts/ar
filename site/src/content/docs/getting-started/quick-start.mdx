@@ -80,9 +80,7 @@ with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
 signatures — the daemon does not need to be running.
 
 ```bash
-AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
-  agent-receipts verify \
-  --public-key ~/.local/share/agent-receipts/signing.key.pub
+agent-receipts verify   # resolves the default chain at $XDG_DATA_HOME (falls back to ~/.local/share)
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
@@ -148,9 +146,7 @@ main().catch((err) => {
 signatures — the daemon does not need to be running.
 
 ```bash
-AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
-  agent-receipts verify \
-  --public-key ~/.local/share/agent-receipts/signing.key.pub
+agent-receipts verify   # resolves the default chain at $XDG_DATA_HOME (falls back to ~/.local/share)
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
@@ -220,9 +216,7 @@ func main() {
 signatures — the daemon does not need to be running.
 
 ```bash
-AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
-  agent-receipts verify \
-  --public-key ~/.local/share/agent-receipts/signing.key.pub
+agent-receipts verify   # resolves the default chain at $XDG_DATA_HOME (falls back to ~/.local/share)
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
