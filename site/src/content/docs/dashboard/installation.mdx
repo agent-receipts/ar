@@ -37,12 +37,16 @@ dashboard
 
 Then open [http://localhost:8080](http://localhost:8080) in your browser.
 
+If port 8080 is already in use, `dashboard` exits immediately with `bind: address already in use` — pass `-port <n>` to pick another (e.g. `dashboard -port 9090`).
+
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-db` | `~/.local/share/agent-receipts/receipts.db` | Path to a receipt SQLite database |
+| `-host` | `127.0.0.1` | Address to bind the web server to |
 | `-port` | `8080` | Port to serve on |
+| `-poll-interval` | `5s` | How often to poll the database for new receipts |
 
 ### Example
 
