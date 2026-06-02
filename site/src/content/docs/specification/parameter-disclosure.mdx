@@ -112,7 +112,7 @@ Never reuse the Ed25519 signing key as an encryption key. They have different pu
 
 ## Disclosure modes
 
-The `parameter_disclosure` setting controls which actions get an encrypted envelope attached. The daemon and the OpenClaw plugin offer the same four modes; only the *spelling of the allowlist* differs by config surface (see the note below):
+The `parameter_disclosure` setting controls which actions get an encrypted envelope attached. It is configured on the daemon — under ADR-0010 (Flavor B) the daemon owns disclosure, and emitters such as the OpenClaw plugin no longer control it (the plugin's `parameterDisclosure` config is a deprecated no-op that only emits a startup warning). The daemon offers four modes; only the *spelling of the allowlist* differs by config surface (see the note below):
 
 | Mode | Behavior |
 |-------|----------|
@@ -124,7 +124,7 @@ The `parameter_disclosure` setting controls which actions get an encrypted envel
 The `"high"` mode uses the taxonomy's risk classification. The allowlist is a set of action-type strings; see the [Action Taxonomy](/specification/action-taxonomy/) for the full list.
 
 <Aside type="note">
-**Allowlist spelling depends on the config surface.** The OpenClaw plugin (JSON config) and the daemon's TOML file accept a real array — `["system.command.execute", "filesystem.file.delete"]`. The daemon's `--parameter-disclosure` flag and `AGENTRECEIPTS_PARAMETER_DISCLOSURE` environment variable have no array type, so there the allowlist is a **comma-separated string**: `system.command.execute,filesystem.file.delete`. The daemon's TOML key also accepts the boolean `true`/`false` for backwards compatibility.
+**Allowlist spelling depends on the config surface.** The daemon's TOML file accepts a real array — `["system.command.execute", "filesystem.file.delete"]`. The daemon's `--parameter-disclosure` flag and `AGENTRECEIPTS_PARAMETER_DISCLOSURE` environment variable have no array type, so there the allowlist is a **comma-separated string**: `system.command.execute,filesystem.file.delete`. The daemon's TOML key also accepts the boolean `true`/`false` for backwards compatibility.
 </Aside>
 
 <Aside type="caution">
