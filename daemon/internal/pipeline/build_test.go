@@ -1307,3 +1307,117 @@ func TestValidateFrame_RejectsPartialOperator(t *testing.T) {
 		t.Errorf("got %d receipts, want 0 (frame was rejected)", len(receipts))
 	}
 }
+
+
+// TestBuild_ForensicPublicKeyEncryptsParameters demonstrates HPKE parameter
+// encryption end-to-end via the daemon's Process API. When a forensic public
+// key is configured, the daemon encrypts tool input to that key and attaches
+// the HPKE v1 envelope as action.parameters_disclosure. The hash still commits
+// to the original plaintext (tamper-evident), but parameters are opaque on the
+// wire. Only the forensic responder holding the private key can decrypt.
+func TestBuild_ForensicPublicKeyEncryptsParameters(t *testing.T) {
+	// Generate a forensic key pair (ADR-0012).
+	fk, err := receipt.GenerateForensicKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up the pipeline with the forensic public key.
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	pp := New(chain.New("chain-1"), ks, st, "did:agent-receipts-daemon:test")
+	pp.ForensicPublicKey = fk.PublicKey
+
+	// Build a frame with JSON parameters.
+	emitterFrame := EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-05-03T00:00:00Z",
+		SessionID: "sess-123",
+		Channel:   "mcp_proxy",
+		Tool:      EmitterTool{Server: "github", Name: "list_repos"},
+		Input:     json.RawMessage(`{"command":"rm -rf /tmp/old-report.pdf"}`),
+		Output:    json.RawMessage(`{"status":"success"}`),
+		Decision:  "allowed",
+	}
+	body, err := json.Marshal(emitterFrame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := socket.Frame{
+		Payload: body,
+		Peer: socket.PeerCred{
+			Platform: "linux",
+			PID:      4242,
+			UID:      1000,
+			GID:      1000,
+			ExePath:  "/usr/bin/mcp-proxy",
+		},
+	}
+
+	// Process the frame through the pipeline.
+	if err := pp.Process(frame); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	// Retrieve the stored receipt.
+	receipts, err := st.GetChain("chain-1")
+	if err != nil {
+		t.Fatalf("GetChain: %v", err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts, want 1", len(receipts))
+	}
+	rec := receipts[0]
+
+	// Verify parameters_disclosure envelope is present and opaque.
+	if rec.CredentialSubject.Action.ParametersDisclosure == nil {
+		t.Fatal("parameters_disclosure is nil; expected HPKE envelope")
+	}
+	env := rec.CredentialSubject.Action.ParametersDisclosure
+	if env.V != "1" {
+		t.Errorf("envelope version: got %q, want %q", env.V, "1")
+	}
+	if env.Alg != "hpke-x25519-hkdf-sha256-aes-256-gcm" {
+		t.Errorf("algorithm: got %q, want hpke-x25519-...", env.Alg)
+	}
+	if len(env.Recipients) != 1 {
+		t.Errorf("recipients: got %d, want 1", len(env.Recipients))
+	}
+	// enc and ct are opaque base64url-encoded HPKE material.
+	if env.Recipients[0].Enc == "" {
+		t.Fatal("enc is empty")
+	}
+	if env.CT == "" {
+		t.Fatal("ct is empty")
+	}
+
+	// Verify parameters_hash still commits to the original canonical bytes.
+	// The hash is tamper-evident even though parameters are encrypted.
+	if rec.CredentialSubject.Action.ParametersHash == "" {
+		t.Fatal("parameters_hash is empty")
+	}
+	if !strings.HasPrefix(rec.CredentialSubject.Action.ParametersHash, "sha256:") {
+		t.Errorf("parameters_hash format: got %q, want sha256:...",
+			rec.CredentialSubject.Action.ParametersHash)
+	}
+
+	// Verify the receipt is signed.
+	if rec.Proof.ProofValue == "" {
+		t.Fatal("proof.proofValue is empty")
+	}
+
+	// Decrypt the envelope using the private key and verify round-trip.
+	decrypted, err := receipt.DecryptDisclosure(env, fk.PrivateKey)
+	if err != nil {
+		t.Fatalf("DecryptDisclosure: %v", err)
+	}
+
+	// Verify decrypted params match the original input.
+	command, ok := decrypted["command"]
+	if !ok {
+		t.Fatalf("decrypted params missing 'command' key: %+v", decrypted)
+	}
+	if command != "rm -rf /tmp/old-report.pdf" {
+		t.Errorf("command: got %v, want rm -rf /tmp/old-report.pdf", command)
+	}
+}
