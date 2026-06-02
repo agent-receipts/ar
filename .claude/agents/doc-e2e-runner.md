@@ -19,9 +19,28 @@ the docs read well" but "can a new user get this working from the docs alone".
 
 ## Environment
 
-- Work in a fresh scratch directory: `WORK=$(mktemp -d)` and stay inside it.
-  Point per-user state there too (e.g. `export XDG_DATA_HOME="$WORK/share"`) so
-  you never touch the real machine's `~/.local/share/agent-receipts`.
+- Work in a fresh scratch directory and keep all per-user state there so you
+  never touch the real machine's `~/.local/share/agent-receipts`. **Your shell
+  does not persist environment variables, `cd`, or shell state between separate
+  commands — a bare `export` in one step is gone by the next.** So set the scratch
+  dir and its env *once*, write them to a file on disk (the filesystem persists
+  even though the shell doesn't), and re-source that file at the start of **every**
+  command:
+  ```
+  WORK=$(mktemp -d)
+  cat > /tmp/doc-e2e-env.sh <<EOF
+  export WORK="$WORK"
+  export XDG_DATA_HOME="$WORK/share"
+  export PATH="\$(go env GOPATH)/bin:\$PATH"
+  EOF
+  ```
+  Then begin every later command with `. /tmp/doc-e2e-env.sh && …` so
+  `XDG_DATA_HOME` / `PATH` are in force for **every** step — daemon, emit, CLI,
+  dashboard, AND any `--help` / default-path inspection. Corollary: **never log a
+  tool's default as a finding from a shell where the env wasn't applied.** A
+  default that looks wrong (e.g. a `-db` / socket path pointing at `$HOME` instead
+  of your scratch dir) is almost always a missing env var in *that* command, not a
+  product bug — re-run it with the env sourced and confirm before recording it.
 - You run on whatever OS the runner gives you (Linux in CI). Follow the docs'
   instructions **for this OS**. If a step only documents another OS (e.g. only
   `brew`, with no source/Linux path), that is a finding — then use the closest
