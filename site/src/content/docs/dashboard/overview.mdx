@@ -28,7 +28,7 @@ The dashboard's chain verification checks **hash linkage and sequence ordering o
 :::
 
 :::caution[Known issue: false negatives]
-The dashboard (v0.3.0) can report a chain as **broken** when `agent-receipts verify` confirms it is **valid** — its hash recomputation does not match the SDK's canonicalisation. If the dashboard flags a break, confirm with `agent-receipts verify` before treating it as real. Tracked in [#719](https://github.com/agent-receipts/ar/issues/719).
+The dashboard (v0.3.0) can report a chain as **broken** when `agent-receipts verify` confirms it is **valid** — its hash recomputation does not match the SDK's canonicalization. If the dashboard flags a break, confirm with `agent-receipts verify` before treating it as real. Tracked in [#719](https://github.com/agent-receipts/ar/issues/719).
 :::
 
 ## How it works
