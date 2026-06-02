@@ -63,10 +63,13 @@ from dataclasses import asdict, dataclass
 # ---------------------------------------------------------------------------
 # Defaults for this monorepo
 
-NPM_PACKAGES = ["@agnt-rcpt/sdk-ts", "@agnt-rcpt/sdk-ts-aws"]
+NPM_PACKAGES = ["@agnt-rcpt/sdk-ts", "@agnt-rcpt/sdk-ts-aws", "@agnt-rcpt/openclaw"]
 PYPI_PACKAGES = ["agent-receipts"]
 GO_MODULES = ["github.com/agent-receipts/ar/sdk/go"]
-GITHUB_REPO = "agent-receipts/ar"
+GITHUB_REPO = "agent-receipts/ar"  # repo hosting the Go module (dependents link)
+# Repos whose GitHub release assets are scanned for Homebrew-tap install signal:
+# the monorepo (daemon/hook/mcp-proxy/collector) plus the dashboard tap.
+GITHUB_REPOS = ["agent-receipts/ar", "agent-receipts/dashboard"]
 
 # ---------------------------------------------------------------------------
 # Classification thresholds. A "spike" is a publish/mirror reaction day; the
@@ -844,7 +847,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--npm", nargs="*", metavar="PKG")
     parser.add_argument("--pypi", nargs="*", metavar="PKG")
     parser.add_argument("--go", nargs="*", metavar="MODULE")
-    parser.add_argument("--github", metavar="OWNER/REPO", help="repo for release-asset counts")
+    parser.add_argument(
+        "--github", nargs="*", metavar="OWNER/REPO", help="repos for release-asset counts"
+    )
     parser.add_argument("--no-npm", action="store_true")
     parser.add_argument("--no-pypi", action="store_true")
     parser.add_argument("--go-off", action="store_true")
@@ -855,7 +860,7 @@ def main(argv: list[str]) -> int:
     npm_pkgs = args.npm if args.npm is not None else NPM_PACKAGES
     pypi_pkgs = args.pypi if args.pypi is not None else PYPI_PACKAGES
     go_mods = args.go if args.go is not None else GO_MODULES
-    gh_repo = args.github if args.github is not None else GITHUB_REPO
+    gh_repos = args.github if args.github is not None else GITHUB_REPOS
 
     results = []
     if not args.no_npm:
@@ -868,7 +873,8 @@ def main(argv: list[str]) -> int:
         for mod in go_mods:
             results.append(report_go(mod))
     if not args.no_github:
-        results.append(report_github_releases(gh_repo))
+        for repo in gh_repos:
+            results.append(report_github_releases(repo))
 
     if args.json:
         print("\n" + json.dumps(results, indent=2, default=str))

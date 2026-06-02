@@ -1,7 +1,16 @@
 # usage_signal
 
 Tells real adopters apart from mirrors, CI, and scanners across the packages
-this monorepo publishes (npm, PyPI, Go).
+this org publishes (npm, PyPI, Go, and Homebrew-tap binaries).
+
+Tracked by default (edit the `*_PACKAGES` / `GITHUB_REPOS` constants in
+`check.py` to add more):
+
+| Project | Channel(s) |
+|---------|-----------|
+| `agent-receipts` monorepo (`agent-receipts/ar`) | npm `@agnt-rcpt/sdk-ts`, `@agnt-rcpt/sdk-ts-aws`; PyPI `agent-receipts`; Go `sdk/go`; Homebrew/release binaries (daemon, hook, mcp-proxy, collector) |
+| `openclaw` | npm `@agnt-rcpt/openclaw` |
+| `dashboard` (`agent-receipts/dashboard`) | Homebrew tap / release binaries |
 
 For a young package the public download counters are misleading. npm folds in,
 with no opt-out, every registry mirror, security scanner (Socket, Snyk,
