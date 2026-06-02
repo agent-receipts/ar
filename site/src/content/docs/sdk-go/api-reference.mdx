@@ -345,6 +345,52 @@ fp2, err := receipt.ForensicKeyFingerprint(pub)
 // fp2 == fingerprint
 ```
 
+#### Recovering a stored disclosure
+
+In practice the envelope comes from a **stored receipt** and the private key from
+the file `agent-receipts-daemon --init-forensic-key` wrote — a raw 32-byte X25519
+key, not PEM, so read it as bytes and pass it straight in. Pull the envelope out
+of the receipt JSON at `credentialSubject.action.parameters_disclosure`:
+
+{/* snippet-check: skip */}
+```go
+import (
+    "encoding/json"
+    "log"
+    "os"
+
+    receipt "github.com/agent-receipts/ar/sdk/go/receipt"
+)
+
+// raw 32-byte private key written by --init-forensic-key (kept offline)
+priv, err := os.ReadFile("/path/to/forensic.key")
+if err != nil {
+    log.Fatal(err)
+}
+
+// from: agent-receipts show <seq> --chain-id default --json > receipt.json
+data, err := os.ReadFile("receipt.json")
+if err != nil {
+    log.Fatal(err)
+}
+var rec struct {
+    CredentialSubject struct {
+        Action struct {
+            ParametersDisclosure *receipt.DisclosureEnvelope `json:"parameters_disclosure"`
+        } `json:"action"`
+    } `json:"credentialSubject"`
+}
+if err := json.Unmarshal(data, &rec); err != nil {
+    log.Fatal(err)
+}
+
+params, err := receipt.DecryptDisclosure(rec.CredentialSubject.Action.ParametersDisclosure, priv)
+if err != nil {
+    log.Fatal(err)
+}
+// params holds the original tool-call parameters
+```
+
 ### Types (disclosure)
 
 #### `ForensicKeyPair`

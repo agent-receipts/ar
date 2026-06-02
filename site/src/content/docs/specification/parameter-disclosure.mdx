@@ -128,7 +128,7 @@ The `"high"` mode uses the taxonomy's risk classification. The allowlist is a se
 </Aside>
 
 <Aside type="caution">
-Risk-based `"high"` only works when the emitter declares a taxonomic `action_type`. The daemon resolves an action's risk from its type via the taxonomy; if the emitter sends only a raw tool name, the daemon constructs a synthetic `<channel>.<tool>` type that does not match the taxonomy and resolves to `medium` — so `"high"` will not fire. Emitters that forward the resolved action type (the SDK, MCP proxy, and hook do this where they can) make `"high"` effective. If your emitter does not, prefer the explicit action-type allowlist or `true`. The daemon always resolves risk itself and never trusts an emitter-supplied risk, so an emitter cannot downgrade risk to dodge disclosure.
+Risk-based `"high"` only works when the emitter declares a taxonomic `action_type`. The daemon resolves an action's risk from its type via the taxonomy; if the emitter sends only a raw tool name, the daemon constructs a synthetic `<channel>.<tool>` type that does not match the taxonomy and resolves to `medium` — so `"high"` will not fire. Emitters that forward the resolved action type (the SDK, MCP proxy, and hook do this where they can) make `"high"` effective. If your emitter does not, prefer the explicit action-type allowlist or `true`. The daemon always resolves risk itself and never trusts an emitter-supplied risk, so an emitter cannot downgrade risk to dodge disclosure. **For a first smoke test, set `--parameter-disclosure true`** so every action is enveloped regardless of risk classification — otherwise `"high"` may legitimately produce no envelope and look like nothing happened.
 </Aside>
 
 ## Daemon configuration
@@ -165,7 +165,7 @@ In TOML, `parameter_disclosure` accepts a boolean, a keyword string, or an array
 parameter_disclosure = "high"
 
 # Path to the forensic X25519 public key file (the raw 32-byte key)
-forensic_public_key = "/home/me/.local/share/agent-receipts/forensic.pub"
+forensic_public_key = "/home/me/.local/share/agent-receipts/forensic.key.pub"
 ```
 
 ### Environment variables / flags
@@ -175,12 +175,12 @@ The flag and environment variable have no array type, so the allowlist form is a
 ```bash
 # keyword mode
 AGENTRECEIPTS_PARAMETER_DISCLOSURE=high \
-AGENTRECEIPTS_FORENSIC_PUBLIC_KEY=/path/to/forensic.pub \
+AGENTRECEIPTS_FORENSIC_PUBLIC_KEY=/path/to/forensic.key.pub \
   agent-receipts-daemon
 
 # allowlist mode (comma-separated)
 agent-receipts-daemon \
-  --forensic-public-key /path/to/forensic.pub \
+  --forensic-public-key /path/to/forensic.key.pub \
   --parameter-disclosure system.command.execute,filesystem.file.delete
 ```
 
@@ -215,6 +215,10 @@ Plaintext is never persisted. It exists only transiently in the forensic respond
 </Aside>
 
 The dashboard feature is the intended forensic-recovery UX for the envelope. CLI-based recovery for automated forensic pipelines is also planned (see ADR-0012 Phase B).
+
+### Recover from code today
+
+You don't need the dashboard (or the planned forensic CLI) to read an envelope. **All three SDKs ship a decrypt helper that works today** — Python [`decrypt_disclosure`](/sdk-py/api-reference/#recovering-a-stored-disclosure), Go [`DecryptDisclosure`](/sdk-go/api-reference/#recovering-a-stored-disclosure), and TypeScript [`decryptDisclosure`](/sdk-ts/api-reference/#recovering-a-stored-disclosure). The file `--init-forensic-key` wrote is the raw 32-byte X25519 private key (no PEM, no decoding); pass it together with the envelope from `agent-receipts show <seq> --chain-id <id> --json` — found at `credentialSubject.action.parameters_disclosure` — to your SDK's helper. The plaintext lives only in your process; nothing is written back to the store.
 
 ## GDPR and data handling
 

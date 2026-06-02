@@ -461,6 +461,31 @@ params = decrypt_disclosure(env, kp.private_key)
 # params == {"mode": "r", "path": "/etc/passwd"}
 ```
 
+### Recovering a stored disclosure
+
+In practice the envelope comes from a **stored receipt** and the private key from the
+file `agent-receipts-daemon --init-forensic-key` wrote — a raw 32-byte X25519 key,
+not PEM, so read it as bytes and pass it straight in. Pull the envelope out of the
+receipt JSON at `credentialSubject.action.parameters_disclosure`:
+
+{/* snippet-check: no-run */}
+```python
+import json
+from agent_receipts import decrypt_disclosure
+
+# raw 32-byte private key written by --init-forensic-key (kept offline)
+with open("/path/to/forensic.key", "rb") as f:
+    priv = f.read()
+
+# from: agent-receipts show <seq> --chain-id default --json > receipt.json
+with open("receipt.json") as f:
+    receipt = json.load(f)
+envelope = receipt["credentialSubject"]["action"]["parameters_disclosure"]
+
+params = decrypt_disclosure(envelope, priv)
+print(params)  # the original tool-call parameters
+```
+
 ### Types
 
 #### `ForensicKeyPair`
