@@ -21,6 +21,16 @@ The Agent Receipts Dashboard is a lightweight, read-only web UI for browsing rec
 - Receipt detail view with raw JSON
 - Dark theme with risk-level color coding
 
+## What "verify" checks
+
+:::caution[The dashboard does not verify signatures]
+The dashboard's chain verification checks **hash linkage and sequence ordering only — it does not verify Ed25519 signatures**, despite the button being labelled "Verify signatures". A green "valid" means the receipts link and are correctly ordered, **not** that their signatures were checked. For full cryptographic verification, use [`agent-receipts verify`](/reference/cli-commands/), which re-derives each hash *and* checks the signature against the public key.
+:::
+
+:::caution[Known issue: false negatives]
+The dashboard (v0.3.0) can report a chain as **broken** when `agent-receipts verify` confirms it is **valid** — its hash recomputation does not match the SDK's canonicalisation. If the dashboard flags a break, confirm with `agent-receipts verify` before treating it as real. Tracked in [#719](https://github.com/agent-receipts/ar/issues/719).
+:::
+
 ## How it works
 
 The dashboard opens your SQLite receipt database in **read-only** mode and serves a web UI at localhost. It never modifies your data.
