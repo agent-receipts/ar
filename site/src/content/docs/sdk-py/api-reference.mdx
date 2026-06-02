@@ -261,6 +261,143 @@ VERSION: str                # current package version
 
 ---
 
+## Parameter disclosure (HPKE)
+
+```python
+from agent_receipts import (
+    generate_forensic_key_pair,
+    encrypt_disclosure,
+    decrypt_disclosure,
+    ForensicKeyPair,
+    DisclosureEnvelope,
+    DisclosureRecipient,
+)
+```
+
+HPKE-based envelope for encrypting tool-call parameters into a receipt's
+`parameters_disclosure` field (ADR-0012, ciphersuite
+`hpke-x25519-hkdf-sha256-aes-256-gcm`). The emitter holds only the forensic
+public key and never sees the plaintext again after encryption; the private key
+stays offline. For the threat model and operator configuration see the
+[Parameter Disclosure specification](/specification/parameter-disclosure/).
+For the envelope JSON shape see the [schema reference](/specification/agent-receipt-schema/#parameters_disclosure-envelope-hpke).
+
+This is the SDK-direct path. When emitting through the daemon the operator
+provides the public key in daemon config; the daemon calls these helpers
+automatically.
+
+### Functions
+
+#### `generate_forensic_key_pair`
+
+```python
+def generate_forensic_key_pair() -> ForensicKeyPair
+```
+
+Generate an X25519 key pair for forensic disclosure. `public_key` (32 raw
+bytes) is shared with emitters. `private_key` (32 raw bytes) must be kept
+offline, separate from the Ed25519 signing key (ADR-0001 / ADR-0012).
+
+#### `encrypt_disclosure`
+
+```python
+def encrypt_disclosure(
+    params: dict[str, Any],
+    recipient_public_key: bytes,
+    kid: str,
+) -> DisclosureEnvelope
+```
+
+Encrypt `params` as a v1 HPKE disclosure envelope. `params` is RFC 8785
+JCS-canonicalized before encryption so all SDKs produce the same ciphertext for
+the same parameters object. `params` must be a plain `dict` (Mapping subclasses
+are rejected; convert Pydantic models with `.model_dump()` first).
+`recipient_public_key` must be 32 bytes. `kid` is the recipient key identifier
+(`sha256:<hex>` fingerprint or `did:key` DID URL). Raises `TypeError` for
+non-dict `params`, `ValueError` for other invalid arguments.
+
+#### `decrypt_disclosure`
+
+```python
+def decrypt_disclosure(
+    env: DisclosureEnvelope,
+    recipient_private_key: bytes,
+) -> dict[str, Any]
+```
+
+Recover the plaintext parameters from a v1 HPKE disclosure envelope.
+`recipient_private_key` must be 32 bytes. `env` is re-validated at runtime
+(callers commonly pass dicts from `json.loads`). Raises `ValueError` if the
+envelope version or algorithm is unsupported, if the key or ciphertext is
+malformed, or if AEAD authentication fails.
+
+### Usage example
+
+{/* snippet-check: no-run */}
+```python
+from agent_receipts import (
+    generate_forensic_key_pair,
+    encrypt_disclosure,
+    decrypt_disclosure,
+)
+import hashlib
+
+# Key management (run once offline, store private key securely)
+kp = generate_forensic_key_pair()
+# Share kp.public_key with emitters; keep kp.private_key offline.
+digest = hashlib.sha256(kp.public_key).hexdigest()
+kid = f"sha256:{digest}"  # use as kid and in daemon config
+
+# Emitter side (holds only the public key)
+env = encrypt_disclosure(
+    {"path": "/etc/passwd", "mode": "r"},
+    kp.public_key,
+    kid,
+)
+# embed env in action.parameters_disclosure, then sign the receipt
+
+# Forensic / audit side (holds the offline private key)
+params = decrypt_disclosure(env, kp.private_key)
+# params == {"mode": "r", "path": "/etc/passwd"}
+```
+
+### Types
+
+#### `ForensicKeyPair`
+
+```python
+@dataclass(frozen=True)
+class ForensicKeyPair:
+    public_key: bytes   # 32-byte X25519 public key; share with emitters
+    private_key: bytes  # 32-byte X25519 private key; keep offline
+```
+
+Raw X25519 key bytes. Unlike `KeyPair` (Ed25519, PEM-encoded), these are raw
+bytes because X25519 has no widespread PKCS8 PEM convention.
+
+#### `DisclosureEnvelope` / `DisclosureRecipient`
+
+```python
+class DisclosureEnvelope(TypedDict):
+    v: Literal["1"]
+    alg: Literal["hpke-x25519-hkdf-sha256-aes-256-gcm"]
+    recipients: list[DisclosureRecipient]  # length 1 in v1
+    ct: str  # AEAD ciphertext; unpadded base64url
+
+class DisclosureRecipient(TypedDict):
+    kid: str
+    enc: str  # HPKE encapsulated key; unpadded base64url, 43 chars for X25519
+```
+
+v1 HPKE envelope stored in `action.parameters_disclosure`. Field names follow
+RFC 9180 §4.1 (`enc`, not `encap`).
+
+**Note:** `ForensicKeyFingerprint` and `ForensicPublicFromPrivate` are available
+in the Go SDK only (added in PR #722). Use `hashlib.sha256(public_key).hexdigest()`
+to compute the `sha256:<hex>` fingerprint string in Python.
+
+---
+
 ## Store
 
 ```python
