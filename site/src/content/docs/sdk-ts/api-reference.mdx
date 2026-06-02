@@ -353,6 +353,29 @@ const params = await decryptDisclosure(env, kp.privateKey);
 // params == { mode: "r", path: "/etc/passwd" }
 ```
 
+### Recovering a stored disclosure
+
+In practice the envelope comes from a **stored receipt** and the private key from
+the file `agent-receipts-daemon --init-forensic-key` wrote — a raw 32-byte X25519
+key, not PEM, so read it as bytes and pass it straight in. Pull the envelope out
+of the receipt JSON at `credentialSubject.action.parameters_disclosure`:
+
+{/* snippet-check: skip */}
+```typescript
+import { readFileSync } from "node:fs";
+import { decryptDisclosure } from "@agnt-rcpt/sdk-ts";
+
+// raw 32-byte private key written by --init-forensic-key (kept offline)
+const priv = new Uint8Array(readFileSync("/path/to/forensic.key"));
+
+// from: agent-receipts show <seq> --chain-id default --json > receipt.json
+const receipt = JSON.parse(readFileSync("receipt.json", "utf8"));
+const env = receipt.credentialSubject.action.parameters_disclosure;
+
+const params = await decryptDisclosure(env, priv);
+// params holds the original tool-call parameters
+```
+
 ### Types
 
 #### `ForensicKeyPair`

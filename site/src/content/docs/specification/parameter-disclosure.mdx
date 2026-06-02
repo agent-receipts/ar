@@ -128,7 +128,7 @@ The `"high"` mode uses the taxonomy's risk classification. The allowlist is a se
 </Aside>
 
 <Aside type="caution">
-Risk-based `"high"` only works when the emitter declares a taxonomic `action_type`. The daemon resolves an action's risk from its type via the taxonomy; if the emitter sends only a raw tool name, the daemon constructs a synthetic `<channel>.<tool>` type that does not match the taxonomy and resolves to `medium` — so `"high"` will not fire. Emitters that forward the resolved action type (the SDK, MCP proxy, and hook do this where they can) make `"high"` effective. If your emitter does not, prefer the explicit action-type allowlist or `true`. The daemon always resolves risk itself and never trusts an emitter-supplied risk, so an emitter cannot downgrade risk to dodge disclosure.
+Risk-based `"high"` only works when the emitter declares a taxonomic `action_type`. The daemon resolves an action's risk from its type via the taxonomy; if the emitter sends only a raw tool name, the daemon constructs a synthetic `<channel>.<tool>` type that does not match the taxonomy and resolves to `medium` — so `"high"` will not fire. Emitters that forward the resolved action type (the SDK, MCP proxy, and hook do this where they can) make `"high"` effective. If your emitter does not, prefer the explicit action-type allowlist or `true`. The daemon always resolves risk itself and never trusts an emitter-supplied risk, so an emitter cannot downgrade risk to dodge disclosure. **For a first smoke test, set `--parameter-disclosure true`** so every action is enveloped regardless of risk classification — otherwise `"high"` may legitimately produce no envelope and look like nothing happened.
 </Aside>
 
 ## Daemon configuration
@@ -218,7 +218,7 @@ The dashboard feature is the intended forensic-recovery UX for the envelope. CLI
 
 ### Recover from code today
 
-You don't need the dashboard (or the planned forensic CLI) to read an envelope. The **Python SDK** ships a decrypt helper that works today: the file `--init-forensic-key` wrote is the raw 32-byte X25519 private key (no PEM, no decoding), and you pass it together with the envelope from `agent-receipts show <seq> --json` — found at `credentialSubject.action.parameters_disclosure` — to [`decrypt_disclosure`](/sdk-py/api-reference/#recovering-a-stored-disclosure). The plaintext lives only in your process; nothing is written back to the store.
+You don't need the dashboard (or the planned forensic CLI) to read an envelope. **All three SDKs ship a decrypt helper that works today** — Python [`decrypt_disclosure`](/sdk-py/api-reference/#recovering-a-stored-disclosure), Go [`DecryptDisclosure`](/sdk-go/api-reference/#recovering-a-stored-disclosure), and TypeScript [`decryptDisclosure`](/sdk-ts/api-reference/#recovering-a-stored-disclosure). The file `--init-forensic-key` wrote is the raw 32-byte X25519 private key (no PEM, no decoding); pass it together with the envelope from `agent-receipts show <seq> --json` — found at `credentialSubject.action.parameters_disclosure` — to your SDK's helper. The plaintext lives only in your process; nothing is written back to the store.
 
 ## GDPR and data handling
 

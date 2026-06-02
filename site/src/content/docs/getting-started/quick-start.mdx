@@ -71,6 +71,7 @@ with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
         channel="my-app",
         tool_name="filesystem.file.read",
         decision="allowed",
+        input='{"path": "/etc/hosts"}',  # raw JSON; the daemon hashes it (and HPKE-encrypts it when parameter disclosure is on)
     )
 ```
 
@@ -127,6 +128,7 @@ async function main() {
       channel: "my-app",
       tool: { name: "filesystem.file.read" },
       decision: "allowed",
+      input: JSON.stringify({ path: "/etc/hosts" }), // raw JSON; hashed by the daemon (and HPKE-encrypted when parameter disclosure is on)
     });
     if (err) throw err;
   } finally {
@@ -189,6 +191,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 
 	"github.com/agent-receipts/ar/sdk/go/emitter"
@@ -205,6 +208,7 @@ func main() {
 		Channel:  "my-app",
 		Tool:     emitter.Tool{Name: "filesystem.file.read"},
 		Decision: "allowed",
+		Input:    json.RawMessage(`{"path":"/etc/hosts"}`), // raw JSON; hashed by the daemon (and HPKE-encrypted when parameter disclosure is on)
 	}); err != nil {
 		log.Fatal(err)
 	}

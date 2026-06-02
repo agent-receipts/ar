@@ -308,6 +308,9 @@ If you start the daemon and an emitter on different socket paths, the emitter ca
 **Key not initialised error.**
 If the daemon exits immediately with an error about a missing key or database, run `agent-receipts-daemon --init` first. The daemon will not auto-create the key on first start — initialisation is intentionally explicit so key generation is a deliberate action, not a side effect.
 
+**`chain "…" tail is already terminal` on startup.**
+A chain tail becomes terminal (`chain.status="interrupted"`) when a daemon advanced the chain and then exited — for example after the deliberate "disclosure enabled but no forensic key" refusal, or any mid-chain shutdown. The next daemon refuses to append to a terminal tail to avoid forking the chain. Continue on a fresh chain with `--chain-id <new-id>` (or point at a fresh `--db`); the original chain stays intact and verifiable.
+
 **`go install` binary not found.**
 After `go install`, the binary lands in `$GOBIN` (or `$(go env GOPATH)/bin`, usually `~/go/bin`). Add it to your `$PATH`:
 
