@@ -68,12 +68,6 @@ PYPI_PACKAGES = ["agent-receipts"]
 GO_MODULES = ["github.com/agent-receipts/ar/sdk/go"]
 GITHUB_REPO = "agent-receipts/ar"
 
-# Binary modules shipped as GitHub Release assets and installed via the Homebrew
-# tap (brew install agent-receipts/tap/<module>). brew fetches the release
-# tarball straight from GitHub, so the asset download_count is a clean install
-# signal — registry mirrors and package scanners don't pull release binaries.
-GITHUB_BINARY_MODULES = ["hook", "mcp-proxy", "daemon", "collector"]
-
 # ---------------------------------------------------------------------------
 # Classification thresholds. A "spike" is a publish/mirror reaction day; the
 # default threshold is relative to the package's own baseline so it scales from
@@ -225,13 +219,17 @@ def verdict(
             f"{metrics.spike_share:.0%} of traffic is same-day spikes "
             f"(>= {metrics.spike_threshold}/day) — publish/mirror reactions, not steady use"
         )
-    if FLAT_WEEK_LO <= metrics.weekend_weekday_ratio <= FLAT_WEEK_HI:
+    if metrics.weekday_per_day == 0:
+        # Only weekend baseline days (or none) — there is no weekly rhythm to read.
+        notes.append("insufficient weekday baseline to read a weekday/weekend rhythm")
+    elif FLAT_WEEK_LO <= metrics.weekend_weekday_ratio <= FLAT_WEEK_HI:
         machine += 1
         notes.append(
             f"flat week: weekend/weekday ratio {metrics.weekend_weekday_ratio:.2f} "
             "(~1.0) — automated traffic ignores weekends"
         )
-    elif 0 < metrics.weekend_weekday_ratio < HUMAN_WEEKDAY_RATIO:
+    elif metrics.weekend_weekday_ratio < HUMAN_WEEKDAY_RATIO:
+        # Includes a 0.0 ratio (weekend-silent traffic), the strongest weekday skew.
         human += 1
         notes.append(
             f"weekday-skewed: weekend/weekday ratio {metrics.weekend_weekday_ratio:.2f} "
@@ -289,15 +287,26 @@ class ReleaseMetrics:
 
     total_downloads: int  # binary downloads (checksums/sigs excluded)
     by_platform: dict[str, int]  # darwin / linux / windows
-    desktop_downloads: int  # darwin + windows
-    server_downloads: int  # linux
-    desktop_fraction: float
     by_module: dict[str, int]
     ci_sweep_releases: int  # releases whose full artifact set was pulled by automation
     ci_downloads: int  # binary downloads attributed to those sweeps
     install_events: int  # total_downloads - ci_downloads; download events, NOT people
     peak_build: int  # most install events on a single (module, version) build
     peak_build_module: str  # the module that peak belongs to
+
+    @property
+    def desktop_downloads(self) -> int:
+        """darwin + windows — the human install platforms."""
+        return self.by_platform.get("darwin", 0) + self.by_platform.get("windows", 0)
+
+    @property
+    def server_downloads(self) -> int:
+        """linux — the CI / server platform."""
+        return self.by_platform.get("linux", 0)
+
+    @property
+    def desktop_fraction(self) -> float:
+        return self.desktop_downloads / self.total_downloads if self.total_downloads else 0.0
 
 
 def parse_asset_platform(name: str) -> str | None:
@@ -314,9 +323,23 @@ def parse_asset_platform(name: str) -> str | None:
     return None
 
 
-def _asset_module(name: str) -> str:
-    """Module an asset belongs to: the name before the first version segment."""
-    return re.split(r"_v?\d", name, maxsplit=1)[0] or name
+def _asset_module_version(name: str) -> tuple[str, str]:
+    """(module, version) parsed from a GoReleaser asset filename.
+
+    e.g. ``daemon_0.13.0_darwin_arm64.tar.gz`` -> ``("daemon", "0.13.0")``. The
+    version is anchored between the module and the platform token and excludes
+    ``_``, so a module name that itself embeds ``_<digit>`` (e.g. ``foo_2``) is
+    kept whole rather than truncated. Returns ``("", "")`` if the name doesn't
+    match the ``module_version_os_arch`` form.
+    """
+    m = re.match(
+        r"^(?P<module>.+)_v?(?P<version>\d[A-Za-z0-9.\-]*)_(?:darwin|linux|windows|macos)_",
+        name,
+        re.IGNORECASE,
+    )
+    if not m:
+        return "", ""
+    return m.group("module"), m.group("version")
 
 
 def is_ci_sweep(assets: list[tuple[str, int]]) -> bool:
@@ -342,6 +365,7 @@ class ReleaseSplit:
     """A single release's downloads split into human (desktop) vs CI."""
 
     module: str
+    version: str  # asset-derived version, "" if unparseable
     human: int  # desktop install events, minus any sweep-pulled desktop artifact
     ci: int  # Linux pulls + sweep-pulled desktop artifacts
     swept: bool
@@ -361,12 +385,14 @@ def split_release(assets: list[tuple[str, int]]) -> ReleaseSplit:
     human = 0
     ci = 0
     module = ""
+    version = ""
     for name, count in assets:
         platform = parse_asset_platform(name)
         if platform is None or count <= 0:
             continue
         by_platform[platform] = by_platform.get(platform, 0) + count
-        module = module or _asset_module(name)
+        if not module:
+            module, version = _asset_module_version(name)
         if platform == "linux":
             ci += count
         elif swept:
@@ -374,17 +400,16 @@ def split_release(assets: list[tuple[str, int]]) -> ReleaseSplit:
             human += count - 1
         else:
             human += count
-    return ReleaseSplit(module=module, human=human, ci=ci, swept=swept, by_platform=by_platform)
+    return ReleaseSplit(
+        module=module, version=version, human=human, ci=ci, swept=swept, by_platform=by_platform
+    )
 
 
-def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMetrics | None:
-    """Aggregate per-asset download counts by platform and module across releases.
+def aggregate_releases(splits: list[ReleaseSplit]) -> ReleaseMetrics | None:
+    """Aggregate already-split releases into overall metrics.
 
-    ``releases`` is a list of releases, each a ``(asset_name, download_count)``
-    list (including non-binary assets like checksums, which inform sweep
-    detection but are excluded from the download totals). Linux pulls and the
-    desktop artifacts of a CI sweep are attributed to automation. Returns ``None``
-    if no binary asset has ever been downloaded.
+    Linux pulls and the desktop artifacts of a CI sweep are attributed to
+    automation. Returns ``None`` if no binary asset has ever been downloaded.
     """
     by_platform: dict[str, int] = {}
     by_module: dict[str, int] = {}
@@ -392,8 +417,7 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
     ci_downloads = 0
     peak_build = 0
     peak_build_module = ""
-    for assets in releases:
-        split = split_release(assets)
+    for split in splits:
         if split.swept:
             ci_sweep_releases += 1
         ci_downloads += split.ci
@@ -408,14 +432,9 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
     total = sum(by_platform.values())
     if total == 0:
         return None
-    desktop = by_platform.get("darwin", 0) + by_platform.get("windows", 0)
-    server = by_platform.get("linux", 0)
     return ReleaseMetrics(
         total_downloads=total,
         by_platform=by_platform,
-        desktop_downloads=desktop,
-        server_downloads=server,
-        desktop_fraction=desktop / total,
         by_module=by_module,
         ci_sweep_releases=ci_sweep_releases,
         ci_downloads=ci_downloads,
@@ -423,6 +442,11 @@ def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMet
         peak_build=peak_build,
         peak_build_module=peak_build_module,
     )
+
+
+def classify_release_assets(releases: list[list[tuple[str, int]]]) -> ReleaseMetrics | None:
+    """Split each release's ``(asset_name, download_count)`` list, then aggregate."""
+    return aggregate_releases([split_release(assets) for assets in releases])
 
 
 @dataclass
@@ -437,42 +461,61 @@ def module_version_from_tag(tag: str) -> tuple[str, str]:
     """Split a release tag into (module, version).
 
     Binary-module tags look like ``hook/v0.12.0`` or ``mcp-proxy/v0.13.0``; SDK
-    tags like ``sdk-ts-v0.10.0``. Returns ("", tag) if no version is found.
+    tags like ``sdk-ts-v0.10.0``; a bare ``v1.2.3`` has no module. Returns
+    ``("", "")`` for a tag with no version at all (empty, or a draft
+    ``untagged-<sha>``), so callers can fall back to the asset-derived version
+    rather than treating the whole tag as a version string.
     """
     m = re.match(r"^(.*?)[/-]v?(\d[\w.\-]*)$", tag)
-    if not m:
-        return "", tag
-    return m.group(1).rstrip("/-"), m.group(2)
+    if m:
+        return m.group(1).rstrip("/-"), m.group(2)
+    m = re.match(r"^v?(\d[\w.\-]*)$", tag)  # bare version, no module prefix
+    if m:
+        return "", m.group(1)
+    return "", ""
 
 
-def _version_key(version: str) -> list:
-    """Sort key: numeric segments ascending, a pre-release sorting before its release."""
+def _version_key(version: str) -> tuple:
+    """Total-orderable sort key for a version string.
+
+    Each segment becomes a uniform ``(kind, int, str)`` triple — numeric segments
+    compare numerically, non-numeric ones as strings, and an int never compares
+    against a str (which would raise ``TypeError``). A pre-release sorts before
+    its release.
+    """
     base, _, pre = version.partition("-")
-    parts: list = [int(p) if p.isdigit() else p for p in base.split(".")]
-    # a release (no pre-release suffix) sorts after its pre-releases
-    parts.append("" if pre else "~")
-    parts.append(pre)
-    return parts
+    nums = tuple((0, int(s), "") if s.isdigit() else (1, 0, s) for s in base.split("."))
+    return (nums, 0 if pre else 1, pre)
 
 
-def release_timeline(releases: list[ReleaseInfo]) -> dict[str, list[tuple[str, ReleaseSplit]]]:
-    """Per-module list of (version, ReleaseSplit), version-sorted ascending.
+def build_timeline(
+    pairs: list[tuple[ReleaseInfo, ReleaseSplit]],
+) -> dict[str, list[tuple[str, ReleaseSplit]]]:
+    """Group already-split releases into a per-module, version-sorted timeline.
 
-    Only releases that carry downloaded binary assets appear (SDK source-only
-    tags drop out). The module label comes from the tag, falling back to the
-    asset-derived module so the two always agree.
+    Releases with no downloaded binary assets drop out (SDK source-only tags).
+    Module and version come from the tag when it parses to a clean version,
+    falling back to the asset-derived values so an untagged/draft release is
+    still placed under its real module rather than an empty bucket.
     """
     timeline: dict[str, list[tuple[str, ReleaseSplit]]] = {}
-    for rel in releases:
-        split = split_release(rel.assets)
+    for rel, split in pairs:
         if not split.by_platform:
             continue  # no binary downloads for this release
         module, version = module_version_from_tag(rel.tag)
+        if not version[:1].isdigit():  # tag carried no clean version
+            module, version = split.module, split.version
         module = module or split.module
+        version = version or split.version
         timeline.setdefault(module, []).append((version, split))
     for versions in timeline.values():
         versions.sort(key=lambda vs: _version_key(vs[0]))
     return timeline
+
+
+def release_timeline(releases: list[ReleaseInfo]) -> dict[str, list[tuple[str, ReleaseSplit]]]:
+    """Per-module list of (version, ReleaseSplit), version-sorted ascending."""
+    return build_timeline([(rel, split_release(rel.assets)) for rel in releases])
 
 
 def verdict_release(metrics: ReleaseMetrics | None) -> tuple[str, list[str]]:
@@ -589,7 +632,9 @@ def pypi_overall(pkg: str) -> tuple[list[tuple[datetime.date, int]], float]:
         elif row["category"] == "with_mirrors":
             with_total += n
     series = sorted(without.items())
-    mirror_fraction = ((with_total - without_total) / with_total) if with_total else 0.0
+    # Clamp: with_mirrors is the superset, but an uneven-date-coverage gap in the
+    # API response could otherwise drive the difference negative.
+    mirror_fraction = max(0.0, (with_total - without_total) / with_total) if with_total else 0.0
     return series, mirror_fraction
 
 
@@ -748,8 +793,9 @@ def report_github_releases(repo: str) -> dict:
         print(f"    unavailable: {exc}")
         return {"repo": repo, "ecosystem": "github-releases", "error": str(exc)}
 
-    metrics = classify_release_assets([r.assets for r in releases])
-    timeline = release_timeline(releases)
+    pairs = [(rel, split_release(rel.assets)) for rel in releases]
+    metrics = aggregate_releases([s for _, s in pairs])
+    timeline = build_timeline(pairs)
     label, notes = verdict_release(metrics)
 
     # Install-base anchor: per-module peak human build, and the overall superset.

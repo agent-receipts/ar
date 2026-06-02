@@ -270,6 +270,18 @@ def test_module_version_from_tag() -> None:
     assert check.module_version_from_tag("mcp-proxy/v0.13.0") == ("mcp-proxy", "0.13.0")
     assert check.module_version_from_tag("daemon/v0.12.1-alpha.1") == ("daemon", "0.12.1-alpha.1")
     assert check.module_version_from_tag("sdk-ts-v0.10.0") == ("sdk-ts", "0.10.0")
+    # bare version (no module prefix): version parsed, module empty
+    assert check.module_version_from_tag("v1.2.3") == ("", "1.2.3")
+    # untagged draft / non-version tags: ("", "") so callers fall back to assets
+    assert check.module_version_from_tag("untagged-deadbeef") == ("", "")
+    assert check.module_version_from_tag("") == ("", "")
+
+
+def test_version_key_no_typeerror_on_mixed_length_or_nonnumeric() -> None:
+    # regression: previously raised TypeError comparing int vs str in the key
+    assert check._version_key("0.12") < check._version_key("0.12.1")  # 2-seg vs 3-seg
+    mixed = sorted(["1.0.0", "0.12", "0.12.1", "1.0.x", "untagged-abc"], key=check._version_key)
+    assert mixed[0] == "0.12"  # well-defined order, no crash
 
 
 def test_version_key_orders_patches_and_prereleases() -> None:
