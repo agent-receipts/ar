@@ -62,8 +62,8 @@ this and undermine the protocol's credibility?"
 |---|---|---|---|---|
 | 1 | Cross-SDK canonicalisation conformance vectors | ADR-0019 § S1 | #474 | done |
 | 2 | Silent chain termination — `status` field on `agent_end` | ADR-0019 § P1 | #475 | done |
-| 3 | `GeneratingKeyProvider` unreachable in production | ADR-0019 § S2 | #476 | in-progress |
-| 4 | Sequential receipt construction enforced under parallel tool calls | ADR-0020 | #488 | in-progress |
+| 3 | `GeneratingKeyProvider` unreachable in production | ADR-0019 § S2 | #476 | done |
+| 4 | Sequential receipt construction enforced under parallel tool calls | ADR-0020 | #488 | done |
 
 Item 4 is in this list because the OpenClaw plugin may fire concurrent tool
 invocations during the demo. If concurrent emission produces a broken chain
