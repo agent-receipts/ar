@@ -29,7 +29,7 @@ Clicking **Verify signatures** on a chain runs one of two modes depending on whe
 Checks hash linkage and sequence ordering. A green "valid" means the receipts link and are correctly ordered; signatures are not checked.
 
 **With a public key — full cryptographic verification**
-Enter your Ed25519 public key in PEM format in the textarea beside the **Verify signatures** button. The dashboard passes the key to `/api/chains/:id/verify`, which calls the SDK's `receipt.Verify` for each receipt — re-deriving each hash *and* validating the Ed25519 signature. Each receipt in the response carries a `SignatureValid` flag.
+Enter your Ed25519 public key in PEM format in the textarea beside the **Verify signatures** button. The dashboard passes the key to `/api/chains/:id/verify`, which performs hash linkage and sequence checks as usual and additionally calls the SDK's `receipt.Verify` for each receipt to validate its Ed25519 signature. Each receipt in the response carries a `signature_valid` field.
 
 For command-line verification, [`agent-receipts verify`](/reference/cli-commands/) provides the same full check without a browser.
 
