@@ -227,13 +227,16 @@ func TestResolveConfig_DefaultPathLoaded(t *testing.T) {
 // path, the daemon resolves on defaults/env/flags without error.
 func TestResolveConfig_MissingDefaultPathTolerated(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir()) // empty dir, no daemon.toml
+	// Capture the date before and after resolveConfig to avoid a flake when
+	// the call straddles a UTC midnight boundary.
+	before := time.Now().UTC().Format("2006-01-02")
 	r, err := resolveConfig(nil, os.Getenv, io.Discard)
+	after := time.Now().UTC().Format("2006-01-02")
 	if err != nil {
 		t.Fatalf("resolveConfig with missing default config: %v", err)
 	}
-	want := time.Now().UTC().Format("2006-01-02")
-	if r.cfg.ChainID != want {
-		t.Errorf("chain_id = %q, want today's date %q", r.cfg.ChainID, want)
+	if r.cfg.ChainID != before && r.cfg.ChainID != after {
+		t.Errorf("chain_id = %q, want today's date (%q or %q)", r.cfg.ChainID, before, after)
 	}
 }
 

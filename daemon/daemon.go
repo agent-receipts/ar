@@ -446,7 +446,7 @@ func Run(ctx context.Context, cfg Config) error {
 	// rather than refusing to start. A terminal tail is normal after any daemon
 	// shutdown (graceful or not) — blocking restart would require manual config
 	// edits for routine restarts. The loop cap of 32 is a safety guard; in
-	// normal operation it runs at most once.
+	// normal operation it runs at most once (advanced chains are always fresh).
 	for range 32 {
 		if state.NextSeq() <= 1 {
 			break
@@ -468,6 +468,26 @@ func Run(ctx context.Context, cfg Config) error {
 			return err
 		}
 		cfg.Logger.Printf("loaded chain %s, next seq=%d", cfg.ChainID, state.NextSeq())
+	}
+	// Post-loop guard: if the resolved chain is still terminal after exhausting
+	// the advance cap, refuse to start rather than appending after a terminal
+	// receipt (spec §7.3.2). This is a defensive belt-and-suspenders check —
+	// in normal operation the loop always breaks on the first fresh chain.
+	if state.NextSeq() > 1 {
+		tail, tailErr := st.GetChainTailReceipt(cfg.ChainID)
+		if tailErr != nil {
+			return fmt.Errorf("check chain tail: %w", tailErr)
+		}
+		if tail != nil && tail.CredentialSubject.Chain.Terminal != nil && *tail.CredentialSubject.Chain.Terminal {
+			return fmt.Errorf(
+				"chain %q tail (seq %d) is already terminal (chain.status=%q) after advancing %d times; "+
+					"use a new --chain-id or a fresh --db to start a new chain",
+				cfg.ChainID,
+				tail.CredentialSubject.Chain.Sequence,
+				tail.CredentialSubject.Chain.Status,
+				32,
+			)
+		}
 	}
 
 	// Resolve the forensic disclosure configuration (ADR-0012): a disclosure
