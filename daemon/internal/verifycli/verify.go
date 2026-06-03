@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/agent-receipts/ar/daemon"
 	"github.com/agent-receipts/ar/sdk/go/store"
@@ -64,7 +65,7 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	fs.SetOutput(stderr)
 	dbPath := fs.String("db", envOr("AGENTRECEIPTS_DB", daemon.DefaultDBPath()), "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	pubKeyPath := fs.String("public-key", defaultPubKey, "PEM-encoded SPKI public key path (env: AGENTRECEIPTS_PUBLIC_KEY)")
-	chainID := fs.String("chain-id", envOr("AGENTRECEIPTS_CHAIN_ID", "default"), "Chain id to verify (env: AGENTRECEIPTS_CHAIN_ID)")
+	chainID := fs.String("chain-id", envOr("AGENTRECEIPTS_CHAIN_ID", time.Now().UTC().Format("2006-01-02")), "Chain id to verify (env: AGENTRECEIPTS_CHAIN_ID)")
 	if err := fs.Parse(args); err != nil {
 		// `-h` / `--help` is intentional, not an error — flag.ContinueOnError
 		// surfaces it as flag.ErrHelp after writing the usage message. Exit 0
