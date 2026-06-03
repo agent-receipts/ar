@@ -15,7 +15,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -301,16 +300,17 @@ func TestTerminatorTimeoutSilent(t *testing.T) {
 	}
 }
 
-// TestNoTerminatorOnAlreadyTerminatedChain verifies that a daemon refuses to
-// start on a chain whose tail is already an interrupted terminator. Since the
-// daemon refuses at startup, no duplicate terminator can be written, and the
-// chain stays exactly as it was after the first graceful shutdown.
+// TestNoTerminatorOnAlreadyTerminatedChain verifies that when a daemon restarts
+// on a chain whose tail is already terminal, it advances to a new chain ID
+// rather than refusing to start, and no duplicate terminator is written to the
+// original chain.
 func TestNoTerminatorOnAlreadyTerminatedChain(t *testing.T) {
 	sockDir := sockettest.ShortSocketDir(t)
 	dataDir := t.TempDir()
 	keyPath := filepath.Join(dataDir, "signing.key")
 	pubPEM := writeTestKey(t, keyPath)
 
+	const chainID = "already-term-chain"
 	mkCfg := func() daemon.Config {
 		return daemon.Config{
 			SocketPath:           filepath.Join(sockDir, "events.sock"),
@@ -318,7 +318,7 @@ func TestNoTerminatorOnAlreadyTerminatedChain(t *testing.T) {
 			DBPath:               filepath.Join(dataDir, "receipts.db"),
 			KeyPath:              keyPath,
 			PublicKeyPath:        keyPath + ".pub",
-			ChainID:              "already-term-chain",
+			ChainID:              chainID,
 			IssuerID:             "did:agent-receipts-daemon:integration",
 			VerificationMethodID: "did:agent-receipts-daemon:integration#k1",
 			Logger:               log.New(io.Discard, "", 0),
@@ -335,8 +335,7 @@ func TestNoTerminatorOnAlreadyTerminatedChain(t *testing.T) {
 		Tool:      pipeline.EmitterTool{Name: "noop"},
 		Decision:  "allowed",
 	})
-	_ = waitForReceiptCount(t, mkCfg().DBPath, mkCfg().ChainID, 1, 5*time.Second)
-
+	_ = waitForReceiptCount(t, mkCfg().DBPath, chainID, 1, 5*time.Second)
 	shutdownAndWait(t, cancel1, done1)
 
 	// Verify the interrupted terminator was written (seq=2).
@@ -344,7 +343,7 @@ func TestNoTerminatorOnAlreadyTerminatedChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store after first run: %v", err)
 	}
-	receiptsAfterFirst, err := st.GetChain(mkCfg().ChainID)
+	receiptsAfterFirst, err := st.GetChain(chainID)
 	st.Close()
 	if err != nil {
 		t.Fatalf("GetChain after first run: %v", err)
@@ -367,65 +366,62 @@ func TestNoTerminatorOnAlreadyTerminatedChain(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Second run: daemon must refuse to start because the tail is already terminal.
-	// Run returns immediately with an "already terminal" error — no socket is created.
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	done2 := make(chan error, 1)
-	go func() { done2 <- daemon.Run(ctx2, mkCfg()) }()
+	// Second run with the same config: daemon auto-advances to "already-term-chain-2"
+	// and starts successfully. No duplicate terminator may be written to the
+	// original chain.
+	advancedID := chainID + "-2"
+	cancel2, done2 := runInterruptDaemon(t, mkCfg())
 
-	select {
-	case err2 := <-done2:
-		if err2 == nil {
-			t.Error("second daemon: expected startup error for terminated chain, got nil")
-		} else if !strings.Contains(err2.Error(), "already terminal") {
-			t.Errorf("second daemon: error = %q, want 'already terminal' in message", err2.Error())
-		}
-	case <-time.After(5 * time.Second):
-		cancel2()
-		t.Fatal("second daemon did not return within 5s")
-	}
+	emitFrame(t, mkCfg().SocketPath, pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
+		SessionID: "already-term-sess-2",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "noop"},
+		Decision:  "allowed",
+	})
+	_ = waitForReceiptCount(t, mkCfg().DBPath, advancedID, 1, 5*time.Second)
+	shutdownAndWait(t, cancel2, done2)
 
-	// The chain must still have exactly 2 receipts — no duplicate terminator.
+	// Original chain must still have exactly 2 receipts — no duplicate terminator.
 	st, err = store.Open(mkCfg().DBPath)
 	if err != nil {
-		t.Fatalf("open store after second run attempt: %v", err)
+		t.Fatalf("open store after second run: %v", err)
 	}
 	defer st.Close()
 
-	receiptsAfterSecond, err := st.GetChain(mkCfg().ChainID)
+	receiptsAfterSecond, err := st.GetChain(chainID)
 	if err != nil {
-		t.Fatalf("GetChain after second run attempt: %v", err)
+		t.Fatalf("GetChain after second run: %v", err)
 	}
 	if len(receiptsAfterSecond) != 2 {
-		t.Fatalf("after second run attempt: got %d receipts, want 2 (no duplicate terminator)", len(receiptsAfterSecond))
+		t.Fatalf("after second run: got %d receipts on original chain, want 2 (no duplicate terminator)", len(receiptsAfterSecond))
 	}
-
-	assertInterruptedTerminator(t, receiptsAfterSecond, pubPEM, mkCfg().ChainID)
+	assertInterruptedTerminator(t, receiptsAfterSecond, pubPEM, chainID)
 }
 
-// TestDaemonRefusesTerminatedChain verifies that a daemon refuses to start
-// when the tail of the chain is already a terminal receipt. This prevents
-// new receipts from being appended after a terminal receipt, which would
-// violate spec §7.3.2 (VerifyChain rejects any receipt following a terminal).
-func TestDaemonRefusesTerminatedChain(t *testing.T) {
-	cfg, _ := interruptDaemonCfg(t, "refuse-chain")
+// TestDaemonAutoAdvancesTerminatedChain verifies that a daemon restarts cleanly
+// after an interrupted shutdown by advancing to the next chain ID. The new chain
+// is independent: receipts on it are valid and no receipt is appended to the
+// terminated chain, preserving spec §7.3.2 (no receipt may follow a terminal).
+func TestDaemonAutoAdvancesTerminatedChain(t *testing.T) {
+	cfg, pubPEM := interruptDaemonCfg(t, "advance-chain")
 	cancel1, done1 := runInterruptDaemon(t, cfg)
 
 	emitFrame(t, cfg.SocketPath, pipeline.EmitterFrame{
 		Version:   "1",
 		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
-		SessionID: "refuse-sess",
+		SessionID: "advance-sess",
 		Channel:   "sdk",
-		Tool:      pipeline.EmitterTool{Name: "refuse-tool"},
+		Tool:      pipeline.EmitterTool{Name: "advance-tool"},
 		Decision:  "allowed",
 	})
 	_ = waitForReceiptCount(t, cfg.DBPath, cfg.ChainID, 1, 5*time.Second)
 
-	// Stop first daemon (writes interrupted terminator).
+	// Stop first daemon (writes interrupted terminator on "advance-chain").
 	shutdownAndWait(t, cancel1, done1)
 
-	// Wait for socket to become unconnectable before attempting the second start.
+	// Wait for socket to become unconnectable before the second start.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		conn, dialErr := net.DialTimeout("unix", cfg.SocketPath, 100*time.Millisecond)
@@ -439,25 +435,46 @@ func TestDaemonRefusesTerminatedChain(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Attempt to start a second daemon on the same terminated chain.
-	cfg2 := cfg
-	cfg2.TraceLog = nil
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	done2 := make(chan error, 1)
-	go func() { done2 <- daemon.Run(ctx2, cfg2) }()
+	// Second start with the same config: daemon advances to "advance-chain-2".
+	cancel2, done2 := runInterruptDaemon(t, cfg)
 
-	select {
-	case err := <-done2:
-		if err == nil {
-			t.Error("second daemon startup: expected error for terminated chain, got nil")
-		} else if !strings.Contains(err.Error(), "already terminal") {
-			t.Errorf("second daemon startup: error = %q, want 'already terminal' in message", err.Error())
-		}
-	case <-time.After(5 * time.Second):
-		cancel2()
-		t.Fatal("second daemon did not return within 5s")
+	advancedID := cfg.ChainID + "-2"
+	emitFrame(t, cfg.SocketPath, pipeline.EmitterFrame{
+		Version:   "1",
+		TsEmit:    time.Now().UTC().Format(time.RFC3339Nano),
+		SessionID: "advance-sess-2",
+		Channel:   "sdk",
+		Tool:      pipeline.EmitterTool{Name: "advance-tool-2"},
+		Decision:  "allowed",
+	})
+	_ = waitForReceiptCount(t, cfg.DBPath, advancedID, 1, 5*time.Second)
+	shutdownAndWait(t, cancel2, done2)
+
+	st, err := store.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
 	}
+	defer st.Close()
+
+	// Original chain: exactly 2 receipts (1 receipt + interrupted terminator).
+	origReceipts, err := st.GetChain(cfg.ChainID)
+	if err != nil {
+		t.Fatalf("GetChain original: %v", err)
+	}
+	if len(origReceipts) != 2 {
+		t.Fatalf("original chain: got %d receipts, want 2", len(origReceipts))
+	}
+	assertInterruptedTerminator(t, origReceipts, pubPEM, cfg.ChainID)
+
+	// Advanced chain: at least 1 receipt + its own interrupted terminator.
+	advReceipts, err := st.GetChain(advancedID)
+	if err != nil {
+		t.Fatalf("GetChain advanced: %v", err)
+	}
+	if len(advReceipts) < 2 {
+		t.Fatalf("advanced chain: got %d receipts, want at least 2", len(advReceipts))
+	}
+	assertInterruptedTerminator(t, advReceipts, pubPEM, advancedID)
 }
 
 // TestQuiescePropertyNoReceiptAfterTerminator confirms that the interrupted

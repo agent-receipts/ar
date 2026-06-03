@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/agent-receipts/ar/daemon/internal/chain"
@@ -440,23 +442,32 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	cfg.Logger.Printf("loaded chain %s, next seq=%d", cfg.ChainID, state.NextSeq())
 
-	// Refuse to start if the chain already has a terminal receipt. Appending
-	// after a terminal receipt produces a chain that fails VerifyChain (spec
-	// §7.3.2). After a graceful shutdown use a new --chain-id or fresh --db.
-	if state.NextSeq() > 1 {
+	// If the chain already has a terminal receipt, advance to the next chain ID
+	// rather than refusing to start. A terminal tail is normal after any daemon
+	// shutdown (graceful or not) — blocking restart would require manual config
+	// edits for routine restarts. The loop cap of 32 is a safety guard; in
+	// normal operation it runs at most once.
+	for range 32 {
+		if state.NextSeq() <= 1 {
+			break
+		}
 		tail, tailErr := st.GetChainTailReceipt(cfg.ChainID)
 		if tailErr != nil {
 			return fmt.Errorf("check chain tail: %w", tailErr)
 		}
-		if tail != nil && tail.CredentialSubject.Chain.Terminal != nil && *tail.CredentialSubject.Chain.Terminal {
-			return fmt.Errorf(
-				"chain %q tail (seq %d) is already terminal (chain.status=%q); "+
-					"use a new --chain-id or a fresh --db to start a new chain",
-				cfg.ChainID,
-				tail.CredentialSubject.Chain.Sequence,
-				tail.CredentialSubject.Chain.Status,
-			)
+		if tail == nil || tail.CredentialSubject.Chain.Terminal == nil || !*tail.CredentialSubject.Chain.Terminal {
+			break
 		}
+		next := advanceChainID(cfg.ChainID)
+		cfg.Logger.Printf("chain %q tail (seq %d) is terminal (status=%q); continuing as %q",
+			cfg.ChainID, tail.CredentialSubject.Chain.Sequence,
+			tail.CredentialSubject.Chain.Status, next)
+		cfg.ChainID = next
+		state, err = chain.LoadFromStore(st, cfg.ChainID)
+		if err != nil {
+			return err
+		}
+		cfg.Logger.Printf("loaded chain %s, next seq=%d", cfg.ChainID, state.NextSeq())
 	}
 
 	// Resolve the forensic disclosure configuration (ADR-0012): a disclosure
@@ -759,6 +770,27 @@ func reconcileExistingPublicKey(path, wantPubPEM string) error {
 		}
 	}
 	return nil
+}
+
+// advanceChainID returns the next chain ID when the current chain is terminal.
+// It appends or increments a numeric suffix separated by "-":
+//
+//	"foo"          → "foo-2"
+//	"foo-2"        → "foo-3"
+//	"2026-06-03"   → "2026-06-03-2"   (date component "03" has a leading zero,
+//	                                    so it is never mistaken for a counter)
+//	"2026-06-03-2" → "2026-06-03-3"
+//
+// The no-leading-zeros guard (suffix == strconv.Itoa(n)) is what distinguishes
+// a counter suffix added by this function from a date component like "03".
+func advanceChainID(id string) string {
+	if i := strings.LastIndex(id, "-"); i >= 0 {
+		suffix := id[i+1:]
+		if n, err := strconv.Atoi(suffix); err == nil && n >= 2 && suffix == strconv.Itoa(n) {
+			return id[:i+1] + strconv.Itoa(n+1)
+		}
+	}
+	return id + "-2"
 }
 
 func validateConfig(cfg *Config) error {

@@ -231,8 +231,9 @@ func TestResolveConfig_MissingDefaultPathTolerated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveConfig with missing default config: %v", err)
 	}
-	if r.cfg.ChainID != "default" {
-		t.Errorf("chain_id = %q, want built-in default", r.cfg.ChainID)
+	want := time.Now().UTC().Format("2006-01-02")
+	if r.cfg.ChainID != want {
+		t.Errorf("chain_id = %q, want today's date %q", r.cfg.ChainID, want)
 	}
 }
 
