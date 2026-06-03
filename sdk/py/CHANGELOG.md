@@ -11,6 +11,12 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-03
+
+### Added
+
+- **`DAEMON_PROTOCOL_RANGE` re-export** ([#655](https://github.com/agent-receipts/ar/pull/655), Gate #8). Exposes the SDK's declared daemon-protocol version range (`DaemonProtocolRange(min=1, max=1)`) at the package root so the release-time daemon ↔ SDK compatibility check (`scripts/daemon_protocol/check.py`) can read it. The constant was added in source for 0.11.0 but merged to main after the 0.11.0 tag was cut, so the published 0.11.0 package did not include it — this release publishes the export.
+
 ## [0.11.0] - 2026-06-02
 
 ### Breaking Changes
