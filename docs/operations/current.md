@@ -20,7 +20,7 @@
 
 ## Last updated
 
-`2026-05-31` — Wave-1 (7 items farmed 2026-05-29) all shipped: #669 (#495), #670 (#488), #671 (#476), #672 (#629), #673 (#473), #674 (#462), #675 (#622). `collector-tagging` (#638) and `d5-release-verification` (#639) both closed — closure-1 fully complete. Wave-2 (15 items farmed 2026-05-30): 13 done (#677 #678 #679 #680 #682 #690 #696 #698 + #153 #174 #480 #534 closed; #214 closed not-planned); #655 and #656 still open. Dep bumps + mcp-proxy hardening also landed (#683–#688, #693–#694).
+`2026-06-03` — Closed issues #476 and #488 (implementations had shipped via #671/#670 but issues were never closed). #656 (`sbom-deps-match-gate`) shipped via #699 (merged 2026-06-01), marked done. #655 (`daemon-sdk-protocol-compat-gate`) in-progress: `DAEMON_PROTOCOL_RANGE` constant landed in TS/Python 0.11.1 (#737); gate script pending. ROADMAP updated for #476/#488 via #738.
 
 > **ADR numbering note.** The numbers settled after three landed in close succession: **ADR-0023** = canonical Go module path (#640/#642), **ADR-0024** = project verification contract (#658), **ADR-0025** = emit failure contract (#643, merged). Earlier snapshots had 0024/0025 swapped.
 
@@ -391,18 +391,17 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - notes: fail-loud on bare-filename DB path fallback. Closed as not-planned.
 
 #### `daemon-sdk-protocol-compat-gate` (#655)
-- state: open
+- state: in-progress
 - depends_on: []
 - issues: #655 (open)
-- farmable: yes
-- notes: Gate #8 (ADR-0024) — declare daemon-protocol version ranges on SDK and daemon sides; assert intersection at release time. Needs protocol-version surface work as part of scope.
+- notes: Gate #8 (ADR-0024) — declare daemon-protocol version ranges on SDK and daemon sides; assert intersection at release time. `DAEMON_PROTOCOL_RANGE` constant added to TS/Python SDKs and shipped in 0.11.1 (#737); release-gate verification script (`scripts/daemon_protocol/check.py`) still pending.
 
 #### `sbom-deps-match-gate` (#656)
-- state: open
+- state: shipped
 - depends_on: []
-- issues: #656 (open)
-- farmable: yes
-- notes: Gate #10 (ADR-0024) — generate per-SDK SBOM at release time; assert installed deps match declared deps; fail on unexplained eager dependencies. Supply-chain gate.
+- issues: #656 (closed)
+- prs: #699 (merged)
+- notes: Gate #10 (ADR-0024) — per-SDK SBOM at release time; declared-vs-installed assertion. Merged 2026-06-01.
 
 ---
 
@@ -419,12 +418,11 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 ## Next farmable (computed)
 
-As of `2026-05-31`, all wave-1 and wave-2 items are shipped except two open verification gates:
+As of `2026-06-03`, wave-1 and wave-2 items are fully shipped. One verification gate remains:
 
-- **`daemon-sdk-protocol-compat-gate` (#655)** — Gate #8: protocol-version range declaration + release-time intersection check. Needs protocol-version surface work scoped as part of the issue.
-- **`sbom-deps-match-gate` (#656)** — Gate #10: per-SDK SBOM at release time + declared-vs-installed assertion.
+- **`daemon-sdk-protocol-compat-gate` (#655)** — Gate #8: in-progress. `DAEMON_PROTOCOL_RANGE` constant shipped (TS/Python 0.11.1); release-gate verification script still needed.
 
-Both are farmable and independent of each other. No other active nodes are blocked on either.
+No other active nodes are blocked.
 
 ---
 
