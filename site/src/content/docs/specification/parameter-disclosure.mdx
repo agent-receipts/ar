@@ -112,7 +112,7 @@ Never reuse the Ed25519 signing key as an encryption key. They have different pu
 
 ## Disclosure modes
 
-The `parameter_disclosure` setting controls which actions get an encrypted envelope attached. It is configured on the daemon — under ADR-0010 (Flavor B) the daemon owns disclosure, and emitters such as the OpenClaw plugin no longer control it (the plugin's `parameterDisclosure` config is a deprecated no-op that only emits a startup warning). The daemon offers four modes; only the *spelling of the allowlist* differs by config surface (see the note below):
+The `parameter_disclosure` setting controls which actions get an encrypted envelope attached. It is configured on the daemon, which owns disclosure policy under ADR-0010 (daemon process separation). The daemon offers four modes; only the *spelling of the allowlist* differs by config surface (see the note below):
 
 | Mode | Behavior |
 |-------|----------|
