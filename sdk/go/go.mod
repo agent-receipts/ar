@@ -3,13 +3,14 @@ module github.com/agent-receipts/ar/sdk/go
 go 1.26.1
 
 require (
-	github.com/agent-receipts/ar/daemon v0.13.0
+	github.com/agent-receipts/ar/daemon v0.16.0
 	github.com/cloudflare/circl v1.6.3
 	github.com/google/uuid v1.6.0
-	modernc.org/sqlite v1.51.0
+	modernc.org/sqlite v1.52.0
 )
 
 require (
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
