@@ -51,6 +51,20 @@ its differentiator. It does not invalidate the taxonomy or cascade model
 in ADR-0026; those become the operative technical spec for the reversal
 tier.
 
+The reason reversal is commodity rather than differentiator is structural,
+not incidental: checkpoint-restore mechanics (content-addressed object store,
+atomic file restore, Merkle-root integrity, `.gitignore`-style exclusion,
+`WalkBudget` limits) are already a solved, widely-distributed capability —
+nono ships exactly this, and other filesystem snapshot tools do too. Investing
+in richer reversal mechanics produces a better implementation of something that
+already exists; it does not produce a capability gap that only Agent Receipts
+can fill. Per-agent attribution, cross-chain blast-radius, and per-principal
+mandate tracking are structurally receipt-native: they require the signed
+issuer identity, the chain ordering, and the delegation graph that no
+host-level snapshot tool captures. That is the gap. "Improve the product"
+therefore means "deepen attribution and blast-radius", not "invest in the
+reversal tier."
+
 ### 2. Reversal tier: checkpoint-primary, tip-undo as special case.
 
 The primary reversal unit is the **checkpoint** — a turn-level (one user
@@ -154,6 +168,17 @@ contact — with blast-radius annotations and turn boundaries — is useful
 against an orchestrator session with no reversal capability at all, the
 product is proven and reversal is an additive tier on top. If it is not
 useful, the reversal tier does not rescue it.
+
+**Success criterion.** The MVP is validated by running it against a real
+multi-agent or orchestrator session (not a synthetic fixture) and making a
+binary judgment with zero reversal capability present: does per-agent
+attribution grouped by turn, with blast-radius annotations, answer questions
+a developer or operator could not answer from raw logs alone? If yes, the
+attribution engine has earned its place and reversal can be layered on top.
+If no, adding reversal to the same read does not change the answer — the
+attribution layer itself needs rethinking first. Shipping without this
+judgment, or substituting a synthetic session for a real one, does not count
+as validation.
 
 ### 5. Nono relationship
 

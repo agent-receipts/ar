@@ -4,6 +4,13 @@
 
 Accepted (2026-06-06). Framing superseded by ADR-0027 (attribution-primary); taxonomy and cascade model remain operative.
 
+The pre-commit PreToolUse-hook capture decision (§2) applies to the **reversal
+tier only** and is **deferred** until reversal beyond checkpoint restore is
+built. The attribution + blast-radius MVP (ADR-0027 §4) requires no new capture
+and does not depend on this hook. A future reader should not interpret the
+"Accepted" status of §2 as a signal that in-process capture is in scope for
+the attribution sprint.
+
 ## Context
 
 The Agent Receipts schema has carried reversibility fields (`reversible`,
