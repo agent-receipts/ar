@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-06-06)
+Accepted (2026-06-06). Framing superseded by ADR-0027 (attribution-primary); taxonomy and cascade model remain operative.
 
 ## Context
 
@@ -97,9 +97,19 @@ version string stays `"1"`. Rationale:
 - The `v` version gate (`validateFrame`) guards interpretation of existing
   fields, not presence of new optional ones. A bump is warranted only
   when the *meaning* of existing bytes changes or a new field is required.
-- ADR-0024 Gate #8 (`scripts/daemon_protocol/check.py`) catches
-  non-negotiable SDK/daemon pairs at release time; this change does not
-  trigger it.
+- ADR-0024 Gate #8 (daemon ↔ SDK protocol compatibility, implemented by
+  `scripts/daemon_protocol/check.py`) catches non-negotiable SDK/daemon
+  pairs at release time; this change does not trigger it.
+
+The **actor model** for state-change fields: at `PreToolUse` the hook
+writes the target file's content hash to a pending entry in the undo log
+(keyed by `tool_use_id`); at `PostToolUse` the hook reads that entry to
+populate `before_hash`, computes `after_hash` from the current file state,
+and includes both in the emitter frame. `emitter.Event` must gain
+`StateChange`, `Reversible`, `ReversalMethod`, `ReversalWindowSeconds`,
+and `ReversalOf` fields alongside the frame fields. If the `PreToolUse`
+entry is absent (hook was not installed, or snapshot failed), the fields
+are omitted and the action is marked non-reversible in the undo log.
 
 A **parity test** is required: `emitter.frame` and `pipeline.EmitterFrame`
 are hand-mirrored by convention with no compiler enforcement. The test
@@ -168,13 +178,18 @@ authorizations and human approval.
 
 ### 5. Undo as a privileged action
 
-- Reversal receipts use `reversal_of` (already in schema). The reversal
-  receipt's `state_change.after_hash` must equal the original receipt's
-  `before_hash`, making undo cryptographically verifiable in the chain.
+- Reversal receipts use `reversal_of` (defined in the JSON schema at
+  `outcome.reversal_of`; the Go SDK `receipt.Outcome` struct must be
+  extended with `ReversalOf string \`json:"reversal_of,omitempty"\``).
+  The reversal receipt's `state_change.after_hash` must equal the original
+  receipt's `before_hash`, making undo cryptographically verifiable in the
+  chain.
 - Authorization: undo requires ≥ the original action's authorization
   level. A low-privilege context cannot undo a high-privilege action.
-- Policy gate: undo routes through the same `policy/engine.go`
-  pass/flag/pause/block logic. High-risk undo → pause/human-in-the-loop;
+- Policy gate: undo must enforce pass/flag/pause/block semantics
+  equivalent to the MCP proxy's policy engine. The undo agent implements
+  this gate directly — it cannot import `mcp-proxy/internal/policy`
+  across the module boundary. High-risk undo → pause/human-in-the-loop;
   never auto-applied above low risk.
 - Snapshot integrity gate: `hash(blob) == before_hash` before any restore.
   A poisoned snapshot store must not become an arbitrary-write primitive.

@@ -117,8 +117,8 @@ no reversal.** This is a read-only query over the existing SQLite receipt
 store; it requires no new capture, no snapshot store, no undo agent.
 
 Inputs available in the store today:
-- `chain_id`, `sequence`, `issuer_id`, `principal_id` (indexed columns)
-- `action_type`, `timestamp`, `risk_level`, `status` (indexed columns)
+- `chain_id`, `sequence` (indexed); `issuer_id`, `principal_id` (columns, not indexed)
+- `action_type`, `timestamp`, `risk_level` (indexed); `status` (column, not indexed)
 - Full `receipt_json` carrying `action.target.resource`, `delegation`,
   `authorization`, `intent.prompt_preview`, `credentialSubject.chain`
 
@@ -143,7 +143,8 @@ For a given session (all chains sharing issuer.session_id):
 `session_id` is not a stored column today (it lives in `receipt_json`
 via `issuer.session_id`). For v0 the query scans `receipt_json` for all
 chains in the time window and groups by parsed `session_id`. A follow-on
-schema migration adds `session_id` and `delegation_parent_chain_id` as
+schema migration adds `session_id` and `delegation_parent_chain_id`
+(extracted from `credentialSubject.delegation.parent_chain_id`) as
 indexed columns.
 
 This is buildable in the `dashboard` repo against its existing read-only
@@ -179,7 +180,8 @@ The relationship is:
 - The undo agent (ADR-0026 §6) is deprioritized below the attribution
   read; it ships as a gated action through the attribution engine, not as
   a standalone tool.
-- `session_id` and `delegation_parent_chain_id` become candidates for
+- `session_id` and `delegation_parent_chain_id` (from
+  `credentialSubject.delegation.parent_chain_id`) become candidates for
   promoted indexed columns in the store schema.
 - The project's value proposition shifts from "undo what your agent did"
   to "see exactly what your agent swarm did, who authorized it, and what
