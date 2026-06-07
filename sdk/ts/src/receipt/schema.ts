@@ -169,6 +169,7 @@ const outcomeSchema = z
 		reversible: z.boolean().optional(),
 		reversal_method: z.string().optional(),
 		reversal_window_seconds: z.number().optional(),
+		reversal_of: z.string().optional(),
 		state_change: stateChangeSchema.optional(),
 		response_hash: z.string().optional(),
 	})

@@ -1,12 +1,12 @@
-# ADR-0027: Attribution-Primary Product Model
+# ADR-0029: Attribution-Primary Product Model
 
 ## Status
 
-Accepted (2026-06-06). Supersedes the undo-primary framing in ADR-0026.
+Accepted (2026-06-06). Supersedes the undo-primary framing in ADR-0028.
 
 ## Context
 
-ADR-0026 was written with undo as the primary product and attribution
+ADR-0028 was written with undo as the primary product and attribution
 as supporting metadata. Pressure-testing the cascade model produced a
 structural observation that inverts that framing.
 
@@ -48,7 +48,7 @@ existing filesystem snapshot tools.
 
 This inversion changes what ships first and what the project defends as
 its differentiator. It does not invalidate the taxonomy or cascade model
-in ADR-0026; those become the operative technical spec for the reversal
+in ADR-0028; those become the operative technical spec for the reversal
 tier.
 
 The reason reversal is commodity rather than differentiator is structural,
@@ -82,7 +82,7 @@ filesystem snapshot tooling already is.
 Reversal mechanics (checkpoint restore, atomic write, Merkle integrity,
 3-way fallback) are deliberately kept commodity. The implementation
 follows the nono object-store design (SHA-256 content-addressed, sharded,
-dedup, pure Go, no CGO) but is not differentiated by it. See ADR-0026
+dedup, pure Go, no CGO) but is not differentiated by it. See ADR-0028
 §2 for the snapshot store spec.
 
 ### 3. The differentiating layer: what attribution provides that reversal tools cannot.
@@ -142,13 +142,25 @@ Query shape (pseudocode, implemented in the dashboard):
 For a given session (all chains sharing issuer.session_id):
   1. Build file-identity → [(chain_id, sequence, issuer_id, action)] index
      from action.target.resource in receipt_json across all chains.
+     NOTE (v0): action.target.resource is a path string, used as a proxy
+     for logical file identity. ADR-0028 §4 prohibits path strings for
+     the conflict relation (moves, symlinks, case-insensitive FSes make
+     path strings unreliable). v0 accepts this limitation explicitly;
+     a follow-on adds identity graph tracking for moves.
   2. Group into turns: cluster consecutive receipts from the same issuer
      by time proximity or by chain sequence runs.
   3. For each action:
        blast_radius = {
-         state_deps:    later receipts whose file-identity sets intersect this one,
-         semantic_deps: co-turn receipts from any issuer touching other files,
-         cross_agent:   state_deps or semantic_deps from a different issuer_id,
+         state_deps:      later receipts whose path-string sets intersect
+                          this one (verified by chain ordering — these are
+                          real state dependencies within the path-string
+                          approximation),
+         semantic_deps:   co-turn receipts from any issuer touching other
+                          paths (heuristic only — receipts cannot prove
+                          symbol-level coupling; surface as a warning,
+                          not a confirmed dependency),
+         cross_agent_state:    state_deps from a different issuer_id,
+         cross_agent_heuristic: semantic_deps from a different issuer_id,
        }
   4. Render grouped by issuer (agent), within each: grouped by turn,
      within each: actions with blast-radius annotations.
@@ -202,7 +214,7 @@ The relationship is:
 
 - The dashboard gains an attribution and blast-radius view as the primary
   new feature, built against the existing store interface.
-- The undo agent (ADR-0026 §6) is deprioritized below the attribution
+- The undo agent (ADR-0028 §6) is deprioritized below the attribution
   read; it ships as a gated action through the attribution engine, not as
   a standalone tool.
 - `session_id` and `delegation_parent_chain_id` (from

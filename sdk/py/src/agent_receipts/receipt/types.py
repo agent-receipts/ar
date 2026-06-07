@@ -221,6 +221,7 @@ class Outcome(BaseModel):
     reversible: bool | None = None
     reversal_method: str | None = None
     reversal_window_seconds: int | None = None
+    reversal_of: str | None = None
     state_change: StateChange | None = None
     response_hash: str | None = None
 

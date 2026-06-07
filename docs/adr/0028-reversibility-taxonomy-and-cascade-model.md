@@ -1,12 +1,12 @@
-# ADR-0026: Reversibility Taxonomy and Cascade Model
+# ADR-0028: Reversibility Taxonomy and Cascade Model
 
 ## Status
 
-Accepted (2026-06-06). Framing superseded by ADR-0027 (attribution-primary); taxonomy and cascade model remain operative.
+Accepted (2026-06-06). Framing superseded by ADR-0029 (attribution-primary); taxonomy and cascade model remain operative.
 
 The pre-commit PreToolUse-hook capture decision (§2) applies to the **reversal
 tier only** and is **deferred** until reversal beyond checkpoint restore is
-built. The attribution + blast-radius MVP (ADR-0027 §4) requires no new capture
+built. The attribution + blast-radius MVP (ADR-0029 §4) requires no new capture
 and does not depend on this hook. A future reader should not interpret the
 "Accepted" status of §2 as a signal that in-process capture is in scope for
 the attribution sprint.
@@ -22,10 +22,10 @@ fixture. This ADR pins the design required to make them load-bearing,
 records the architectural decisions a pressure-test of the cascade model
 surfaced, and establishes the explicit limits where undo is not possible.
 
-ADR-0027 supersedes the framing of this ADR: the product is
+ADR-0029 supersedes the framing of this ADR: the product is
 attribution-and-blast-radius, not undo. This ADR is retained because its
 taxonomy and cascade conclusions are correct and remain the operative
-technical model for the reversal tier that ADR-0027 places underneath
+technical model for the reversal tier that ADR-0029 places underneath
 attribution.
 
 ## Decision
@@ -117,6 +117,12 @@ and includes both in the emitter frame. `emitter.Event` must gain
 and `ReversalOf` fields alongside the frame fields. If the `PreToolUse`
 entry is absent (hook was not installed, or snapshot failed), the fields
 are omitted and the action is marked non-reversible in the undo log.
+
+> **Runtime note:** `tool_use_id` is a Claude Code-specific concept
+> (present in `hook/internal/claudeCodeFrame`). It is not part of the
+> protocol schema, `emitter.Event`, or `emitter.frame`. Runtimes other
+> than Claude Code need an equivalent per-invocation correlation ID to key
+> the undo log; the implementation strategy is runtime-specific.
 
 A **parity test** is required: `emitter.frame` and `pipeline.EmitterFrame`
 are hand-mirrored by convention with no compiler enforcement. The test

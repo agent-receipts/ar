@@ -179,6 +179,7 @@ export interface Outcome {
 	reversible?: boolean;
 	reversal_method?: string;
 	reversal_window_seconds?: number;
+	reversal_of?: string;
 	state_change?: StateChange;
 	/** SHA-256 hash of the RFC 8785 canonical JSON of the server's response,
 	 *  computed after secret redaction (redact → hash → sign). */
