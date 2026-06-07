@@ -53,7 +53,7 @@ func jsonTagsOf(v any) []string {
 		return nil
 	}
 	var tags []string
-	for i := range t.NumField() {
+	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		tag := f.Tag.Get("json")
 		if tag == "" || tag == "-" {

@@ -17,8 +17,9 @@ The Agent Receipts schema has carried reversibility fields (`reversible`,
 `reversal_method`, `reversal_window_seconds`, `reversal_of`,
 `state_change.before_hash`, `state_change.after_hash`) since the initial
 spec. As of v0.4.0 none of these fields are populated by any emitter,
-daemon, hook, or proxy — they appear only in a TypeScript unit-test
-fixture. This ADR pins the design required to make them load-bearing,
+daemon, hook, or proxy — they appear in SDK type definitions and
+cross-SDK canonicalization test vectors but no live capture path writes
+them. This ADR pins the design required to make them load-bearing,
 records the architectural decisions a pressure-test of the cascade model
 surfaced, and establishes the explicit limits where undo is not possible.
 

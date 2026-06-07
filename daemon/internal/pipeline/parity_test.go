@@ -50,7 +50,7 @@ func TestEmitterFrameParityKnownFields(t *testing.T) {
 func jsonTagsOfEmitterFrame() []string {
 	t := reflect.TypeOf(EmitterFrame{})
 	var tags []string
-	for i := range t.NumField() {
+	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		tag := f.Tag.Get("json")
 		if tag == "" || tag == "-" {
