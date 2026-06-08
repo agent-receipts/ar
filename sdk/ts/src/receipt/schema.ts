@@ -203,7 +203,7 @@ const credentialSubjectSchema = z
 		outcome: outcomeSchema,
 		authorization: authorizationSchema.optional(),
 		chain: chainSchema,
-		correlation_id: z.string().optional(),
+		correlation_id: z.string().min(1).optional(),
 	})
 	.passthrough();
 

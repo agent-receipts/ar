@@ -43,6 +43,10 @@ export interface CreateReceiptInput {
 	 *  constructed directly with `status` but no `terminal` would be
 	 *  schema-invalid but cannot be produced through this entry point. */
 	terminationStatus?: "complete" | "interrupted";
+	/** Opaque token linking this receipt to a related receipt for the same
+	 *  logical tool invocation (e.g. a hook pre-check to MCP proxy post-action).
+	 *  Must be non-empty when provided; omit when no correlation context exists. */
+	correlationId?: string;
 }
 
 /**
@@ -104,6 +108,7 @@ export function createReceipt(input: CreateReceiptInput): UnsignedAgentReceipt {
 			chain,
 			...(input.intent && { intent: input.intent }),
 			...(input.authorization && { authorization: input.authorization }),
+			...(input.correlationId && { correlation_id: input.correlationId }),
 		},
 	};
 }
