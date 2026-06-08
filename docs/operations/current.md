@@ -20,7 +20,9 @@
 
 ## Last updated
 
-`2026-06-03` — Closed issues #476 and #488 (implementations had shipped via #671/#670 but issues were never closed). ROADMAP updated via #738. Gate #10 (#656, `sbom-deps-match-gate`) shipped via #699 (merged 2026-06-01). Gate #8 (#655, `daemon-sdk-protocol-compat-gate`) shipped via #705 (merged 2026-06-01) — `scripts/daemon_protocol/check.py` + protocol-version ranges on all four sides + live handshake, wired into all release workflows. sdk-ts/0.11.1 + sdk-py/0.11.1 prepped via #737 to publish the missing `DAEMON_PROTOCOL_RANGE` export; tags needed after this merges to main.
+`2026-06-08` — PR #753 merged: Layer 2 subagent chain delegation. Hook forwards `agent_id`; daemon routes to per-agent chains keyed `<rootChainID>/agent/<agentID>`; first receipt on each chain carries `delegation.parent_chain_id` + `delegation.parent_receipt_id` + `delegation.delegator.id`. No release cut yet — alpha is the next step when ready.
+
+`2026-06-03` — #655 (`daemon-sdk-protocol-compat-gate`, Gate #8) shipped; closed 2026-06-03. #656 (`sbom-deps-match-gate`) found already closed 2026-06-01; marked shipped. **Active DAG fully clear** — no farmable nodes remain. Foreground shifts to `daemon-v2` design work (not yet broken into nodes).
 
 > **ADR numbering note.** The numbers settled after three landed in close succession: **ADR-0023** = canonical Go module path (#640/#642), **ADR-0024** = project verification contract (#658), **ADR-0025** = emit failure contract (#643, merged). Earlier snapshots had 0024/0025 swapped.
 
@@ -39,7 +41,7 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - **`closure-0` (spec/context versioning) — SHIPPED.**
 - **`closure-1` (Quick Start coherence + Go module identity) — COMPLETE.** All Quick Start / README / ADR nodes shipped, including `homepage-rewrite` (#644) and `ADR-0023-go-module-path` (#640). ADR-0023 follow-ups `collector-tagging` (#638) and `d5-release-verification` (#639) both closed 2026-05-30. Tracker #598 can now close.
 - **`closure-2` (emit failure contract) — SHIPPED.** ADR-0025 implemented across all three SDKs (#643, merged 2026-05-28). Issue #599 closed.
-- **`verification-contract` (ADR-0024) — SHIPPED & BUILDING GATES.** ADR-0024 landed (#658). Gate #1 type-check shipped (#632); Gate #1 execute mode shipped (#666, closes #650). Gate #2 (release round-trip) shipped (#664, closes #651). Gate #5 (MDX snippet execution) shipped (#667, closes #652). Gate #6 (schema-conformance) shipped (#696, closes #653). Gate #7 (byte-identity) shipped (#698, closes #654). Gate #8 (daemon ↔ SDK protocol compatibility) shipped (#705, closes #655). Gate #10 (dependency-manifest/SBOM) shipped (#699, closes #656). Gates #3/#4/#9 tracked under ADR-0021 (#597).
+- **`verification-contract` (ADR-0024) — ALL GATES SHIPPED.** ADR-0024 landed (#658). Gate #1 type-check shipped (#632); Gate #1 execute mode shipped (#666, closes #650). Gate #2 (release round-trip) shipped (#664, closes #651). Gate #5 (MDX snippet execution) shipped (#667, closes #652). Gate #6 (schema-conformance) shipped (#696, closes #653). Gate #7 (byte-identity) shipped (#698, closes #654). Gate #8 (daemon ↔ SDK protocol compatibility) shipped (#705, closes #655). Gate #10 (dependency-manifest/SBOM) shipped (#699, closes #656). Gates #3/#4/#9 tracked under ADR-0021 (#597).
 - **`v1-blockers`** (orthogonal to closures; tracked by `v1-blocker` label) — #534 (AWS KMS signers) shipped for TS + Python (#663); #535 (ephemeral-compute deployment guide) shipped (#660). Foreground for the v1 release path; not part of the audit response.
 - **`daemon-v2`** — Otto's foreground design work. Not yet broken into nodes here; add when it becomes farmable.
 
@@ -393,18 +395,16 @@ A closure is a coherent piece of work that retires a category of audit findings 
 #### `daemon-sdk-protocol-compat-gate` (#655)
 - state: shipped
 - depends_on: []
-- issues: #655 (closed)
+- issues: #655 (closed 2026-06-03)
 - prs: #705 (merged)
-- artifacts: `scripts/daemon_protocol/check.py`; `daemon/protocol.go`; `sdk/go/emitter/{emitter,protocol_test}.go`; `daemon-protocol` CI job in all four release workflows
-- notes: Gate #8 shipped 2026-06-01. Protocol-version ranges declared on all four sides (daemon, Go SDK, TS SDK, Python SDK). Static range-intersection + live handshake wired into all four release workflows. sdk-ts/0.11.0 and sdk-py/0.11.0 were tagged before #705 landed and lacked the `DAEMON_PROTOCOL_RANGE` re-export; sdk-ts/0.11.1 + sdk-py/0.11.1 patch releases (prepped in #737) fix this once published.
+- notes: Gate #8 (ADR-0024) — protocol-version ranges declared on all four sides (daemon, Go SDK, TS SDK, Python SDK); static range-intersection check + live handshake wired into all four release workflows.
 
 #### `sbom-deps-match-gate` (#656)
 - state: shipped
 - depends_on: []
-- issues: #656 (closed)
+- issues: #656 (closed 2026-06-01)
 - prs: #699 (merged)
-- artifacts: `scripts/dependency_manifest/check.py`; `dependency-manifest` CI job in all three SDK release workflows
-- notes: Gate #10 shipped 2026-06-01. Per-SDK SBOM at release time; installed deps asserted to match declared deps; unexplained eager dependencies fail the release.
+- notes: Gate #10 (ADR-0024) — generate per-SDK SBOM at release time; assert installed deps match declared deps; fail on unexplained eager dependencies. Supply-chain gate.
 
 ---
 
@@ -421,9 +421,9 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 ## Next farmable (computed)
 
-As of `2026-06-03`, all wave-1 and wave-2 items are shipped. Gate #8 (#655) shipped via #705 and Gate #10 (#656) shipped via #699 — both on 2026-06-01, the day after the ops doc was last updated.
+As of `2026-06-08`, **the active DAG is fully clear** — all wave-1 and wave-2 items, and all ADR-0024 verification gates (#1–#10), are shipped. `daemon-sdk-protocol-compat-gate` (#655, Gate #8) closed 2026-06-03; `sbom-deps-match-gate` (#656, Gate #10) closed 2026-06-01.
 
-No verification-gate nodes remain open. The next farmable work is in the background queue below.
+No farmable nodes remain. The next foreground work is **`daemon-v2`** — Otto's design work, not yet broken into nodes (add them here once it becomes farmable). Background items awaiting an Otto decision: PR #708 (doc-e2e CI fleet — needs repo secret + action SHA pin + permissions sign-off), idle PR #532 (hermes-agent plugin — review or close).
 
 ---
 

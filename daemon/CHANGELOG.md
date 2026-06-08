@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0-alpha.1] - 2026-06-08
+
+### Added
+
+- **Subagent chain delegation** ([#753](https://github.com/agent-receipts/ar/pull/753)) — Claude Code sends a distinct `agent_id` per subagent in hook payloads. The daemon now routes frames with a non-empty `agent_id` to a per-agent chain keyed `<rootChainID>/agent/<agentID>` (the root chain continues to hold root-level receipts). The first receipt on each subagent chain carries a `delegation` object: `parent_chain_id` (the root chain ID), `parent_receipt_id` (the root chain's tail receipt at delegation time), and `delegator.id` (the daemon's issuer ID). This creates a cryptographically verifiable link from every subagent action back to the root session that spawned it. `agent_id` values containing `/` or null bytes are rejected at validation to prevent chain ID injection.
+- **Correlation ID** ([#752](https://github.com/agent-receipts/ar/pull/752)) — the emitter frame now carries an optional `correlation_id` field; the daemon stamps it on `credentialSubject.correlation_id`. Enables post-hoc joining of a hook pre-check receipt with the MCP proxy post-action receipt for the same tool call without a shared database lookup.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.16.0-alpha.1`.
+
+## [0.16.0] - 2026-06-03
+
+### Added
+
+- **Auto-advance chain ID on terminal tail** ([#735](https://github.com/agent-receipts/ar/pull/735)) — instead of refusing to start when the active chain's tail is a terminal receipt (normal shutdown), the daemon now advances to the next chain ID (`foo` → `foo-2` → `foo-3 …`). A `brew services restart` after a normal or interrupted shutdown no longer requires manual config edits.
+- **Date-based default chain ID** ([#735](https://github.com/agent-receipts/ar/pull/735)) — the default chain ID changes from the static `"default"` string to today's UTC date (`2006-01-02` format). Each calendar day produces a named chain; same-day restarts auto-advance with a counter suffix (`2026-06-03` → `2026-06-03-2`); midnight rolls over to a fresh chain automatically.
+
 ## [0.15.0] - 2026-06-02
 
 ### Added
