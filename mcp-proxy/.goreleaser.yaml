@@ -84,3 +84,38 @@ brews:
         strategy :github_releases
         regex(/^mcp-proxy\/v?(\d+(?:\.\d+)+)$/i)
       end
+
+  # Alpha-track formula — updated on every release (stable and pre-release).
+  # `brew install agent-receipts/tap/mcp-proxy-alpha` always gives the latest
+  # cut; conflicts with the stable formula since both install the same binary.
+  - name: mcp-proxy-alpha
+    repository:
+      owner: agent-receipts
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      branch: "bump-{{.ProjectName}}-alpha-{{.Version}}"
+      pull_request:
+        enabled: true
+        base:
+          branch: main
+    directory: Formula
+    url_template: "https://github.com/agent-receipts/ar/releases/download/mcp-proxy%2Fv{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/agent-receipts/ar/tree/main/mcp-proxy"
+    description: "MCP proxy with action receipts, policy engine, and intent tracking (alpha/beta track)"
+    license: "Apache-2.0"
+    commit_author:
+      name: agent-receipts-bot
+      email: bot@agentreceipts.ai
+    commit_msg_template: "chore(mcp-proxy): bump alpha to v{{ .Version }}"
+    install: |
+      bin.install "mcp-proxy"
+    test: |
+      system "#{bin}/mcp-proxy", "--version"
+    custom_block: |
+      conflicts_with "mcp-proxy", because: "both install the same binary"
+
+      livecheck do
+        url "https://github.com/agent-receipts/ar"
+        strategy :github_releases
+        regex(/^mcp-proxy\/v?(\d+(?:\.\d+)+(?:-[a-z0-9.]+)?)$/i)
+      end
