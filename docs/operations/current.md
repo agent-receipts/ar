@@ -397,7 +397,7 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - depends_on: []
 - issues: #655 (closed 2026-06-03)
 - prs: #705 (merged)
-- notes: Gate #8 (ADR-0024) — declare daemon-protocol version ranges on SDK and daemon sides; assert intersection at release time. Needs protocol-version surface work as part of scope.
+- notes: Gate #8 (ADR-0024) — protocol-version ranges declared on all four sides (daemon, Go SDK, TS SDK, Python SDK); static range-intersection check + live handshake wired into all four release workflows.
 
 #### `sbom-deps-match-gate` (#656)
 - state: shipped
