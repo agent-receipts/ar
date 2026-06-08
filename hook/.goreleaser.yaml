@@ -90,3 +90,39 @@ brews:
         strategy :github_releases
         regex(/^hook\/v?(\d+(?:\.\d+)+)$/i)
       end
+
+  # Alpha-track formula — updated on every release (stable and pre-release).
+  # `brew install agent-receipts/tap/agent-receipts-hook-alpha` always gives
+  # the latest cut; conflicts with the stable formula since both install the
+  # same binary.
+  - name: agent-receipts-hook-alpha
+    repository:
+      owner: agent-receipts
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      branch: "bump-{{.ProjectName}}-alpha-{{.Version}}"
+      pull_request:
+        enabled: true
+        base:
+          branch: main
+    directory: Formula
+    url_template: "https://github.com/agent-receipts/ar/releases/download/hook%2Fv{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/agent-receipts/ar/tree/main/hook"
+    description: "Claude Code PostToolUse hook that forwards tool-call events to agent-receipts-daemon (alpha/beta track)"
+    license: "Apache-2.0"
+    commit_author:
+      name: agent-receipts-bot
+      email: bot@agentreceipts.ai
+    commit_msg_template: "chore(hook): bump alpha to v{{ .Version }}"
+    install: |
+      bin.install "agent-receipts-hook"
+    test: |
+      system "#{bin}/agent-receipts-hook", "--version"
+    custom_block: |
+      conflicts_with "agent-receipts-hook", because: "both install the same binary"
+
+      livecheck do
+        url "https://github.com/agent-receipts/ar"
+        strategy :github_releases
+        regex(/^hook\/v?(\d+(?:\.\d+)+(?:-[a-z0-9.]+)?)$/i)
+      end

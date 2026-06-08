@@ -153,3 +153,80 @@ brews:
         strategy :github_releases
         regex(/^daemon\/v?(\d+(?:\.\d+)+)$/i)
       end
+
+  # Alpha-track formula — updated on every release (stable and pre-release).
+  # `brew install agent-receipts/tap/agent-receipts-daemon-alpha` always gives
+  # the latest cut; conflicts with the stable formula since both install the
+  # same binaries.
+  - name: agent-receipts-daemon-alpha
+    repository:
+      owner: agent-receipts
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      branch: "bump-{{.ProjectName}}-alpha-{{.Version}}"
+      pull_request:
+        enabled: true
+        base:
+          branch: main
+    directory: Formula
+    url_template: "https://github.com/agent-receipts/ar/releases/download/daemon%2Fv{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/agent-receipts/ar/tree/main/daemon"
+    description: "Agent Receipts daemon and companion verify CLI (alpha/beta track)"
+    license: "Apache-2.0"
+    commit_author:
+      name: agent-receipts-bot
+      email: bot@agentreceipts.ai
+    commit_msg_template: "chore(daemon): bump alpha to v{{ .Version }}"
+    install: |
+      bin.install "agent-receipts-daemon"
+      bin.install "agent-receipts"
+    test: |
+      system "#{bin}/agent-receipts-daemon", "--version"
+      system "#{bin}/agent-receipts", "--help"
+    custom_block: |
+      conflicts_with "agent-receipts-daemon", because: "both install the same binaries"
+
+      def post_install
+        (var/"log/agent-receipts").mkpath
+      end
+
+      service do
+        run opt_bin/"agent-receipts-daemon"
+        keep_alive crashed: true
+        log_path var/"log/agent-receipts/daemon.log"
+        error_log_path var/"log/agent-receipts/daemon.log"
+      end
+
+      def caveats
+        <<~EOS
+          This is the alpha/beta track — it tracks every release including pre-releases.
+          For stable-only installs use: brew install agent-receipts/tap/agent-receipts-daemon
+
+          Before starting the service for the first time, generate your signing key:
+            agent-receipts-daemon --init
+
+          Then start the daemon:
+            brew services start agent-receipts/tap/agent-receipts-daemon-alpha
+
+          Receipts database: $XDG_DATA_HOME/agent-receipts/receipts.db
+                             (falls back to ~/.local/share/agent-receipts/receipts.db when $XDG_DATA_HOME is unset or relative)
+                             Override: AGENTRECEIPTS_DB
+          Signing key:       $XDG_DATA_HOME/agent-receipts/signing.key
+                             (falls back to ~/.local/share/agent-receipts/signing.key when $XDG_DATA_HOME is unset or relative)
+                             Override: AGENTRECEIPTS_KEY
+          Socket (macOS):    $XDG_DATA_HOME/agent-receipts/events.sock
+                             (falls back to ~/.local/share/agent-receipts/events.sock when $XDG_DATA_HOME is unset or relative)
+                             Override: AGENTRECEIPTS_SOCKET
+          Socket (Linux):    $XDG_RUNTIME_DIR/agentreceipts/events.sock
+                             (falls back to /run/agentreceipts/events.sock when $XDG_RUNTIME_DIR is unset)
+                             Override: AGENTRECEIPTS_SOCKET
+          Daemon logs:       #{var}/log/agent-receipts/daemon.log
+                             (stdout + stderr, written by launchd when started via `brew services`)
+        EOS
+      end
+
+      livecheck do
+        url "https://github.com/agent-receipts/ar"
+        strategy :github_releases
+        regex(/^daemon\/v?(\d+(?:\.\d+)+(?:-[a-z0-9.]+)?)$/i)
+      end
