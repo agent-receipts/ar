@@ -79,6 +79,8 @@ brews:
     # scans all releases; regex extracts version from the `mcp-proxy/vX.Y.Z`
     # tag prefix.
     custom_block: |
+      conflicts_with "mcp-proxy-alpha", because: "both install the same binary"
+
       livecheck do
         url "https://github.com/agent-receipts/ar"
         strategy :github_releases
