@@ -51,7 +51,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/agent-receipts",
+          href: "https://github.com/agent-receipts/ar",
         },
       ],
       components: {
