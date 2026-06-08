@@ -52,6 +52,9 @@ type EmitInput struct {
 	// TerminationStatus sets chain.status when Terminal is true and the value
 	// is a valid wire value (spec §7.3.3); otherwise dropped by receipt.Create.
 	TerminationStatus receipt.ChainStatus
+	// CorrelationID links related receipts for the same logical tool invocation.
+	// See receipt.CredentialSubject.CorrelationID.
+	CorrelationID string
 }
 
 // Options configures a [ReceiptChain].
@@ -213,6 +216,7 @@ func (c *ReceiptChain) Emit(ctx context.Context, input EmitInput) (receipt.Agent
 		ResponseBody:      input.ResponseBody,
 		Terminal:          input.Terminal,
 		TerminationStatus: input.TerminationStatus,
+		CorrelationID:     input.CorrelationID,
 	})
 	signed, err := receipt.Sign(unsigned, c.privateKeyPEM, c.verificationMethod)
 	if err != nil {

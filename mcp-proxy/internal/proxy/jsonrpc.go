@@ -23,17 +23,24 @@ type ToolCallParams struct {
 	// _meta["claudecode/toolUseId"] with the tool_use_id from the hook payload,
 	// enabling correlation between hook pre-check receipts and proxy post-action
 	// receipts for the same logical tool invocation.
-	Meta map[string]string `json:"_meta,omitempty"`
+	// Typed as map[string]any (not map[string]string) so that non-string values
+	// in _meta do not cause json.Unmarshal to fail and silently bypass policy.
+	Meta map[string]any `json:"_meta,omitempty"`
 }
 
 // ToolUseID returns the Claude Code tool_use_id from _meta, or empty string
-// if absent. This is the correlation key linking a hook receipt to its paired
-// proxy receipt.
+// if absent or not a string. This is the correlation key linking a hook
+// receipt to its paired proxy receipt.
 func (p *ToolCallParams) ToolUseID() string {
 	if p.Meta == nil {
 		return ""
 	}
-	return p.Meta["claudecode/toolUseId"]
+	v, ok := p.Meta["claudecode/toolUseId"]
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
 }
 
 // ParseMessage attempts to parse a JSON-RPC message from a line.

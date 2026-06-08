@@ -363,6 +363,9 @@ func validateFrame(f *EmitterFrame) error {
 	if len(f.IdempotencyKey) > maxIdentityFieldLen {
 		return fmt.Errorf("idempotency_key exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.IdempotencyKey))
 	}
+	if len(f.CorrelationID) > maxIdentityFieldLen {
+		return fmt.Errorf("correlation_id exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.CorrelationID))
+	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
 	// JSON syntax, so anything reaching this point is well-formed. The hash

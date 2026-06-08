@@ -270,6 +270,22 @@ func TestValidateFrame_RejectsOversizeIdempotencyKey(t *testing.T) {
 	}
 }
 
+// TestValidateFrame_RejectsOversizeCorrelationID pins the per-field cap so an
+// oversized correlation_id cannot inflate receipts.
+func TestValidateFrame_RejectsOversizeCorrelationID(t *testing.T) {
+	f := &EmitterFrame{
+		Version:       "1",
+		SessionID:     "s",
+		Channel:       "mcp",
+		Tool:          EmitterTool{Name: "t"},
+		Decision:      "allowed",
+		CorrelationID: strings.Repeat("x", maxIdentityFieldLen+1),
+	}
+	if err := validateFrame(f); err == nil {
+		t.Error("validateFrame accepted an oversize correlation_id; want rejection")
+	}
+}
+
 func TestProcess_OutcomeStatus(t *testing.T) {
 	cases := []struct {
 		name       string

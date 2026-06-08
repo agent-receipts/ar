@@ -322,9 +322,10 @@ func serve() int {
 					log.Printf("mcp-proxy: BLOCKED %s (rule: %s, risk: %d)", toolName, decision.RuleName, riskScore)
 					emitPolicyEvent(toolName, decision.RuleName, riskScore, "block", approvalURL, "blocked", 0)
 					pendingMu.Lock()
+					blockedCorrelationID := pendingCalls[jsonrpcID].correlationID
 					delete(pendingCalls, jsonrpcID)
 					pendingMu.Unlock()
-					emitToContext(em, *serverName, toolName, argJSON, nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied", jsonrpcID, params.ToolUseID())
+					emitToContext(em, *serverName, toolName, argJSON, nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied", jsonrpcID, blockedCorrelationID)
 					return &proxy.HandlerResult{
 						Block:          true,
 						ClientResponse: proxy.MakeErrorResponse(msg.ID, -32001, fmt.Sprintf("blocked by policy: %s", decision.Reason)),
@@ -348,9 +349,10 @@ func serve() int {
 						emitPolicyEvent(toolName, decision.RuleName, riskScore, "pause", approvalURL, string(approvalStatus), approvalWaitUs/1000)
 						code, message := approvalRejectionResponse(toolName, decision.RuleName, riskScore, approvalID, approvalStatus, *approvalWait)
 						pendingMu.Lock()
+						deniedCorrelationID := pendingCalls[jsonrpcID].correlationID
 						delete(pendingCalls, jsonrpcID)
 						pendingMu.Unlock()
-						emitToContext(em, *serverName, toolName, argJSON, nil, message, "denied", jsonrpcID, params.ToolUseID())
+						emitToContext(em, *serverName, toolName, argJSON, nil, message, "denied", jsonrpcID, deniedCorrelationID)
 						return &proxy.HandlerResult{
 							Block: true,
 							ClientResponse: proxy.MakeErrorResponseWithData(

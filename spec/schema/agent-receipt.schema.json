@@ -443,7 +443,8 @@
         "chain": { "$ref": "#/$defs/chain" },
         "correlation_id": {
           "type": "string",
-          "description": "Opaque identifier linking related receipts for the same logical tool invocation — e.g. a hook pre-check receipt to the MCP proxy post-action receipt. Populated from the runtime's tool-use correlation token (Claude Code: tool_use_id). Absent when no correlation context is available."
+          "minLength": 1,
+          "description": "Opaque identifier linking related receipts for the same logical tool invocation — e.g. a hook pre-check receipt to the MCP proxy post-action receipt. Populated from the runtime's tool-use correlation token (Claude Code: tool_use_id). Absent when no correlation context is available. MUST be non-empty when present."
         }
       }
     },
