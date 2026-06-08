@@ -259,6 +259,22 @@ func (c Chain) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a)
 }
 
+// Delegator identifies the agent whose chain spawned a delegation.
+//
+// Deprecated: github.com/agent-receipts/sdk-go is no longer maintained. Use the canonical module github.com/agent-receipts/ar/sdk/go instead (see ADR-0023).
+type Delegator struct {
+	ID string `json:"id"`
+}
+
+// Delegation records the chain linkage when this chain was spawned by a parent agent.
+//
+// Deprecated: github.com/agent-receipts/sdk-go is no longer maintained. Use the canonical module github.com/agent-receipts/ar/sdk/go instead (see ADR-0023).
+type Delegation struct {
+	ParentChainID   string    `json:"parent_chain_id"`
+	ParentReceiptID string    `json:"parent_receipt_id"`
+	Delegator       Delegator `json:"delegator"`
+}
+
 // CredentialSubject contains the core receipt payload.
 //
 // Deprecated: github.com/agent-receipts/sdk-go is no longer maintained. Use the canonical module github.com/agent-receipts/ar/sdk/go instead (see ADR-0023).
@@ -270,6 +286,7 @@ type CredentialSubject struct {
 	Authorization *Authorization `json:"authorization,omitempty"`
 	Chain         Chain          `json:"chain"`
 	CorrelationID string         `json:"correlation_id,omitempty"`
+	Delegation    *Delegation    `json:"delegation,omitempty"`
 }
 
 // Proof contains the Ed25519 signature.

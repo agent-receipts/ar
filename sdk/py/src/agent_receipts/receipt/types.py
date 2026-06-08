@@ -259,6 +259,22 @@ class Chain(BaseModel):
         return data
 
 
+class Delegator(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+
+
+class Delegation(BaseModel):
+    """Present on the first receipt of a subagent chain; absent on root chains."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    parent_chain_id: str
+    parent_receipt_id: str
+    delegator: Delegator
+
+
 class CredentialSubject(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -269,6 +285,7 @@ class CredentialSubject(BaseModel):
     authorization: Authorization | None = None
     chain: Chain
     correlation_id: str | None = Field(None, min_length=1)
+    delegation: Delegation | None = None
 
 
 class Proof(BaseModel):

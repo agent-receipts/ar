@@ -4,6 +4,7 @@ import type {
 	Action,
 	Authorization,
 	Chain,
+	Delegation,
 	Intent,
 	Issuer,
 	Outcome,
@@ -47,6 +48,9 @@ export interface CreateReceiptInput {
 	 *  logical tool invocation (e.g. a hook pre-check to MCP proxy post-action).
 	 *  Must be non-empty when provided; omit when no correlation context exists. */
 	correlationId?: string;
+	/** Records the parent chain when this receipt opens a subagent chain.
+	 *  Only set on the first receipt of a new subagent chain; omit otherwise. */
+	delegation?: Delegation;
 }
 
 /**
@@ -109,6 +113,7 @@ export function createReceipt(input: CreateReceiptInput): UnsignedAgentReceipt {
 			...(input.intent && { intent: input.intent }),
 			...(input.authorization && { authorization: input.authorization }),
 			...(input.correlationId && { correlation_id: input.correlationId }),
+			...(input.delegation && { delegation: input.delegation }),
 		},
 	};
 }

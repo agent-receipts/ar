@@ -11,6 +11,8 @@ from agent_receipts.receipt.types import (
     VERSION,
     Authorization,
     Chain,
+    Delegation,
+    Delegator,
     Intent,
     Issuer,
     Outcome,
@@ -120,3 +122,16 @@ class TestCreateReceipt:
     def test_excludes_correlation_id_when_empty_string(self) -> None:
         receipt = create_receipt(_make_input(correlation_id=""))
         assert receipt.credentialSubject.correlation_id is None
+
+    def test_preserves_delegation(self) -> None:
+        delegation = Delegation(
+            parent_chain_id="root-chain",
+            parent_receipt_id="urn:receipt:parent-uuid",
+            delegator=Delegator(id="did:agent-receipts-daemon:host"),
+        )
+        receipt = create_receipt(_make_input(delegation=delegation))
+        assert receipt.credentialSubject.delegation == delegation
+
+    def test_excludes_delegation_when_not_provided(self) -> None:
+        receipt = create_receipt(_make_input())
+        assert receipt.credentialSubject.delegation is None

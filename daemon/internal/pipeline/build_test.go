@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/json"
@@ -1636,5 +1637,174 @@ func TestProcess_EmitterDeclaredActionTypeDrivesRisk(t *testing.T) {
 	}
 	if r.CredentialSubject.Action.ParametersDisclosure != nil {
 		t.Error("medium-risk action must not disclose under policy=high")
+	}
+}
+
+// agentFrame returns a socket.Frame whose payload has the given agent_id.
+func agentFrame(t *testing.T, agentID string) socket.Frame {
+	t.Helper()
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-06-08T00:00:00Z",
+		SessionID: "sess-agent-test",
+		Channel:   "claude-code",
+		Tool:      EmitterTool{Name: "Bash"},
+		Decision:  "allowed",
+		AgentID:   agentID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return socket.Frame{Payload: body}
+}
+
+// TestProcess_AgentIDRoutesToSeparateChain verifies that frames with a non-empty
+// agent_id land on a per-agent chain distinct from the root chain.
+func TestProcess_AgentIDRoutesToSeparateChain(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("root")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	// One root receipt (no agent_id).
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatal(err)
+	}
+	// One subagent receipt.
+	if err := p.Process(agentFrame(t, "agent-abc")); err != nil {
+		t.Fatal(err)
+	}
+
+	rootReceipts, err := st.GetChain("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rootReceipts) != 1 {
+		t.Errorf("root chain: got %d receipts, want 1", len(rootReceipts))
+	}
+	if rootReceipts[0].CredentialSubject.Chain.ChainID != "root" {
+		t.Errorf("root receipt chain_id = %q", rootReceipts[0].CredentialSubject.Chain.ChainID)
+	}
+
+	agentChainID := "root/agent/agent-abc"
+	agentReceipts, err := st.GetChain(agentChainID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agentReceipts) != 1 {
+		t.Errorf("agent chain: got %d receipts, want 1", len(agentReceipts))
+	}
+	if agentReceipts[0].CredentialSubject.Chain.ChainID != agentChainID {
+		t.Errorf("agent receipt chain_id = %q, want %q",
+			agentReceipts[0].CredentialSubject.Chain.ChainID, agentChainID)
+	}
+}
+
+// TestProcess_DelegationOnFirstAgentReceipt verifies that the first receipt on
+// a subagent chain carries a delegation that links back to the root chain's tail.
+func TestProcess_DelegationOnFirstAgentReceipt(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("root")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	// Emit a root receipt so there is a tail to backlink to.
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatal(err)
+	}
+	rootReceipts, err := st.GetChain("root")
+	if err != nil || len(rootReceipts) != 1 {
+		t.Fatalf("setup: expected 1 root receipt, err=%v", err)
+	}
+	rootTailID := rootReceipts[0].ID
+
+	// First subagent receipt — delegation must be present.
+	if err := p.Process(agentFrame(t, "agent-xyz")); err != nil {
+		t.Fatal(err)
+	}
+	agentReceipts, err := st.GetChain("root/agent/agent-xyz")
+	if err != nil || len(agentReceipts) != 1 {
+		t.Fatalf("expected 1 agent receipt, got %d, err=%v", len(agentReceipts), err)
+	}
+	del := agentReceipts[0].CredentialSubject.Delegation
+	if del == nil {
+		t.Fatal("first agent receipt missing delegation")
+	}
+	if del.ParentChainID != "root" {
+		t.Errorf("delegation.parent_chain_id = %q, want root", del.ParentChainID)
+	}
+	if del.ParentReceiptID != rootTailID {
+		t.Errorf("delegation.parent_receipt_id = %q, want %q", del.ParentReceiptID, rootTailID)
+	}
+	if del.Delegator.ID != "did:agent-receipts-daemon:test" {
+		t.Errorf("delegation.delegator.id = %q", del.Delegator.ID)
+	}
+
+	// Second subagent receipt on the same chain — no delegation.
+	if err := p.Process(agentFrame(t, "agent-xyz")); err != nil {
+		t.Fatal(err)
+	}
+	agentReceipts, err = st.GetChain("root/agent/agent-xyz")
+	if err != nil || len(agentReceipts) != 2 {
+		t.Fatalf("expected 2 agent receipts, got %d, err=%v", len(agentReceipts), err)
+	}
+	if agentReceipts[1].CredentialSubject.Delegation != nil {
+		t.Error("second receipt must not carry delegation")
+	}
+}
+
+// TestProcess_NoDelegationWhenRootChainEmpty verifies that if the first event is
+// a subagent frame with no prior root receipt, delegation is omitted rather than
+// panicking or returning an error.
+func TestProcess_NoDelegationWhenRootChainEmpty(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("root")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	// Subagent frame arrives before any root receipt.
+	if err := p.Process(agentFrame(t, "agent-early")); err != nil {
+		t.Fatal(err)
+	}
+	agentReceipts, err := st.GetChain("root/agent/agent-early")
+	if err != nil || len(agentReceipts) != 1 {
+		t.Fatalf("expected 1 agent receipt, got %d, err=%v", len(agentReceipts), err)
+	}
+	// No root tail → delegation should be omitted, not an error.
+	if agentReceipts[0].CredentialSubject.Delegation != nil {
+		t.Error("expected no delegation when root chain has no receipts yet")
+	}
+}
+
+// TestEmitTerminator_TerminatesAgentChains verifies that EmitTerminator closes
+// all open agent chains in addition to the root chain.
+func TestEmitTerminator_TerminatesAgentChains(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("root")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	// Populate root and one agent chain.
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(agentFrame(t, "agent-term")); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := p.EmitTerminator(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, chainID := range []string{"root", "root/agent/agent-term"} {
+		receipts, err := st.GetChain(chainID)
+		if err != nil {
+			t.Fatalf("GetChain %q: %v", chainID, err)
+		}
+		tail := receipts[len(receipts)-1]
+		if tail.CredentialSubject.Chain.Terminal == nil || !*tail.CredentialSubject.Chain.Terminal {
+			t.Errorf("chain %q tail is not terminal", chainID)
+		}
 	}
 }

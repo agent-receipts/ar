@@ -38,6 +38,10 @@ type CreateInput struct {
 	// CorrelationID links related receipts for the same logical tool invocation.
 	// See CredentialSubject.CorrelationID.
 	CorrelationID string
+
+	// Delegation records the parent chain when this receipt opens a subagent
+	// chain. Nil on root chains and all receipts after the first in a chain.
+	Delegation *Delegation
 }
 
 // Create builds an unsigned AgentReceipt from structured inputs.
@@ -62,6 +66,7 @@ func Create(input CreateInput) UnsignedAgentReceipt {
 		Intent:        input.Intent,
 		Authorization: input.Authorization,
 		CorrelationID: input.CorrelationID,
+		Delegation:    input.Delegation,
 	}
 
 	// Compute response_hash when a response body is supplied.

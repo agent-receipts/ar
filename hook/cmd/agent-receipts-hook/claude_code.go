@@ -16,6 +16,7 @@ type claudeCodeFrame struct {
 	ToolName      string          `json:"tool_name"`
 	ToolInput     json.RawMessage `json:"tool_input"`
 	ToolResponse  json.RawMessage `json:"tool_response"`
+	AgentID       string          `json:"agent_id"`
 }
 
 // readClaudeCode parses a Claude Code PostToolUse or PreToolUse stdin frame
@@ -56,6 +57,7 @@ func readClaudeCode(stdin []byte, _ func(string) string) (emitter.Event, string,
 		Tool:          emitter.Tool{Name: f.ToolName},
 		Decision:      decision,
 		CorrelationID: f.ToolUseID,
+		AgentID:       f.AgentID,
 	}
 	// Only set Input/Output when non-empty; the emitter rejects non-nil empty
 	// slices and the daemon expects nil to mean "no payload".

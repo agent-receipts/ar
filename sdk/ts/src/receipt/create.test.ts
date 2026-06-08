@@ -212,4 +212,21 @@ describe("createReceipt", () => {
 
 		expect(receipt.credentialSubject).not.toHaveProperty("correlation_id");
 	});
+
+	it("preserves delegation on the first receipt of a subagent chain", () => {
+		const delegation = {
+			parent_chain_id: "root-chain",
+			parent_receipt_id: "urn:receipt:parent-uuid",
+			delegator: { id: "did:agent-receipts-daemon:host" },
+		};
+		const receipt = createReceipt(makeInput({ delegation }));
+
+		expect(receipt.credentialSubject.delegation).toEqual(delegation);
+	});
+
+	it("omits delegation when not provided", () => {
+		const receipt = createReceipt(makeInput());
+
+		expect(receipt.credentialSubject).not.toHaveProperty("delegation");
+	});
 });

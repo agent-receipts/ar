@@ -136,3 +136,53 @@ func TestCreateOmitsEmptyCorrelationID(t *testing.T) {
 		t.Errorf("canonical JSON contains correlation_id when field is empty: %s", canonical)
 	}
 }
+
+func TestCreatePreservesDelegation(t *testing.T) {
+	del := &Delegation{
+		ParentChainID:   "root-chain",
+		ParentReceiptID: "urn:receipt:parent-uuid",
+		Delegator:       Delegator{ID: "did:agent-receipts-daemon:host"},
+	}
+	r := Create(CreateInput{
+		Issuer:     Issuer{ID: "did:agent:test"},
+		Principal:  Principal{ID: "did:user:alice"},
+		Action:     Action{Type: "mcp.tool_call", RiskLevel: RiskLow},
+		Outcome:    Outcome{Status: StatusSuccess},
+		Chain:      Chain{Sequence: 1, ChainID: "root-chain/agent/abc"},
+		Delegation: del,
+	})
+	got := r.CredentialSubject.Delegation
+	if got == nil {
+		t.Fatal("expected delegation to be set, got nil")
+	}
+	if got.ParentChainID != del.ParentChainID {
+		t.Errorf("ParentChainID = %q, want %q", got.ParentChainID, del.ParentChainID)
+	}
+	if got.ParentReceiptID != del.ParentReceiptID {
+		t.Errorf("ParentReceiptID = %q, want %q", got.ParentReceiptID, del.ParentReceiptID)
+	}
+	if got.Delegator.ID != del.Delegator.ID {
+		t.Errorf("Delegator.ID = %q, want %q", got.Delegator.ID, del.Delegator.ID)
+	}
+}
+
+func TestCreateOmitsNilDelegation(t *testing.T) {
+	r := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:alice"},
+		Action:    Action{Type: "mcp.tool_call", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 1, ChainID: "chain-1"},
+	})
+	if r.CredentialSubject.Delegation != nil {
+		t.Errorf("expected nil Delegation on root-chain receipt, got %+v", r.CredentialSubject.Delegation)
+	}
+	// Verify absent from canonical JSON.
+	canonical, err := Canonicalize(r)
+	if err != nil {
+		t.Fatalf("Canonicalize: %v", err)
+	}
+	if strings.Contains(canonical, "delegation") {
+		t.Errorf("canonical JSON contains delegation when nil: %s", canonical)
+	}
+}
