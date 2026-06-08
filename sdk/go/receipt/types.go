@@ -215,6 +215,10 @@ type CredentialSubject struct {
 	Outcome       Outcome        `json:"outcome"`
 	Authorization *Authorization `json:"authorization,omitempty"`
 	Chain         Chain          `json:"chain"`
+	// CorrelationID links related receipts for the same logical tool invocation
+	// (e.g. hook pre-check to MCP proxy post-action). Populated from the
+	// runtime's tool-use correlation token; absent when not available.
+	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
 // Proof contains the Ed25519 signature.

@@ -135,6 +135,12 @@ type Event struct {
 	// duplicated emission. Optional; omitted from the frame when empty.
 	// See spec §7.3.6 and ADR-0019 §S5.
 	IdempotencyKey string
+
+	// CorrelationID links related receipts for the same logical tool invocation.
+	// Populated from the runtime's tool-use correlation token (Claude Code:
+	// tool_use_id). The daemon stamps it onto credentialSubject.correlation_id.
+	// Optional; omitted from the frame when empty.
+	CorrelationID string
 }
 
 // Option configures an Emitter at construction.
@@ -294,6 +300,7 @@ type frame struct {
 	OperatorID     string          `json:"operator_id,omitempty"`
 	OperatorName   string          `json:"operator_name,omitempty"`
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	CorrelationID  string          `json:"correlation_id,omitempty"`
 }
 
 type frameTool struct {
@@ -415,6 +422,7 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		OperatorID:     operatorID,
 		OperatorName:   operatorName,
 		IdempotencyKey: ev.IdempotencyKey,
+		CorrelationID:  ev.CorrelationID,
 	})
 	if err != nil {
 		// Marshal failure is a caller bug, not a transient outage. Restore

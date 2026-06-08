@@ -26,10 +26,6 @@ type claudeCodeFrame struct {
 //
 // The returned sessionID is the host-supplied session identifier from the
 // frame; it is the empty string when absent.
-//
-// Note: tool_use_id is parsed but not forwarded — emitter.Event has no
-// correlation-ID field. A follow-up can add one to the wire format once
-// ADR-0010 is amended.
 func readClaudeCode(stdin []byte, _ func(string) string) (emitter.Event, string, error) {
 	if len(stdin) == 0 {
 		return emitter.Event{}, "", errors.New("empty stdin")
@@ -56,9 +52,10 @@ func readClaudeCode(stdin []byte, _ func(string) string) (emitter.Event, string,
 	}
 
 	ev := emitter.Event{
-		Channel:  "claude-code",
-		Tool:     emitter.Tool{Name: f.ToolName},
-		Decision: decision,
+		Channel:       "claude-code",
+		Tool:          emitter.Tool{Name: f.ToolName},
+		Decision:      decision,
+		CorrelationID: f.ToolUseID,
 	}
 	// Only set Input/Output when non-empty; the emitter rejects non-nil empty
 	// slices and the daemon expects nil to mean "no payload".

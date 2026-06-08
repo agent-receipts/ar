@@ -105,6 +105,7 @@ type EmitterFrame struct {
 	OperatorID     string          `json:"operator_id,omitempty"`
 	OperatorName   string          `json:"operator_name,omitempty"`
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	CorrelationID  string          `json:"correlation_id,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -362,6 +363,9 @@ func validateFrame(f *EmitterFrame) error {
 	if len(f.IdempotencyKey) > maxIdentityFieldLen {
 		return fmt.Errorf("idempotency_key exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.IdempotencyKey))
 	}
+	if len(f.CorrelationID) > maxIdentityFieldLen {
+		return fmt.Errorf("correlation_id exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.CorrelationID))
+	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
 	// JSON syntax, so anything reaching this point is well-formed. The hash
@@ -582,10 +586,11 @@ func (p *Pipeline) buildAndSign(
 	}
 
 	return p.signAndHash(receipt.CreateInput{
-		Issuer:    issuerFromFrame(f, p.IssuerID),
-		Principal: receipt.Principal{ID: "did:user:unknown"},
-		Action:    action,
-		Outcome:   outcome,
+		Issuer:        issuerFromFrame(f, p.IssuerID),
+		Principal:     receipt.Principal{ID: "did:user:unknown"},
+		Action:        action,
+		Outcome:       outcome,
+		CorrelationID: f.CorrelationID,
 		Chain: receipt.Chain{
 			Sequence:            int(alloc.Sequence),
 			PreviousReceiptHash: alloc.PrevHash,

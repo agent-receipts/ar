@@ -133,3 +133,53 @@ func TestParseMessageBatchReturnsNil(t *testing.T) {
 		t.Error("expected nil for batch (JSON array) message")
 	}
 }
+
+func TestToolUseID(t *testing.T) {
+	tests := []struct {
+		name   string
+		params string
+		want   string
+	}{
+		{
+			name:   "string value extracted",
+			params: `{"name":"t","_meta":{"claudecode/toolUseId":"toolu_01ABC"}}`,
+			want:   "toolu_01ABC",
+		},
+		{
+			name:   "absent _meta returns empty",
+			params: `{"name":"t"}`,
+			want:   "",
+		},
+		{
+			name:   "missing key returns empty",
+			params: `{"name":"t","_meta":{"other":"x"}}`,
+			want:   "",
+		},
+		{
+			name:   "non-string value returns empty (no parse failure)",
+			params: `{"name":"t","_meta":{"claudecode/toolUseId":12345}}`,
+			want:   "",
+		},
+		{
+			name:   "null value returns empty (no parse failure)",
+			params: `{"name":"t","_meta":{"claudecode/toolUseId":null}}`,
+			want:   "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + tt.params + `}`)
+			msg := ParseMessage(line)
+			if msg == nil {
+				t.Fatal("expected non-nil message")
+			}
+			p, err := msg.ParseToolCallParams()
+			if err != nil {
+				t.Fatalf("ParseToolCallParams error: %v", err)
+			}
+			if got := p.ToolUseID(); got != tt.want {
+				t.Errorf("ToolUseID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

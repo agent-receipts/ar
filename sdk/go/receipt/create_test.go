@@ -100,3 +100,39 @@ func TestCreateWithOptionalFields(t *testing.T) {
 		t.Errorf("expected 2 scopes, got %d", len(r.CredentialSubject.Authorization.Scopes))
 	}
 }
+
+func TestCreatePreservesCorrelationID(t *testing.T) {
+	const want = "toolu_01AAAAAAAAAAAAAAAAAAAAAA"
+	r := Create(CreateInput{
+		Issuer:        Issuer{ID: "did:agent:test"},
+		Principal:     Principal{ID: "did:user:alice"},
+		Action:        Action{Type: "mcp.tool_call", RiskLevel: RiskLow},
+		Outcome:       Outcome{Status: StatusSuccess},
+		Chain:         Chain{Sequence: 1, ChainID: "chain-1"},
+		CorrelationID: want,
+	})
+	if got := r.CredentialSubject.CorrelationID; got != want {
+		t.Errorf("CorrelationID = %q, want %q", got, want)
+	}
+}
+
+func TestCreateOmitsEmptyCorrelationID(t *testing.T) {
+	r := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:alice"},
+		Action:    Action{Type: "mcp.tool_call", RiskLevel: RiskLow},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 1, ChainID: "chain-1"},
+	})
+	if r.CredentialSubject.CorrelationID != "" {
+		t.Errorf("expected empty CorrelationID, got %q", r.CredentialSubject.CorrelationID)
+	}
+	// Verify it's absent from the canonical JSON (omitempty).
+	canonical, err := Canonicalize(r)
+	if err != nil {
+		t.Fatalf("Canonicalize: %v", err)
+	}
+	if strings.Contains(canonical, "correlation_id") {
+		t.Errorf("canonical JSON contains correlation_id when field is empty: %s", canonical)
+	}
+}

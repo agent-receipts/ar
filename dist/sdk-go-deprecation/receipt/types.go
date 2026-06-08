@@ -269,6 +269,7 @@ type CredentialSubject struct {
 	Outcome       Outcome        `json:"outcome"`
 	Authorization *Authorization `json:"authorization,omitempty"`
 	Chain         Chain          `json:"chain"`
+	CorrelationID string         `json:"correlation_id,omitempty"`
 }
 
 // Proof contains the Ed25519 signature.

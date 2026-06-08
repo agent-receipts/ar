@@ -107,3 +107,16 @@ class TestCreateReceipt:
         )
         assert receipt.credentialSubject.authorization is not None
         assert receipt.credentialSubject.authorization.scopes == ["read"]
+
+    def test_preserves_correlation_id(self) -> None:
+        cid = "toolu_01AAAAAAAAAAAAAAAAAAAAAA"
+        receipt = create_receipt(_make_input(correlation_id=cid))
+        assert receipt.credentialSubject.correlation_id == cid
+
+    def test_excludes_correlation_id_when_not_provided(self) -> None:
+        receipt = create_receipt(_make_input())
+        assert receipt.credentialSubject.correlation_id is None
+
+    def test_excludes_correlation_id_when_empty_string(self) -> None:
+        receipt = create_receipt(_make_input(correlation_id=""))
+        assert receipt.credentialSubject.correlation_id is None

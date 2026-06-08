@@ -202,6 +202,7 @@ export interface CredentialSubject {
 	outcome: Outcome;
 	authorization?: Authorization;
 	chain: Chain;
+	correlation_id?: string;
 }
 
 // --- Proof ---

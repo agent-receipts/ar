@@ -65,6 +65,7 @@ class CreateReceiptInput(BaseModel):
     # Issuer-asserted termination reason, applied only when terminal=True.
     # MUST be "complete" or "interrupted" (spec §7.3.3).
     termination_status: Literal["complete", "interrupted"] | None = None
+    correlation_id: str | None = None
 
 
 def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
@@ -140,6 +141,8 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         cs_data["intent"] = input.intent
     if input.authorization is not None:
         cs_data["authorization"] = input.authorization
+    if input.correlation_id:
+        cs_data["correlation_id"] = input.correlation_id
 
     receipt_data: dict[str, Any] = {
         "@context": list(CONTEXT),

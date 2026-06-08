@@ -190,4 +190,26 @@ describe("createReceipt", () => {
 
 		expect(receipt).not.toHaveProperty("proof");
 	});
+
+	it("preserves correlationId as credentialSubject.correlation_id", () => {
+		const receipt = createReceipt(
+			makeInput({ correlationId: "toolu_01AAAAAAAAAAAAAAAAAAAAAA" }),
+		);
+
+		expect(receipt.credentialSubject.correlation_id).toBe(
+			"toolu_01AAAAAAAAAAAAAAAAAAAAAA",
+		);
+	});
+
+	it("omits correlation_id when correlationId is not provided", () => {
+		const receipt = createReceipt(makeInput());
+
+		expect(receipt.credentialSubject).not.toHaveProperty("correlation_id");
+	});
+
+	it("omits correlation_id when correlationId is empty string", () => {
+		const receipt = createReceipt(makeInput({ correlationId: "" }));
+
+		expect(receipt.credentialSubject).not.toHaveProperty("correlation_id");
+	});
 });

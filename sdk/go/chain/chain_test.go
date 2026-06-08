@@ -323,6 +323,33 @@ func TestResumeExistingChain(t *testing.T) {
 	}
 }
 
+func TestEmitPreservesCorrelationID(t *testing.T) {
+	keys := testKeys(t)
+	inmem := emitters.NewInMemory()
+	rc, err := chain.New(chain.Options{
+		ChainID:            "chain_test",
+		PrivateKeyPEM:      keys.PrivateKey,
+		VerificationMethod: verificationMethod,
+		Emitter:            inmem,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	const want = "toolu_01AAAAAAAAAAAAAAAAAAAAAA"
+	input := emitInput()
+	input.CorrelationID = want
+
+	ctx := context.Background()
+	r, err := rc.Emit(ctx, input)
+	if err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if got := r.CredentialSubject.CorrelationID; got != want {
+		t.Errorf("CorrelationID = %q, want %q", got, want)
+	}
+}
+
 type failingEmitter struct {
 	inner    *emitters.InMemoryEmitter
 	failNext bool

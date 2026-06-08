@@ -225,6 +225,7 @@ func serve() int {
 		toolName       string
 		argJSON        json.RawMessage
 		idempotencyKey string
+		correlationID  string
 	}
 	pendingCalls := make(map[string]*pendingCall)
 	var pendingMu sync.Mutex
@@ -313,6 +314,7 @@ func serve() int {
 					toolName:       toolName,
 					argJSON:        argJSON,
 					idempotencyKey: jsonrpcID,
+					correlationID:  params.ToolUseID(),
 				}
 				pendingMu.Unlock()
 
@@ -320,9 +322,10 @@ func serve() int {
 					log.Printf("mcp-proxy: BLOCKED %s (rule: %s, risk: %d)", toolName, decision.RuleName, riskScore)
 					emitPolicyEvent(toolName, decision.RuleName, riskScore, "block", approvalURL, "blocked", 0)
 					pendingMu.Lock()
+					blockedCorrelationID := pendingCalls[jsonrpcID].correlationID
 					delete(pendingCalls, jsonrpcID)
 					pendingMu.Unlock()
-					emitToContext(em, *serverName, toolName, argJSON, nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied", jsonrpcID)
+					emitToContext(em, *serverName, toolName, argJSON, nil, fmt.Sprintf("blocked by policy: %s", decision.Reason), "denied", jsonrpcID, blockedCorrelationID)
 					return &proxy.HandlerResult{
 						Block:          true,
 						ClientResponse: proxy.MakeErrorResponse(msg.ID, -32001, fmt.Sprintf("blocked by policy: %s", decision.Reason)),
@@ -346,9 +349,10 @@ func serve() int {
 						emitPolicyEvent(toolName, decision.RuleName, riskScore, "pause", approvalURL, string(approvalStatus), approvalWaitUs/1000)
 						code, message := approvalRejectionResponse(toolName, decision.RuleName, riskScore, approvalID, approvalStatus, *approvalWait)
 						pendingMu.Lock()
+						deniedCorrelationID := pendingCalls[jsonrpcID].correlationID
 						delete(pendingCalls, jsonrpcID)
 						pendingMu.Unlock()
-						emitToContext(em, *serverName, toolName, argJSON, nil, message, "denied", jsonrpcID)
+						emitToContext(em, *serverName, toolName, argJSON, nil, message, "denied", jsonrpcID, deniedCorrelationID)
 						return &proxy.HandlerResult{
 							Block: true,
 							ClientResponse: proxy.MakeErrorResponseWithData(
@@ -412,7 +416,7 @@ func serve() int {
 				if resultStr != "" && json.Valid([]byte(resultStr)) {
 					outputRaw = json.RawMessage(resultStr)
 				}
-				emitToContext(em, *serverName, pc.toolName, pc.argJSON, outputRaw, errorStr, "allowed", pc.idempotencyKey)
+				emitToContext(em, *serverName, pc.toolName, pc.argJSON, outputRaw, errorStr, "allowed", pc.idempotencyKey, pc.correlationID)
 			}
 		}
 
@@ -676,7 +680,11 @@ func emitStartupBanner(summary policy.Summary, approvalURL string, approverDisab
 // of the same logical operation share a value and auditors can tell a
 // legitimate retry from a duplicated emission. Empty when no id was present;
 // the emitter omits the field from the frame in that case.
-func emitToContext(em *emitter.DaemonEmitter, serverName, toolName string, input, output json.RawMessage, errStr, decision, idempotencyKey string) {
+//
+// correlationID is the Claude Code tool_use_id from _meta, used to link this
+// proxy post-action receipt to the hook pre-check receipt for the same
+// logical tool invocation. Empty when not available (non-Claude-Code clients).
+func emitToContext(em *emitter.DaemonEmitter, serverName, toolName string, input, output json.RawMessage, errStr, decision, idempotencyKey, correlationID string) {
 	if em == nil {
 		return
 	}
@@ -688,6 +696,7 @@ func emitToContext(em *emitter.DaemonEmitter, serverName, toolName string, input
 		Error:          errStr,
 		Decision:       decision,
 		IdempotencyKey: idempotencyKey,
+		CorrelationID:  correlationID,
 	}); err != nil {
 		log.Printf("mcp-proxy: emitter: %v", err)
 	}
