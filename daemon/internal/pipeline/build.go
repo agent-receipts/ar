@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,6 +107,7 @@ type EmitterFrame struct {
 	OperatorName   string          `json:"operator_name,omitempty"`
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 	CorrelationID  string          `json:"correlation_id,omitempty"`
+	AgentID        string          `json:"agent_id,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -161,19 +163,119 @@ type Pipeline struct {
 	// chain-allocation lock, so tracing doesn't contend with sequence
 	// allocation; however it does block the processing of that frame.
 	traceMu sync.Mutex
+
+	// rootChainID is the chain ID for the root (session) chain; fixed after New.
+	rootChainID string
+	// agentChains maps agent_id to its per-subagent chain state. Protected by
+	// agentChainsMu. Frames with a non-empty agent_id are routed here; frames
+	// with no agent_id go to State (the root chain).
+	agentChains   map[string]*chain.State
+	agentChainsMu sync.RWMutex
 }
 
 // New returns a Pipeline. Callers configure IssuerID; Now defaults to
 // time.Now.UTC.
 func New(s *chain.State, ks keysource.KeySource, store pipelineStore, issuerID string) *Pipeline {
 	return &Pipeline{
-		State:    s,
-		Keys:     ks,
-		Store:    store,
-		IssuerID: issuerID,
-		Now:      func() time.Time { return time.Now().UTC() },
-		TraceLog: nil,
+		State:       s,
+		Keys:        ks,
+		Store:       store,
+		IssuerID:    issuerID,
+		Now:         func() time.Time { return time.Now().UTC() },
+		TraceLog:    nil,
+		rootChainID: s.ChainID(),
+		agentChains: make(map[string]*chain.State),
 	}
+}
+
+// getOrCreateAgentState returns the chain.State and, when appropriate, a
+// Delegation to backlink to the root chain.
+//
+// Frames with no agent_id → (p.State, nil, nil): root chain, no delegation.
+// Frames with a known agent_id → (existing state, delegation?, nil): delegation
+// is non-nil only while the chain's first receipt has not yet been committed
+// (NextSeq still 1). This covers retries after a rollback and the
+// processWithDrop→processLive fallback — both leave NextSeq at 1 with no
+// committed receipt, and both must carry the delegation on the eventual first
+// receipt of the subagent chain.
+// Frames with a new agent_id → (new state, &Delegation{...}, nil) on creation.
+//
+// DB I/O (LoadFromStore, buildDelegation) is performed outside the write lock
+// so agentChainsMu is never held across blocking store queries.
+func (p *Pipeline) getOrCreateAgentState(agentID string) (*chain.State, *receipt.Delegation, error) {
+	if agentID == "" {
+		return p.State, nil, nil
+	}
+	// Fast path: chain already exists for this agent.
+	p.agentChainsMu.RLock()
+	s, ok := p.agentChains[agentID]
+	p.agentChainsMu.RUnlock()
+	if ok {
+		// Re-derive delegation when the first receipt has not yet been committed.
+		// NextSeq stays at 1 after a Rollback, so a failed build/sign/insert
+		// attempt on what is logically the first receipt leaves the chain in a
+		// state where the next attempt must still carry the delegation.
+		if s.NextSeq() != 1 {
+			return s, nil, nil
+		}
+		del, err := p.buildDelegation()
+		if err != nil {
+			return nil, nil, err
+		}
+		return s, del, nil
+	}
+
+	// Slow path: load from store outside the write lock so blocking I/O does not
+	// hold agentChainsMu and serialize all concurrent frame goroutines.
+	//
+	// Chain ID is deterministic: base chain + "/agent/" + agent_id.
+	// This lets the daemon resume an agent chain across restarts when the same
+	// agent reconnects within a session.
+	chainID := p.rootChainID + "/agent/" + agentID
+	s, err := chain.LoadFromStore(p.Store, chainID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load agent chain %q: %w", chainID, err)
+	}
+	var del *receipt.Delegation
+	if s.NextSeq() == 1 {
+		del, err = p.buildDelegation()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Install under write lock; double-check to detect a concurrent creator.
+	p.agentChainsMu.Lock()
+	defer p.agentChainsMu.Unlock()
+	if existing, ok := p.agentChains[agentID]; ok {
+		// Lost the creation race. Reuse the delegation we already computed if the
+		// winner's chain is still at seq 1 (first receipt not yet committed);
+		// otherwise the first receipt already landed without our delegation object.
+		if existing.NextSeq() == 1 {
+			return existing, del, nil
+		}
+		return existing, nil, nil
+	}
+	p.agentChains[agentID] = s
+	return s, del, nil
+}
+
+// buildDelegation queries the root chain tail and returns a Delegation for use
+// on the first receipt of a new subagent chain. Returns nil, nil when the root
+// chain has no receipts yet — delegation is optional per spec.
+func (p *Pipeline) buildDelegation() (*receipt.Delegation, error) {
+	tail, err := p.Store.GetChainTailReceipt(p.rootChainID)
+	if err != nil {
+		return nil, fmt.Errorf("get root chain tail for delegation: %w", err)
+	}
+	if tail == nil {
+		return nil, nil
+	}
+	return &receipt.Delegation{
+		ParentChainID:   p.rootChainID,
+		ParentReceiptID: tail.ID,
+		Delegator:       receipt.Delegator{ID: p.IssuerID},
+	}, nil
 }
 
 // Process is the daemon's per-frame entrypoint. It parses the frame, allocates
@@ -216,11 +318,26 @@ func (p *Pipeline) Process(f socket.Frame) error {
 // returned liveAlloc shares the same release Once so deferring liveAlloc.Rollback()
 // covers panics in the second phase; pair.Rollback() becomes a no-op.
 func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) error {
-	pair := p.State.AllocatePair()
+	state, delegation, err := p.getOrCreateAgentState(frame.AgentID)
+	if err != nil {
+		return err
+	}
+	chainID := state.ChainID()
+
+	pair := state.AllocatePair()
 	defer pair.Rollback() // panic-safety: no-op after CommitFirst
 
+	// Delegation belongs on the first receipt in the chain. Guard by the
+	// actual allocated sequence so that if a concurrent goroutine committed
+	// seq 1 between getOrCreateAgentState and AllocatePair, we do not
+	// incorrectly attach delegation to a non-first receipt.
+	dropDelegation := delegation
+	if pair.FirstSeq != 1 {
+		dropDelegation = nil
+	}
+
 	synthetic, synHash, err := p.buildAndSignDropReceipt(
-		frame.DropCount, frame.SessionID, peer, pair.FirstSeq, pair.FirstPrev)
+		frame.DropCount, frame.SessionID, peer, pair.FirstSeq, pair.FirstPrev, chainID, dropDelegation)
 	if err != nil {
 		pair.Rollback()
 		p.logError("build events_dropped receipt (drop_count=%d session=%s): %v",
@@ -243,7 +360,9 @@ func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) er
 	liveAlloc := pair.CommitFirst(synHash)
 	defer liveAlloc.Rollback() // panic-safety; pair.Rollback defer is now a no-op
 
-	live, liveHash, err := p.buildAndSign(frame, peer, liveAlloc)
+	// The live receipt is always the second in the pair (seq FirstSeq+1) so
+	// delegation never belongs here regardless of agent chain state.
+	live, liveHash, err := p.buildAndSign(frame, peer, liveAlloc, chainID, nil)
 	if err != nil {
 		liveAlloc.Rollback() // releases lock; chain is at pair.FirstSeq+1
 		return err
@@ -264,10 +383,22 @@ func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) er
 // receipt. Used for frames with DropCount == 0 and as fallback when the
 // synthetic insert fails.
 func (p *Pipeline) processLive(frame *EmitterFrame, peer socket.PeerCred) error {
-	alloc := p.State.Allocate()
+	state, delegation, err := p.getOrCreateAgentState(frame.AgentID)
+	if err != nil {
+		return err
+	}
+
+	alloc := state.Allocate()
 	defer alloc.Rollback()
 
-	signed, hash, err := p.buildAndSign(frame, peer, alloc)
+	// Guard by actual sequence: a concurrent goroutine may have committed
+	// seq 1 between getOrCreateAgentState and Allocate, so check the
+	// allocated sequence rather than the earlier NextSeq observation.
+	if alloc.Sequence != 1 {
+		delegation = nil
+	}
+
+	signed, hash, err := p.buildAndSign(frame, peer, alloc, state.ChainID(), delegation)
 	if err != nil {
 		return err
 	}
@@ -365,6 +496,12 @@ func validateFrame(f *EmitterFrame) error {
 	}
 	if len(f.CorrelationID) > maxIdentityFieldLen {
 		return fmt.Errorf("correlation_id exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.CorrelationID))
+	}
+	if len(f.AgentID) > maxIdentityFieldLen {
+		return fmt.Errorf("agent_id exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.AgentID))
+	}
+	if strings.ContainsAny(f.AgentID, "/\x00") {
+		return fmt.Errorf("agent_id must not contain '/' or null bytes")
 	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
@@ -467,6 +604,8 @@ func (p *Pipeline) buildAndSign(
 	f *EmitterFrame,
 	peer socket.PeerCred,
 	alloc chain.Allocation,
+	chainID string,
+	delegation *receipt.Delegation,
 ) (receipt.AgentReceipt, string, error) {
 	now := p.Now().Format(time.RFC3339)
 
@@ -591,10 +730,11 @@ func (p *Pipeline) buildAndSign(
 		Action:        action,
 		Outcome:       outcome,
 		CorrelationID: f.CorrelationID,
+		Delegation:    delegation,
 		Chain: receipt.Chain{
 			Sequence:            int(alloc.Sequence),
 			PreviousReceiptHash: alloc.PrevHash,
-			ChainID:             p.State.ChainID(),
+			ChainID:             chainID,
 		},
 	}, now)
 }
@@ -631,6 +771,8 @@ func (p *Pipeline) buildAndSignDropReceipt(
 	peer socket.PeerCred,
 	seq int64,
 	prevHash *string,
+	chainID string,
+	delegation *receipt.Delegation,
 ) (receipt.AgentReceipt, string, error) {
 	now := p.Now().Format(time.RFC3339)
 
@@ -644,7 +786,8 @@ func (p *Pipeline) buildAndSignDropReceipt(
 			Type:      "AgentReceiptsDaemon",
 			SessionID: sessionID,
 		},
-		Principal: receipt.Principal{ID: "did:user:unknown"},
+		Principal:  receipt.Principal{ID: "did:user:unknown"},
+		Delegation: delegation,
 		Action: receipt.Action{
 			Type:           actionTypeEventsDropped,
 			ToolName:       "events_dropped",
@@ -659,7 +802,7 @@ func (p *Pipeline) buildAndSignDropReceipt(
 		Chain: receipt.Chain{
 			Sequence:            int(seq),
 			PreviousReceiptHash: prevHash,
-			ChainID:             p.State.ChainID(),
+			ChainID:             chainID,
 		},
 	}, now)
 }
@@ -685,25 +828,51 @@ func buildPeerCred(peer socket.PeerCred) *receipt.PeerCredential {
 
 func ptrUint32(v uint32) *uint32 { return &v }
 
-// EmitTerminator emits an interrupted-chain terminal receipt for the current
-// chain if the chain has at least one receipt and is not already terminated.
-// It is called once, synchronously, after the IPC listener has shut down and
-// all in-flight frames have been processed — the chain state mutex is free.
+// EmitTerminator emits interrupted-chain terminal receipts for all open chains
+// (root chain and any per-agent chains). It is called once, synchronously,
+// after the IPC listener has shut down and all in-flight frames have been
+// processed — all chain state mutexes are free.
 //
 // ctx should carry a short deadline (~200ms). Deadline/cancel errors are
 // non-fatal — the verifier's "unknown" classification is the documented
 // fallback for chains that never receive a terminator. Store or signing
 // failures are returned wrapped so the caller can surface them as fatal.
 func (p *Pipeline) EmitTerminator(ctx context.Context) error {
-	// Fast path: no receipts in this chain (fresh store or first-ever run).
-	if p.State.NextSeq() == 1 {
+	// Terminate agent chains first, then the root chain.
+	p.agentChainsMu.RLock()
+	agentStates := make([]*chain.State, 0, len(p.agentChains))
+	for _, s := range p.agentChains {
+		agentStates = append(agentStates, s)
+	}
+	p.agentChainsMu.RUnlock()
+
+	// Attempt all chains; a single failing agent chain must not prevent the
+	// remaining chains (or the root chain) from receiving their terminators.
+	// Return the first error after all attempts complete.
+	var firstErr error
+	for _, s := range agentStates {
+		if err := p.emitTerminatorForChain(ctx, s); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if err := p.emitTerminatorForChain(ctx, p.State); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
+}
+
+// emitTerminatorForChain emits an interrupted-chain terminal receipt for s if
+// it has at least one receipt and is not already terminated.
+func (p *Pipeline) emitTerminatorForChain(ctx context.Context, s *chain.State) error {
+	// Fast path: no receipts in this chain.
+	if s.NextSeq() == 1 {
 		return nil
 	}
 
 	// Check whether the chain's tail is already a terminal receipt. This
 	// covers the cross-restart case where a previous daemon run emitted an
 	// interrupted terminator that is now the tail.
-	chainID := p.State.ChainID()
+	chainID := s.ChainID()
 	tail, err := p.Store.GetChainTailReceipt(chainID)
 	if err != nil {
 		return fmt.Errorf("check chain tail: %w", err)
@@ -725,7 +894,7 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 		return fmt.Errorf("deadline exceeded before terminator: %w", context.DeadlineExceeded)
 	}
 
-	alloc := p.State.Allocate()
+	alloc := s.Allocate()
 	defer alloc.Rollback()
 
 	if alloc.Sequence > int64(math.MaxInt) {

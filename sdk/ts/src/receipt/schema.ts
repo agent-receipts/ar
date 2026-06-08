@@ -193,6 +193,18 @@ const chainSchema = z
 		path: ["status"],
 	});
 
+// --- Delegation ---
+
+const delegatorSchema = z.object({ id: z.string() }).passthrough();
+
+const delegationSchema = z
+	.object({
+		parent_chain_id: z.string(),
+		parent_receipt_id: z.string(),
+		delegator: delegatorSchema,
+	})
+	.passthrough();
+
 // --- Credential Subject ---
 
 const credentialSubjectSchema = z
@@ -204,6 +216,7 @@ const credentialSubjectSchema = z
 		authorization: authorizationSchema.optional(),
 		chain: chainSchema,
 		correlation_id: z.string().min(1).optional(),
+		delegation: delegationSchema.optional(),
 	})
 	.passthrough();
 

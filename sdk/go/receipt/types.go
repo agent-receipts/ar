@@ -207,6 +207,20 @@ func (c Chain) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a)
 }
 
+// Delegator identifies the agent whose chain spawned a delegation.
+type Delegator struct {
+	ID string `json:"id"`
+}
+
+// Delegation records the chain linkage when this chain was spawned by
+// delegation from another agent. Present only on the first receipt of a
+// subagent chain; absent on root chains. See spec §delegation.
+type Delegation struct {
+	ParentChainID   string    `json:"parent_chain_id"`
+	ParentReceiptID string    `json:"parent_receipt_id"`
+	Delegator       Delegator `json:"delegator"`
+}
+
 // CredentialSubject contains the core receipt payload.
 type CredentialSubject struct {
 	Principal     Principal      `json:"principal"`
@@ -219,6 +233,9 @@ type CredentialSubject struct {
 	// (e.g. hook pre-check to MCP proxy post-action). Populated from the
 	// runtime's tool-use correlation token; absent when not available.
 	CorrelationID string `json:"correlation_id,omitempty"`
+	// Delegation records the parent chain when this receipt opens a subagent
+	// chain. Absent on root chains and all receipts after the first in a chain.
+	Delegation *Delegation `json:"delegation,omitempty"`
 }
 
 // Proof contains the Ed25519 signature.

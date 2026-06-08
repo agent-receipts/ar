@@ -141,6 +141,12 @@ type Event struct {
 	// tool_use_id). The daemon stamps it onto credentialSubject.correlation_id.
 	// Optional; omitted from the frame when empty.
 	CorrelationID string
+
+	// AgentID identifies the subagent that generated this event (Claude Code:
+	// agent_id). The daemon uses it to route frames to per-agent chains and to
+	// populate delegation.parent_chain_id on the first receipt of a new agent.
+	// Optional; omitted from the frame when empty (root agent).
+	AgentID string
 }
 
 // Option configures an Emitter at construction.
@@ -301,6 +307,7 @@ type frame struct {
 	OperatorName   string          `json:"operator_name,omitempty"`
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 	CorrelationID  string          `json:"correlation_id,omitempty"`
+	AgentID        string          `json:"agent_id,omitempty"`
 }
 
 type frameTool struct {
@@ -393,12 +400,14 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 	}
 	// Mirror the daemon's per-field length cap so oversized values are caught
 	// at the emitter rather than silently rejected by the daemon after the write.
-	for _, f := range [5]struct{ name, val string }{
+	for _, f := range [7]struct{ name, val string }{
 		{"issuer_name", issuerName},
 		{"issuer_model", issuerModel},
 		{"operator_id", operatorID},
 		{"operator_name", operatorName},
 		{"idempotency_key", ev.IdempotencyKey},
+		{"correlation_id", ev.CorrelationID},
+		{"agent_id", ev.AgentID},
 	} {
 		if len(f.val) > MaxIdentityFieldLen {
 			e.dropCount.Add(pendingDrops)
@@ -423,6 +432,7 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		OperatorName:   operatorName,
 		IdempotencyKey: ev.IdempotencyKey,
 		CorrelationID:  ev.CorrelationID,
+		AgentID:        ev.AgentID,
 	})
 	if err != nil {
 		// Marshal failure is a caller bug, not a transient outage. Restore

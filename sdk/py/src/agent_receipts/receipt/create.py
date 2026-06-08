@@ -16,6 +16,7 @@ from agent_receipts.receipt.types import (
     Authorization,
     Chain,
     CredentialSubject,
+    Delegation,
     EmitterMetadata,
     Intent,
     Issuer,
@@ -66,6 +67,7 @@ class CreateReceiptInput(BaseModel):
     # MUST be "complete" or "interrupted" (spec §7.3.3).
     termination_status: Literal["complete", "interrupted"] | None = None
     correlation_id: str | None = None
+    delegation: Delegation | None = None
 
 
 def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
@@ -143,6 +145,8 @@ def create_receipt(input: CreateReceiptInput) -> UnsignedAgentReceipt:
         cs_data["authorization"] = input.authorization
     if input.correlation_id:
         cs_data["correlation_id"] = input.correlation_id
+    if input.delegation is not None:
+        cs_data["delegation"] = input.delegation
 
     receipt_data: dict[str, Any] = {
         "@context": list(CONTEXT),

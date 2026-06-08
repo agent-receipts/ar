@@ -193,6 +193,19 @@ export interface Chain {
 	status?: "complete" | "interrupted";
 }
 
+// --- Delegation ---
+
+export interface Delegator {
+	id: string;
+}
+
+/** Present on the first receipt of a subagent chain; absent on root chains. */
+export interface Delegation {
+	parent_chain_id: string;
+	parent_receipt_id: string;
+	delegator: Delegator;
+}
+
 // --- Credential Subject ---
 
 export interface CredentialSubject {
@@ -203,6 +216,8 @@ export interface CredentialSubject {
 	authorization?: Authorization;
 	chain: Chain;
 	correlation_id?: string;
+	/** Records the parent chain when this receipt opens a subagent chain. */
+	delegation?: Delegation;
 }
 
 // --- Proof ---

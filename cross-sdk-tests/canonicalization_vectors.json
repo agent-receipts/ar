@@ -541,6 +541,45 @@
       "expectedHash": "sha256:c4921f75f78e01dee2df94b9e7eb22a1bf076565d631a702e4c2f7eb582f7b90"
     },
     {
+      "name": "receipt_delegation_field",
+      "rule": "rule2_optional_present_is_emitted",
+      "description": "A receipt with delegation set on credentialSubject. Verifies that delegation and all its sub-fields are included in the canonical form — they must not be silently stripped by any SDK. This receipt represents the first receipt of a subagent chain.",
+      "mustContainSubstring": "\"delegation\"",
+      "receipt": {
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          "https://agentreceipts.ai/context/v1"
+        ],
+        "id": "urn:receipt:00000000-0000-0000-0000-000000000007",
+        "type": ["VerifiableCredential", "AgentReceipt"],
+        "version": "0.4.0",
+        "issuer": { "id": "did:agent:test", "name": "test-agent" },
+        "issuanceDate": "2026-06-08T00:00:00Z",
+        "credentialSubject": {
+          "principal": { "id": "did:user:test", "type": "HumanPrincipal" },
+          "action": {
+            "id": "act_00000000-0000-0000-0000-000000000007",
+            "type": "mcp.tool_call",
+            "tool_name": "Bash",
+            "risk_level": "low",
+            "timestamp": "2026-06-08T00:00:00Z"
+          },
+          "outcome": { "status": "success" },
+          "chain": {
+            "sequence": 1,
+            "previous_receipt_hash": null,
+            "chain_id": "root-chain/agent/agent-abc"
+          },
+          "delegation": {
+            "parent_chain_id": "root-chain",
+            "parent_receipt_id": "urn:receipt:00000000-0000-0000-0000-000000000001",
+            "delegator": { "id": "did:agent-receipts-daemon:host" }
+          }
+        }
+      },
+      "expectedHash": "sha256:6982fe89187303748a003e6ec001f13d598b6956d4d328d29c780863c1e6d9b6"
+    },
+    {
       "name": "receipt_signature_preservation_legacy_0_2_0",
       "rule": "signature_preservation",
       "description": "The three-receipt terminalChain from cross-sdk-tests/v020_vectors.json was signed under the pre-sweep (0.2.0) canonicaliser. Running the post-sweep canonicaliser on the same unsigned bytes MUST produce identical canonical output, and the existing proof.proofValue MUST still verify. This is the signature-preservation invariant from ADR-0009 §4. Implementation: this vector reuses the v020 fixtures by reference; the test harness loads both files and asserts round-trip equality.",
