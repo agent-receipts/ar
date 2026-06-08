@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -187,37 +188,46 @@ func New(s *chain.State, ks keysource.KeySource, store pipelineStore, issuerID s
 	}
 }
 
-// getOrCreateAgentState returns the chain.State and, on the first receipt for a
-// new agent chain, a Delegation to backlink to the root chain.
+// getOrCreateAgentState returns the chain.State and, when appropriate, a
+// Delegation to backlink to the root chain.
 //
 // Frames with no agent_id → (p.State, nil, nil): root chain, no delegation.
-// Frames with a known agent_id → (existing state, nil, nil): already routed.
-// Frames with a new agent_id → (new state, &Delegation{...}, nil) on first
-// call; subsequent calls return the same state with nil delegation.
+// Frames with a known agent_id → (existing state, delegation?, nil): delegation
+// is non-nil only while the chain's first receipt has not yet been committed
+// (NextSeq still 1). This covers retries after a rollback and the
+// processWithDrop→processLive fallback — both leave NextSeq at 1 with no
+// committed receipt, and both must carry the delegation on the eventual first
+// receipt of the subagent chain.
+// Frames with a new agent_id → (new state, &Delegation{...}, nil) on creation.
 //
-// The delegation.parent_receipt_id is the tail receipt of the root chain at
-// the moment the subagent chain is created. If the root chain has no receipts
-// yet, delegation is omitted (nil) — the spec treats it as optional.
+// DB I/O (LoadFromStore, buildDelegation) is performed outside the write lock
+// so agentChainsMu is never held across blocking store queries.
 func (p *Pipeline) getOrCreateAgentState(agentID string) (*chain.State, *receipt.Delegation, error) {
 	if agentID == "" {
 		return p.State, nil, nil
 	}
 	// Fast path: chain already exists for this agent.
 	p.agentChainsMu.RLock()
-	if s, ok := p.agentChains[agentID]; ok {
-		p.agentChainsMu.RUnlock()
-		return s, nil, nil
-	}
+	s, ok := p.agentChains[agentID]
 	p.agentChainsMu.RUnlock()
-
-	// Slow path: create a new chain for this agent.
-	p.agentChainsMu.Lock()
-	defer p.agentChainsMu.Unlock()
-	if s, ok := p.agentChains[agentID]; ok {
-		// Another goroutine raced us to creation.
-		return s, nil, nil
+	if ok {
+		// Re-derive delegation when the first receipt has not yet been committed.
+		// NextSeq stays at 1 after a Rollback, so a failed build/sign/insert
+		// attempt on what is logically the first receipt leaves the chain in a
+		// state where the next attempt must still carry the delegation.
+		if s.NextSeq() != 1 {
+			return s, nil, nil
+		}
+		del, err := p.buildDelegation()
+		if err != nil {
+			return nil, nil, err
+		}
+		return s, del, nil
 	}
 
+	// Slow path: load from store outside the write lock so blocking I/O does not
+	// hold agentChainsMu and serialize all concurrent frame goroutines.
+	//
 	// Chain ID is deterministic: base chain + "/agent/" + agent_id.
 	// This lets the daemon resume an agent chain across restarts when the same
 	// agent reconnects within a session.
@@ -226,25 +236,46 @@ func (p *Pipeline) getOrCreateAgentState(agentID string) (*chain.State, *receipt
 	if err != nil {
 		return nil, nil, fmt.Errorf("load agent chain %q: %w", chainID, err)
 	}
-
 	var del *receipt.Delegation
 	if s.NextSeq() == 1 {
-		// First receipt on this chain — link back to the root chain's current tail.
-		tail, err := p.Store.GetChainTailReceipt(p.rootChainID)
+		del, err = p.buildDelegation()
 		if err != nil {
-			return nil, nil, fmt.Errorf("get root chain tail for delegation: %w", err)
-		}
-		if tail != nil {
-			del = &receipt.Delegation{
-				ParentChainID:   p.rootChainID,
-				ParentReceiptID: tail.ID,
-				Delegator:       receipt.Delegator{ID: p.IssuerID},
-			}
+			return nil, nil, err
 		}
 	}
 
+	// Install under write lock; double-check to detect a concurrent creator.
+	p.agentChainsMu.Lock()
+	defer p.agentChainsMu.Unlock()
+	if existing, ok := p.agentChains[agentID]; ok {
+		// Lost the creation race. Reuse the delegation we already computed if the
+		// winner's chain is still at seq 1 (first receipt not yet committed);
+		// otherwise the first receipt already landed without our delegation object.
+		if existing.NextSeq() == 1 {
+			return existing, del, nil
+		}
+		return existing, nil, nil
+	}
 	p.agentChains[agentID] = s
 	return s, del, nil
+}
+
+// buildDelegation queries the root chain tail and returns a Delegation for use
+// on the first receipt of a new subagent chain. Returns nil, nil when the root
+// chain has no receipts yet — delegation is optional per spec.
+func (p *Pipeline) buildDelegation() (*receipt.Delegation, error) {
+	tail, err := p.Store.GetChainTailReceipt(p.rootChainID)
+	if err != nil {
+		return nil, fmt.Errorf("get root chain tail for delegation: %w", err)
+	}
+	if tail == nil {
+		return nil, nil
+	}
+	return &receipt.Delegation{
+		ParentChainID:   p.rootChainID,
+		ParentReceiptID: tail.ID,
+		Delegator:       receipt.Delegator{ID: p.IssuerID},
+	}, nil
 }
 
 // Process is the daemon's per-frame entrypoint. It parses the frame, allocates
@@ -450,6 +481,9 @@ func validateFrame(f *EmitterFrame) error {
 	}
 	if len(f.AgentID) > maxIdentityFieldLen {
 		return fmt.Errorf("agent_id exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.AgentID))
+	}
+	if strings.ContainsAny(f.AgentID, "/\x00") {
+		return fmt.Errorf("agent_id must not contain '/' or null bytes")
 	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
@@ -792,12 +826,19 @@ func (p *Pipeline) EmitTerminator(ctx context.Context) error {
 	}
 	p.agentChainsMu.RUnlock()
 
+	// Attempt all chains; a single failing agent chain must not prevent the
+	// remaining chains (or the root chain) from receiving their terminators.
+	// Return the first error after all attempts complete.
+	var firstErr error
 	for _, s := range agentStates {
-		if err := p.emitTerminatorForChain(ctx, s); err != nil {
-			return err
+		if err := p.emitTerminatorForChain(ctx, s); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-	return p.emitTerminatorForChain(ctx, p.State)
+	if err := p.emitTerminatorForChain(ctx, p.State); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
 }
 
 // emitTerminatorForChain emits an interrupted-chain terminal receipt for s if

@@ -400,12 +400,13 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 	}
 	// Mirror the daemon's per-field length cap so oversized values are caught
 	// at the emitter rather than silently rejected by the daemon after the write.
-	for _, f := range [6]struct{ name, val string }{
+	for _, f := range [7]struct{ name, val string }{
 		{"issuer_name", issuerName},
 		{"issuer_model", issuerModel},
 		{"operator_id", operatorID},
 		{"operator_name", operatorName},
 		{"idempotency_key", ev.IdempotencyKey},
+		{"correlation_id", ev.CorrelationID},
 		{"agent_id", ev.AgentID},
 	} {
 		if len(f.val) > MaxIdentityFieldLen {
