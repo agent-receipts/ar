@@ -327,8 +327,17 @@ func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) er
 	pair := state.AllocatePair()
 	defer pair.Rollback() // panic-safety: no-op after CommitFirst
 
+	// Delegation belongs on the first receipt in the chain. Guard by the
+	// actual allocated sequence so that if a concurrent goroutine committed
+	// seq 1 between getOrCreateAgentState and AllocatePair, we do not
+	// incorrectly attach delegation to a non-first receipt.
+	dropDelegation := delegation
+	if pair.FirstSeq != 1 {
+		dropDelegation = nil
+	}
+
 	synthetic, synHash, err := p.buildAndSignDropReceipt(
-		frame.DropCount, frame.SessionID, peer, pair.FirstSeq, pair.FirstPrev, chainID)
+		frame.DropCount, frame.SessionID, peer, pair.FirstSeq, pair.FirstPrev, chainID, dropDelegation)
 	if err != nil {
 		pair.Rollback()
 		p.logError("build events_dropped receipt (drop_count=%d session=%s): %v",
@@ -351,7 +360,9 @@ func (p *Pipeline) processWithDrop(frame *EmitterFrame, peer socket.PeerCred) er
 	liveAlloc := pair.CommitFirst(synHash)
 	defer liveAlloc.Rollback() // panic-safety; pair.Rollback defer is now a no-op
 
-	live, liveHash, err := p.buildAndSign(frame, peer, liveAlloc, chainID, delegation)
+	// The live receipt is always the second in the pair (seq FirstSeq+1) so
+	// delegation never belongs here regardless of agent chain state.
+	live, liveHash, err := p.buildAndSign(frame, peer, liveAlloc, chainID, nil)
 	if err != nil {
 		liveAlloc.Rollback() // releases lock; chain is at pair.FirstSeq+1
 		return err
@@ -379,6 +390,13 @@ func (p *Pipeline) processLive(frame *EmitterFrame, peer socket.PeerCred) error 
 
 	alloc := state.Allocate()
 	defer alloc.Rollback()
+
+	// Guard by actual sequence: a concurrent goroutine may have committed
+	// seq 1 between getOrCreateAgentState and Allocate, so check the
+	// allocated sequence rather than the earlier NextSeq observation.
+	if alloc.Sequence != 1 {
+		delegation = nil
+	}
 
 	signed, hash, err := p.buildAndSign(frame, peer, alloc, state.ChainID(), delegation)
 	if err != nil {
@@ -754,6 +772,7 @@ func (p *Pipeline) buildAndSignDropReceipt(
 	seq int64,
 	prevHash *string,
 	chainID string,
+	delegation *receipt.Delegation,
 ) (receipt.AgentReceipt, string, error) {
 	now := p.Now().Format(time.RFC3339)
 
@@ -767,7 +786,8 @@ func (p *Pipeline) buildAndSignDropReceipt(
 			Type:      "AgentReceiptsDaemon",
 			SessionID: sessionID,
 		},
-		Principal: receipt.Principal{ID: "did:user:unknown"},
+		Principal:  receipt.Principal{ID: "did:user:unknown"},
+		Delegation: delegation,
 		Action: receipt.Action{
 			Type:           actionTypeEventsDropped,
 			ToolName:       "events_dropped",

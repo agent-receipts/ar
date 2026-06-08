@@ -1753,6 +1753,80 @@ func TestProcess_DelegationOnFirstAgentReceipt(t *testing.T) {
 	}
 }
 
+// TestProcess_DelegationOnFirstAgentDropReceipt verifies that when the first
+// frame for a subagent chain has DropCount>0, the synthetic events_dropped
+// receipt (sequence 1) carries delegation and the following live receipt
+// (sequence 2) does not.
+func TestProcess_DelegationOnFirstAgentDropReceipt(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("root")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	// Emit a root receipt so there is a tail to backlink to.
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatal(err)
+	}
+	rootReceipts, err := st.GetChain("root")
+	if err != nil || len(rootReceipts) != 1 {
+		t.Fatalf("setup: expected 1 root receipt, err=%v", err)
+	}
+	rootTailID := rootReceipts[0].ID
+
+	// First subagent frame with drop_count=2: produces a synthetic receipt
+	// (seq 1) followed by the live receipt (seq 2).
+	body, err := json.Marshal(EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-06-08T00:00:00Z",
+		SessionID: "sess-agent-drop",
+		Channel:   "claude-code",
+		Tool:      EmitterTool{Name: "Bash"},
+		Decision:  "allowed",
+		AgentID:   "agent-drop",
+		DropCount: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatal(err)
+	}
+
+	agentChainID := "root/agent/agent-drop"
+	agentReceipts, err := st.GetChain(agentChainID)
+	if err != nil || len(agentReceipts) != 2 {
+		t.Fatalf("expected 2 agent receipts (drop+live), got %d, err=%v", len(agentReceipts), err)
+	}
+
+	// Sequence 1: synthetic events_dropped — must carry delegation.
+	dropR := agentReceipts[0]
+	if dropR.CredentialSubject.Chain.Sequence != 1 {
+		t.Errorf("drop receipt seq = %d, want 1", dropR.CredentialSubject.Chain.Sequence)
+	}
+	del := dropR.CredentialSubject.Delegation
+	if del == nil {
+		t.Fatal("drop receipt (seq 1) missing delegation")
+	}
+	if del.ParentChainID != "root" {
+		t.Errorf("delegation.parent_chain_id = %q, want root", del.ParentChainID)
+	}
+	if del.ParentReceiptID != rootTailID {
+		t.Errorf("delegation.parent_receipt_id = %q, want %q", del.ParentReceiptID, rootTailID)
+	}
+	if del.Delegator.ID != "did:agent-receipts-daemon:test" {
+		t.Errorf("delegation.delegator.id = %q", del.Delegator.ID)
+	}
+
+	// Sequence 2: live receipt — must NOT carry delegation.
+	liveR := agentReceipts[1]
+	if liveR.CredentialSubject.Chain.Sequence != 2 {
+		t.Errorf("live receipt seq = %d, want 2", liveR.CredentialSubject.Chain.Sequence)
+	}
+	if liveR.CredentialSubject.Delegation != nil {
+		t.Error("live receipt (seq 2) must not carry delegation")
+	}
+}
+
 // TestProcess_NoDelegationWhenRootChainEmpty verifies that if the first event is
 // a subagent frame with no prior root receipt, delegation is omitted rather than
 // panicking or returning an error.
