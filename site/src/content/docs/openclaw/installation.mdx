@@ -57,6 +57,8 @@ Or allowlist the entire plugin by ID:
 
 ## Configuration
 
+The plugin requires a running [`agent-receipts-daemon`](/getting-started/daemon-setup/). Every tool call is forwarded to the daemon over a Unix socket; the daemon signs, hash-links, and stores each receipt (ADR-0010, daemon process separation). The plugin holds no signing keys and no chain state of its own.
+
 All configuration is optional. Defaults are shown below:
 
 ```jsonc
@@ -66,12 +68,10 @@ All configuration is optional. Defaults are shown below:
       "openclaw-agent-receipts": {
         "enabled": true,
         "config": {
-          "enabled": true,
-          "dbPath": "~/.openclaw/agent-receipts/receipts.db",
-          "keyPath": "~/.openclaw/agent-receipts/keys.json",  // in-process signing key; not used when daemonForwarding is true
-          // "taxonomyPath": "/path/to/custom-taxonomy.json",  // optional — overrides bundled taxonomy
-          "parameterDisclosure": false,   // false | true | "high" | string[]
-          "daemonForwarding": false       // set true to forward events to agent-receipts-daemon instead of signing in-process
+          "enabled": true
+          // "daemonDbPath": "~/.local/share/agent-receipts/receipts.db",            // optional — overrides the daemon's default DB path
+          // "daemonPublicKeyPath": "~/.local/share/agent-receipts/signing.key.pub", // optional — public key used by ar_verify_chain
+          // "taxonomyPath": "/path/to/custom-taxonomy.json"                          // optional — overrides the bundled taxonomy
         }
       }
     }
@@ -79,57 +79,38 @@ All configuration is optional. Defaults are shown below:
 }
 ```
 
-`keyPath` holds the Ed25519 signing key used for in-process receipt signing (the default). When `daemonForwarding: true`, signing is delegated to `agent-receipts-daemon` and `keyPath` is not used — see [Daemon Setup](/getting-started/daemon-setup/) for daemon installation. Daemon forwarding is opt-in because it sends raw tool I/O across a process boundary; see the [openclaw README](https://github.com/agent-receipts/openclaw#daemon-forwarding) for trust-boundary details.
+`daemonDbPath` and `daemonPublicKeyPath` let the read-side tools (`ar_query_receipts`, `ar_verify_chain`) locate the daemon's SQLite database and Ed25519 public key. Both default to the daemon's own platform paths (`AGENTRECEIPTS_DB` / `AGENTRECEIPTS_KEY`, otherwise under `~/.local/share/agent-receipts/`). See [Daemon Setup](/getting-started/daemon-setup/) for daemon installation and the trust-boundary details of forwarding raw tool I/O across the socket.
+
+The legacy in-process fields `dbPath`, `keyPath`, and `daemonForwarding` are deprecated and ignored — the daemon is now always required.
 
 ## Parameter disclosure
 
-By default, action parameters are hashed but not stored in plaintext. Enable `parameterDisclosure` to selectively disclose specific fields per action type — useful for auditing high-risk commands without exposing sensitive data on lower-risk calls.
+By default, action parameters are hashed (`parameters_hash`) but never stored in plaintext. Disclosure — attaching a recoverable, encrypted copy of the parameters — is **configured on the daemon**, not in this plugin. The daemon encrypts qualifying parameters to a forensic X25519 public key using HPKE and stores the result as an opaque `parameters_disclosure` envelope; only the holder of the forensic private key can recover them.
 
-For the protocol-level model behind this setting — the HPKE envelope, the two-key separation, forensic recovery, and the threat/GDPR considerations — see [Parameter Disclosure](/specification/parameter-disclosure/).
+Enable it with the daemon's `--parameter-disclosure` flag and a forensic public key — not in `openclaw.json`. For the full model — the HPKE envelope, the two-key separation, forensic recovery, and the threat/GDPR considerations — see [Parameter Disclosure](/specification/parameter-disclosure/) and [Daemon Setup](/getting-started/daemon-setup/).
 
-```jsonc
-{
-  "plugins": {
-    "entries": {
-      "openclaw-agent-receipts": {
-        "config": {
-          "parameterDisclosure": "high"
-        }
-      }
-    }
-  }
-}
-```
-
-Options:
-
-| Value | Behavior |
-|-------|----------|
-| `false` | Hashes only — no plaintext (default) |
-| `true` | Disclosure enabled for all action types |
-| `"high"` | Disclosure enabled for `high` and `critical` risk actions only |
-| `["system.command.execute"]` | Disclosure enabled for specific action types |
-
-With `"high"` enabled, a `system.command.execute` receipt includes:
+With disclosure active on the daemon, a `system.command.execute` receipt carries an opaque envelope alongside the hash:
 
 ```jsonc
 {
   // ...other receipt fields
   "parameters_hash": "sha256:9c84a8c9...",
   "parameters_disclosure": {
-    "command": "echo \"Testing agent-receipts plugin fix\""
+    "v": "1",
+    "alg": "hpke-x25519-hkdf-sha256-aes-256-gcm",
+    "recipients": [{ "kid": "sha256:3b4c5d6e...", "enc": "N_2jVnvb..." }],
+    "ct": "YGn3i4Np..."   // ciphertext — recoverable only with the forensic private key
   }
 }
 ```
 
-The hash always covers the full original parameters regardless of disclosure config. Only the **first** matching field from the taxonomy's `preview_fields` list is included in `parameters_disclosure`, and non-string values are JSON-stringified. Disclosed values are stored verbatim — do not list fields that may contain secrets.
+The hash always covers the full original parameters whether or not disclosure is enabled; the envelope is additive. `ar_query_receipts` reports a `disclosed: true` flag for receipts that carry one, but the plugin never decrypts — recovery happens with the forensic private key, which lives with the responder, not the agent host.
 
-> The config key was named `parameterPreview` and the receipt field
-> `parameters_preview` before the 0.6.0 SDK release. Per
-> [ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md),
-> "preview" misdescribed a permanent, signed field, so both renamed to
-> `parameterDisclosure` / `parameters_disclosure` in lockstep. There is no
-> deprecation alias — update your `openclaw.json`.
+> The plugin's own `parameterDisclosure` config key is a deprecated no-op: setting it
+> emits a startup warning and has no effect. It was the control surface in the earlier
+> in-process model; disclosure is now daemon-owned. See
+> [ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md)
+> for the rename from `parameterPreview` / `parameters_preview`.
 
 ## Verify the install
 
