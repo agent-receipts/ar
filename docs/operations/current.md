@@ -421,7 +421,7 @@ A closure is a coherent piece of work that retires a category of audit findings 
 
 ## Next farmable (computed)
 
-As of `2026-06-03`, **the active DAG is fully clear** — all wave-1 and wave-2 items, and all ADR-0024 verification gates (#1–#10), are shipped. `daemon-sdk-protocol-compat-gate` (#655, Gate #8) closed 2026-06-03; `sbom-deps-match-gate` (#656, Gate #10) closed 2026-06-01.
+As of `2026-06-08`, **the active DAG is fully clear** — all wave-1 and wave-2 items, and all ADR-0024 verification gates (#1–#10), are shipped. `daemon-sdk-protocol-compat-gate` (#655, Gate #8) closed 2026-06-03; `sbom-deps-match-gate` (#656, Gate #10) closed 2026-06-01.
 
 No farmable nodes remain. The next foreground work is **`daemon-v2`** — Otto's design work, not yet broken into nodes (add them here once it becomes farmable). Background items awaiting an Otto decision: PR #708 (doc-e2e CI fleet — needs repo secret + action SHA pin + permissions sign-off), idle PR #532 (hermes-agent plugin — review or close).
 
