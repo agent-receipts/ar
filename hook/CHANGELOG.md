@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0-alpha.1] - 2026-06-08
+
+### Added
+
+- **`agent_id` forwarding** ([#753](https://github.com/agent-receipts/ar/pull/753)) — Claude Code sends a distinct `agent_id` per subagent in hook payloads. The hook now parses this field from the `claudeCodeFrame` and sets it on `emitter.Event.AgentID`, enabling the daemon to route subagent frames to per-agent chains and attach delegation backlinks.
+- **`correlation_id` forwarding** ([#752](https://github.com/agent-receipts/ar/pull/752)) — the hook now reads `tool_use_id` from the Claude Code payload and forwards it as `Event.CorrelationID`. This links every pre-check receipt to the corresponding post-action receipt emitted by the MCP proxy for the same tool invocation.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.16.0-alpha.1`.
+
+## [0.13.0] - 2026-06-01
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.14.0` (response hash, redaction patterns, HPKE forensic key helpers, action-type forwarding).
+
 ## [0.12.0] - 2026-05-24
 
 ### Changed
