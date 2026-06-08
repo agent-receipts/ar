@@ -41,7 +41,7 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - **`closure-0` (spec/context versioning) — SHIPPED.**
 - **`closure-1` (Quick Start coherence + Go module identity) — COMPLETE.** All Quick Start / README / ADR nodes shipped, including `homepage-rewrite` (#644) and `ADR-0023-go-module-path` (#640). ADR-0023 follow-ups `collector-tagging` (#638) and `d5-release-verification` (#639) both closed 2026-05-30. Tracker #598 can now close.
 - **`closure-2` (emit failure contract) — SHIPPED.** ADR-0025 implemented across all three SDKs (#643, merged 2026-05-28). Issue #599 closed.
-- **`verification-contract` (ADR-0024) — SHIPPED & BUILDING GATES.** ADR-0024 landed (#658). Gate #1 type-check shipped (#632); Gate #1 execute mode shipped (#666, closes #650). Gate #2 (release round-trip) shipped (#664, closes #651). Gate #5 (MDX snippet execution) shipped (#667, closes #652). Gates #3/#4/#6/#7 are future siblings.
+- **`verification-contract` (ADR-0024) — ALL GATES SHIPPED.** ADR-0024 landed (#658). Gate #1 type-check shipped (#632); Gate #1 execute mode shipped (#666, closes #650). Gate #2 (release round-trip) shipped (#664, closes #651). Gate #5 (MDX snippet execution) shipped (#667, closes #652). Gate #6 (schema-conformance) shipped (#696, closes #653). Gate #7 (byte-identity) shipped (#698, closes #654). Gate #8 (daemon ↔ SDK protocol compatibility) shipped (#705, closes #655). Gate #10 (dependency-manifest/SBOM) shipped (#699, closes #656). Gates #3/#4/#9 tracked under ADR-0021 (#597).
 - **`v1-blockers`** (orthogonal to closures; tracked by `v1-blocker` label) — #534 (AWS KMS signers) shipped for TS + Python (#663); #535 (ephemeral-compute deployment guide) shipped (#660). Foreground for the v1 release path; not part of the audit response.
 - **`daemon-v2`** — Otto's foreground design work. Not yet broken into nodes here; add when it becomes farmable.
 
@@ -396,12 +396,14 @@ A closure is a coherent piece of work that retires a category of audit findings 
 - state: shipped
 - depends_on: []
 - issues: #655 (closed 2026-06-03)
+- prs: #705 (merged)
 - notes: Gate #8 (ADR-0024) — declare daemon-protocol version ranges on SDK and daemon sides; assert intersection at release time. Needs protocol-version surface work as part of scope.
 
 #### `sbom-deps-match-gate` (#656)
 - state: shipped
 - depends_on: []
 - issues: #656 (closed 2026-06-01)
+- prs: #699 (merged)
 - notes: Gate #10 (ADR-0024) — generate per-SDK SBOM at release time; assert installed deps match declared deps; fail on unexplained eager dependencies. Supply-chain gate.
 
 ---

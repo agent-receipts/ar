@@ -15,7 +15,7 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Added
 
-- **`Delegation` dataclass** ([#753](https://github.com/agent-receipts/ar/pull/753)) — new `Delegator` and `Delegation` frozen dataclasses in `agent_receipts.receipt.types`. `Delegation` carries `parent_chain_id: str`, `parent_receipt_id: str`, and `delegator: Delegator`. Added to `CredentialSubject.delegation: Delegation | None = None` and `CreateInput.delegation: Delegation | None = None`. Cross-SDK canonicalization vectors added.
+- **`Delegation` dataclass** ([#753](https://github.com/agent-receipts/ar/pull/753)) — new `Delegator` and `Delegation` frozen dataclasses in `agent_receipts.receipt.types`. `Delegation` carries `parent_chain_id: str`, `parent_receipt_id: str`, and `delegator: Delegator`. Added to `CredentialSubject.delegation: Delegation | None = None` and `CreateInput.delegation: Delegation | None = None`. Cross-SDK canonicalisation vectors added.
 - **`CredentialSubject.correlation_id`** ([#752](https://github.com/agent-receipts/ar/pull/752)) — new optional `correlation_id: str | None = None` field linking the pre-check and post-action receipts for a single tool invocation.
 
 ## [0.11.1] - 2026-06-03

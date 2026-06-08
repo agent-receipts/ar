@@ -15,7 +15,7 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ### Added
 
-- **`Delegation` type** ([#753](https://github.com/agent-receipts/ar/pull/753)) — new `Delegation` interface with `parent_chain_id: string`, `parent_receipt_id: string`, and `delegator: { id: string }`. Added to `CredentialSubject.delegation?: Delegation` and `CreateInput.delegation?: Delegation`. Enables the daemon to attach a verifiable chain backlink to the first receipt on every subagent chain. Zod schema and TypeScript types updated; cross-SDK canonicalization vectors added.
+- **`Delegation` type** ([#753](https://github.com/agent-receipts/ar/pull/753)) — new `Delegation` interface with `parent_chain_id: string`, `parent_receipt_id: string`, and `delegator: { id: string }`. Added to `CredentialSubject.delegation?: Delegation` and `CreateInput.delegation?: Delegation`. Enables the daemon to attach a verifiable chain backlink to the first receipt on every subagent chain. Zod schema and TypeScript types updated; cross-SDK canonicalisation vectors added.
 - **`CredentialSubject.correlation_id`** ([#752](https://github.com/agent-receipts/ar/pull/752)) — new optional `correlation_id?: string` field linking the pre-check and post-action receipts for a single tool invocation.
 
 ## [0.11.1] - 2026-06-03
