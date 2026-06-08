@@ -268,6 +268,7 @@ class CredentialSubject(BaseModel):
     outcome: Outcome
     authorization: Authorization | None = None
     chain: Chain
+    correlation_id: str | None = None
 
 
 class Proof(BaseModel):

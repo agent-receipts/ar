@@ -34,6 +34,10 @@ type CreateInput struct {
 	// TerminationStatus without Terminal is also silently dropped; the spec
 	// requires status to coexist with terminal.
 	TerminationStatus ChainStatus
+
+	// CorrelationID links related receipts for the same logical tool invocation.
+	// See CredentialSubject.CorrelationID.
+	CorrelationID string
 }
 
 // Create builds an unsigned AgentReceipt from structured inputs.
@@ -57,6 +61,7 @@ func Create(input CreateInput) UnsignedAgentReceipt {
 		Chain:         input.Chain,
 		Intent:        input.Intent,
 		Authorization: input.Authorization,
+		CorrelationID: input.CorrelationID,
 	}
 
 	// Compute response_hash when a response body is supplied.

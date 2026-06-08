@@ -105,6 +105,7 @@ type EmitterFrame struct {
 	OperatorID     string          `json:"operator_id,omitempty"`
 	OperatorName   string          `json:"operator_name,omitempty"`
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	CorrelationID  string          `json:"correlation_id,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -582,10 +583,11 @@ func (p *Pipeline) buildAndSign(
 	}
 
 	return p.signAndHash(receipt.CreateInput{
-		Issuer:    issuerFromFrame(f, p.IssuerID),
-		Principal: receipt.Principal{ID: "did:user:unknown"},
-		Action:    action,
-		Outcome:   outcome,
+		Issuer:        issuerFromFrame(f, p.IssuerID),
+		Principal:     receipt.Principal{ID: "did:user:unknown"},
+		Action:        action,
+		Outcome:       outcome,
+		CorrelationID: f.CorrelationID,
 		Chain: receipt.Chain{
 			Sequence:            int(alloc.Sequence),
 			PreviousReceiptHash: alloc.PrevHash,
