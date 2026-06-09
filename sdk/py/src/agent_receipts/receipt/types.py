@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 CONTEXT: list[str] = [
     "https://www.w3.org/ns/credentials/v2",
-    "https://agentreceipts.ai/context/v1",
+    "https://agentreceipts.ai/context/v2",
 ]
 
 CREDENTIAL_TYPE: list[str] = [
@@ -24,7 +24,7 @@ CREDENTIAL_TYPE: list[str] = [
     "AgentReceipt",
 ]
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 RiskLevel = Literal["low", "medium", "high", "critical"]
 
@@ -38,6 +38,23 @@ class Operator(BaseModel):
     name: str
 
 
+class Runtime(BaseModel):
+    """Open container for runtime/observability metadata the issuing runtime
+    attaches to an action (ADR-0026).
+
+    Intentionally extensible: ``agent_id`` and ``agent_type`` are documented
+    members, but the JSON-LD context types this ``@json`` and the schema does
+    not close it, so additional runtime keys (e.g. future trace-context
+    identifiers) may be added without a protocol-version bump. ``extra="allow"``
+    preserves unknown keys on round-trip. Absent for the root agent.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    agent_id: str | None = None
+    agent_type: str | None = None
+
+
 class Issuer(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -47,6 +64,7 @@ class Issuer(BaseModel):
     operator: Operator | None = None
     model: str | None = None
     session_id: str | None = None
+    runtime: Runtime | None = None
 
 
 class Principal(BaseModel):

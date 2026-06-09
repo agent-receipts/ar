@@ -26,6 +26,16 @@ const operatorSchema = z
 	})
 	.passthrough();
 
+// Open runtime/observability metadata container (ADR-0026). Known members are
+// declared for documentation; `.passthrough()` keeps it extensible so future
+// runtime keys validate without a schema change.
+const runtimeSchema = z
+	.object({
+		agent_id: z.string().optional(),
+		agent_type: z.string().optional(),
+	})
+	.passthrough();
+
 const issuerSchema = z
 	.object({
 		id: z.string(),
@@ -34,6 +44,7 @@ const issuerSchema = z
 		operator: operatorSchema.optional(),
 		model: z.string().optional(),
 		session_id: z.string().optional(),
+		runtime: runtimeSchema.optional(),
 	})
 	.passthrough();
 

@@ -6,7 +6,7 @@ import "encoding/json"
 
 // Protocol constants (unexported to prevent mutation).
 var (
-	protocolContext        = []string{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"}
+	protocolContext        = []string{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v2"}
 	protocolCredentialType = []string{"VerifiableCredential", "AgentReceipt"}
 )
 
@@ -16,7 +16,7 @@ func Context() []string { return append([]string{}, protocolContext...) }
 // CredentialType returns a copy of the credential type array.
 func CredentialType() []string { return append([]string{}, protocolCredentialType...) }
 
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 // RiskLevel classifies the security risk of an action.
 type RiskLevel string
@@ -69,6 +69,21 @@ type Issuer struct {
 	Operator  *Operator `json:"operator,omitempty"`
 	Model     string    `json:"model,omitempty"`
 	SessionID string    `json:"session_id,omitempty"`
+	Runtime   *Runtime  `json:"runtime,omitempty"`
+}
+
+// Runtime is the open container for runtime/observability metadata the issuing
+// runtime attaches to an action (ADR-0026). It is intentionally extensible: the
+// fields below are documented members, but the JSON-LD context types it @json
+// and the schema does not close it, so additional runtime keys (e.g. future
+// trace-context identifiers) may be added without a protocol-version bump.
+// Absent for the root agent.
+type Runtime struct {
+	// AgentID identifies the sub-agent that issued the receipt. Absent for the
+	// root agent.
+	AgentID string `json:"agent_id,omitempty"`
+	// AgentType is the runtime-reported agent type label (e.g. "general-purpose").
+	AgentType string `json:"agent_type,omitempty"`
 }
 
 // Principal identifies the human or organisation that authorised the action.

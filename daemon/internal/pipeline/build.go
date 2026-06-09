@@ -27,10 +27,11 @@ import (
 // (multibase prefix "u") rather than the W3C default base58btc ("z").
 const multibaseBase64URL = "u"
 
-// maxIdentityFieldLen caps the byte length of the four proxy-supplied identity
-// fields (IssuerName, IssuerModel, OperatorID, OperatorName). The 1 MiB socket
-// cap is the only ceiling today — this per-field limit catches runaway values
-// early and keeps error messages legible.
+// maxIdentityFieldLen caps the byte length of the proxy-supplied identity
+// fields (IssuerName, IssuerModel, OperatorID, OperatorName, IdempotencyKey,
+// CorrelationID, AgentID, AgentType). The 1 MiB socket cap is the only other
+// ceiling — this per-field limit catches runaway values early and keeps error
+// messages legible.
 const maxIdentityFieldLen = 256
 
 // SupportedFrameVersion is the only emitter-frame schema this daemon accepts.
@@ -108,6 +109,7 @@ type EmitterFrame struct {
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 	CorrelationID  string          `json:"correlation_id,omitempty"`
 	AgentID        string          `json:"agent_id,omitempty"`
+	AgentType      string          `json:"agent_type,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -503,6 +505,9 @@ func validateFrame(f *EmitterFrame) error {
 	if strings.ContainsAny(f.AgentID, "/\x00") {
 		return fmt.Errorf("agent_id must not contain '/' or null bytes")
 	}
+	if len(f.AgentType) > maxIdentityFieldLen {
+		return fmt.Errorf("agent_type exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.AgentType))
+	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
 	// JSON syntax, so anything reaching this point is well-formed. The hash
@@ -747,6 +752,10 @@ func issuerFromFrame(f *EmitterFrame, daemonID string) receipt.Issuer {
 	if f.OperatorID != "" {
 		op = &receipt.Operator{ID: f.OperatorID, Name: f.OperatorName}
 	}
+	var runtime *receipt.Runtime
+	if f.AgentID != "" || f.AgentType != "" {
+		runtime = &receipt.Runtime{AgentID: f.AgentID, AgentType: f.AgentType}
+	}
 	return receipt.Issuer{
 		ID:        daemonID,
 		Type:      "AgentReceiptsDaemon",
@@ -754,6 +763,7 @@ func issuerFromFrame(f *EmitterFrame, daemonID string) receipt.Issuer {
 		Model:     f.IssuerModel,
 		Operator:  op,
 		SessionID: f.SessionID,
+		Runtime:   runtime,
 	}
 }
 

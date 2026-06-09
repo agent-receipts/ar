@@ -32,6 +32,7 @@ from agent_receipts.receipt.types import (
     Outcome,
     Principal,
     Proof,
+    Runtime,
     StateChange,
     UnsignedAgentReceipt,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "Outcome",
     "Principal",
     "Proof",
+    "Runtime",
     "StateChange",
     "UnsignedActionReceipt",
     "UnsignedAgentReceipt",

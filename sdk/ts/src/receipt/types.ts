@@ -10,7 +10,7 @@ import type { DisclosureEnvelope } from "./disclosure.js";
 
 export const CONTEXT = [
 	"https://www.w3.org/ns/credentials/v2",
-	"https://agentreceipts.ai/context/v1",
+	"https://agentreceipts.ai/context/v2",
 ] as const;
 
 export const CREDENTIAL_TYPE = [
@@ -18,7 +18,7 @@ export const CREDENTIAL_TYPE = [
 	"AgentReceipt",
 ] as const;
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 // --- Risk levels ---
 
@@ -35,6 +35,22 @@ export interface Operator {
 	name: string;
 }
 
+/**
+ * Open container for runtime/observability metadata the issuing runtime
+ * attaches to an action (ADR-0026). Intentionally extensible: the members
+ * below are documented, but the JSON-LD context types it `@json` and the schema
+ * does not close it, so additional runtime keys (e.g. future trace-context
+ * identifiers) may be added without a protocol-version bump. Absent for the
+ * root agent.
+ */
+export interface Runtime {
+	/** Identifier of the sub-agent that issued the receipt. Absent for the root agent. */
+	agent_id?: string;
+	/** Runtime-reported agent type label (e.g. "general-purpose"). */
+	agent_type?: string;
+	[key: string]: unknown;
+}
+
 export interface Issuer {
 	id: string;
 	type?: string;
@@ -42,6 +58,7 @@ export interface Issuer {
 	operator?: Operator;
 	model?: string;
 	session_id?: string;
+	runtime?: Runtime;
 }
 
 // --- Principal ---

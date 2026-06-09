@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-09
+
+### Added
+- `issuer.runtime` — optional open container for runtime/observability metadata the issuing runtime attaches to an action. Initially defined members: `runtime.agent_id` (identifier of the sub-agent that issued the receipt) and `runtime.agent_type` (runtime-reported agent type label, e.g. `"general-purpose"`). Absent for the root agent. Unlike every other issuer field, `runtime` is **not** `additionalProperties: false` in the schema and is typed `@json` in the JSON-LD context, so it is an opaque JSON literal that may carry additional keys. New runtime members (e.g. forthcoming W3C Trace Context / OpenTelemetry identifiers) MAY be added without a protocol-version or context-version bump. See spec §4.3.1 and ADR-0026.
+- JSON-LD **context v2** (`https://agentreceipts.ai/context/v2`) — adds the `runtime` term (`@type: @json`). Identical to v1 otherwise. Receipts at `0.5.0` reference context v2 in their `@context` array; v1 remains permanent for earlier receipts (ADR-0021 D3).
+
+### Changed
+- `version` field now accepts `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, `"0.3.0"`, `"0.4.0"`, or `"0.5.0"`. Verifiers MUST accept all six. All new receipts SHOULD use `"0.5.0"`.
+
+### Upgrade notes
+
+**Issuers:** No action required to remain protocol-valid. Receipts emitted through a daemon that knows a sub-agent's identity will carry `issuer.runtime.agent_id` / `agent_type`; the root agent omits `runtime` entirely. Upgrade to `"version": "0.5.0"` (and context v2) when emitting new receipts.
+
+**Verifiers:** No breaking changes. Receipts at `0.1.0`–`0.4.0` validate unchanged against their pinned context v1. Treat unknown keys inside `issuer.runtime` as untrusted, signed-but-unvalidated metadata — never as identity.
+
 ## [0.4.0] - 2026-05-23
 
 ### Added

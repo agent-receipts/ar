@@ -1,0 +1,108 @@
+{
+  "$comment": "Cross-SDK v0.5.0 test vectors: pins the open issuer.runtime sub-object (agent_id / agent_type) and JSON-LD context v2 (spec §4.3.1, ADR-0026). runtime is an ordinary nested object under RFC 8785 — its keys sort like any other — so cross-SDK hash/sign/verify must be byte-identical. The root-agent receipt pins that omitting runtime stays backward-compatible.",
+  "version": "0.5.0",
+  "keys": {
+    "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZMzh2Qtdx/p40WlXhD+gKmaTDv3rLGm6TeY7TsJUKSQ=\n-----END PUBLIC KEY-----\n",
+    "privateKey": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIJqomA2cjqhLUYPhkMJyg4+A7hU8GiZtVzkN0Yz6jJPF\n-----END PRIVATE KEY-----\n"
+  },
+  "runtimeReceipt": {
+    "description": "Signed v0.5.0 sub-agent receipt whose issuer carries runtime.agent_id and runtime.agent_type.",
+    "receipt": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://agentreceipts.ai/context/v2"
+      ],
+      "credentialSubject": {
+        "action": {
+          "id": "act_050e0050-0000-4050-a050-000000000001",
+          "risk_level": "low",
+          "timestamp": "2026-06-09T00:00:00Z",
+          "type": "filesystem.file.read"
+        },
+        "chain": {
+          "chain_id": "chain_v050_test/agent/a3e49db54342a92d4",
+          "previous_receipt_hash": null,
+          "sequence": 1
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "principal": {
+          "id": "did:user:test"
+        }
+      },
+      "id": "urn:receipt:050e0050-0000-4050-a050-000000000001",
+      "issuanceDate": "2026-06-09T00:00:00Z",
+      "issuer": {
+        "id": "did:agent-receipts-daemon:test",
+        "runtime": {
+          "agent_id": "a3e49db54342a92d4",
+          "agent_type": "general-purpose"
+        },
+        "session_id": "a9a50488-d6f2-4dee-ac2e-ed3db47b9d00"
+      },
+      "proof": {
+        "created": "2026-06-09T00:00:00Z",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "ufp78VVsVq5sPg714ZWf7VN33Rn_smx3mEK2UkINitYUoY0sCW_Lxs8t_qKhQ1vf-TAd9PJ6qOzLoLC5IVwApCQ",
+        "type": "Ed25519Signature2020",
+        "verificationMethod": "did:agent:test#key-1"
+      },
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.5.0"
+    },
+    "expectedReceiptHash": "sha256:8a5809dcb62efcc55bc5a3876e4c5b62f85d2932e1633ded1527befb2052ea7c",
+    "expectedValid": true
+  },
+  "rootAgentReceipt": {
+    "description": "Signed v0.5.0 root-agent receipt whose issuer omits runtime entirely.",
+    "receipt": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://agentreceipts.ai/context/v2"
+      ],
+      "credentialSubject": {
+        "action": {
+          "id": "act_050e0050-0000-4050-a050-000000000002",
+          "risk_level": "low",
+          "timestamp": "2026-06-09T00:00:00Z",
+          "type": "filesystem.file.read"
+        },
+        "chain": {
+          "chain_id": "chain_v050_test",
+          "previous_receipt_hash": null,
+          "sequence": 1
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "principal": {
+          "id": "did:user:test"
+        }
+      },
+      "id": "urn:receipt:050e0050-0000-4050-a050-000000000002",
+      "issuanceDate": "2026-06-09T00:00:00Z",
+      "issuer": {
+        "id": "did:agent-receipts-daemon:test",
+        "session_id": "a9a50488-d6f2-4dee-ac2e-ed3db47b9d00"
+      },
+      "proof": {
+        "created": "2026-06-09T00:00:00Z",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "uOxndeya87wY5xiYvEz3DqXEitrx2ESkeOlGDcySnrQtkWfcyzAARFUdbL5qwXPFS8KITGsqsPJ7cH9M1xpcyAA",
+        "type": "Ed25519Signature2020",
+        "verificationMethod": "did:agent:test#key-1"
+      },
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.5.0"
+    },
+    "expectedReceiptHash": "sha256:6d8b3d3d370cdbe665388eecb2731d4a4431d1ebedf69f02b4b021fe06c5de71",
+    "expectedValid": true
+  }
+}
