@@ -316,6 +316,24 @@ describe("DaemonEmitter — frame round-trip", () => {
 		expect(f.tool).not.toHaveProperty("server");
 	});
 
+	it("action_type is included when provided", async () => {
+		await emitter.emit({ ...GOOD_EVENT, actionType: "filesystem.file.modify" });
+		await waitFor(async () => (await server.frames()).length > 0);
+
+		const frames = await server.frames();
+		const f = JSON.parse(frames[0] ?? "{}");
+		expect(f.action_type).toBe("filesystem.file.modify");
+	});
+
+	it("action_type is absent when not provided", async () => {
+		await emitter.emit(GOOD_EVENT);
+		await waitFor(async () => (await server.frames()).length > 0);
+
+		const frames = await server.frames();
+		const f = JSON.parse(frames[0] ?? "{}");
+		expect(f).not.toHaveProperty("action_type");
+	});
+
 	it("input and output are forwarded as raw JSON values (not double-encoded)", async () => {
 		await emitter.emit({
 			...GOOD_EVENT,
