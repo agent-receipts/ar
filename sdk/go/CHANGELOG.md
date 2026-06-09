@@ -11,6 +11,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-09
+
+Graduates `0.16.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.16.0-alpha.1` entry below for the full surface (subagent-chain delegation, issuer/event `agent_id`, and `correlation_id`).
+
 ## [0.16.0-alpha.1] - 2026-06-08
 
 ### Added
