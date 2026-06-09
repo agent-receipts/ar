@@ -53,6 +53,20 @@ class TestV050Vectors:
         assert receipt.issuer.runtime.agent_id == "a3e49db54342a92d4"
         assert receipt.issuer.runtime.agent_type == "general-purpose"
 
+    def test_extended_runtime_preserves_unknown_key(self) -> None:
+        # Open-container gate: a runtime key the SDK does not model (trace_id)
+        # must survive model round-trip and still hash to the pinned digest
+        # (ADR-0026). extra="allow" on Runtime keeps it; model_dump re-emits it.
+        vectors = _load_vectors()
+        section = vectors["extendedRuntimeReceipt"]
+        receipt = AgentReceipt.model_validate(section["receipt"])
+        assert receipt.issuer.runtime is not None
+        assert (
+            getattr(receipt.issuer.runtime, "trace_id", None)
+            == "4bf92f3577b34da6a3ce929d0e0e4736"
+        )
+        assert hash_receipt(receipt) == section["expectedReceiptHash"]
+
     def test_root_agent_receipt_hash_matches(self) -> None:
         vectors = _load_vectors()
         section = vectors["rootAgentReceipt"]

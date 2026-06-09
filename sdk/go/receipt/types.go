@@ -2,7 +2,10 @@
 // verifying Action Receipts — W3C Verifiable Credentials for AI agent actions.
 package receipt
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Protocol constants (unexported to prevent mutation).
 var (
@@ -78,12 +81,72 @@ type Issuer struct {
 // and the schema does not close it, so additional runtime keys (e.g. future
 // trace-context identifiers) may be added without a protocol-version bump.
 // Absent for the root agent.
+//
+// Unlike the rest of the receipt struct (whose unknown fields are dropped on a
+// round-trip — see HashRawReceipt), Runtime PRESERVES unknown keys via Extra so
+// the Go, TS, and Python SDKs all keep runtime open at the typed layer. A key
+// added by a newer SDK therefore survives an older Go SDK's HashReceipt/Sign
+// round-trip and stays byte-identical across languages.
 type Runtime struct {
 	// AgentID identifies the sub-agent that issued the receipt. Absent for the
 	// root agent.
-	AgentID string `json:"agent_id,omitempty"`
+	AgentID string
 	// AgentType is the runtime-reported agent type label (e.g. "general-purpose").
-	AgentType string `json:"agent_type,omitempty"`
+	AgentType string
+	// Extra holds runtime keys this SDK version does not model as typed fields,
+	// preserved verbatim so they survive a round-trip and hash identically.
+	Extra map[string]json.RawMessage
+}
+
+// MarshalJSON emits agent_id / agent_type (when non-empty) alongside every Extra
+// key, so unknown runtime members round-trip. Key ordering is irrelevant:
+// Canonicalize re-sorts per RFC 8785.
+func (r Runtime) MarshalJSON() ([]byte, error) {
+	m := make(map[string]json.RawMessage, len(r.Extra)+2)
+	for k, v := range r.Extra {
+		m[k] = v
+	}
+	if r.AgentID != "" {
+		b, err := json.Marshal(r.AgentID)
+		if err != nil {
+			return nil, err
+		}
+		m["agent_id"] = b
+	}
+	if r.AgentType != "" {
+		b, err := json.Marshal(r.AgentType)
+		if err != nil {
+			return nil, err
+		}
+		m["agent_type"] = b
+	}
+	return json.Marshal(m)
+}
+
+// UnmarshalJSON reads the typed members into AgentID / AgentType and keeps any
+// remaining keys in Extra.
+func (r *Runtime) UnmarshalJSON(data []byte) error {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+	*r = Runtime{}
+	if v, ok := m["agent_id"]; ok {
+		if err := json.Unmarshal(v, &r.AgentID); err != nil {
+			return fmt.Errorf("runtime.agent_id: %w", err)
+		}
+		delete(m, "agent_id")
+	}
+	if v, ok := m["agent_type"]; ok {
+		if err := json.Unmarshal(v, &r.AgentType); err != nil {
+			return fmt.Errorf("runtime.agent_type: %w", err)
+		}
+		delete(m, "agent_type")
+	}
+	if len(m) > 0 {
+		r.Extra = m
+	}
+	return nil
 }
 
 // Principal identifies the human or organisation that authorised the action.

@@ -62,7 +62,7 @@ The top-level `issuer` object is unchanged and stays closed: `id`, `type`,
 `name`, `operator`, `model`, `session_id` remain `additionalProperties: false`.
 `runtime` is the *only* extensible region.
 
-### D2. `runtime` is open at both the schema and JSON-LD layers
+### D2. `runtime` is open at the schema, JSON-LD, AND SDK-typed layers
 
 This is the load-bearing decision — it is what makes future runtime fields free.
 
@@ -73,6 +73,13 @@ This is the load-bearing decision — it is what makes future runtime fields fre
   treatment `action.parameters_disclosure` already uses. Its contents are an
   opaque JSON literal; JSON-LD never expands the inner keys, so no inner key
   ever requires a term definition.
+- **SDK typed layer:** all three SDKs *preserve* unknown `runtime` keys across a
+  round-trip, so a key a newer SDK adds is not silently dropped by an older one
+  (which would diverge the canonical hash). TS uses an index signature, Python
+  uses `extra="allow"`, and Go gives `Runtime` an `Extra map[string]json.RawMessage`
+  with custom (un)marshalling. This is deliberately *unlike* the rest of the
+  receipt struct, whose unknown fields are dropped (see Go `HashRawReceipt`):
+  `runtime` is the one region that stays open end-to-end.
 
 Consequence: a future runtime field (e.g. `traceparent`) is added to the JSON
 Schema's `runtime` members for documentation, and ships with **no spec-version
@@ -134,16 +141,23 @@ field that a dashboard *correlates or visualizes* with is runtime.
 
 The new structure ships with its enforcement in the same release:
 
-- The cross-SDK byte-identity / signature vectors gain a v0.5.0 case carrying a
-  populated `issuer.runtime`, pinning identical canonicalization and signatures
-  across the Go, TS, and Python SDKs.
+- The cross-SDK byte-identity / signature vectors gain v0.5.0 cases: a receipt
+  carrying a populated `issuer.runtime`, a root receipt that omits it, and an
+  **extended** receipt whose `runtime` carries a key beyond the typed members
+  (`trace_id`). All three SDKs must preserve the unknown key and reproduce the
+  pinned hash — the gate for the D2 open-container invariant. Go's runner hashes
+  the extended receipt *through the typed struct* (`HashReceipt`), so a dropped
+  key fails the test.
 - The schema-conformance suite validates v0.5.0 examples (with and without
-  `runtime`) against the v0.5.0 schema.
+  `runtime`) against the v0.5.0 schema, and a negative test asserts the
+  version↔context `allOf` coupling **rejects** mismatched pairings (0.5.0+v1 or
+  ≤0.4.0+v2).
 - The daemon bounds the runtime fields it writes: `agent_id` keeps its existing
   length + character validation (it is interpolated into chain IDs);
   `agent_type` gets the same `maxIdentityFieldLen` cap the other proxy-supplied
-  identity fields have. Schema openness governs *consumers*; the daemon still
-  validates what it *produces*.
+  identity fields have. `runtime` is gated on `agent_id` alone (matching chain
+  routing), so a root-chain receipt never carries it. Schema openness governs
+  *consumers*; the daemon still validates what it *produces*.
 
 ## Consequences
 

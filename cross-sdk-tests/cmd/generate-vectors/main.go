@@ -656,6 +656,7 @@ type v050Vectors struct {
 	Version   string                `json:"version"`
 	Keys      keysSection           `json:"keys"`
 	Runtime   runtimeReceiptSection `json:"runtimeReceipt"`
+	Extended  runtimeReceiptSection `json:"extendedRuntimeReceipt"`
 	RootAgent runtimeReceiptSection `json:"rootAgentReceipt"`
 }
 
@@ -848,6 +849,46 @@ func generateV050Vectors(keys keysSection) error {
 		return fmt.Errorf("runtime receipt: %w", err)
 	}
 
+	// --- receipt whose issuer.runtime carries a key beyond the typed members ---
+	// (trace_id) — pins that the open container preserves unknown runtime keys
+	// byte-identically across all three SDKs (ADR-0026 D2). A newer SDK adding
+	// trace_id must not diverge from an older SDK that does not model it.
+	extendedUnsigned := map[string]any{
+		"@context": contextV2,
+		"id":       "urn:receipt:050e0050-0000-4050-a050-000000000003",
+		"type":     []any{"VerifiableCredential", "AgentReceipt"},
+		"version":  "0.5.0",
+		"issuer": map[string]any{
+			"id":         "did:agent-receipts-daemon:test",
+			"session_id": "a9a50488-d6f2-4dee-ac2e-ed3db47b9d00",
+			"runtime": map[string]any{
+				"agent_id":   "a3e49db54342a92d4",
+				"agent_type": "general-purpose",
+				"trace_id":   "4bf92f3577b34da6a3ce929d0e0e4736",
+			},
+		},
+		"issuanceDate": fixedTimestamp,
+		"credentialSubject": map[string]any{
+			"principal": map[string]any{"id": "did:user:test"},
+			"action": map[string]any{
+				"id":         "act_050e0050-0000-4050-a050-000000000003",
+				"type":       "filesystem.file.read",
+				"risk_level": "low",
+				"timestamp":  fixedTimestamp,
+			},
+			"outcome": map[string]any{"status": "success"},
+			"chain": map[string]any{
+				"sequence":              1,
+				"previous_receipt_hash": nil,
+				"chain_id":              "chain_v050_test/agent/a3e49db54342a92d4",
+			},
+		},
+	}
+	extendedSigned, extendedHash, err := signAndHashMap(extendedUnsigned, keys, fixedTimestamp)
+	if err != nil {
+		return fmt.Errorf("extended runtime receipt: %w", err)
+	}
+
 	// --- root-agent receipt: issuer omits runtime (backward-compatible shape) ---
 	rootUnsigned := map[string]any{
 		"@context": contextV2,
@@ -880,8 +921,8 @@ func generateV050Vectors(keys keysSection) error {
 		return fmt.Errorf("root receipt: %w", err)
 	}
 
-	// Self-check: both receipts must verify against the shared public key.
-	for label, signed := range map[string]json.RawMessage{"runtime": runtimeSigned, "root": rootSigned} {
+	// Self-check: all receipts must verify against the shared public key.
+	for label, signed := range map[string]json.RawMessage{"runtime": runtimeSigned, "extended": extendedSigned, "root": rootSigned} {
 		var r receipt.AgentReceipt
 		if err := json.Unmarshal(signed, &r); err != nil {
 			return fmt.Errorf("unmarshal %s receipt: %w", label, err)
@@ -900,6 +941,12 @@ func generateV050Vectors(keys keysSection) error {
 			Description:         "Signed v0.5.0 sub-agent receipt whose issuer carries runtime.agent_id and runtime.agent_type.",
 			Receipt:             runtimeSigned,
 			ExpectedReceiptHash: runtimeHash,
+			ExpectedValid:       true,
+		},
+		Extended: runtimeReceiptSection{
+			Description:         "Signed v0.5.0 receipt whose issuer.runtime carries an extra key (trace_id) beyond the typed members. All three SDKs MUST preserve the unknown key and reproduce this hash byte-for-byte (ADR-0026 open-container invariant).",
+			Receipt:             extendedSigned,
+			ExpectedReceiptHash: extendedHash,
 			ExpectedValid:       true,
 		},
 		RootAgent: runtimeReceiptSection{

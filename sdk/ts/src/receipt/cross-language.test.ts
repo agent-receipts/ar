@@ -455,6 +455,7 @@ interface V050Vectors {
 	version: string;
 	keys: { publicKey: string; privateKey: string };
 	runtimeReceipt: V050ReceiptSection;
+	extendedRuntimeReceipt: V050ReceiptSection;
 	rootAgentReceipt: V050ReceiptSection;
 }
 
@@ -493,6 +494,19 @@ describe("cross-language: v0.5.0 vectors", () => {
 		);
 		expect(v.runtimeReceipt.receipt.issuer.runtime?.agent_type).toBe(
 			"general-purpose",
+		);
+	});
+
+	it("extended runtime preserves unknown key and hash matches", () => {
+		// Open-container gate: a runtime key the SDK does not model (trace_id)
+		// must survive and hash to the pinned digest (ADR-0026). The Runtime
+		// index signature keeps it; canonicalize re-emits it.
+		const v = loadV050Vectors();
+		expect(v.extendedRuntimeReceipt.receipt.issuer.runtime?.trace_id).toBe(
+			"4bf92f3577b34da6a3ce929d0e0e4736",
+		);
+		expect(hashReceipt(v.extendedRuntimeReceipt.receipt)).toBe(
+			v.extendedRuntimeReceipt.expectedReceiptHash,
 		);
 	});
 

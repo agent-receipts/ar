@@ -43,6 +43,7 @@ type v050File struct {
 		PrivateKey string `json:"privateKey"`
 	} `json:"keys"`
 	Runtime   v050ReceiptSection `json:"runtimeReceipt"`
+	Extended  v050ReceiptSection `json:"extendedRuntimeReceipt"`
 	RootAgent v050ReceiptSection `json:"rootAgentReceipt"`
 }
 
@@ -68,7 +69,7 @@ func TestV050VectorsValidateAgainstSchema(t *testing.T) {
 	schema := loadSchema(t)
 	f := loadV050(t)
 
-	for _, sec := range []v050ReceiptSection{f.Runtime, f.RootAgent} {
+	for _, sec := range []v050ReceiptSection{f.Runtime, f.Extended, f.RootAgent} {
 		var doc any
 		if err := json.Unmarshal(sec.Receipt, &doc); err != nil {
 			t.Fatalf("unmarshal %q: %v", sec.Description, err)
@@ -89,7 +90,7 @@ func TestV050ReceiptHashAndSignature(t *testing.T) {
 		t.Fatalf("parse public key: %v", err)
 	}
 
-	for _, sec := range []v050ReceiptSection{f.Runtime, f.RootAgent} {
+	for _, sec := range []v050ReceiptSection{f.Runtime, f.Extended, f.RootAgent} {
 		var asMap map[string]any
 		if err := json.Unmarshal(sec.Receipt, &asMap); err != nil {
 			t.Fatalf("%q: unmarshal receipt to map: %v", sec.Description, err)
@@ -156,5 +157,44 @@ func TestV050RuntimeRoundTrips(t *testing.T) {
 	}
 	if rootReceipt.Issuer.Runtime != nil {
 		t.Errorf("root receipt issuer.runtime = %+v, want nil", rootReceipt.Issuer.Runtime)
+	}
+}
+
+// TestV050ExtendedRuntimePreservedThroughStruct is the open-container gate: a
+// runtime key the Go SDK does not model (trace_id) MUST survive a round-trip
+// through the typed AgentReceipt struct and still hash to the pinned digest.
+// HashReceipt re-marshals the struct (it does not hash raw bytes), so this
+// fails if Runtime drops unknown keys — exactly the cross-SDK divergence the
+// Extra field exists to prevent.
+func TestV050ExtendedRuntimePreservedThroughStruct(t *testing.T) {
+	f := loadV050(t)
+
+	var r receipt.AgentReceipt
+	if err := json.Unmarshal(f.Extended.Receipt, &r); err != nil {
+		t.Fatalf("unmarshal extended receipt: %v", err)
+	}
+	if r.Issuer.Runtime == nil {
+		t.Fatal("extended receipt issuer.runtime is nil, want populated")
+	}
+	raw, ok := r.Issuer.Runtime.Extra["trace_id"]
+	if !ok {
+		t.Fatalf("issuer.runtime.Extra missing trace_id; Extra = %v", r.Issuer.Runtime.Extra)
+	}
+	var traceID string
+	if err := json.Unmarshal(raw, &traceID); err != nil {
+		t.Fatalf("decode trace_id: %v", err)
+	}
+	if traceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Errorf("trace_id = %q, want 4bf92f3577b34da6a3ce929d0e0e4736", traceID)
+	}
+
+	// The struct round-trip (unmarshal → HashReceipt re-marshal) must reproduce
+	// the pinned hash, proving trace_id was not dropped.
+	got, err := receipt.HashReceipt(r)
+	if err != nil {
+		t.Fatalf("hash extended receipt: %v", err)
+	}
+	if got != f.Extended.ExpectedReceiptHash {
+		t.Errorf("extended receipt struct round-trip hash\n  got:  %s\n  want: %s", got, f.Extended.ExpectedReceiptHash)
 	}
 }

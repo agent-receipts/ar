@@ -57,6 +57,59 @@
     "expectedReceiptHash": "sha256:8a5809dcb62efcc55bc5a3876e4c5b62f85d2932e1633ded1527befb2052ea7c",
     "expectedValid": true
   },
+  "extendedRuntimeReceipt": {
+    "description": "Signed v0.5.0 receipt whose issuer.runtime carries an extra key (trace_id) beyond the typed members. All three SDKs MUST preserve the unknown key and reproduce this hash byte-for-byte (ADR-0026 open-container invariant).",
+    "receipt": {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://agentreceipts.ai/context/v2"
+      ],
+      "credentialSubject": {
+        "action": {
+          "id": "act_050e0050-0000-4050-a050-000000000003",
+          "risk_level": "low",
+          "timestamp": "2026-06-09T00:00:00Z",
+          "type": "filesystem.file.read"
+        },
+        "chain": {
+          "chain_id": "chain_v050_test/agent/a3e49db54342a92d4",
+          "previous_receipt_hash": null,
+          "sequence": 1
+        },
+        "outcome": {
+          "status": "success"
+        },
+        "principal": {
+          "id": "did:user:test"
+        }
+      },
+      "id": "urn:receipt:050e0050-0000-4050-a050-000000000003",
+      "issuanceDate": "2026-06-09T00:00:00Z",
+      "issuer": {
+        "id": "did:agent-receipts-daemon:test",
+        "runtime": {
+          "agent_id": "a3e49db54342a92d4",
+          "agent_type": "general-purpose",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        },
+        "session_id": "a9a50488-d6f2-4dee-ac2e-ed3db47b9d00"
+      },
+      "proof": {
+        "created": "2026-06-09T00:00:00Z",
+        "proofPurpose": "assertionMethod",
+        "proofValue": "uSs-FqqNiNGDOp1O6zPExRv69m4Fu6C9U1-pSZh-yy5NfVc4F15wPsFI12_UiG_5C0ftcpJTZ-S3Kl1PzUAGdBg",
+        "type": "Ed25519Signature2020",
+        "verificationMethod": "did:agent:test#key-1"
+      },
+      "type": [
+        "VerifiableCredential",
+        "AgentReceipt"
+      ],
+      "version": "0.5.0"
+    },
+    "expectedReceiptHash": "sha256:96249aa6691a109a78bfc93bd34abd6f59578c6f5ab7f83415da1b8a1ddc9332",
+    "expectedValid": true
+  },
   "rootAgentReceipt": {
     "description": "Signed v0.5.0 root-agent receipt whose issuer omits runtime entirely.",
     "receipt": {

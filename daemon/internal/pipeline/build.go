@@ -752,8 +752,13 @@ func issuerFromFrame(f *EmitterFrame, daemonID string) receipt.Issuer {
 	if f.OperatorID != "" {
 		op = &receipt.Operator{ID: f.OperatorID, Name: f.OperatorName}
 	}
+	// Gate runtime on AgentID alone, matching getOrCreateAgentState's routing
+	// key: a frame routes to a per-agent chain iff agent_id is non-empty, so
+	// only those receipts carry issuer.runtime. A stray agent_type without an
+	// agent_id belongs to the root chain and must stay runtime-free ("absent
+	// for the root agent").
 	var runtime *receipt.Runtime
-	if f.AgentID != "" || f.AgentType != "" {
+	if f.AgentID != "" {
 		runtime = &receipt.Runtime{AgentID: f.AgentID, AgentType: f.AgentType}
 	}
 	return receipt.Issuer{

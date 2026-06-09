@@ -55,6 +55,35 @@
     "proof": { "$ref": "#/$defs/proof" }
   },
 
+  "allOf": [
+    {
+      "title": "Context is pinned to the protocol version",
+      "description": "Versions 0.1.0–0.4.0 MUST reference Agent Receipts context v1; 0.5.0 (which adds issuer.runtime) MUST reference v2. This couples the two so a receipt cannot declare a version whose context does not define its fields.",
+      "if": {
+        "properties": { "version": { "enum": ["0.1.0", "0.2.0", "0.2.1", "0.3.0", "0.4.0"] } }
+      },
+      "then": {
+        "properties": {
+          "@context": {
+            "prefixItems": [{}, { "const": "https://agentreceipts.ai/context/v1" }]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "version": { "const": "0.5.0" } }
+      },
+      "then": {
+        "properties": {
+          "@context": {
+            "prefixItems": [{}, { "const": "https://agentreceipts.ai/context/v2" }]
+          }
+        }
+      }
+    }
+  ],
+
   "$defs": {
     "sha256Hash": {
       "type": "string",
