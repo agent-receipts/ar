@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0-alpha.1] - 2026-06-09
+
+### Added
+
+- **`issuer.runtime` on emitted receipts** ([#761](https://github.com/agent-receipts/ar/pull/761), ADR-0026) — `issuerFromFrame` now nests the frame's `agent_id` / `agent_type` under `issuer.runtime` (gated on `agent_id`, matching chain routing, so root-chain receipts stay runtime-free). `agent_type` is validated for length like the other proxy-supplied identity fields. Receipts are emitted at protocol version `0.5.0` / JSON-LD context v2.
+
+### Changed
+
+- Pin `github.com/agent-receipts/ar/sdk/go` to `v0.17.0-alpha.1` (provides the `receipt.Runtime` type). The daemon does not compile against `sdk/go v0.16.0`, which predates `Runtime`.
+
 ## [0.17.0] - 2026-06-09
 
 Graduates `0.17.0-alpha.1` after the alpha pass. No code changes since the alpha; the only change is pinning the now-released stable `github.com/agent-receipts/ar/sdk/go` `v0.16.0` (the alpha pinned `v0.16.0-alpha.1`). See the `0.17.0-alpha.1` entry below for the full surface (subagent chain delegation, correlation ID).

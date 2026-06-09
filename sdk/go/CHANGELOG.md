@@ -11,6 +11,12 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.17.0-alpha.1] - 2026-06-09
+
+### Added
+
+- **`issuer.runtime` open metadata sub-object** ([#761](https://github.com/agent-receipts/ar/pull/761), ADR-0026) — `receipt.Issuer` gains `Runtime *Runtime`, an open container for runtime/observability metadata (initial members `agent_id` / `agent_type`). Unlike the rest of the receipt struct, `Runtime` preserves unknown keys via an `Extra map[string]json.RawMessage` with custom (un)marshalling, so a key added by a newer SDK survives an older SDK's `HashReceipt`/`Sign` round-trip and stays byte-identical across Go/TS/Python. Receipts emitting `runtime` use protocol version `0.5.0` and JSON-LD context v2. The emitter `Event`/frame gains `agent_type` alongside the existing `agent_id`.
+
 ## [0.16.0] - 2026-06-09
 
 Graduates `0.16.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.16.0-alpha.1` entry below for the full surface (subagent-chain delegation, issuer/event `agent_id`, and `correlation_id`).
