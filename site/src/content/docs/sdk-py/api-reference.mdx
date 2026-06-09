@@ -249,6 +249,14 @@ class Issuer(BaseModel):
     operator: Operator | None = None
     model: str | None = None
     session_id: str | None = None
+    runtime: Runtime | None = None  # open metadata container (v0.5.0, ADR-0026)
+
+class Runtime(BaseModel):
+    # Open container for runtime/observability metadata. extra="allow" keeps it
+    # extensible, so unknown runtime keys survive round-trips.
+    model_config = ConfigDict(extra="allow")
+    agent_id: str | None = None    # the sub-agent that issued the receipt
+    agent_type: str | None = None  # e.g. "general-purpose"
 
 class Operator(BaseModel):
     id: str
@@ -355,7 +363,7 @@ OutcomeStatus = Literal["success", "failure", "pending"]
 
 CONTEXT: list[str]          # ["https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"]
 CREDENTIAL_TYPE: list[str]  # ["VerifiableCredential", "AgentReceipt"]
-RECEIPT_VERSION: str        # "0.4.0" (receipt schema)
+RECEIPT_VERSION: str        # "0.5.0" (receipt schema)
 VERSION: str                # current package version
 ```
 

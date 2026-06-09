@@ -46,11 +46,11 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 {
   "@context": [
     "https://www.w3.org/ns/credentials/v2",
-    "https://agentreceipts.ai/context/v1"
+    "https://agentreceipts.ai/context/v2"
   ],
   "id": "urn:receipt:550e8400-e29b-41d4-a716-446655440000",
   "type": ["VerifiableCredential", "AgentReceipt"],
-  "version": "0.3.0",
+  "version": "0.5.0",
 
   "issuer": {
     "id": "did:agent:claude-cowork-instance-abc123",
@@ -61,7 +61,11 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
       "name": "Anthropic"
     },
     "model": "claude-sonnet-4-6",
-    "session_id": "session_xyz789"
+    "session_id": "session_xyz789",
+    "runtime": {
+      "agent_id": "a3e49db54342a92d4",
+      "agent_type": "general-purpose"
+    }
   },
 
   "issuanceDate": "2026-03-31T14:30:00Z",
@@ -140,7 +144,7 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `@context` | Yes | JSON-LD context. Must include the W3C VC v2 and Agent Receipt context URIs in order. |
 | `id` | Yes | Globally unique identifier. Must be `urn:receipt:<uuid>`. |
 | `type` | Yes | Must be `["VerifiableCredential", "AgentReceipt"]`. |
-| `version` | Yes | Protocol version. Must be `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, `"0.3.0"`, or `"0.4.0"`. Verifiers MUST accept all five. |
+| `version` | Yes | Protocol version. Must be `"0.1.0"`, `"0.2.0"`, `"0.2.1"`, `"0.3.0"`, `"0.4.0"`, or `"0.5.0"`. Verifiers MUST accept all six. Versions `0.1.0`–`0.4.0` reference Agent Receipts context v1; `0.5.0` references v2. |
 | `issuer` | Yes | The agent or platform that issued the receipt. |
 | `issuanceDate` | Yes | ISO 8601 datetime when the receipt was issued. May differ from `action.timestamp`. |
 | `credentialSubject` | Yes | The receipt payload. |
@@ -157,6 +161,9 @@ An Agent Receipt is a W3C Verifiable Credential with type `AgentReceipt`. This p
 | `operator.name` | Conditional | Human-readable operator name. Required when `operator` is present. |
 | `model` | No | Model identifier (e.g. `claude-sonnet-4-6`). |
 | `session_id` | No | Opaque session identifier. |
+| `runtime` | No | Open container for runtime/observability metadata (added in v0.5.0, ADR-0026). Absent for the root agent. Unlike the other issuer fields it is extensible: it carries the members below plus any additional keys a runtime supplies, typed `@json` in the context so JSON-LD treats it as an opaque literal. |
+| `runtime.agent_id` | No | Identifier of the sub-agent that issued the receipt. |
+| `runtime.agent_type` | No | Runtime-reported agent type label (e.g. `general-purpose`). |
 
 ## Credential subject
 
