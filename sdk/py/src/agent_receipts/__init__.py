@@ -76,6 +76,7 @@ from agent_receipts.receipt.types import (
     PeerCredential,
     Principal,
     Proof,
+    Runtime,
     StateChange,
     UnsignedAgentReceipt,
 )
@@ -142,6 +143,7 @@ __all__ = [
     "PeerCredential",
     "Principal",
     "Proof",
+    "Runtime",
     "StateChange",
     "UnsignedAgentReceipt",
     # Backwards compat aliases (deprecated)
