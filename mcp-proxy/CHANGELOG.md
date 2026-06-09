@@ -11,6 +11,32 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.14.0-alpha.1] - 2026-06-09
+
+### Added
+
+- **`correlation_id` forwarded from Claude Code hook payloads** ([#752](https://github.com/agent-receipts/ar/pull/752)) — the proxy now extracts `_meta["claudecode/toolUseId"]` from `tools/call` params and stamps it as `correlation_id` on the emitted receipt, linking the proxy post-action receipt to the hook pre-check receipt for the same tool call.
+- **`agent_id` forwarding and delegation receipts** ([#753](https://github.com/agent-receipts/ar/pull/753)) — the proxy forwards `agent_id` from hook payloads; subagent chains carry `delegation.parent_chain_id`, `delegation.parent_receipt_id`, and `delegation.delegator.id` on their first receipt, enabling full attribution trees across orchestrator and subagent sessions.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.15.0` (HPKE parameter disclosure, correlation_id and agent_id types).
+- Bump `github.com/agent-receipts/ar/daemon` to `v0.16.0`.
+
+## [0.13.0] - 2026-06-01
+
+### Added
+
+- **Graceful shutdown on SIGINT/SIGTERM** ([#690](https://github.com/agent-receipts/ar/pull/690)) — the proxy now handles signals and shuts down cleanly, draining in-flight tool calls before exiting.
+- **Fail fast when approval server dies mid-session** ([#693](https://github.com/agent-receipts/ar/pull/693)) — if the HTTP approval listener dies unexpectedly, the proxy now surfaces the error immediately rather than hanging on the next pause rule.
+- **Warn on world-accessible `~/.agent-receipts`** ([#682](https://github.com/agent-receipts/ar/pull/682)) — logs a warning at startup if the receipt directory has permissions broader than 0700.
+- **Env-marker secondary host detection** ([#674](https://github.com/agent-receipts/ar/pull/674)) — secondary host environment detection for issuer identity stamping, driven by env-var markers.
+
+### Dependencies
+
+- Bump `github.com/agent-receipts/ar/sdk/go` to `v0.14.0` (emit failure contract, GeneratingKeyProvider production guard, ReceiptChain).
+- Bump `github.com/agent-receipts/ar/daemon` to `v0.13.0`.
+
 ## [0.12.0] - 2026-05-24
 
 ### Added
