@@ -60,7 +60,13 @@ Override these paths with environment variables: `AGENTRECEIPTS_KEY` (signing ke
 
 The receipt database (`$XDG_DATA_HOME/agent-receipts/receipts.db`, falling back to `~/.local/share/agent-receipts/receipts.db`) is created automatically the first time the daemon starts, not by `--init`. Override with `AGENTRECEIPTS_DB`.
 
-`--init` refuses to overwrite an existing key and exits non-zero. Only run it once, or delete the old key first if rotating.
+`--init` refuses to overwrite an existing key and exits non-zero. It is a one-time bootstrap, not a rotation command — run it once per machine.
+
+#### Key rotation is not yet implemented
+
+There is no supported way to rotate the daemon's signing key today. Automated rotation — emitting a `key_rotated` event so that receipts signed by the retired key still verify after the handoff — is specified in [ADR-0015](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md) but unimplemented: `KeySource.Rotate()` returns `ErrNotImplemented`, and there is no rotation event, external anchor, or BYOK (HSM/KMS) backend yet.
+
+Do **not** "rotate" by deleting `signing.key` and re-running `--init`. The new key has no cryptographic link to the old one, so every receipt signed by the retired key fails `agent-receipts verify` against the new public key and the chain is split with no in-chain bridge between the two key eras. If you must replace a key, archive the old `signing.key.pub` and verify pre-rotation receipts against it separately until rotation support lands.
 
 ### Start
 
