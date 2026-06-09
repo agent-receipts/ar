@@ -11,6 +11,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-09
+
+Graduates `0.14.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.14.0-alpha.1` entry below for the full surface (`correlation_id` and `agent_id` forwarding, delegation receipts).
+
 ## [0.14.0-alpha.1] - 2026-06-09
 
 ### Added

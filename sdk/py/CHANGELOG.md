@@ -11,6 +11,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-09
+
+Graduates `0.12.0a1` after the alpha pass. No source changes since the alpha; see the `0.12.0a1` entry below for the full surface (`Delegation` dataclass and `correlation_id`).
+
 ## [0.12.0a1] - 2026-06-08
 
 ### Added
