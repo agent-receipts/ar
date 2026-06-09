@@ -109,18 +109,22 @@ func (r Runtime) MarshalJSON() ([]byte, error) {
 	if r.AgentID != "" {
 		b, err := json.Marshal(r.AgentID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("marshal runtime.agent_id: %w", err)
 		}
 		m["agent_id"] = b
 	}
 	if r.AgentType != "" {
 		b, err := json.Marshal(r.AgentType)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("marshal runtime.agent_type: %w", err)
 		}
 		m["agent_type"] = b
 	}
-	return json.Marshal(m)
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("marshal runtime: %w", err)
+	}
+	return b, nil
 }
 
 // UnmarshalJSON reads the typed members into AgentID / AgentType and keeps any
@@ -128,7 +132,7 @@ func (r Runtime) MarshalJSON() ([]byte, error) {
 func (r *Runtime) UnmarshalJSON(data []byte) error {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {
-		return err
+		return fmt.Errorf("unmarshal runtime: %w", err)
 	}
 	*r = Runtime{}
 	if v, ok := m["agent_id"]; ok {

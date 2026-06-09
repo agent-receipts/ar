@@ -60,7 +60,7 @@ A cryptographically signed record of a single action taken by an AI agent on beh
 
 An ordered sequence of Agent Receipts linked by hash references. Each receipt contains the hash of the previous receipt in the chain, creating a tamper-evident log. The first receipt in a chain has a `null` previous hash.
 
-> **Note:** In v0.1.0, receipt chains are strictly linear — each receipt has exactly one predecessor. Concurrent action streams (e.g., parallel tool calls, sub-agent fan-out) cannot be represented within a single chain. See §9.8 for discussion of this limitation.
+> **Note:** In this version, receipt chains are strictly linear — each receipt has exactly one predecessor. Concurrent action streams (e.g., parallel tool calls, sub-agent fan-out) cannot be represented within a single chain. See §9.8 for discussion of this limitation.
 
 ### 3.3 Action Taxonomy
 
@@ -293,7 +293,7 @@ All five `proof` fields are required even in the minimal form.
 
 #### 4.3.2.1 Intent field guidance (non-normative)
 
-The `intent` fields link an action to the context that triggered it. Because agent frameworks differ in how they structure conversations and reasoning, the following guidance is non-normative for v0.1.0. Capitalized keywords (e.g., "SHOULD") in this subsection are used for consistency with the rest of the document but are informational, not normative.
+The `intent` fields link an action to the context that triggered it. Because agent frameworks differ in how they structure conversations and reasoning, the following guidance is non-normative in this version. Capitalized keywords (e.g., "SHOULD") in this subsection are used for consistency with the rest of the document but are informational, not normative.
 
 **`conversation_hash`** should be computed over the complete message history — including system prompts, user messages, assistant messages, and tool results — in the conversation thread that preceded this action, serialized as an RFC 8785 canonical JSON array of message objects. Implementations that truncate or filter the conversation context should document their truncation policy. If no conversation context exists (e.g., a scheduled autonomous action), this field should be omitted.
 
@@ -570,7 +570,7 @@ To verify a single Agent Receipt:
 
 A receipt that passes steps 1–4 is individually valid. Steps 5–6 provide chain and delegation context but require additional receipts to verify fully.
 
-> **Note:** This algorithm depends on DID resolution (step 2), which is not fully specified in v0.1.0. Implementations MUST document their DID resolution strategy. See §9.6.
+> **Note:** This algorithm depends on DID resolution (step 2), which is not fully specified in this version. Implementations MUST document their DID resolution strategy. See §9.6.
 
 ---
 
@@ -629,6 +629,6 @@ A receipt that passes steps 1–4 is individually valid. Steps 5–6 provide cha
 
 7. **Revocation is append-only.** Reversal is recorded by issuing a new receipt, not by mutating the original. The chain is always append-only.
 
-8. **Key lifecycle is out of scope for v0.1.** Agent key generation, secure storage, rotation, and revocation are not specified by this version of the protocol. Implementers SHOULD treat key management as a critical security concern: a compromised agent key allows production of validly-signed but fraudulent receipts that are indistinguishable from legitimate ones. MolTrust (listed in §8) or a dedicated key management specification may address this in future. At minimum, implementations SHOULD document their key generation and storage practices.
+8. **Key lifecycle is out of scope for this version.** Agent key generation, secure storage, rotation, and revocation are not specified by this version of the protocol. Implementers SHOULD treat key management as a critical security concern: a compromised agent key allows production of validly-signed but fraudulent receipts that are indistinguishable from legitimate ones. MolTrust (listed in §8) or a dedicated key management specification may address this in future. At minimum, implementations SHOULD document their key generation and storage practices.
 
 9. **base64url for `proofValue`.** The `proofValue` field uses multibase `u`-prefixed base64url (no padding) rather than the W3C Data Integrity default of base58btc (`z`). base64url avoids the need for a base58 library, is natively supported in all target runtimes, and is slightly more compact. This is an intentional deviation from the W3C default.
