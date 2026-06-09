@@ -33,14 +33,6 @@ export interface AgentReceiptsPluginConfig {
 	 */
 	strict?: boolean;
 	/**
-	 * Emitter backend. Only `"daemon"` is supported: this plugin runs inside
-	 * the OpenCode process and is an emitter only — it never signs or holds a
-	 * key (ADR-0010 daemon-sole-writer), so it cannot use the signed-receipt
-	 * `WalEmitter`/`HttpEmitter` collector path. At-least-once delivery via a
-	 * WAL belongs to that out-of-process signed path; see the docs.
-	 */
-	emitter?: "daemon";
-	/**
 	 * Tool allow-list. When set (non-empty), ONLY these tool names produce
 	 * receipts. When unset, all tools are eligible (subject to {@link deny}).
 	 */

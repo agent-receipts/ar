@@ -228,6 +228,27 @@ describe("ReceiptRecorder — per-session emitters (chain mapping)", () => {
 		});
 		expect(emitters.get("s1")).not.toBe(first);
 	});
+
+	it("closeSession reclaims pending intents whose tool call never completed", async () => {
+		const { recorder, emitters } = harness();
+		// `before` fires for a call that is cancelled before `after` runs.
+		recorder.recordIntent({
+			tool: "edit",
+			sessionID: "s1",
+			callID: "orphan",
+			args: { filePath: "stale.ts" },
+		});
+		recorder.closeSession("s1");
+
+		// A later result for that callID (no args) must NOT resurrect the stale
+		// intent — it was reclaimed, so no input is attached.
+		await recorder.recordResult({
+			tool: "edit",
+			sessionID: "s1",
+			callID: "orphan",
+		});
+		expect(emitters.get("s1")?.events[0]?.input).toBeUndefined();
+	});
 });
 
 describe("ReceiptRecorder — failure posture (ADR-0025)", () => {

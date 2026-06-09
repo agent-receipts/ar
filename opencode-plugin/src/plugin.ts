@@ -48,12 +48,13 @@ export function createAgentReceiptsPlugin(
 					metadata: output.metadata,
 				});
 			},
-			// Release the per-session emitter when a session goes idle or is
-			// deleted so sockets don't accumulate across a long-lived process.
+			// Release the per-session emitter when a session is deleted. We do
+			// NOT close on `session.idle`: OpenCode fires that after every turn,
+			// not at session end, so closing there would churn sockets and could
+			// tear down a connection mid-emit. Emitters otherwise live until
+			// plugin teardown (`dispose`).
 			event: async ({ event }) => {
-				if (event.type === "session.idle") {
-					recorder.closeSession(event.properties.sessionID);
-				} else if (event.type === "session.deleted") {
+				if (event.type === "session.deleted") {
 					recorder.closeSession(event.properties.info.id);
 				}
 			},

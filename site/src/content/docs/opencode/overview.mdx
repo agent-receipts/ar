@@ -31,7 +31,7 @@ OpenCode exposes a [plugin API](https://opencode.ai/docs/plugins/) (`@opencode-a
 
 1. Records each call's **intent/params** in `tool.execute.before`.
 2. On `tool.execute.after`, builds one event — channel `opencode`, the tool name, the resolved action type, the input args, the output, and `decision: "allowed"` — and emits it to the daemon over a Unix socket.
-3. Releases the per-session socket on `session.idle`/`session.deleted`.
+3. Releases the per-session socket on `session.deleted` (and on plugin teardown). It deliberately does *not* release on `session.idle`, which OpenCode fires after every turn rather than at session end.
 
 The daemon hashes the input args (`parameters_hash`, RFC 8785) — cleartext parameters are never stored.
 

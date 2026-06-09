@@ -71,8 +71,17 @@ export class ReceiptRecorder {
 	private readonly config: ResolvedConfig;
 	private readonly emitterFactory: EmitterFactory;
 	private readonly emitters = new Map<string, ReceiptEmitter>();
-	/** Pending intent args keyed by callID, bridging before → after. */
-	private readonly pendingArgs = new Map<string, unknown>();
+	/**
+	 * Pending intent args keyed by callID, bridging before → after. The
+	 * sessionID is stored alongside so {@link closeSession} can reclaim intents
+	 * whose tool call never completed (an aborted/cancelled call fires
+	 * `before` with no matching `after`), rather than leaking them for the life
+	 * of the process.
+	 */
+	private readonly pendingArgs = new Map<
+		string,
+		{ sessionID: string; args: unknown }
+	>();
 	private closed = false;
 
 	constructor(config: ResolvedConfig, emitterFactory?: EmitterFactory) {
@@ -95,7 +104,10 @@ export class ReceiptRecorder {
 		if (this.closed || !shouldEmit(this.config, intent.tool)) {
 			return;
 		}
-		this.pendingArgs.set(intent.callID, intent.args);
+		this.pendingArgs.set(intent.callID, {
+			sessionID: intent.sessionID,
+			args: intent.args,
+		});
 	}
 
 	/**
@@ -104,11 +116,9 @@ export class ReceiptRecorder {
 	 * is never aborted. In strict mode the failure is re-thrown (ADR-0025).
 	 */
 	async recordResult(result: ToolResult): Promise<void> {
-		const args =
-			result.args !== undefined
-				? result.args
-				: this.pendingArgs.get(result.callID);
+		const pending = this.pendingArgs.get(result.callID);
 		this.pendingArgs.delete(result.callID);
+		const args = result.args !== undefined ? result.args : pending?.args;
 
 		if (this.closed || !shouldEmit(this.config, result.tool)) {
 			return;
@@ -125,12 +135,21 @@ export class ReceiptRecorder {
 		}
 	}
 
-	/** Close and forget the emitter for a finished session (`session.idle`/`session.deleted`). */
+	/**
+	 * Close and forget the emitter for a deleted session, and reclaim any
+	 * pending intents captured for it whose tool call never completed. Called
+	 * on `session.deleted` (and indirectly on {@link close}/`dispose`).
+	 */
 	closeSession(sessionID: string): void {
 		const emitter = this.emitters.get(sessionID);
 		if (emitter) {
 			emitter.close();
 			this.emitters.delete(sessionID);
+		}
+		for (const [callID, pending] of this.pendingArgs) {
+			if (pending.sessionID === sessionID) {
+				this.pendingArgs.delete(callID);
+			}
 		}
 	}
 
