@@ -162,6 +162,24 @@ class TestPostToolCall:
         # Must not raise — a single broken tool call cannot break the agent loop.
         post_tool_call(state, tool_name="read_file", args={"path": "/x"}, result=None)
 
+    def test_emit_transport_error_does_not_propagate(
+        self, fake_emitter: FakeEmitter
+    ) -> None:
+        # Newer agent-receipts releases raise EmitTransportError (a bare
+        # Exception) by default when the daemon is unreachable (ADR-0025);
+        # the pinned 0.9.0 swallows it. Either way the hook must not let a
+        # transport failure surface into the host agent.
+        class _FakeTransportError(Exception):
+            pass
+
+        fake_emitter.raise_on["allowed"] = _FakeTransportError("daemon down")
+        state = HookState(emitter=fake_emitter)
+        # Returns normally (does not raise) and still classifies — proving the
+        # emit was attempted and its failure swallowed, not skipped.
+        result = post_tool_call(state, tool_name="read_file", args={"path": "/x"})
+        assert result is not None
+        assert result.action_type == "filesystem.file.read"
+
 
 class TestPendingEviction:
     def test_stale_entries_evicted_on_next_pre(self, fake_emitter: FakeEmitter) -> None:
@@ -206,7 +224,7 @@ class TestThreadSafety:
         would raise ``RuntimeError: dictionary changed size during iteration``.
         """
         state = HookState(emitter=fake_emitter)
-        errors: list[BaseException] = []
+        errors: list[Exception] = []
         start_barrier = threading.Barrier(8)
 
         def worker(worker_id: int) -> None:
@@ -227,7 +245,7 @@ class TestThreadSafety:
                         result={"ok": True},
                         tool_call_id=tool_call_id,
                     )
-            except BaseException as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
 
         threads = [

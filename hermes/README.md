@@ -63,9 +63,9 @@ previous one, forming a tamper-evident chain.
 
 Every time the hermes agent executes a tool, this plugin:
 
-1. **Classifies the action** using the [Agent Receipts taxonomy](../spec/taxonomy).
-2. **Forwards an unsigned frame** to the local [agent-receipts daemon](../daemon) over AF\_UNIX.
-3. The daemon **signs, hash-links, and stores** the receipt in its SQLite database.
+1. **Classifies the action** with the bundled [Agent Receipts taxonomy](../spec/taxonomy) — for diagnostic logging only.
+2. **Forwards an unsigned frame** (the tool name plus its input/output) to the local [agent-receipts daemon](../daemon) over AF\_UNIX.
+3. The daemon **classifies, signs, hash-links, and stores** the receipt in its SQLite database — the daemon's classification is the authoritative one that lands in the signed receipt.
 
 The agent also gets two introspection tools to query and verify its own
 audit trail.
@@ -180,6 +180,11 @@ See [`src/agent_receipts_hermes/taxonomy.json`](src/agent_receipts_hermes/taxono
 for the full mapping. Override with a custom file via the
 `taxonomyPath` config option.
 
+> **Note:** this mapping is **diagnostic only** — it drives the plugin's log
+> lines. The daemon performs the authoritative classification that is signed
+> into each receipt, so a custom `taxonomyPath` changes what the plugin
+> *logs*, not what the receipt *records*.
+
 ## Configuration
 
 All settings are optional — the plugin works out of the box with sensible
@@ -191,7 +196,7 @@ defaults, assuming the daemon is installed at its default paths.
 | `socketPath`         | *(platform default)*   | Path to the daemon socket (overrides `AGENTRECEIPTS_SOCKET`). |
 | `daemonDbPath`       | *(platform default)*   | Path to the daemon's SQLite database (overrides `AGENTRECEIPTS_DB`). |
 | `daemonPublicKeyPath`| *(platform default)*   | Path to the daemon's Ed25519 public key PEM. |
-| `taxonomyPath`       | *(bundled)*            | Custom tool → action-type mapping. |
+| `taxonomyPath`       | *(bundled)*            | Custom tool → action-type mapping for the plugin's diagnostic logs (does not change signed receipts). |
 | `channel`            | `hermes`               | Channel identifier embedded in every frame. |
 
 Default paths follow the daemon's own resolution: `AGENTRECEIPTS_DB` env

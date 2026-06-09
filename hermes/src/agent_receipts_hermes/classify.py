@@ -9,6 +9,12 @@ Custom taxonomies merge with the bundled defaults: custom mappings
 override built-ins by ``tool_name``; custom patterns override built-ins
 by ``prefix``. Custom-first ordering matches the openclaw plugin so the
 two implementations stay observationally consistent.
+
+Note: this classification is **diagnostic only**. The plugin forwards the
+tool name (not this classification) to the daemon, which performs the
+authoritative classification that lands in the signed receipt. The output
+of this module — and any custom ``taxonomyPath`` — affects local log lines,
+not the audit trail.
 """
 
 from __future__ import annotations

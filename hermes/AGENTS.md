@@ -21,7 +21,7 @@ uv run pyright src         # type check (strict mode, must pass)
 |------|------|
 | `src/agent_receipts_hermes/__init__.py` | Plugin entry — `register(ctx)` wires hooks + tools |
 | `src/agent_receipts_hermes/hooks.py` | `pre_tool_call` / `post_tool_call` — classify + forward to daemon |
-| `src/agent_receipts_hermes/classify.py` | Tool name → action type + risk level via taxonomy |
+| `src/agent_receipts_hermes/classify.py` | Tool name → action type + risk level via taxonomy (diagnostic logging only; the daemon classifies the signed receipt) |
 | `src/agent_receipts_hermes/daemon_store.py` | Read-only access to the daemon's SQLite database |
 | `src/agent_receipts_hermes/tools.py` | Agent-facing tools: `ar_query_receipts`, `ar_verify_chain` |
 | `src/agent_receipts_hermes/config.py` | Config resolution + default daemon paths |
@@ -36,7 +36,7 @@ uv run pyright src         # type check (strict mode, must pass)
 - **Frozen dataclasses** for simple immutable types
 - **Ruff** for lint + format (line-length 88), import sort
 - **No module-level mutable state** — all mutable state flows through `HookState` (multi-instance safe)
-- **`taxonomy.json` is canonical** — tool classification comes from this file; custom taxonomies override via config
+- **`taxonomy.json` drives diagnostic logging only** — the plugin forwards the tool name (not its own classification); the daemon performs the authoritative classification that lands in the signed receipt. Custom taxonomies (via `taxonomyPath`) change the plugin's log output, not the receipt
 
 ## Testing
 

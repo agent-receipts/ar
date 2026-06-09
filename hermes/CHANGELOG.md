@@ -7,6 +7,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed (round 4)
+
+- Documented that the plugin's tool classification (`classify.py`,
+  `taxonomy.json`, the `taxonomyPath` config option) is **diagnostic only**:
+  it drives log lines, not the signed receipt. The plugin forwards just the
+  tool name and the daemon performs the authoritative classification. README,
+  AGENTS.md, and the relevant docstrings now state this explicitly.
+
+### Fixed (round 4)
+
+- `_emit` now swallows transport-class failures (not only `ValueError` /
+  `RuntimeError`), so the fire-and-forget guarantee holds across SDK versions:
+  newer `agent-receipts` releases raise `EmitTransportError` by default
+  (ADR-0025), which the pinned 0.9.0 does not. A tool call never fails because
+  the audit daemon is unreachable. Covered by
+  `test_emit_transport_error_does_not_propagate`.
+
+### Internal (round 4)
+
+- Cleared code-quality lint nits: the `EmitterLike.emit` Protocol stub carries
+  a docstring instead of a bare `...`, `FakeSocketServer.stop` teardown
+  `except` blocks are commented, and the thread-safety test narrows
+  `BaseException` → `Exception`.
+
 ### Security (round 3)
 
 - ``test_unserialisable_args_drop_field_not_frame`` strengthened with

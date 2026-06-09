@@ -125,12 +125,12 @@ class FakeSocketServer:
         try:
             self._sock.close()
         except OSError:
-            pass
+            pass  # listener already closed or never bound — nothing to release
         self._thread.join(timeout=2.0)
         try:
             os.unlink(self.path)
         except OSError:
-            pass
+            pass  # socket path already removed or never created during teardown
 
 
 def _recv_exact(conn: socket.socket, n: int) -> bytes | None:

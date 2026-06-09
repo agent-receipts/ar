@@ -53,7 +53,8 @@ class EmitterLike(Protocol):
         input: bytes | str | None = None,  # noqa: A002 - mirrors SDK API
         output: bytes | str | None = None,
         error: str = "",
-    ) -> None: ...
+    ) -> None:
+        """Forward one tool-call frame to the daemon (see the SDK emitter)."""
 
 
 @dataclass
@@ -223,6 +224,12 @@ def post_tool_call(
         stashed = state.pending.pop(key, None)
 
     effective_args = args if args is not None else (stashed.args if stashed else None)
+    # Diagnostic only: this classification feeds the log line below and the
+    # return value (consumed by tests). It does NOT influence the signed
+    # receipt — the frame forwarded to the daemon carries the tool name (not
+    # the plugin's classification), and the daemon performs the authoritative
+    # classification that lands in the receipt. A custom ``taxonomyPath``
+    # therefore changes these logs, not the audit trail.
     classification = classify(tool_name, state.mappings, state.patterns)
 
     logger.info(
@@ -253,7 +260,11 @@ def _emit(
     result: Any,
     error: str,
 ) -> None:
-    """Best-effort forward to the daemon. All failures are swallowed."""
+    """Best-effort forward to the daemon.
+
+    All failures are swallowed: a tool call must never fail because the audit
+    daemon is unreachable or misbehaving.
+    """
     emitter = state.emitter
     if emitter is None:
         return
@@ -270,11 +281,17 @@ def _emit(
             output=output_json,
             error=error,
         )
-    except ValueError as exc:
-        # Caller-bug-class errors from Emitter.emit (invalid JSON, oversized
-        # frame, empty channel). Log and move on so a single broken tool call
-        # cannot stop subsequent receipts from flowing.
-        logger.warning("agent-receipts: emit failed (%s): %s", decision, exc)
     except RuntimeError as exc:
         # Emitter already closed — happens during shutdown; downgrade to debug.
         logger.debug("agent-receipts: emit dropped (%s): %s", decision, exc)
+    except Exception as exc:  # noqa: BLE001 - fire-and-forget must never break the host
+        # Everything else: caller-bug-class ValueErrors (invalid JSON,
+        # oversized frame, empty channel) AND transport-class failures (daemon
+        # down, write timeout). The pinned SDK (agent-receipts 0.9.0) swallows
+        # transport errors inside emit(), but newer releases raise
+        # EmitTransportError by default (ADR-0025) unless the emitter is built
+        # with best_effort=True — a kwarg 0.9.0 does not accept. Catching the
+        # base class keeps the fire-and-forget guarantee across SDK versions
+        # without importing a type that may not exist on the installed SDK: a
+        # tool call must never fail because the audit daemon is unreachable.
+        logger.warning("agent-receipts: emit dropped (%s): %s", decision, exc)
