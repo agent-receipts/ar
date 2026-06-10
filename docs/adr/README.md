@@ -39,6 +39,9 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0023](0023-canonical-go-module-path.md) | Canonical Go Module Path | Accepted |
 | [ADR-0024](0024-project-verification-contract.md) | Project Verification Contract — Every Asserted Property Has a Gate | Accepted |
 | [ADR-0025](0025-emit-failure-contract.md) | Emit Failure Contract | Accepted |
+| [ADR-0026](0026-issuer-runtime-open-metadata.md) | Issuer Runtime Open Metadata Sub-object | Accepted |
+| [ADR-0028](0028-reversibility-taxonomy-and-cascade-model.md) | Reversibility Taxonomy and Cascade Model | Accepted |
+| [ADR-0029](0029-attribution-primary-product-model.md) | Attribution-Primary Product Model | Accepted |
 
 ## References
 
