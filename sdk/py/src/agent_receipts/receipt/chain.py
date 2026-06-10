@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from agent_receipts.receipt.hash import canonicalize, hash_receipt, sha256
+from agent_receipts.receipt.rotation import verify_rotation_event
 from agent_receipts.receipt.signing import verify_receipt
 
 if TYPE_CHECKING:
@@ -198,14 +199,21 @@ def verify_chain(
     previous: AgentReceipt | None = None
     signature_compute_error: str | None = None
     signature_compute_error_at: int = -1
+    rotation_error: str | None = None
+    rotation_error_at: int = -1
     hash_compute_error: str | None = None
     hash_compute_error_at: int = -1
+
+    # active_key is the public key the current receipt must verify against. It
+    # starts as the caller-supplied genesis key and is replaced by the incoming
+    # key after each verified key_rotated receipt (spec §7.3.7).
+    active_key = public_key
 
     for i, receipt in enumerate(receipts):
         chain = receipt.credentialSubject.chain
 
         try:
-            signature_valid = verify_receipt(receipt, public_key)
+            signature_valid = verify_receipt(receipt, active_key)
         except (TypeError, ValueError) as exc:
             signature_valid = False
             if signature_compute_error is None:
@@ -247,26 +255,48 @@ def verify_chain(
         ):
             broken_at = i
 
+        # Key-rotation traversal (ADR-0015 / spec §7.3.7). A key_rotated receipt
+        # is signed with the OUTGOING (currently active) key; once that signature
+        # and the rotation-event fields check out, the incoming key carried inline
+        # takes over for every subsequent receipt until the next rotation.
+        key_rotation = receipt.credentialSubject.key_rotation
+        if key_rotation is not None:
+            try:
+                new_key_pem = verify_rotation_event(active_key, key_rotation)
+            except ValueError as exc:
+                if rotation_error is None:
+                    rotation_error = f"key rotation invalid at index {i}: {exc}"
+                    rotation_error_at = i
+                if broken_at == -1:
+                    broken_at = i
+            else:
+                # Only adopt the incoming key when the rotation receipt itself
+                # verified under the outgoing key; otherwise the binding of
+                # new_public_key to the prior chain segment is not trustworthy.
+                if signature_valid:
+                    active_key = new_key_pem
+
         previous = receipt
 
     # Pick the compute error that occurred earliest in the chain.
     # When both are present, the one at the lower index wins (not always sig).
     # Compute this before the terminal check so early returns can compare indices.
+    # Candidates checked in priority order — sig > rotation > hash — so when two
+    # errors fire at the same index the higher-priority one wins. Mirrors the Go
+    # and TypeScript SDKs so cross-SDK error strings agree on which failure to
+    # surface.
     loop_error = ""
     loop_error_at = -1
-    if signature_compute_error is not None and hash_compute_error is not None:
-        if signature_compute_error_at <= hash_compute_error_at:
-            loop_error = signature_compute_error
-            loop_error_at = signature_compute_error_at
-        else:
-            loop_error = hash_compute_error
-            loop_error_at = hash_compute_error_at
-    elif signature_compute_error is not None:
-        loop_error = signature_compute_error
-        loop_error_at = signature_compute_error_at
-    elif hash_compute_error is not None:
-        loop_error = hash_compute_error
-        loop_error_at = hash_compute_error_at
+    for msg, at in (
+        (signature_compute_error, signature_compute_error_at),
+        (rotation_error, rotation_error_at),
+        (hash_compute_error, hash_compute_error_at),
+    ):
+        if msg is None:
+            continue
+        if loop_error_at == -1 or at < loop_error_at:
+            loop_error = msg
+            loop_error_at = at
 
     # Chain identifier binding check (unconditional — spec §7.3.4).
     # All receipts in a verified chain MUST share chain.chain_id. Reject
