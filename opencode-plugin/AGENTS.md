@@ -50,6 +50,6 @@ src/
 - Unit tests inject a capturing `ReceiptEmitter` fake (no socket) to assert mapping, filtering, intent/params bridging, per-session emitters, and the strict/default failure posture.
 - `roundtrip.test.ts` drives the real `DaemonEmitter` against a fake length-prefixed AF_UNIX server (mirrors sdk/ts `daemon-emitter.test.ts`) and asserts the wire-frame shape. Signed-chain verification is the daemon's job, covered by the docs `agent-receipts verify` walkthrough.
 
-## Release
+## CI / Release
 
-No release workflow ships yet (adding CI workflows requires human review). Publishing and a `file:` → versioned `@agnt-rcpt/sdk-ts` dependency swap are a follow-up.
+CI runs via `.github/workflows/opencode-plugin.yml` (path-filtered on `opencode-plugin/**` and `sdk/ts/**`): it builds the in-tree `sdk/ts` first (the `file:` dependency), then runs typecheck, lint, build, and test. No release/publish workflow ships yet — publishing and the `file:` → versioned `@agnt-rcpt/sdk-ts` dependency swap are a follow-up.
