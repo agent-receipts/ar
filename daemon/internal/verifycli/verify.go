@@ -1,8 +1,12 @@
 // Package verifycli implements the `agent-receipts verify` subcommand:
 // validate a stored chain's signatures and hash links using a daemon-written
-// SQLite store and the daemon-published public key. It opens the database
-// read-only (sdk/go/store.OpenReadOnly) so it is safe to run while the daemon
-// is the active writer, and it does not require the daemon socket to be
+// SQLite store and the daemon-published public key. For a chain that has
+// survived an offline key rotation the published key is the post-rotation key,
+// so verification resolves the genesis key — the key that signed the first
+// receipt — from the archives `agent-receipts rotate` leaves beside it, then
+// traverses each key_rotated receipt forward (spec §7.3.7). It opens the
+// database read-only (sdk/go/store.OpenReadOnly) so it is safe to run while the
+// daemon is the active writer, and it does not require the daemon socket to be
 // reachable — independent verifiability is not gated on daemon availability
 // (issue #236, Section 4).
 //
@@ -20,9 +24,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/agent-receipts/ar/daemon"
+	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
@@ -113,11 +119,27 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	}
 	defer s.Close()
 
-	result, err := s.VerifyStoredChain(*chainID, string(pubPEM))
+	receipts, err := s.GetChain(*chainID)
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts verify: %v\n", err)
+		fmt.Fprintf(stderr, "agent-receipts verify: load chain: %v\n", err)
 		return ExitUsageError
 	}
+
+	// Resolve the genesis key before verifying. After an offline key rotation
+	// the *published* .pub holds the post-rotation key, but a chain is anchored
+	// to the key that signed its first receipt: VerifyChain must start there and
+	// traverse each key_rotated receipt forward (spec §7.3.7). `agent-receipts
+	// rotate` archives every superseded public key beside the live one as
+	// `<public-key>.rotated-<fingerprint>`, so a verify run pointed only at the
+	// current .pub would otherwise report a rotated chain as BROKEN at receipt 0.
+	// With no rotation the published key already is the genesis key and this is a
+	// no-op.
+	genesisPEM, genesisPath := resolveGenesisKey(receipts, candidate{path: *pubKeyPath, pem: string(pubPEM)}, stderr)
+	if genesisPath != *pubKeyPath {
+		fmt.Fprintf(stderr, "Note: chain is rotated; verifying from archived genesis key %s\n", genesisPath)
+	}
+
+	result := receipt.VerifyChain(receipts, genesisPEM)
 
 	if result.ResponseHashNote != "" {
 		fmt.Fprintf(stderr, "Note: %s\n", result.ResponseHashNote)
@@ -182,4 +204,51 @@ func validatePublicKeyPEM(pubPEM []byte) error {
 		return fmt.Errorf("public key is %T, want ed25519.PublicKey", parsed)
 	}
 	return nil
+}
+
+// candidate pairs a public-key file path with its PEM bytes so genesis-key
+// resolution can report which file it settled on.
+type candidate struct {
+	path string
+	pem  string
+}
+
+// resolveGenesisKey selects the public key that signed the chain's first
+// receipt — the key VerifyChain must start from to traverse key rotations
+// (spec §7.3.7). The published key (provided) is tried first, then every
+// archived pre-rotation key written beside it by `agent-receipts rotate` as
+// `<public-key>.rotated-*`. The first candidate whose key verifies receipt[0]'s
+// signature is the genesis key.
+//
+// When the chain is empty, or no candidate verifies receipt[0] (a genuinely
+// broken chain, or one rotated with archives the verifier can't see), the
+// published key is returned unchanged so the failure is reported against the
+// operator's expected key rather than an archive. A stray or malformed
+// `.rotated-*` sibling is skipped with a note, not treated as fatal.
+func resolveGenesisKey(receipts []receipt.AgentReceipt, provided candidate, stderr io.Writer) (pem, path string) {
+	if len(receipts) == 0 {
+		return provided.pem, provided.path
+	}
+
+	candidates := []candidate{provided}
+	archives, _ := filepath.Glob(provided.path + ".rotated-*")
+	for _, archivePath := range archives {
+		data, err := os.ReadFile(archivePath)
+		if err != nil {
+			fmt.Fprintf(stderr, "Note: skipping archived key %s: %v\n", archivePath, err)
+			continue
+		}
+		if err := validatePublicKeyPEM(data); err != nil {
+			fmt.Fprintf(stderr, "Note: skipping archived key %s: %v\n", archivePath, err)
+			continue
+		}
+		candidates = append(candidates, candidate{path: archivePath, pem: string(data)})
+	}
+
+	for _, c := range candidates {
+		if ok, err := receipt.Verify(receipts[0], c.pem); ok && err == nil {
+			return c.pem, c.path
+		}
+	}
+	return provided.pem, provided.path
 }

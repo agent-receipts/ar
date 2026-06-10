@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agent-receipts/ar/daemon"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
@@ -132,6 +133,98 @@ func fixturePendingTailChain(t *testing.T, dir, chainID string, count int) (dbPa
 		prevHash = &h
 	}
 	return dbPath, pubKeyPath
+}
+
+// fixtureRotatedChain builds a chain that has survived an offline key rotation:
+// an ordinary receipt signed with the genesis key, a key_rotated receipt
+// (signed with the genesis key, swapping in a new key), then an ordinary
+// receipt signed with the post-rotation key. It returns the db path and the
+// *published* public-key path — which, after rotation, holds the new key, not
+// the genesis key. The superseded genesis key is left archived beside it as
+// `<pub>.rotated-<fingerprint>` by daemon.RotateKey, which is what the verify
+// CLI must rediscover. The returned chainID is fixed so callers pass it through.
+func fixtureRotatedChain(t *testing.T, dir, chainID string) (dbPath, pubKeyPath string) {
+	t.Helper()
+
+	keyPath := filepath.Join(dir, "signing.key")
+	pubKeyPath = keyPath + ".pub"
+	dbPath = filepath.Join(dir, "receipts.db")
+	if err := daemon.GenerateKey(keyPath, pubKeyPath); err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	cfg := daemon.Config{
+		KeyPath:              keyPath,
+		PublicKeyPath:        pubKeyPath,
+		DBPath:               dbPath,
+		ChainID:              chainID,
+		IssuerID:             "did:test",
+		VerificationMethodID: "did:test#k1",
+		// SocketPath empty so the running-daemon guard is a no-op.
+	}
+
+	// seq 1: ordinary receipt signed with the genesis key.
+	signSeed(t, cfg, 1, nil)
+	// seq 2: rotation receipt — signed with the genesis (outgoing) key, archives
+	// the genesis public key, and swaps the new key into pubKeyPath.
+	if _, err := daemon.RotateKey(cfg); err != nil {
+		t.Fatalf("RotateKey: %v", err)
+	}
+	// seq 3: ordinary receipt signed with the new (post-rotation) key now at
+	// keyPath — so a verifier that never traverses the rotation fails here too.
+	prev := tailHash(t, dbPath, chainID)
+	signSeed(t, cfg, 3, &prev)
+
+	return dbPath, pubKeyPath
+}
+
+// signSeed appends one ordinary receipt at the given sequence, signed with the
+// key currently at cfg.KeyPath, and inserts it into the store.
+func signSeed(t *testing.T, cfg daemon.Config, seq int, prev *string) {
+	t.Helper()
+	privPEM, err := os.ReadFile(cfg.KeyPath)
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+	unsigned := receipt.Create(receipt.CreateInput{
+		Issuer:    receipt.Issuer{ID: cfg.IssuerID},
+		Principal: receipt.Principal{ID: cfg.IssuerID},
+		Action:    receipt.Action{Type: "filesystem.file.read", RiskLevel: receipt.RiskLow},
+		Outcome:   receipt.Outcome{Status: receipt.StatusSuccess},
+		Chain:     receipt.Chain{Sequence: seq, PreviousReceiptHash: prev, ChainID: cfg.ChainID},
+	})
+	signed, err := receipt.Sign(unsigned, string(privPEM), cfg.VerificationMethodID)
+	if err != nil {
+		t.Fatalf("sign seed receipt: %v", err)
+	}
+	h, err := receipt.HashReceipt(signed)
+	if err != nil {
+		t.Fatalf("hash seed receipt: %v", err)
+	}
+	s, err := store.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	if err := s.Insert(signed, h); err != nil {
+		t.Fatalf("insert seed receipt: %v", err)
+	}
+}
+
+func tailHash(t *testing.T, dbPath, chainID string) string {
+	t.Helper()
+	s, err := store.OpenReadOnly(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	_, h, found, err := s.GetChainTail(chainID)
+	if err != nil {
+		t.Fatalf("get chain tail: %v", err)
+	}
+	if !found {
+		t.Fatalf("chain %s has no tail", chainID)
+	}
+	return h
 }
 
 func runOnce(t *testing.T, args []string) (code int, stdout, stderr string) {
@@ -306,6 +399,63 @@ func TestRun_RejectsPositionalArgs(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "unexpected positional argument") {
 		t.Errorf("stderr = %q, expected unexpected-positional diagnostic", stderr)
+	}
+}
+
+func TestRun_VerifiesRotatedChainFromPublishedKey(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath := fixtureRotatedChain(t, dir, "chain-1")
+
+	// --public-key points at the *published* key, which after rotation is the
+	// post-rotation key. The CLI must rediscover the archived genesis key and
+	// verify the chain end-to-end through the rotation.
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--chain-id", "chain-1",
+	})
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (rotated chain should verify from archived genesis key); stdout=%s stderr=%s", code, ExitOK, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "VALID (3 receipts)") {
+		t.Errorf("stdout = %q, expected VALID with 3 receipts", stdout)
+	}
+	if !strings.Contains(stderr, "chain is rotated; verifying from archived genesis key") {
+		t.Errorf("stderr = %q, expected the rotated-chain genesis-key note", stderr)
+	}
+}
+
+func TestRun_RotatedChainBrokenWhenGenesisArchiveMissing(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath := fixtureRotatedChain(t, dir, "chain-1")
+
+	// Remove the archived genesis key so it can no longer be rediscovered. The
+	// published key alone cannot verify receipt[0], so the chain must report
+	// BROKEN at the first receipt rather than silently passing.
+	archives, err := filepath.Glob(pubKeyPath + ".rotated-*")
+	if err != nil || len(archives) == 0 {
+		t.Fatalf("expected an archived genesis key beside %s (glob err=%v, matches=%v)", pubKeyPath, err, archives)
+	}
+	for _, a := range archives {
+		if err := os.Remove(a); err != nil {
+			t.Fatalf("remove archive %s: %v", a, err)
+		}
+	}
+
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--chain-id", "chain-1",
+	})
+	if code != ExitChainBad {
+		t.Fatalf("exit = %d, want %d (missing genesis archive should fail, not pass); stderr=%s", code, ExitChainBad, stderr)
+	}
+	if !strings.Contains(stdout, "BROKEN at receipt 0") {
+		t.Errorf("stdout = %q, expected BROKEN at receipt 0", stdout)
+	}
+	// Falling back to the published key means no genesis note is emitted.
+	if strings.Contains(stderr, "verifying from archived genesis key") {
+		t.Errorf("stderr = %q, expected no genesis-key note when no archive matches", stderr)
 	}
 }
 
