@@ -42,6 +42,13 @@ func socketReachable(path string) (bool, error) {
 // authoritative; action.type is the index hint.
 const actionTypeKeyRotate = "agent.key.rotate"
 
+// RotatedPublicKeySuffix is the filename suffix archiveOldPublicKey appends to a
+// superseded public key (followed by a short key fingerprint), e.g.
+// signing.key.pub.rotated-<fp>. The verify CLI scans for it to rediscover a
+// rotated chain's genesis key, so the writer here and that reader share this one
+// definition rather than hardcoding the literal on each side.
+const RotatedPublicKeySuffix = ".rotated-"
+
 // RotateSummary reports the outcome of a key rotation for the CLI to print.
 type RotateSummary struct {
 	ChainID           string
@@ -286,7 +293,7 @@ func archiveOldPublicKey(publicKeyPath, fingerprint string) (string, error) {
 	if len(fingerprint) > 16 {
 		short = fingerprint[len(fingerprint)-16:]
 	}
-	archivePath := publicKeyPath + ".rotated-" + short
+	archivePath := publicKeyPath + RotatedPublicKeySuffix + short
 	if err := writeNewSecretFile(archivePath, data, 0o644); err != nil {
 		return "", fmt.Errorf("write archive %s: %w", archivePath, err)
 	}

@@ -187,6 +187,13 @@ live one (`<public-key>.rotated-<fingerprint>`), then traverses each
 against the published key path. If those archives are missing, the chain reports
 `BROKEN` at the first receipt rather than silently passing.
 
+Resolution stays pinned to the operator's key: a chain reached through an
+archive must end its rotation lineage at the `--public-key` it was verified
+against. A cryptographically self-consistent chain that rotates to some *other*
+key — e.g. an attacker who planted a `<public-key>.rotated-*` archive and a
+chain signed under their own key — reports `BROKEN` (the published key is not
+the chain's current key), so a forged archive cannot turn into a `VALID` result.
+
 Exit codes are stable for scripting:
 
 | Code | Meaning |

@@ -459,6 +459,49 @@ func TestRun_RotatedChainBrokenWhenGenesisArchiveMissing(t *testing.T) {
 	}
 }
 
+func TestRun_RejectsRotatedChainNotEndingAtPublishedKey(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath := fixtureRotatedChain(t, dir, "chain-1")
+
+	// Planted-archive forgery: the DB plus the archived genesis key form a
+	// self-consistent rotated chain, but the operator's *pinned* published key is
+	// an unrelated key the chain never rotates to. Overwrite the published key
+	// with a fresh, unrelated Ed25519 key; the genesis archive beside it remains,
+	// so resolution still anchors and VerifyChain still passes — only the
+	// published-key binding should catch it.
+	overwriteWithUnrelatedKey(t, pubKeyPath)
+
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--chain-id", "chain-1",
+	})
+	if code != ExitChainBad {
+		t.Fatalf("exit = %d, want %d (a chain that does not terminate at the published key must fail); stdout=%s stderr=%s", code, ExitChainBad, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "does not terminate at the published key") {
+		t.Errorf("stdout = %q, expected the published-key binding failure", stdout)
+	}
+	if strings.Contains(stdout, "VALID") {
+		t.Errorf("stdout = %q, a cryptographically-consistent but unpinned chain must not report VALID", stdout)
+	}
+}
+
+func overwriteWithUnrelatedKey(t *testing.T, pubKeyPath string) {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pubKeyPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRun_HelpFlagExitsCleanly(t *testing.T) {
 	code, _, stderr := runOnce(t, []string{"-h"})
 	if code != ExitOK {
