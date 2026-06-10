@@ -1,6 +1,6 @@
 # AGENTS.md
 
-OpenCode plugin (`@agent-receipts/opencode-plugin`) that emits one Agent Receipt per native OpenCode tool call. Hooks `tool.execute.before`/`tool.execute.after` from `@opencode-ai/plugin` and forwards each call to `agent-receipts-daemon` via the TS SDK `DaemonEmitter`. The OpenCode analog of the Go [`hook/`](../hook/) Claude Code integration, for the native-tool channel.
+OpenCode plugin (`@agent-receipts/opencode-plugin`) that emits one Agent Receipt per native OpenCode tool call. Hooks `tool.execute.before`/`tool.execute.after` from `@opencode-ai/plugin` and forwards each call to `agent-receipts-daemon` via the TS SDK `DaemonEmitter`. The OpenCode analog of the Go [`hook/`](../../hook/) Claude Code integration, for the native-tool channel.
 
 ## Trust boundary (load-bearing)
 
@@ -9,14 +9,14 @@ The plugin runs **inside** the OpenCode process → **emitter only**. It MUST em
 ## Getting started
 
 ```sh
-pnpm install        # @agnt-rcpt/sdk-ts is file:-linked from ../sdk/ts (build it first)
+pnpm install        # @agnt-rcpt/sdk-ts is file:-linked from ../../sdk/ts (build it first)
 pnpm build          # tsc → dist/
 pnpm test           # vitest (unit + round-trip against a fake daemon socket)
 pnpm typecheck      # tsc --noEmit
 pnpm lint           # biome check
 ```
 
-`@agnt-rcpt/sdk-ts` resolves from a `file:../sdk/ts` install, so run `pnpm build` in `sdk/ts` before installing/testing here.
+`@agnt-rcpt/sdk-ts` resolves from a `file:../../sdk/ts` install, so run `pnpm build` in `sdk/ts` before installing/testing here.
 
 ## Project structure
 
@@ -52,4 +52,4 @@ src/
 
 ## CI / Release
 
-CI runs via `.github/workflows/opencode-plugin.yml` (path-filtered on `opencode-plugin/**` and `sdk/ts/**`): it builds the in-tree `sdk/ts` first (the `file:` dependency), then runs typecheck, lint, build, and test. No release/publish workflow ships yet — publishing and the `file:` → versioned `@agnt-rcpt/sdk-ts` dependency swap are a follow-up.
+CI runs via `.github/workflows/opencode-plugin.yml` (path-filtered on `integrations/opencode-plugin/**` and `sdk/ts/**`): it builds the in-tree `sdk/ts` first (the `file:` dependency), then runs typecheck, lint, build, and test. No release/publish workflow ships yet — publishing and the `file:` → versioned `@agnt-rcpt/sdk-ts` dependency swap are a follow-up.

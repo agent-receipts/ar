@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@agnt-rcpt/sdk-ts':
-        specifier: file:../sdk/ts
-        version: file:../sdk/ts
+        specifier: file:../../sdk/ts
+        version: file:../../sdk/ts
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.4.9
@@ -30,8 +30,8 @@ importers:
 
 packages:
 
-  '@agnt-rcpt/sdk-ts@file:../sdk/ts':
-    resolution: {directory: ../sdk/ts, type: directory}
+  '@agnt-rcpt/sdk-ts@file:../../sdk/ts':
+    resolution: {directory: ../../sdk/ts, type: directory}
     engines: {node: '>=22.11.0'}
 
   '@biomejs/biome@2.4.16':
@@ -659,7 +659,7 @@ packages:
 
 snapshots:
 
-  '@agnt-rcpt/sdk-ts@file:../sdk/ts':
+  '@agnt-rcpt/sdk-ts@file:../../sdk/ts':
     dependencies:
       undici: 8.4.1
       zod: 4.4.3

@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "opencode-plugin/**"
+      - "integrations/opencode-plugin/**"
       - "sdk/ts/**"
   pull_request:
     branches: [main]
     paths:
-      - "opencode-plugin/**"
+      - "integrations/opencode-plugin/**"
       - "sdk/ts/**"
 
 permissions:
@@ -30,10 +30,10 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: |
             sdk/ts/pnpm-lock.yaml
-            opencode-plugin/pnpm-lock.yaml
+            integrations/opencode-plugin/pnpm-lock.yaml
 
-      # The plugin depends on `@agnt-rcpt/sdk-ts` via a `file:../sdk/ts` install,
-      # so the in-tree SDK's dist/ must be built before the plugin can
+      # The plugin depends on `@agnt-rcpt/sdk-ts` via a `file:../../sdk/ts`
+      # install, so the in-tree SDK's dist/ must be built before the plugin can
       # typecheck, build, or test against it. This also makes the job fail when
       # a same-PR sdk/ts change breaks the plugin (hence sdk/ts/** in paths).
       - name: Build in-tree TypeScript SDK
@@ -41,21 +41,21 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm run build
 
       - name: Install plugin deps
-        working-directory: opencode-plugin
+        working-directory: integrations/opencode-plugin
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        working-directory: opencode-plugin
+        working-directory: integrations/opencode-plugin
         run: pnpm run typecheck
 
       - name: Lint
-        working-directory: opencode-plugin
+        working-directory: integrations/opencode-plugin
         run: pnpm run lint
 
       - name: Build
-        working-directory: opencode-plugin
+        working-directory: integrations/opencode-plugin
         run: pnpm run build
 
       - name: Test
-        working-directory: opencode-plugin
+        working-directory: integrations/opencode-plugin
         run: pnpm run test
