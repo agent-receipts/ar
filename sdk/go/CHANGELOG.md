@@ -11,6 +11,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-06-11
+
+Graduates `0.17.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.17.0-alpha.1` entry below for the full surface (`issuer.runtime` open metadata sub-object, `agent_type` forwarding).
+
 ## [0.17.0-alpha.1] - 2026-06-09
 
 ### Added
