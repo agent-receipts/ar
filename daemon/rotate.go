@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/agent-receipts/ar/daemon/internal/anchor"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
@@ -49,6 +50,7 @@ type RotateSummary struct {
 	OldFingerprint    string
 	NewFingerprint    string
 	ArchivedPublicKey string
+	AnchoredTo        string
 }
 
 // RotateKey rotates the daemon's signing key (ADR-0015 Phase A, offline).
@@ -163,13 +165,22 @@ func RotateKey(cfg Config) (RotateSummary, error) {
 		return RotateSummary{}, fmt.Errorf("hash rotation receipt: %w", err)
 	}
 
-	// 5. Archive the outgoing public key so the genesis key stays resolvable.
+	// 5. Anchor-first (ADR-0015): write the rotation event to the external
+	//    witness BEFORE any local change. A sink-write failure aborts the
+	//    rotation cleanly — nothing on disk or in the chain has moved yet, so
+	//    there is no torn state where the local chain reflects an unanchored
+	//    handover.
+	if err := anchorRotationEvent(cfg.AnchorLogPath, signed); err != nil {
+		return RotateSummary{}, err
+	}
+
+	// 6. Archive the outgoing public key so the genesis key stays resolvable.
 	archivePath, err := archiveOldPublicKey(cfg.PublicKeyPath, oldFingerprint)
 	if err != nil {
 		return RotateSummary{}, fmt.Errorf("archive outgoing public key: %w", err)
 	}
 
-	// 6. Swap the incoming key into place, then commit the receipt. Roll the
+	// 7. Swap the incoming key into place, then commit the receipt. Roll the
 	//    key files back if the insert fails so disk and chain never disagree.
 	restore, err := swapKeyFiles(cfg.KeyPath, cfg.PublicKeyPath, newPrivPEM, newPubPEM)
 	if err != nil {
@@ -195,7 +206,34 @@ func RotateKey(cfg Config) (RotateSummary, error) {
 		OldFingerprint:    oldFingerprint,
 		NewFingerprint:    newFingerprint,
 		ArchivedPublicKey: archivePath,
+		AnchoredTo:        cfg.AnchorLogPath,
 	}, nil
+}
+
+// anchorRotationEvent writes the signed rotation receipt to the configured
+// external witness in its RFC 8785 canonical form (ADR-0015). A no-op when no
+// anchor is configured — the operator has opted out of the post-compromise
+// integrity guarantee but keeps every other property.
+func anchorRotationEvent(anchorLogPath string, signed receipt.AgentReceipt) error {
+	if anchorLogPath == "" {
+		return nil
+	}
+	canonical, err := receipt.Canonicalize(signed)
+	if err != nil {
+		return fmt.Errorf("canonicalize rotation event for anchor: %w", err)
+	}
+	sink, err := anchor.OpenFileLog(anchorLogPath)
+	if err != nil {
+		return fmt.Errorf("open anchor: %w", err)
+	}
+	if err := sink.Write(anchor.EventTypeRotation, []byte(canonical)); err != nil {
+		_ = sink.Close()
+		return fmt.Errorf("anchor rotation event (aborting, nothing committed): %w", err)
+	}
+	if err := sink.Close(); err != nil {
+		return fmt.Errorf("close anchor: %w", err)
+	}
+	return nil
 }
 
 // rawKeyFingerprint is the ADR-0015 fingerprint: SHA-256 of the raw public key

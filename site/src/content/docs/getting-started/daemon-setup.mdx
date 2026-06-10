@@ -78,7 +78,17 @@ This appends a `key_rotated` receipt — signed with the **outgoing** key — to
 
 Do **not** "rotate" by deleting `signing.key` and re-running `--init`. That new key has no `key_rotated` receipt bridging it to the old one, so every receipt signed by the retired key fails verification and the chain is split with no in-chain handover.
 
-External anchoring of rotation events (so the rotation history survives daemon-key compromise) is still pending — see ADR-0015's phasing — so `--rotate` does not yet provide the full post-compromise integrity guarantee.
+##### Anchoring rotation events
+
+For the rotation history to survive a future daemon-key compromise, the rotation event must be recorded somewhere the daemon cannot later rewrite. Pass `--anchor-log <path>` (env `AGENTRECEIPTS_ANCHOR_LOG`) and `--rotate` writes the rotation event to that append-only log **before** committing locally — an anchor-write failure aborts the rotation cleanly, leaving nothing changed:
+
+```bash
+agent-receipts-daemon --rotate --anchor-log /var/log/agent-receipts/anchor.log
+```
+
+The built-in log is a **reference** sink: it appends newline-delimited JSON records, but a plain file is only as tamper-evident as the storage under it. To get the real post-compromise guarantee, point `--anchor-log` at a path backed by append-only/immutable storage (object-lock volume, a write-only log host, a transparency log). Adapters that speak directly to such systems (S3 object-lock, SIEM ingest) are follow-up work. Without `--anchor-log`, rotation still works and verifies — you simply opt out of the post-compromise guarantee.
+
+> Periodic *checkpoint* anchoring (for tail-truncation detection) is a separate, still-pending phase — see ADR-0015.
 
 ### Start
 

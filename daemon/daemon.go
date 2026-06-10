@@ -71,6 +71,13 @@ type Config struct {
 	// VerificationMethodID goes into proof.verificationMethod.
 	VerificationMethodID string
 
+	// AnchorLogPath, when set, is an append-only external-witness log that
+	// rotation events are written to before the local chain commits (ADR-0015
+	// anchor-first ordering). Empty disables anchoring — the operator keeps the
+	// chain-integrity guarantees but forgoes the post-compromise integrity
+	// guarantee. Set from --anchor-log (env: AGENTRECEIPTS_ANCHOR_LOG).
+	AnchorLogPath string
+
 	// Logger receives daemon log lines. Defaults to log.Default().
 	Logger *log.Logger
 

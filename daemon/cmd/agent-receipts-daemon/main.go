@@ -131,6 +131,11 @@ func main() {
 		fmt.Printf("  outgoing key:        %s\n", summary.OldFingerprint)
 		fmt.Printf("  incoming key:        %s\n", summary.NewFingerprint)
 		fmt.Printf("  archived public key: %s\n", summary.ArchivedPublicKey)
+		if summary.AnchoredTo != "" {
+			fmt.Printf("  anchored to:         %s\n", summary.AnchoredTo)
+		} else {
+			fmt.Printf("  anchored to:         (none — set --anchor-log for post-compromise integrity)\n")
+		}
 		fmt.Printf("\nRestart the daemon to sign with the new key. Verify the rotated chain\n")
 		fmt.Printf("from the genesis public key (it traverses the rotation); the freshly\n")
 		fmt.Printf("published %s is the new key only.\n", r.cfg.PublicKeyPath)
@@ -210,6 +215,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	fs.StringVar(&cfg.ChainID, "chain-id", cfg.ChainID, "Chain id to write under (env: AGENTRECEIPTS_CHAIN_ID)")
 	fs.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	fs.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
+	fs.StringVar(&cfg.AnchorLogPath, "anchor-log", cfg.AnchorLogPath, "Append-only external-witness log for rotation events (ADR-0015). When set, --rotate writes the rotation event here before committing locally; a write failure aborts the rotation. (env: AGENTRECEIPTS_ANCHOR_LOG)")
 	fs.StringVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "Which actions encrypt their parameters into parameters_disclosure (ADR-0012): false|true|high|<comma-separated action types>. Requires --forensic-public-key. (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
 	fs.BoolVar(&cfg.UnsafeSocketPath, "unsafe-socket-path", cfg.UnsafeSocketPath, "Permit a --socket/AGENTRECEIPTS_SOCKET path outside the per-platform safe set (logs a warning; does not override TCP rejection) (env: AGENTRECEIPTS_UNSAFE_SOCKET_PATH)")
 	fs.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults) (env: AGENTRECEIPTS_REDACT_PATTERNS)")
@@ -392,6 +398,9 @@ func envOverlay(cfg *daemon.Config, getenv func(string) string) error {
 	}
 	if v := getenv("AGENTRECEIPTS_VERIFICATION_METHOD"); v != "" {
 		cfg.VerificationMethodID = v
+	}
+	if v := getenv("AGENTRECEIPTS_ANCHOR_LOG"); v != "" {
+		cfg.AnchorLogPath = v
 	}
 	if v := getenv("AGENTRECEIPTS_PARAMETER_DISCLOSURE"); v != "" {
 		cfg.ParameterDisclosure = v

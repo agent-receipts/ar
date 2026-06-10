@@ -1,11 +1,14 @@
 package daemon
 
 import (
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/agent-receipts/ar/daemon/internal/anchor"
 	"github.com/agent-receipts/ar/sdk/go/receipt"
 	"github.com/agent-receipts/ar/sdk/go/store"
 )
@@ -183,6 +186,72 @@ func TestRotateKeyRefusesRunningDaemon(t *testing.T) {
 
 	if _, err := RotateKey(cfg); err == nil {
 		t.Fatal("expected RotateKey to refuse while a daemon is listening, got nil")
+	}
+}
+
+func TestRotateKeyAnchors(t *testing.T) {
+	cfg := rotateTestConfig(t)
+	cfg.AnchorLogPath = filepath.Join(filepath.Dir(cfg.KeyPath), "anchor.log")
+
+	summary, err := RotateKey(cfg)
+	if err != nil {
+		t.Fatalf("RotateKey: %v", err)
+	}
+	if summary.AnchoredTo != cfg.AnchorLogPath {
+		t.Errorf("AnchoredTo = %q, want %q", summary.AnchoredTo, cfg.AnchorLogPath)
+	}
+
+	data, err := os.ReadFile(cfg.AnchorLogPath)
+	if err != nil {
+		t.Fatalf("read anchor log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("anchor log has %d lines, want 1", len(lines))
+	}
+	var rec anchor.Record
+	if err := json.Unmarshal([]byte(lines[0]), &rec); err != nil {
+		t.Fatalf("anchor record not JSON: %v", err)
+	}
+	if rec.EventType != anchor.EventTypeRotation {
+		t.Errorf("anchor event_type = %q, want %q", rec.EventType, anchor.EventTypeRotation)
+	}
+
+	// The anchored payload is the rotation receipt's canonical form.
+	chain := getStoredChain(t, cfg)
+	rot := chain[len(chain)-1]
+	canon, err := receipt.Canonicalize(rot)
+	if err != nil {
+		t.Fatalf("canonicalize: %v", err)
+	}
+	if string(rec.Payload) != canon {
+		t.Errorf("anchored payload does not match the stored rotation receipt's canonical form")
+	}
+}
+
+func TestRotateKeyAnchorFailureAborts(t *testing.T) {
+	cfg := rotateTestConfig(t)
+	// A path under a regular file can never be opened (ENOTDIR), so the anchor
+	// write fails — the rotation must abort with no local change.
+	cfg.AnchorLogPath = filepath.Join(cfg.KeyPath, "nope", "anchor.log")
+	origPriv, err := os.ReadFile(cfg.KeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RotateKey(cfg); err == nil {
+		t.Fatal("expected RotateKey to fail when the anchor is unwritable")
+	}
+
+	if chain := getStoredChain(t, cfg); len(chain) != 0 {
+		t.Errorf("store has %d receipts, want 0 — an aborted rotation must commit nothing", len(chain))
+	}
+	nowPriv, err := os.ReadFile(cfg.KeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(nowPriv) != string(origPriv) {
+		t.Error("signing key changed despite an aborted rotation")
 	}
 }
 
