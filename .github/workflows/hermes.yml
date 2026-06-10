@@ -1,0 +1,42 @@
+name: "CI: hermes"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugins/hermes/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "plugins/hermes/**"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/hermes
+
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - run: uv sync --all-extras
+
+      - run: uv run ruff check .
+
+      - run: uv run ruff format --check .
+
+      - run: uv run pyright src
+
+      - run: uv run pytest -v

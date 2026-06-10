@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed (round 4)
 
+- Relocated the plugin from `hermes/` to `plugins/hermes/` in the monorepo, and
+  added a path-filtered `CI: hermes` GitHub Actions workflow (ruff + format +
+  pyright + pytest across Python 3.11–3.13). Relative doc links and the
+  `Homepage` URL updated for the new path.
 - Documented that the plugin's tool classification (`classify.py`,
   `taxonomy.json`, the `taxonomyPath` config option) is **diagnostic only**:
   it drives log lines, not the signed receipt. The plugin forwards just the

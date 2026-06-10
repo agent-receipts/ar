@@ -4,7 +4,7 @@
 
 ### Agent Receipts plugin for [hermes-agent](https://github.com/NousResearch/hermes-agent)
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](../LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](../../LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 
 ---
@@ -12,10 +12,10 @@
 Cryptographically signed, hash-linked audit trail for every tool call a
 hermes-agent makes.
 
-Built on [`agent-receipts`](../sdk/py) (Python SDK) and the
-[agent-receipts daemon](../daemon).
+Built on [`agent-receipts`](../../sdk/py) (Python SDK) and the
+[agent-receipts daemon](../../daemon).
 
-[Spec](../spec) &bull; [Python SDK](../sdk/py) &bull; [OpenClaw plugin](https://github.com/agent-receipts/openclaw)
+[Spec](../../spec) &bull; [Python SDK](../../sdk/py) &bull; [OpenClaw plugin](https://github.com/agent-receipts/openclaw)
 
 </div>
 
@@ -63,8 +63,8 @@ previous one, forming a tamper-evident chain.
 
 Every time the hermes agent executes a tool, this plugin:
 
-1. **Classifies the action** with the bundled [Agent Receipts taxonomy](../spec/taxonomy) — for diagnostic logging only.
-2. **Forwards an unsigned frame** (the tool name plus its input/output) to the local [agent-receipts daemon](../daemon) over AF\_UNIX.
+1. **Classifies the action** with the bundled [Agent Receipts taxonomy](../../spec/taxonomy) — for diagnostic logging only.
+2. **Forwards an unsigned frame** (the tool name plus its input/output) to the local [agent-receipts daemon](../../daemon) over AF\_UNIX.
 3. The daemon **classifies, signs, hash-links, and stores** the receipt in its SQLite database — the daemon's classification is the authoritative one that lands in the signed receipt.
 
 The agent also gets two introspection tools to query and verify its own
@@ -215,7 +215,7 @@ config:
 
 ## Daemon setup
 
-The [agent-receipts daemon](../daemon) must be installed and running
+The [agent-receipts daemon](../../daemon) must be installed and running
 locally. Per ADR-0010 the daemon is the single owner of signing keys,
 canonical hashing, and chain state.
 
@@ -255,13 +255,13 @@ uv run pyright src
 
 | Repository | Description |
 |:---|:---|
-| [agent-receipts/spec](../spec) | Protocol specification, JSON schemas, taxonomy |
-| [agent-receipts/sdk-py](../sdk/py) | Python SDK |
-| [agent-receipts/sdk-ts](../sdk/ts) | TypeScript SDK |
+| [agent-receipts/spec](../../spec) | Protocol specification, JSON schemas, taxonomy |
+| [agent-receipts/sdk-py](../../sdk/py) | Python SDK |
+| [agent-receipts/sdk-ts](../../sdk/ts) | TypeScript SDK |
 | [agent-receipts/openclaw](https://github.com/agent-receipts/openclaw) | OpenClaw plugin |
 | **agent-receipts/ar/hermes** (this plugin) | hermes-agent integration |
-| [agent-receipts/ar/mcp-proxy](../mcp-proxy) | MCP proxy + CLI |
+| [agent-receipts/ar/mcp-proxy](../../mcp-proxy) | MCP proxy + CLI |
 
 ## License
 
-Apache License 2.0 — see [LICENSE](../LICENSE).
+Apache License 2.0 — see [LICENSE](../../LICENSE).

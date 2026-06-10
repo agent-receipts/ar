@@ -97,9 +97,9 @@ Before marking work as complete:
 ## Agent safety rules
 
 When working in this directory as an AI coding agent, in addition to the
-conventions in `../AGENTS.md`:
+conventions in `../../AGENTS.md`:
 
-- **Never modify CI/CD workflows** (`../.github/workflows/`) without
+- **Never modify CI/CD workflows** (`../../.github/workflows/`) without
   explicit human review.
 - **Never weaken cryptographic parameters** — do not change key sizes,
   hash algorithms, or signature schemes.
