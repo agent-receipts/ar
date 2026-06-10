@@ -14,7 +14,7 @@ agent-initiated actions within the sandbox flow through a single in-sandbox
 daemon: `execd`, a Gin HTTP service. This chokepoint property makes execd an
 ideal AR instrumentation surface — full coverage, no per-tool integration work.
 
-execd already exports OTLP metrics out-of-boundary, tagged with
+execd already exports OTLP metrics outside the sandbox boundary, tagged with
 `OPENSANDBOX_ID`. There is no tamper-evident record of what the agent did.
 Agent Receipts fills that gap.
 
@@ -24,7 +24,7 @@ Agent Receipts fills that gap.
 |----------|----------------|-------------|
 | `POST /command` | Shell command execution | No |
 | `POST /code` (SSE) | Code execution; streams stdout/stderr until close | Yes (stream) |
-| `GET/PUT/DELETE /files` | File read, write, delete | No |
+| `GET/POST/PUT/DELETE /files` | File read, create, write, delete | No |
 | `GET/POST /directories` | Directory list, create | No |
 | `POST /pty` | PTY session (interactive, long-running) | Yes (session) |
 
@@ -72,7 +72,9 @@ implementation issues:
    contract.
 5. **`OPENSANDBOX_ID` is the subject/binding field.** It appears in the
    receipt's `credentialSubject.binding.sandbox_id`, establishing the
-   per-sandbox sub-chain.
+   per-sandbox sub-chain. The `credentialSubject.binding` object is a proposed
+   schema extension not yet present in the current spec; formalising it is
+   follow-up item 3 (see §Spawned follow-up work).
 6. **`/code` SSE receipts emit at stream close.** The event is canonicalized
    over `(code_hash, language, result_hash, logs_hash)` once the stream
    finishes, within execd's graceful-shutdown tail-drain window.
@@ -130,7 +132,7 @@ taxonomy amendment in the implementation PR.
 
 Existing type. Risk: `high`.
 
-| IPC field | Content |
+| Receipt field | Content |
 |---|---|
 | `action.type` | `system.command.execute` |
 | `parameters_hash` | SHA-256 of canonical `{"command":<string>,"env":<map>?}` |
@@ -148,7 +150,7 @@ treat the resulting gap as a missing single receipt, not as a tool-call/result
 pair — see ADR-0020 §"At-least-once delivery and the WAL" for the authoritative
 gap-classification guidance.
 
-| IPC field | Content |
+| Receipt field | Content |
 |---|---|
 | `action.type` | `system.code.execute` |
 | `parameters_hash` | SHA-256 of canonical `{"code_hash":<sha256>,"language":<string>}` |
@@ -173,7 +175,7 @@ types.
 | `PUT` | `filesystem.file.modify` | `medium` |
 | `DELETE` | `filesystem.file.delete` | `high` |
 
-| IPC field | Content |
+| Receipt field | Content |
 |---|---|
 | `parameters_hash` | SHA-256 of canonical `{"path":<string>}` (read/delete) or `{"path":<string>,"content_hash":<sha256>}` (create/modify) |
 | `response_hash` | SHA-256 of canonical `{"content_hash":<sha256>}` (read) or `{"bytes_written":<int>}` (create/modify) or `{}` (delete) |
@@ -191,7 +193,7 @@ types.
 | `GET` | `filesystem.directory.list` *(new)* | `low` |
 | `POST` | `filesystem.directory.create` | `low` |
 
-| IPC field | Content |
+| Receipt field | Content |
 |---|---|
 | `parameters_hash` | SHA-256 of canonical `{"path":<string>}` |
 | `response_hash` | SHA-256 of canonical `{"entries_hash":<sha256>}` (list) or `{}` (create) |
@@ -216,6 +218,12 @@ a misnomer. The more generic name `correlator` is used instead. The semantics
 are identical: a per-session UUID generated on open, repeated on close, used by
 the daemon and verifiers to pair the two receipts.
 
+**Schema status:** `correlator` is not present in the current receipt schema or
+daemon IPC frame (the only similar existing field, `action.idempotency_key`, has
+retry semantics and is unsuitable here). Adding `correlator` requires a spec
+schema update, SDK changes, and a daemon IPC frame amendment; this is captured
+as follow-up item 6 (implementation PR).
+
 A `pty.open` without a corresponding `pty.close` (abnormal termination, OOM
 kill, sandbox force-stop) is classified as **`incomplete_session`**: a verifier
 classification for session-scope open/close pairs where the close receipt is
@@ -224,7 +232,7 @@ absent. `incomplete_session` is to PTY pairs what `incomplete_tool_roundtrip`
 attested end, not a hash-chain corruption. This classification does not yet
 exist in the verifier framework; formalizing it is follow-up item 4.
 
-| IPC field | `system.pty.open` | `system.pty.close` |
+| Receipt field | `system.pty.open` | `system.pty.close` |
 |---|---|---|
 | `parameters_hash` | SHA-256 of canonical `{"command":<string>,"env":<map>?}` | SHA-256 of canonical `{"exit_code":<int>,"signal":<string>?}` |
 | `response_hash` | SHA-256 of canonical `{"pty_id":<string>}` | SHA-256 of canonical `{"io_hash":<sha256>}` |
@@ -245,7 +253,7 @@ sandbox boundary. Because the interceptor operates below the HTTP application
 layer, it observes connection-level metadata rather than execd endpoint
 semantics.
 
-| IPC field | Content |
+| Receipt field | Content |
 |---|---|
 | `action.type` | `network.egress.observed` *(new)* |
 | `parameters_hash` | SHA-256 of canonical `{"dst_addr":<string>,"dst_port":<int>,"protocol":<string>}` |
