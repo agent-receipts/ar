@@ -49,6 +49,7 @@ type resolved struct {
 	showProtocol    bool
 	initKeys        bool
 	initForensicKey bool
+	rotate          bool
 	forensicKeyPath string
 	printConfig     bool
 }
@@ -119,6 +120,23 @@ func main() {
 		r.cfg.PublicKeyPath = daemon.DefaultPublicKeyPath(r.cfg.KeyPath)
 	}
 
+	if r.rotate {
+		summary, err := daemon.RotateKey(r.cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --rotate: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("rotated signing key on chain %s (seq %d)\n", summary.ChainID, summary.Sequence)
+		fmt.Printf("  key_rotated receipt: %s\n", summary.ReceiptID)
+		fmt.Printf("  outgoing key:        %s\n", summary.OldFingerprint)
+		fmt.Printf("  incoming key:        %s\n", summary.NewFingerprint)
+		fmt.Printf("  archived public key: %s\n", summary.ArchivedPublicKey)
+		fmt.Printf("\nRestart the daemon to sign with the new key. Verify the rotated chain\n")
+		fmt.Printf("from the genesis public key (it traverses the rotation); the freshly\n")
+		fmt.Printf("published %s is the new key only.\n", r.cfg.PublicKeyPath)
+		return
+	}
+
 	if r.printConfig {
 		printConfig(os.Stdout, r.cfg)
 		return
@@ -155,6 +173,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	configPath := fs.String("config", "", "Path to a TOML config file (default: $XDG_DATA_HOME/agent-receipts/daemon.toml; ignored if absent)")
 	initKeys := fs.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
 	initForensicKey := fs.Bool("init-forensic-key", false, "Generate a new X25519 forensic key pair (ADR-0012) and exit. Writes the private key to --forensic-key and the public key to --forensic-public-key (must not exist)")
+	rotate := fs.Bool("rotate", false, "Rotate the signing key (ADR-0015): append a key_rotated receipt signed by the current key, archive the current public key, and swap in a new key, then exit. Stop the daemon first.")
 	showVersion := fs.Bool("version", false, "Print version and exit")
 	showProtocol := fs.Bool("protocol-version", false, "Print the daemon's spoken wire-protocol version range as JSON and exit")
 	printConfigFlag := fs.Bool("print-config", false, "Print the resolved config (file < env < flags) and exit")
@@ -212,6 +231,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 		showProtocol:    *showProtocol,
 		initKeys:        *initKeys,
 		initForensicKey: *initForensicKey,
+		rotate:          *rotate,
 		forensicKeyPath: *forensicKeyPath,
 		printConfig:     *printConfigFlag,
 	}, nil

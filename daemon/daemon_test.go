@@ -111,7 +111,6 @@ func (s *stubKeySource) Init() error                   { return nil }
 func (s *stubKeySource) Sign(_ []byte) ([]byte, error) { return nil, nil }
 func (s *stubKeySource) PublicKey() (string, error)    { return s.pub, s.pubErr }
 func (s *stubKeySource) VerificationMethod() string    { return "did:test#k1" }
-func (s *stubKeySource) Rotate() error                 { return keysource.ErrNotImplemented }
 func (s *stubKeySource) Teardown() error               { return nil }
 
 func TestPublishPublicKey_WritesFreshFile(t *testing.T) {

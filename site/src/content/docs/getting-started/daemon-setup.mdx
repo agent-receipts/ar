@@ -62,11 +62,23 @@ The receipt database (`$XDG_DATA_HOME/agent-receipts/receipts.db`, falling back 
 
 `--init` refuses to overwrite an existing key and exits non-zero. It is a one-time bootstrap, not a rotation command — run it once per machine.
 
-#### Key rotation is not yet implemented
+#### Rotate the signing key
 
-There is no supported way to rotate the daemon's signing key today. Automated rotation — emitting a `key_rotated` event so that receipts signed by the retired key still verify after the handoff — is specified in [ADR-0015](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md) but unimplemented: `KeySource.Rotate()` returns `ErrNotImplemented`, and there is no rotation event, external anchor, or BYOK (HSM/KMS) backend yet.
+To rotate the daemon's signing key, stop the daemon and run `--rotate` ([ADR-0015](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md)):
 
-Do **not** "rotate" by deleting `signing.key` and re-running `--init`. The new key has no cryptographic link to the old one, so every receipt signed by the retired key fails `agent-receipts verify` against the new public key and the chain is split with no in-chain bridge between the two key eras. If you must replace a key, archive the old `signing.key.pub` and verify pre-rotation receipts against it separately until rotation support lands.
+```bash
+agent-receipts-daemon --rotate
+```
+
+This appends a `key_rotated` receipt — signed with the **outgoing** key — to the head of the current chain, archives the outgoing public key next to `signing.key.pub` (as `signing.key.pub.rotated-<fingerprint>`), and swaps the new key pair into place. The `key_rotated` receipt carries the incoming public key inline, so a verifier chains through the rotation: receipts before it verify under the old key, receipts after it under the new key. Restart the daemon afterwards to sign with the new key.
+
+`--rotate` refuses to run while the daemon's socket is reachable — stop the daemon first, or you will get a torn state where the running process keeps signing with the old key while the chain records a handover.
+
+> **Verifying a rotated chain.** Verify from the **genesis** public key — the key that signed the chain's first receipt — not the freshly published `signing.key.pub` (which is now the *new* key only). The SDK chain verifiers traverse the rotation from the genesis key automatically; the archived `signing.key.pub.rotated-*` files preserve the older keys for this. Pointing `agent-receipts verify` at the genesis key for a rotated chain is a current follow-up.
+
+Do **not** "rotate" by deleting `signing.key` and re-running `--init`. That new key has no `key_rotated` receipt bridging it to the old one, so every receipt signed by the retired key fails verification and the chain is split with no in-chain handover.
+
+External anchoring of rotation events (so the rotation history survives daemon-key compromise) is still pending — see ADR-0015's phasing — so `--rotate` does not yet provide the full post-compromise integrity guarantee.
 
 ### Start
 

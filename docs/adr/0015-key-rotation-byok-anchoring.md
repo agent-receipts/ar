@@ -140,6 +140,16 @@ What has **not** landed and is in scope for Phase A:
 
 Phase B (checkpoint anchoring) and Phase C (HSM/KMS adapters) are explicitly deferred and not on a schedule.
 
+### Update (2026-06-10): rotation verification and offline rotation landed
+
+The status above is superseded for the rotation mechanism itself:
+
+- **Wire format + verifier traversal** landed across the schema, the spec (§4.3.2, §7.3.7), and all three SDKs. `credentialSubject.keyRotation` is modelled and the chain verifiers chain through a rotation: a `key_rotated` receipt is verified under the outgoing key, then the inline `new_public_key` takes over. The spec rotation-event vector is verified by all three SDKs (matching canonical hashes) and schema-validated in CI.
+- **Offline rotation** landed as `agent-receipts-daemon --rotate` (`daemon.RotateKey`): it appends a `key_rotated` receipt signed by the outgoing key, archives the outgoing public key, and swaps in the new key pair. Restart picks up the new key.
+- **Interface deviation from the *`KeySource` interface* section above.** `Rotate()` was **removed** from `KeySource` rather than implemented on it. A `key_rotated` receipt's signature covers the whole envelope (including chain fields the `KeySource` cannot know), and the file backend needs the public-key path and the receipt store — neither of which a `KeySource` holds. Rotation is therefore daemon-orchestrated (the chain owner). A live-rotation prepare/commit pair on the interface can be designed later against a concrete HSM/KMS backend rather than speculatively against the file backend.
+
+Still **not** landed and required for the full post-compromise integrity guarantee: the **external anchor write contract** for rotation events. Until the anchor sink exists, rotation history is only as trustworthy as the daemon, and `--rotate`'s consistency has a residual crash window (key files swapped but the rotation receipt not yet committed). The verify CLI also still defaults to the current published key; rotated chains must be verified from the genesis key explicitly.
+
 ## Consequences
 
 ### Positive
