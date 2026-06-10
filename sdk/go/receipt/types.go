@@ -2,11 +2,14 @@
 // verifying Action Receipts — W3C Verifiable Credentials for AI agent actions.
 package receipt
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Protocol constants (unexported to prevent mutation).
 var (
-	protocolContext        = []string{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v1"}
+	protocolContext        = []string{"https://www.w3.org/ns/credentials/v2", "https://agentreceipts.ai/context/v2"}
 	protocolCredentialType = []string{"VerifiableCredential", "AgentReceipt"}
 )
 
@@ -16,7 +19,7 @@ func Context() []string { return append([]string{}, protocolContext...) }
 // CredentialType returns a copy of the credential type array.
 func CredentialType() []string { return append([]string{}, protocolCredentialType...) }
 
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 // RiskLevel classifies the security risk of an action.
 type RiskLevel string
@@ -69,6 +72,85 @@ type Issuer struct {
 	Operator  *Operator `json:"operator,omitempty"`
 	Model     string    `json:"model,omitempty"`
 	SessionID string    `json:"session_id,omitempty"`
+	Runtime   *Runtime  `json:"runtime,omitempty"`
+}
+
+// Runtime is the open container for runtime/observability metadata the issuing
+// runtime attaches to an action (ADR-0026). It is intentionally extensible: the
+// fields below are documented members, but the JSON-LD context types it @json
+// and the schema does not close it, so additional runtime keys (e.g. future
+// trace-context identifiers) may be added without a protocol-version bump.
+// Absent for the root agent.
+//
+// Unlike the rest of the receipt struct (whose unknown fields are dropped on a
+// round-trip — see HashRawReceipt), Runtime PRESERVES unknown keys via Extra so
+// the Go, TS, and Python SDKs all keep runtime open at the typed layer. A key
+// added by a newer SDK therefore survives an older Go SDK's HashReceipt/Sign
+// round-trip and stays byte-identical across languages.
+type Runtime struct {
+	// AgentID identifies the sub-agent that issued the receipt. Absent for the
+	// root agent.
+	AgentID string
+	// AgentType is the runtime-reported agent type label (e.g. "general-purpose").
+	AgentType string
+	// Extra holds runtime keys this SDK version does not model as typed fields,
+	// preserved verbatim so they survive a round-trip and hash identically.
+	Extra map[string]json.RawMessage
+}
+
+// MarshalJSON emits agent_id / agent_type (when non-empty) alongside every Extra
+// key, so unknown runtime members round-trip. Key ordering is irrelevant:
+// Canonicalize re-sorts per RFC 8785.
+func (r Runtime) MarshalJSON() ([]byte, error) {
+	m := make(map[string]json.RawMessage, len(r.Extra)+2)
+	for k, v := range r.Extra {
+		m[k] = v
+	}
+	if r.AgentID != "" {
+		b, err := json.Marshal(r.AgentID)
+		if err != nil {
+			return nil, fmt.Errorf("marshal runtime.agent_id: %w", err)
+		}
+		m["agent_id"] = b
+	}
+	if r.AgentType != "" {
+		b, err := json.Marshal(r.AgentType)
+		if err != nil {
+			return nil, fmt.Errorf("marshal runtime.agent_type: %w", err)
+		}
+		m["agent_type"] = b
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("marshal runtime: %w", err)
+	}
+	return b, nil
+}
+
+// UnmarshalJSON reads the typed members into AgentID / AgentType and keeps any
+// remaining keys in Extra.
+func (r *Runtime) UnmarshalJSON(data []byte) error {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		return fmt.Errorf("unmarshal runtime: %w", err)
+	}
+	*r = Runtime{}
+	if v, ok := m["agent_id"]; ok {
+		if err := json.Unmarshal(v, &r.AgentID); err != nil {
+			return fmt.Errorf("runtime.agent_id: %w", err)
+		}
+		delete(m, "agent_id")
+	}
+	if v, ok := m["agent_type"]; ok {
+		if err := json.Unmarshal(v, &r.AgentType); err != nil {
+			return fmt.Errorf("runtime.agent_type: %w", err)
+		}
+		delete(m, "agent_type")
+	}
+	if len(m) > 0 {
+		r.Extra = m
+	}
+	return nil
 }
 
 // Principal identifies the human or organisation that authorised the action.

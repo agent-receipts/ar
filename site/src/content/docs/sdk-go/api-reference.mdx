@@ -153,6 +153,16 @@ type Issuer struct {
     Operator  *Operator `json:"operator,omitempty"`
     Model     string    `json:"model,omitempty"`
     SessionID string    `json:"session_id,omitempty"`
+    Runtime   *Runtime  `json:"runtime,omitempty"` // open metadata container (v0.5.0, ADR-0026)
+}
+
+// Runtime is the open container for runtime/observability metadata. The typed
+// members are documented; unknown keys are preserved via Extra so the field
+// stays open across SDKs.
+type Runtime struct {
+    AgentID   string                     // runtime.agent_id — the sub-agent that issued the receipt
+    AgentType string                     // runtime.agent_type — e.g. "general-purpose"
+    Extra     map[string]json.RawMessage // any additional runtime keys, preserved verbatim
 }
 ```
 

@@ -444,3 +444,77 @@ describe("cross-language: v0.4.0 vectors", () => {
 		);
 	});
 });
+
+interface V050ReceiptSection {
+	receipt: AgentReceipt;
+	expectedReceiptHash: string;
+	expectedValid: boolean;
+}
+
+interface V050Vectors {
+	version: string;
+	keys: { publicKey: string; privateKey: string };
+	runtimeReceipt: V050ReceiptSection;
+	extendedRuntimeReceipt: V050ReceiptSection;
+	rootAgentReceipt: V050ReceiptSection;
+}
+
+function loadV050Vectors(): V050Vectors {
+	const path = resolve(
+		currentDir,
+		"../../../../cross-sdk-tests/v050_vectors.json",
+	);
+	return JSON.parse(readFileSync(path, "utf-8"));
+}
+
+// Cross-SDK reproduction of the v0.5.0 vectors pinned in
+// cross-sdk-tests/v050_vectors.json (issuer.runtime open sub-object, ADR-0026).
+// The TS SDK MUST hash both the runtime-bearing and root-agent receipts to the
+// same digests as Go and Python, proving the nested runtime object canonicalises
+// identically.
+describe("cross-language: v0.5.0 vectors", () => {
+	it("runtime receipt hash matches pin", () => {
+		const v = loadV050Vectors();
+		expect(hashReceipt(v.runtimeReceipt.receipt)).toBe(
+			v.runtimeReceipt.expectedReceiptHash,
+		);
+	});
+
+	it("runtime receipt verifies with shared key", () => {
+		const v = loadV050Vectors();
+		expect(verifyReceipt(v.runtimeReceipt.receipt, v.keys.publicKey)).toBe(
+			true,
+		);
+	});
+
+	it("runtime members round-trip", () => {
+		const v = loadV050Vectors();
+		expect(v.runtimeReceipt.receipt.issuer.runtime?.agent_id).toBe(
+			"a3e49db54342a92d4",
+		);
+		expect(v.runtimeReceipt.receipt.issuer.runtime?.agent_type).toBe(
+			"general-purpose",
+		);
+	});
+
+	it("extended runtime preserves unknown key and hash matches", () => {
+		// Open-container gate: a runtime key the SDK does not model (trace_id)
+		// must survive and hash to the pinned digest (ADR-0026). The Runtime
+		// index signature keeps it; canonicalize re-emits it.
+		const v = loadV050Vectors();
+		expect(v.extendedRuntimeReceipt.receipt.issuer.runtime?.trace_id).toBe(
+			"4bf92f3577b34da6a3ce929d0e0e4736",
+		);
+		expect(hashReceipt(v.extendedRuntimeReceipt.receipt)).toBe(
+			v.extendedRuntimeReceipt.expectedReceiptHash,
+		);
+	});
+
+	it("root-agent receipt hash matches pin and omits runtime", () => {
+		const v = loadV050Vectors();
+		expect(hashReceipt(v.rootAgentReceipt.receipt)).toBe(
+			v.rootAgentReceipt.expectedReceiptHash,
+		);
+		expect(v.rootAgentReceipt.receipt.issuer.runtime).toBeUndefined();
+	});
+});

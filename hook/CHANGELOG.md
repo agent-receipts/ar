@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-alpha.1] - 2026-06-09
+
+### Added
+
+- **`agent_type` forwarding** ([#761](https://github.com/agent-receipts/ar/pull/761), ADR-0026) — the Claude Code hook now parses `agent_type` from the PostToolUse payload and forwards it to the emitter alongside the existing `agent_id`. The daemon nests both under `issuer.runtime`.
+
+### Changed
+
+- Pin `github.com/agent-receipts/ar/sdk/go` to `v0.17.0-alpha.1` (carries the `agent_type` emitter field).
+
+## [0.14.0] - 2026-06-09
+
+Graduates `0.14.0-alpha.1` after the alpha pass. No code changes since the alpha; the only change is pinning the now-released stable `github.com/agent-receipts/ar/sdk/go` `v0.16.0` (the alpha pinned `v0.16.0-alpha.1`). See the `0.14.0-alpha.1` entry below for the full surface (`agent_id` and `correlation_id` forwarding).
+
 ## [0.14.0-alpha.1] - 2026-06-08
 
 ### Added

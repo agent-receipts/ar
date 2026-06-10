@@ -171,6 +171,49 @@ func TestSpecSchemaRejectsNonRFC3339IssuanceDate(t *testing.T) {
 	}
 }
 
+// TestSpecSchemaCouplesVersionAndContext pins the ADR-0026 allOf binding: a
+// receipt's protocol version and its Agent Receipts @context URI must agree
+// (0.1.0–0.4.0 → context v1; 0.5.0 → v2). Without the coupling, a 0.5.0 receipt
+// could declare context v1 (whose JSON-LD has no runtime term) and validate.
+func TestSpecSchemaCouplesVersionAndContext(t *testing.T) {
+	schema := loadSchema(t)
+
+	load := func() (map[string]any, []any) {
+		full := decodeJSON(t, filepath.Join("..", "spec", "examples", "minimal-receipt.json"))
+		receipt, ok := full.(map[string]any)
+		if !ok {
+			t.Fatalf("minimal-receipt.json is not an object: %T", full)
+		}
+		ctx, ok := receipt["@context"].([]any)
+		if !ok {
+			t.Fatalf("@context is not an array: %T", receipt["@context"])
+		}
+		return receipt, ctx
+	}
+
+	// Baseline: the unmodified example (a pre-0.5.0 version on context v1) validates.
+	base, _ := load()
+	if err := schema.Validate(base); err != nil {
+		t.Fatalf("baseline minimal-receipt.json does not validate: %v", err)
+	}
+
+	// 0.5.0 declaring context v1 — runtime term would be undefined; must reject.
+	mismatch1, _ := load()
+	mismatch1["version"] = "0.5.0"
+	if err := schema.Validate(mismatch1); err == nil {
+		t.Error("schema accepted version 0.5.0 with context v1 — version/context coupling missing")
+	}
+
+	// A pre-0.5.0 version declaring context v2 — must reject (released versions
+	// reference v1 permanently).
+	mismatch2, ctx2 := load()
+	ctx2[1] = "https://agentreceipts.ai/context/v2"
+	mismatch2["@context"] = ctx2
+	if err := schema.Validate(mismatch2); err == nil {
+		t.Error("schema accepted a 0.1.0–0.4.0 version with context v2 — version/context coupling missing")
+	}
+}
+
 // TestCrossSDKVectorsValidateAgainstSchema runs the signed receipts produced
 // by all three SDKs (Go, TS, Py) through the schema. If any SDK regresses to
 // emitting a non-spec field shape, the cross-SDK contract fails here.

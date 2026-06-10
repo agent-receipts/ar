@@ -15,6 +15,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 - **`EmitEvent.actionType`** — new optional field on the `DaemonEmitter` frame, forwarded to the daemon as `action_type`. When set, the daemon uses it verbatim as `action.type` and resolves `risk_level` from the taxonomy, rather than falling back to the synthetic `"<channel>.<tool>"` type (which defaults risk to medium). Lets emitters that already know the taxonomic action type — such as the OpenCode plugin — make risk-based controls effective. The daemon already accepted this frame field; this exposes it through the TS emitter. Additive and backwards-compatible: omitting it preserves the previous behaviour.
 
+## [0.12.0] - 2026-06-09
+
+Graduates `0.12.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.12.0-alpha.1` entry below for the full surface (`Delegation` type and `correlation_id`).
+
 ## [0.12.0-alpha.1] - 2026-06-08
 
 ### Added

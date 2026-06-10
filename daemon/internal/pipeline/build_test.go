@@ -1685,6 +1685,9 @@ func TestProcess_AgentIDRoutesToSeparateChain(t *testing.T) {
 	if rootReceipts[0].CredentialSubject.Chain.ChainID != "root" {
 		t.Errorf("root receipt chain_id = %q", rootReceipts[0].CredentialSubject.Chain.ChainID)
 	}
+	if rootReceipts[0].Issuer.Runtime != nil {
+		t.Errorf("root receipt issuer.runtime = %+v; want nil (no agent_id)", rootReceipts[0].Issuer.Runtime)
+	}
 
 	agentChainID := "root/agent/agent-abc"
 	agentReceipts, err := st.GetChain(agentChainID)
@@ -1697,6 +1700,9 @@ func TestProcess_AgentIDRoutesToSeparateChain(t *testing.T) {
 	if agentReceipts[0].CredentialSubject.Chain.ChainID != agentChainID {
 		t.Errorf("agent receipt chain_id = %q, want %q",
 			agentReceipts[0].CredentialSubject.Chain.ChainID, agentChainID)
+	}
+	if rt := agentReceipts[0].Issuer.Runtime; rt == nil || rt.AgentID != "agent-abc" {
+		t.Errorf("agent receipt issuer.runtime = %+v, want AgentID=agent-abc", rt)
 	}
 }
 

@@ -147,6 +147,10 @@ type Event struct {
 	// populate delegation.parent_chain_id on the first receipt of a new agent.
 	// Optional; omitted from the frame when empty (root agent).
 	AgentID string
+
+	// AgentType is the runtime-reported agent type label (Claude Code:
+	// agent_type, e.g. "general-purpose"). Optional; omitted when empty.
+	AgentType string
 }
 
 // Option configures an Emitter at construction.
@@ -308,6 +312,7 @@ type frame struct {
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 	CorrelationID  string          `json:"correlation_id,omitempty"`
 	AgentID        string          `json:"agent_id,omitempty"`
+	AgentType      string          `json:"agent_type,omitempty"`
 }
 
 type frameTool struct {
@@ -433,6 +438,7 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		IdempotencyKey: ev.IdempotencyKey,
 		CorrelationID:  ev.CorrelationID,
 		AgentID:        ev.AgentID,
+		AgentType:      ev.AgentType,
 	})
 	if err != nil {
 		// Marshal failure is a caller bug, not a transient outage. Restore
