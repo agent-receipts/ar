@@ -14,7 +14,11 @@
  */
 export const DEFAULT_ACTION_MAP: Readonly<Record<string, string>> = {
 	bash: "system.command.execute",
-	write: "filesystem.file.create",
+	// `write` creates a file OR overwrites an existing one. Without inspecting
+	// the filesystem we cannot tell which, so map to the more conservative
+	// `modify` (medium) rather than `create` (low) — overwriting an existing
+	// file is a destructive change and should not be under-reported as low risk.
+	write: "filesystem.file.modify",
 	edit: "filesystem.file.modify",
 	patch: "filesystem.file.modify",
 	apply_patch: "filesystem.file.modify",

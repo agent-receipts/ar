@@ -42,8 +42,7 @@ The plugin resolves each OpenCode tool name to an [action taxonomy](/specificati
 | OpenCode tool | Action type | Risk |
 |---|---|---|
 | `bash` | `system.command.execute` | high |
-| `write` | `filesystem.file.create` | low |
-| `edit`, `patch` | `filesystem.file.modify` | medium |
+| `edit`, `write`, `patch` | `filesystem.file.modify` | medium |
 | `read`, `glob`, `grep`, `list` | `filesystem.file.read` | low |
 | `webfetch` | `data.api.read` | low |
 | *(unmapped)* | `opencode.<tool>` (daemon fallback) | medium |

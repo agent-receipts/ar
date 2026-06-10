@@ -4,7 +4,7 @@ import { DEFAULT_ACTION_MAP, resolveActionType } from "./actions.js";
 describe("resolveActionType", () => {
 	it("maps the documented native tools to taxonomy types", () => {
 		expect(resolveActionType("bash")).toBe("system.command.execute");
-		expect(resolveActionType("write")).toBe("filesystem.file.create");
+		expect(resolveActionType("write")).toBe("filesystem.file.modify");
 		expect(resolveActionType("edit")).toBe("filesystem.file.modify");
 		expect(resolveActionType("read")).toBe("filesystem.file.read");
 		expect(resolveActionType("webfetch")).toBe("data.api.read");

@@ -183,7 +183,7 @@ describe("round-trip against a fake daemon socket", () => {
 			"system.command.execute",
 			"filesystem.file.modify",
 		]);
-		expect(bySession.get("subagent")).toEqual(["filesystem.file.create"]);
+		expect(bySession.get("subagent")).toEqual(["filesystem.file.modify"]);
 	});
 
 	it("preserves input bytes verbatim for the daemon to hash", async () => {
