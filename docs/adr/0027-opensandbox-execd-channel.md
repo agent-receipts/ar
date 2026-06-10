@@ -1,4 +1,4 @@
-# ADR-0026: opensandbox_execd Emission Channel
+# ADR-0027: opensandbox_execd Emission Channel
 
 ## Status
 
