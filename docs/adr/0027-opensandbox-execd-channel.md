@@ -1,4 +1,4 @@
-# ADR-0026: opensandbox_execd Emission Channel
+# ADR-0027: opensandbox_execd Emission Channel
 
 ## Status
 
@@ -216,6 +216,17 @@ a misnomer. The more generic name `correlator` is used instead. The semantics
 are identical: a per-session UUID generated on open, repeated on close, used by
 the daemon and verifiers to pair the two receipts.
 
+**Relation to `correlation_id`.** `correlation_id` is a separate, first-class
+field on `credentialSubject` (shipped in sdk-go v0.16.0, #752) whose purpose is
+cross-channel linking — it joins a hook pre-check receipt to the MCP proxy
+post-action receipt for the same tool call. The `correlator` IPC field here
+serves a different purpose: same-channel, same-session pairing (open ↔ close)
+within `opensandbox_execd`. An implementation MAY also populate
+`correlation_id` with the correlator value on both `system.pty.open` and
+`system.pty.close` receipts to enable cross-tool-use join queries. The two
+fields carry different semantics and `correlator` is not collapsed into
+`correlation_id`.
+
 A `pty.open` without a corresponding `pty.close` (abnormal termination, OOM
 kill, sandbox force-stop) is classified as **`incomplete_session`**: a verifier
 classification for session-scope open/close pairs where the close receipt is
@@ -296,6 +307,17 @@ sandboxes. Anchoring is strongly preferred; it becomes required once
 `parentChainRef` is defined in the daemon IPC contract (follow-up item 3). Until
 then, sub-chains remain independently verifiable and the global ordering
 property is aspirational.
+
+**Relation to `agent_id` multi-chain routing.** The daemon's `agent_id`
+multi-chain routing (PR #753) creates a separate chain per `agent_id`; it is
+orthogonal to `sandbox_id` sub-chaining. `sandbox_id` scopes a receipt to a
+specific sandbox instance at the receipt level, not the chain level. If the
+agent inside the sandbox forwards an `agent_id` (e.g. it is itself a
+sub-agent), the proxy SHOULD include `agent_id` in the IPC frame so the daemon
+routes the receipt to the correct agent chain; `sandbox_id` then appears as a
+binding annotation on receipts within that chain. If the sandbox contains only
+the root agent, `agent_id` is absent and all receipts land on the daemon's root
+chain.
 
 **Replication note.** In a replicated daemon deployment (future work per
 ADR-0022), `parentChainRef` MUST be resolved against the current primary
@@ -569,3 +591,9 @@ in the binary that produced it — the same caveat as ADR-0014.
 - [ADR-0025 (Emit Failure Contract)](./0025-emit-failure-contract.md) — emit
   failures MUST be surfaced through the proxy's Go error channel and tracked via
   the drop counter; this ADR inherits that requirement.
+- [ADR-0026 (Open `issuer.runtime` Metadata)](./0026-issuer-runtime-open-metadata.md) —
+  if the agent inside the sandbox has sub-agent metadata, the proxy SHOULD
+  forward `agent_id` / `agent_type` in the emitter event frame so the daemon
+  can populate `issuer.runtime` on the signed receipt; `correlation_id` on
+  `credentialSubject` (also shipped in the same protocol generation) is distinct
+  from this ADR's `correlator` IPC field — see §Correlator naming above.
