@@ -80,7 +80,11 @@ type Issuer struct {
 // fields below are documented members, but the JSON-LD context types it @json
 // and the schema does not close it, so additional runtime keys (e.g. future
 // trace-context identifiers) may be added without a protocol-version bump.
-// Absent for the root agent.
+//
+// Runtime is present whenever any member is set. The agent-identity members
+// (AgentID/AgentType) appear only on sub-agent receipts, but the observability
+// members (Model/Usage/CaptureMethod) also appear on root-agent receipts — so
+// consumers MUST NOT assume Issuer.Runtime is nil on a root-chain receipt.
 //
 // Unlike the rest of the receipt struct (whose unknown fields are dropped on a
 // round-trip — see HashRawReceipt), Runtime PRESERVES unknown keys via Extra so
