@@ -1658,6 +1658,71 @@ func agentFrame(t *testing.T, agentID string) socket.Frame {
 	return socket.Frame{Payload: body}
 }
 
+// TestProcess_RuntimeModelUsageOnRootReceipt verifies that the transcript-
+// derived model/usage/capture_method fields on a frame are stamped onto
+// issuer.runtime — even on a ROOT receipt with no agent_id, which historically
+// carried no runtime. Usage is forwarded verbatim, and the receipt round-trips
+// through HashReceipt so a dropped runtime key would fail the hash.
+func TestProcess_RuntimeModelUsageOnRootReceipt(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("root")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	usage := json.RawMessage(`{"input_tokens":1954,"output_tokens":392,"cache_read_input_tokens":0,"cache_creation_input_tokens":16762}`)
+	body, err := json.Marshal(EmitterFrame{
+		Version:       "1",
+		TsEmit:        "2026-05-03T00:00:00Z",
+		SessionID:     "sess-abc",
+		Channel:       "claude-code",
+		Tool:          EmitterTool{Name: "Bash"},
+		Decision:      "allowed",
+		Model:         "claude-opus-4-8",
+		Usage:         usage,
+		CaptureMethod: "transcript",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	receipts, err := st.GetChain("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts, want 1", len(receipts))
+	}
+	rt := receipts[0].Issuer.Runtime
+	if rt == nil {
+		t.Fatal("issuer.runtime is nil; want model/usage/capture_method on a root receipt")
+	}
+	if rt.AgentID != "" {
+		t.Errorf("runtime.agent_id = %q; want empty on a root receipt", rt.AgentID)
+	}
+	if rt.Model != "claude-opus-4-8" {
+		t.Errorf("runtime.model = %q; want claude-opus-4-8", rt.Model)
+	}
+	if rt.CaptureMethod != "transcript" {
+		t.Errorf("runtime.capture_method = %q; want transcript", rt.CaptureMethod)
+	}
+	var got map[string]int
+	if err := json.Unmarshal(rt.Usage, &got); err != nil {
+		t.Fatalf("runtime.usage is not an object: %v (%s)", err, rt.Usage)
+	}
+	if got["input_tokens"] != 1954 || got["output_tokens"] != 392 || got["cache_creation_input_tokens"] != 16762 {
+		t.Errorf("runtime.usage = %v; want the verbatim token object", got)
+	}
+
+	// The signed receipt must re-hash to a stable value through the typed
+	// Runtime struct (the open-container round-trip invariant from ADR-0026).
+	if _, err := receipt.HashReceipt(receipts[0]); err != nil {
+		t.Fatalf("HashReceipt on a runtime-bearing receipt: %v", err)
+	}
+}
+
 // TestProcess_AgentIDRoutesToSeparateChain verifies that frames with a non-empty
 // agent_id land on a per-agent chain distinct from the root chain.
 func TestProcess_AgentIDRoutesToSeparateChain(t *testing.T) {
