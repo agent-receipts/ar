@@ -291,6 +291,104 @@ func TestRun_FlagsIncompleteToolRoundtrip(t *testing.T) {
 	}
 }
 
+// fixturePTYOpenChain writes a valid signed chain ending with a system.pty.open
+// receipt that has no corresponding system.pty.close — the shape that VerifyChain
+// flags as IncompleteSession. Returns the db path and public-key path.
+func fixturePTYOpenChain(t *testing.T, dir, chainID string) (dbPath, pubKeyPath string) {
+	t.Helper()
+
+	dbPath = filepath.Join(dir, "receipts.db")
+	pubKeyPath = filepath.Join(dir, "signing.key.pub")
+
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privDER, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubDER, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
+	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+	if err := os.WriteFile(pubKeyPath, pubPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	var prevHash *string
+	for i := 1; i <= 2; i++ {
+		unsigned := receipt.Create(receipt.CreateInput{
+			Issuer:    receipt.Issuer{ID: "did:test"},
+			Principal: receipt.Principal{ID: "did:user:test"},
+			Action:    receipt.Action{Type: "filesystem.file.read", RiskLevel: receipt.RiskLow},
+			Outcome:   receipt.Outcome{Status: receipt.StatusSuccess},
+			Chain:     receipt.Chain{Sequence: i, PreviousReceiptHash: prevHash, ChainID: chainID},
+		})
+		signed, err := receipt.Sign(unsigned, privPEM, "did:test#k1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := receipt.HashReceipt(signed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Insert(signed, h); err != nil {
+			t.Fatal(err)
+		}
+		prevHash = &h
+	}
+	// Append an unclosed pty.open receipt.
+	openUnsigned := receipt.Create(receipt.CreateInput{
+		Issuer:    receipt.Issuer{ID: "did:test"},
+		Principal: receipt.Principal{ID: "did:user:test"},
+		Action:    receipt.Action{Type: receipt.ActionTypePTYOpen, RiskLevel: receipt.RiskCritical},
+		Outcome:   receipt.Outcome{Status: receipt.StatusSuccess},
+		Chain:     receipt.Chain{Sequence: 3, PreviousReceiptHash: prevHash, ChainID: chainID},
+	})
+	openSigned, err := receipt.Sign(openUnsigned, privPEM, "did:test#k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	openHash, err := receipt.HashReceipt(openSigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Insert(openSigned, openHash); err != nil {
+		t.Fatal(err)
+	}
+	return dbPath, pubKeyPath
+}
+
+func TestRun_FlagsIncompleteSession(t *testing.T) {
+	dir := t.TempDir()
+	dbPath, pubKeyPath := fixturePTYOpenChain(t, dir, "chain-1")
+
+	code, stdout, stderr := runOnce(t, []string{
+		"--db", dbPath,
+		"--public-key", pubKeyPath,
+		"--chain-id", "chain-1",
+	})
+	// The advisory is informational only — it must not change the exit code.
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (incomplete session is advisory, not a break); stderr=%s", code, ExitOK, stderr)
+	}
+	if !strings.Contains(stdout, "incomplete session") {
+		t.Errorf("stdout = %q, expected an incomplete-session advisory line", stdout)
+	}
+	if !strings.Contains(stdout, "VALID") {
+		t.Errorf("stdout = %q, expected the chain to still report VALID", stdout)
+	}
+}
+
 func TestRun_ReportsBrokenChain(t *testing.T) {
 	dir := t.TempDir()
 	dbPath, _ := fixtureChain(t, dir, "chain-1", 2)

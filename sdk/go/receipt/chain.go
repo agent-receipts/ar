@@ -48,6 +48,12 @@ type ChainVerification struct {
 	// surfaced separately from a generic chain break so callers can report
 	// "incomplete tool roundtrip" specifically.
 	IncompleteToolRoundtrip bool `json:"incomplete_tool_roundtrip,omitempty"`
+	// IncompleteSession is true when PTY session accounting is imbalanced:
+	// more opens than closes (session force-terminated without a close receipt)
+	// or more closes than opens (orphaned close from a replay or truncated
+	// chain). Advisory only: it does NOT by itself set Valid=false. Analogous
+	// to IncompleteToolRoundtrip for session-scope pairs (ADR-0027 §/pty).
+	IncompleteSession bool `json:"incomplete_session,omitempty"`
 }
 
 // classifyTerminationStatus inspects the wire form of the final receipt and
@@ -122,6 +128,23 @@ func isIncompleteToolRoundtrip(receipts []AgentReceipt) bool {
 	return last.CredentialSubject.Outcome.Status == StatusPending
 }
 
+// isIncompleteSession reports whether PTY session accounting is imbalanced:
+// more opens than closes (session force-terminated without a close receipt) or
+// more closes than opens (orphaned close from a replay or truncated chain).
+// Count-based; advisory only; independent of chain validity. ADR-0027 §/pty.
+func isIncompleteSession(receipts []AgentReceipt) bool {
+	var opens, closes int
+	for _, r := range receipts {
+		switch r.CredentialSubject.Action.Type {
+		case ActionTypePTYOpen:
+			opens++
+		case ActionTypePTYClose:
+			closes++
+		}
+	}
+	return opens != closes
+}
+
 // ChainVerifyOptions holds optional parameters for VerifyChain.
 // Zero value means "use defaults" — behaviour is identical to v0.1 with no options.
 type ChainVerifyOptions struct {
@@ -182,6 +205,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	// Computed once and stamped onto every returned ChainVerification below;
 	// advisory and never affects Valid.
 	incompleteToolRoundtrip := isIncompleteToolRoundtrip(receipts)
+	incompleteSession := isIncompleteSession(receipts)
 
 	if len(receipts) == 0 {
 		// Handle ExpectedLength=0 edge case: empty chain with ExpectedLength=0 is valid.
@@ -193,9 +217,10 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 				BrokenAt:                0,
 				Error:                   "expected chain length does not match: expected " + strconv.Itoa(*opt.ExpectedLength) + ", got 0",
 				IncompleteToolRoundtrip: incompleteToolRoundtrip,
+				IncompleteSession:       incompleteSession,
 			}
 		}
-		return ChainVerification{Valid: true, Length: 0, Status: ChainStatusUnknown, BrokenAt: -1, IncompleteToolRoundtrip: incompleteToolRoundtrip}
+		return ChainVerification{Valid: true, Length: 0, Status: ChainStatusUnknown, BrokenAt: -1, IncompleteToolRoundtrip: incompleteToolRoundtrip, IncompleteSession: incompleteSession}
 	}
 
 	status := classifyTerminationStatus(receipts)
@@ -364,9 +389,10 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 				Receipts: results,
 				BrokenAt: i,
 				Error: "chain_id mismatch at index " + strconv.Itoa(i) +
-					`: expected "` + expectedChainID + `", got "` + observed + `"`,
+					": expected \"" + expectedChainID + "\", got \"" + observed + "\"",
 				Warnings:                warnings,
 				IncompleteToolRoundtrip: incompleteToolRoundtrip,
+				IncompleteSession:       incompleteSession,
 			}
 		}
 	}
@@ -397,6 +423,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 					Error:                   errMsg,
 					Warnings:                warnings,
 					IncompleteToolRoundtrip: incompleteToolRoundtrip,
+					IncompleteSession:       incompleteSession,
 				}
 			}
 		}
@@ -411,6 +438,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		Error:                   loopErr,
 		Warnings:                warnings,
 		IncompleteToolRoundtrip: incompleteToolRoundtrip,
+		IncompleteSession:       incompleteSession,
 	}
 
 	// Response-hash verification (spec §4.3.2).
