@@ -65,9 +65,10 @@ wire-format pin.
 
 ## Out of scope
 
-- No daemon emission. This fixture exercises the verifier (read) side. The
-  daemon's `KeySource.Rotate()` and the `key_rotated` synthetic-receipt
-  emission path are a separate slice (ADR-0015 Phase A).
+- No daemon emission. This fixture exercises the verifier (read) side only; it
+  does not cover how a daemon *produces* a `key_rotated` receipt. Offline
+  emission is daemon-orchestrated via `agent-receipts-daemon --rotate` (there is
+  no `KeySource.Rotate()`); this vector is silent on that path.
 - No rotation event anchored to an external sink. ADR-0015 specifies that
   rotation events MUST be anchored before the local chain commits — this
   fixture is a *wire-format* vector and is silent on the anchor write contract.
