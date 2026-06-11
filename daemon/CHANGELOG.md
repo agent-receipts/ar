@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0-alpha.1] - 2026-06-11
+
+### Added
+
+- **`--rotate` offline key rotation** ([#778](https://github.com/agent-receipts/obsigna/pull/778), ADR-0015 Phase A) — new `--rotate` flag generates a fresh Ed25519 key pair, emits a `key_rotated` receipt (action type `agent.key.rotate`) signed by the current key, archives the old public key as `signing.key.pub.rotated-<fp>`, and atomically swaps in the new key. The daemon must be stopped first; a live-socket check aborts rotation if the daemon is reachable. Pass `--anchor-log` to write the rotation event to an append-only external witness log before committing. `--verify` and `--doctor` traverse rotation chains and surface `IncompleteSession` when a `system.pty.open` receipt has no matching close.
+- **Transcript-derived model and token usage** ([#779](https://github.com/agent-receipts/obsigna/pull/779), ADR-0026) — `issuerFromFrame` now maps the hook-forwarded `model`, `usage` (verbatim JSON), and `capture_method` fields into `issuer.runtime` on all receipts, including root-chain receipts when observability fields are present.
+- **`IncompleteSession` advisory** ([#780](https://github.com/agent-receipts/obsigna/pull/780), ADR-0027) — `--verify` prints `Advisory: incomplete session: PTY open/close imbalance` and `--doctor` surfaces the same advisory when a `system.pty.open` receipt has no corresponding `system.pty.close` in the chain. Advisory-only; does not affect `Valid`.
+
+### Dependencies
+
+- Pin `github.com/agent-receipts/ar/sdk/go` to `v0.18.0-alpha.1` (provides `receipt.Runtime` typed fields, `KeyRotation` type, and `ChainVerification.IncompleteSession`).
+
 ## [0.18.0] - 2026-06-11
 
 Graduates `0.18.0-alpha.1` after the alpha pass. No code changes since the alpha; the only change is pinning the now-released stable `github.com/agent-receipts/ar/sdk/go` `v0.17.0` (the alpha pinned `v0.17.0-alpha.1`). See the `0.18.0-alpha.1` entry below for the full surface (`issuer.runtime` sub-object, `agent_type` forwarding).
