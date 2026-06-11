@@ -166,6 +166,14 @@ export default defineConfig({
           ],
         },
         {
+          label: "OpenCode",
+          items: [
+            { label: "Overview", slug: "opencode/overview" },
+            { label: "Plugin Installation", slug: "opencode/installation" },
+            { label: "MCP Proxy (Tier A)", slug: "opencode/mcp-proxy" },
+          ],
+        },
+        {
           label: "Dashboard",
           items: [
             { label: "Overview", slug: "dashboard/overview" },
