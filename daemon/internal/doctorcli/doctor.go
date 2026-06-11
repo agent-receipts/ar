@@ -444,7 +444,7 @@ func checkChainHead(dbPath, pubKeyPath, chainID string) Result {
 		reason += "; advisory: final tool call has no result receipt"
 	}
 	if result.IncompleteSession {
-		reason += "; advisory: PTY session has no close receipt"
+		reason += "; advisory: PTY session open/close imbalance"
 	}
 	return Result{Check: name, Status: StatusOK, Reason: reason}
 }

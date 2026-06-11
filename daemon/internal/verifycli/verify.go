@@ -131,7 +131,7 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		fmt.Fprintln(stdout, "Advisory: incomplete tool roundtrip: final tool call has no result receipt")
 	}
 	if result.IncompleteSession {
-		fmt.Fprintln(stdout, "Advisory: incomplete session: PTY session has no close receipt")
+		fmt.Fprintln(stdout, "Advisory: incomplete session: PTY open/close imbalance")
 	}
 
 	if result.Valid {
