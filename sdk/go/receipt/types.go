@@ -58,6 +58,14 @@ const (
 	StatusPending OutcomeStatus = "pending"
 )
 
+// ActionTypePTYOpen and ActionTypePTYClose are the action.type values for PTY
+// lifecycle events (ADR-0027 §/pty). Defined here so chain.go can reference
+// them without importing the taxonomy package (which imports receipt).
+const (
+	ActionTypePTYOpen  = "system.pty.open"
+	ActionTypePTYClose = "system.pty.close"
+)
+
 // Operator identifies the AI model executing actions.
 type Operator struct {
 	ID   string `json:"id"`
@@ -234,7 +242,6 @@ type Outcome struct {
 	Reversible            *bool         `json:"reversible,omitempty"`
 	ReversalMethod        string        `json:"reversal_method,omitempty"`
 	ReversalWindowSeconds *int          `json:"reversal_window_seconds,omitempty"`
-	ReversalOf            string        `json:"reversal_of,omitempty"`
 	StateChange           *StateChange  `json:"state_change,omitempty"`
 	ResponseHash          string        `json:"response_hash,omitempty"`
 }

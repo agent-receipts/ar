@@ -48,11 +48,11 @@ type ChainVerification struct {
 	// surfaced separately from a generic chain break so callers can report
 	// "incomplete tool roundtrip" specifically.
 	IncompleteToolRoundtrip bool `json:"incomplete_tool_roundtrip,omitempty"`
-	// IncompleteSession is true when a system.pty.open receipt has no
-	// corresponding system.pty.close — a PTY session that was abnormally
-	// terminated (OOM kill, sandbox force-stop). Advisory only: does NOT set
-	// Valid=false. Analogous to IncompleteToolRoundtrip for session-scope pairs
-	// (ADR-0027 §/pty).
+	// IncompleteSession is true when PTY session accounting is imbalanced:
+	// more opens than closes (session force-terminated without a close receipt)
+	// or more closes than opens (orphaned close from a replay or truncated
+	// chain). Advisory only: it does NOT by itself set Valid=false. Analogous
+	// to IncompleteToolRoundtrip for session-scope pairs (ADR-0027 §/pty).
 	IncompleteSession bool `json:"incomplete_session,omitempty"`
 }
 
@@ -128,22 +128,21 @@ func isIncompleteToolRoundtrip(receipts []AgentReceipt) bool {
 	return last.CredentialSubject.Outcome.Status == StatusPending
 }
 
-// isIncompleteSession reports whether any system.pty.open receipt in the chain
-// lacks a corresponding system.pty.close — a PTY session that ended abnormally
-// without emitting a close receipt (ADR-0027 §/pty). Count-based: flagged when
-// the number of pty.open receipts exceeds the number of pty.close receipts.
-// Advisory only; independent of chain validity.
+// isIncompleteSession reports whether PTY session accounting is imbalanced:
+// more opens than closes (session force-terminated without a close receipt) or
+// more closes than opens (orphaned close from a replay or truncated chain).
+// Count-based; advisory only; independent of chain validity. ADR-0027 §/pty.
 func isIncompleteSession(receipts []AgentReceipt) bool {
 	var opens, closes int
 	for _, r := range receipts {
 		switch r.CredentialSubject.Action.Type {
-		case "system.pty.open":
+		case ActionTypePTYOpen:
 			opens++
-		case "system.pty.close":
+		case ActionTypePTYClose:
 			closes++
 		}
 	}
-	return opens > closes
+	return opens != closes
 }
 
 // ChainVerifyOptions holds optional parameters for VerifyChain.
@@ -360,7 +359,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 				Receipts: results,
 				BrokenAt: i,
 				Error: "chain_id mismatch at index " + strconv.Itoa(i) +
-					`: expected "` + expectedChainID + `", got "` + observed + `"`,
+					": expected \"" + expectedChainID + "\", got \"" + observed + "\"",
 				Warnings:                warnings,
 				IncompleteToolRoundtrip: incompleteToolRoundtrip,
 				IncompleteSession:       incompleteSession,

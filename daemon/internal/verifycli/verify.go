@@ -130,6 +130,9 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	if result.IncompleteToolRoundtrip {
 		fmt.Fprintln(stdout, "Advisory: incomplete tool roundtrip: final tool call has no result receipt")
 	}
+	if result.IncompleteSession {
+		fmt.Fprintln(stdout, "Advisory: incomplete session: PTY session has no close receipt")
+	}
 
 	if result.Valid {
 		noun := "receipts"

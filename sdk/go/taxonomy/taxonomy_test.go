@@ -74,8 +74,8 @@ func TestOpenSandboxActionTypes(t *testing.T) {
 	}{
 		{"filesystem.directory.list", receipt.RiskLow},
 		{"system.code.execute", receipt.RiskHigh},
-		{"system.pty.open", receipt.RiskCritical},
-		{"system.pty.close", receipt.RiskCritical},
+		{receipt.ActionTypePTYOpen, receipt.RiskCritical},
+		{receipt.ActionTypePTYClose, receipt.RiskHigh},
 		{"network.egress.observed", receipt.RiskMedium},
 	}
 	for _, tc := range cases {
