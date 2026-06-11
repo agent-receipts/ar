@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0-alpha.1] - 2026-06-11
+
+### Added
+
+- **Transcript-derived model and token usage** ([#779](https://github.com/agent-receipts/obsigna/pull/779), ADR-0026) — `lookupTranscriptUsage` streams the Claude Code session transcript JSONL and joins on `tool_use_id` to resolve the model name and token counts for each tool call. Best-effort: a missing entry or read error is logged to stderr but never fails the hook. The resolved `model`, `usage` (verbatim JSON), and `capture_method: "transcript"` are forwarded in the emitter frame; the daemon stamps them into `issuer.runtime` on the receipt.
+
+### Dependencies
+
+- Pin `github.com/agent-receipts/ar/sdk/go` to `v0.18.0-alpha.1` (provides the `receipt.Runtime` typed fields).
+
 ## [0.15.0] - 2026-06-11
 
 Graduates `0.15.0-alpha.1` after the alpha pass. No code changes since the alpha; the only change is pinning the now-released stable `github.com/agent-receipts/ar/sdk/go` `v0.17.0` (the alpha pinned `v0.17.0-alpha.1`). See the `0.15.0-alpha.1` entry below for the full surface (`agent_type` forwarding).
