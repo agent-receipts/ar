@@ -11,6 +11,16 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.13.0-alpha.1] - 2026-06-11
+
+### Added
+
+- **`KeyRotation` type and chain-verifier traversal** ([#778](https://github.com/agent-receipts/ar/pull/778), ADR-0015 Phase A) — new `KeyRotation` interface added to `CredentialSubject.key_rotation?: KeyRotation`. `verifyChain` now traverses key-rotation receipts: the outgoing key verifies the `key_rotated` receipt, then the inline `new_public_key` takes over for all subsequent receipts. Fingerprint mismatches and unsupported algorithms are hard errors. Zod schema and TypeScript types updated; cross-SDK wire vector verified.
+
+### Dependencies
+
+- No new external dependencies.
+
 ## [0.12.0] - 2026-06-09
 
 Graduates `0.12.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.12.0-alpha.1` entry below for the full surface (`Delegation` type and `correlation_id`).

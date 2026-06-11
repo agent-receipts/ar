@@ -1,6 +1,6 @@
 {
 	"name": "@agnt-rcpt/sdk-ts",
-	"version": "0.12.0",
+	"version": "0.13.0-alpha.1",
 	"description": "TypeScript SDK for the Agent Receipts protocol",
 	"license": "Apache-2.0",
 	"author": "Otto Jongerius",

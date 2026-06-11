@@ -11,6 +11,17 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.18.0-alpha.1] - 2026-06-11
+
+### Added
+
+- **`KeyRotation` type and chain-verifier traversal** ([#778](https://github.com/agent-receipts/ar/pull/778), ADR-0015 Phase A) — `receipt.KeyRotation` carries the seven fields of the `credentialSubject.keyRotation` rotation-event envelope. `VerifyChain` now traverses key-rotation receipts: the outgoing key verifies the `key_rotated` receipt, then the inline `new_public_key` takes over for all subsequent receipts. Fingerprint mismatches and unsupported algorithms are hard errors. New helpers: `FingerprintFromPublicKey`, `PublicKeyFromMultibase`, and `VerifyRotationEvent` (for standalone use). Cross-SDK wire vectors verified against the shared spec test fixture.
+- **Transcript-derived model and token usage on `Runtime`** ([#779](https://github.com/agent-receipts/ar/pull/779)) — `receipt.Runtime` gains typed `Model string`, `Usage *RuntimeUsage`, and `CaptureMethod string` members alongside the existing `Extra` open map. `RuntimeUsage` carries `InputTokens`, `OutputTokens`, `CacheCreationInputTokens`, and `CacheReadInputTokens`. The emitter `Event` gains the same three fields; the daemon stamps them into `issuer.runtime` on any receipt (including root-chain receipts) where observability data is present. Additive: no existing wire fields, hashing, or signing changes.
+
+### Dependencies
+
+- No new external dependencies.
+
 ## [0.17.0] - 2026-06-11
 
 Graduates `0.17.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.17.0-alpha.1` entry below for the full surface (`issuer.runtime` open metadata sub-object, `agent_type` forwarding).
