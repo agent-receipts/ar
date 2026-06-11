@@ -118,6 +118,13 @@ type EmitterFrame struct {
 	Model         string          `json:"model,omitempty"`
 	Usage         json.RawMessage `json:"usage,omitempty"`
 	CaptureMethod string          `json:"capture_method,omitempty"`
+	// TargetSystem and TargetResource together identify the resource the action
+	// operates on. The daemon maps them into action.target.{system,resource}.
+	// For filesystem tools (Read, Write, Edit, MultiEdit) on the claude-code
+	// channel, TargetSystem is "filesystem" and TargetResource is the file path.
+	// Both are optional; omitted when the tool has no addressable resource.
+	TargetSystem   string `json:"target_system,omitempty"`
+	TargetResource string `json:"target_resource,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -689,6 +696,12 @@ func (p *Pipeline) buildAndSign(
 		Timestamp:      now,
 		PeerCredential: peerCred,
 		IdempotencyKey: f.IdempotencyKey,
+	}
+	if f.TargetSystem != "" || f.TargetResource != "" {
+		action.Target = &receipt.ActionTarget{
+			System:   f.TargetSystem,
+			Resource: f.TargetResource,
+		}
 	}
 	if hasJSONPayload(f.Input) {
 		hash, err := canonicalSHA256(f.Input)

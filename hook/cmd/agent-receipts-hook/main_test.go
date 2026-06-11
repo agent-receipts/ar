@@ -369,6 +369,210 @@ func TestReadClaudeCode_PreToolUseAcceptedByEmitter(t *testing.T) {
 	checkEventAcceptedByEmitter(t, ev)
 }
 
+// --- extractFileTarget unit tests ---
+
+func TestExtractFileTarget(t *testing.T) {
+	cases := []struct {
+		name        string
+		toolName    string
+		input       string
+		wantSys     string
+		wantRes     string
+		wantWarning bool // true = non-empty warning expected
+	}{
+		// Known file tools — file_path present.
+		{
+			name:     "Read with file_path",
+			toolName: "Read",
+			input:    `{"file_path":"/etc/hosts"}`,
+			wantSys:  "filesystem",
+			wantRes:  "/etc/hosts",
+		},
+		{
+			name:     "Write with file_path",
+			toolName: "Write",
+			input:    `{"file_path":"src/main.go","content":"package main"}`,
+			wantSys:  "filesystem",
+			wantRes:  "src/main.go",
+		},
+		{
+			name:     "Edit with file_path",
+			toolName: "Edit",
+			input:    `{"file_path":"a.go","old_string":"x","new_string":"y"}`,
+			wantSys:  "filesystem",
+			wantRes:  "a.go",
+		},
+		{
+			name:     "MultiEdit with file_path",
+			toolName: "MultiEdit",
+			input:    `{"file_path":"b.go","edits":[]}`,
+			wantSys:  "filesystem",
+			wantRes:  "b.go",
+		},
+		// Known file tools — file_path absent (schema drift): must warn.
+		{
+			name:        "Read without file_path triggers warning",
+			toolName:    "Read",
+			input:       `{"offset":0}`,
+			wantWarning: true,
+		},
+		{
+			name:        "Write without file_path triggers warning",
+			toolName:    "Write",
+			input:       `{"content":"x"}`,
+			wantWarning: true,
+		},
+		// Skip-listed tools — never attempt extraction.
+		{
+			name:     "Bash is skipped",
+			toolName: "Bash",
+			input:    `{"command":"ls"}`,
+		},
+		{
+			name:     "Agent is skipped",
+			toolName: "Agent",
+			input:    `{"prompt":"do stuff"}`,
+		},
+		{
+			name:     "WebFetch is skipped",
+			toolName: "WebFetch",
+			input:    `{"url":"https://example.com"}`,
+		},
+		{
+			name:     "WebSearch is skipped",
+			toolName: "WebSearch",
+			input:    `{"query":"golang"}`,
+		},
+		// MCP tools — always skipped regardless of input.
+		{
+			name:     "MCP tool with file_path is skipped",
+			toolName: "mcp__github-audited__list_issues",
+			input:    `{"file_path":"/sneaky"}`,
+		},
+		// Unknown tools — opportunistic extraction, no warning on miss.
+		{
+			name:     "unknown tool with file_path is auto-captured",
+			toolName: "Move",
+			input:    `{"file_path":"old.go","destination":"new.go"}`,
+			wantSys:  "filesystem",
+			wantRes:  "old.go",
+		},
+		{
+			name:     "unknown tool without file_path: silent, no warning",
+			toolName: "Grep",
+			input:    `{"pattern":"func","path":"."}`,
+		},
+		// Edge cases.
+		{
+			name:     "empty input returns empty",
+			toolName: "Read",
+			input:    "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sys, res, warn := extractFileTarget(tc.toolName, json.RawMessage(tc.input))
+			if sys != tc.wantSys {
+				t.Errorf("system = %q; want %q", sys, tc.wantSys)
+			}
+			if res != tc.wantRes {
+				t.Errorf("resource = %q; want %q", res, tc.wantRes)
+			}
+			if tc.wantWarning && warn == "" {
+				t.Error("warning = \"\"; want non-empty warning")
+			}
+			if !tc.wantWarning && warn != "" {
+				t.Errorf("warning = %q; want empty", warn)
+			}
+		})
+	}
+}
+
+// TestExtractFileTarget_WarningNamesTheTool checks that the warning message
+// includes the tool name so operators can triage the degradation.
+func TestExtractFileTarget_WarningNamesTheTool(t *testing.T) {
+	_, _, warn := extractFileTarget("Read", json.RawMessage(`{"offset":0}`))
+	if warn == "" {
+		t.Fatal("expected warning; got empty")
+	}
+	if !strings.Contains(warn, "Read") {
+		t.Errorf("warning %q does not contain tool name %q", warn, "Read")
+	}
+}
+
+// TestReadClaudeCode_Target verifies that readClaudeCode populates ev.Target
+// for filesystem tools, auto-captures unknown tools with file_path, and leaves
+// target empty for skip-listed and MCP tools.
+func TestReadClaudeCode_Target(t *testing.T) {
+	cases := []struct {
+		name    string
+		stdin   string
+		wantSys string
+		wantRes string
+	}{
+		{
+			name: "Read populates target",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"Read",` +
+				`"tool_input":{"file_path":"/etc/hosts"},"tool_response":{"content":"127.0.0.1"}}`,
+			wantSys: "filesystem",
+			wantRes: "/etc/hosts",
+		},
+		{
+			name: "Write populates target",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"Write",` +
+				`"tool_input":{"file_path":"out.go","content":"package main"}}`,
+			wantSys: "filesystem",
+			wantRes: "out.go",
+		},
+		{
+			name: "Edit populates target",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"Edit",` +
+				`"tool_input":{"file_path":"x.go","old_string":"a","new_string":"b"}}`,
+			wantSys: "filesystem",
+			wantRes: "x.go",
+		},
+		{
+			name: "MultiEdit populates target",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"MultiEdit",` +
+				`"tool_input":{"file_path":"z.go","edits":[]}}`,
+			wantSys: "filesystem",
+			wantRes: "z.go",
+		},
+		{
+			name: "unknown tool with file_path is auto-captured",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"Move",` +
+				`"tool_input":{"file_path":"old.go","destination":"new.go"}}`,
+			wantSys: "filesystem",
+			wantRes: "old.go",
+		},
+		{
+			name: "Bash leaves target empty",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"Bash",` +
+				`"tool_input":{"command":"echo hi"},"tool_response":{"output":"hi"}}`,
+		},
+		{
+			name: "MCP tool leaves target empty",
+			stdin: `{"hook_event_name":"PostToolUse","session_id":"s",` +
+				`"tool_name":"mcp__github-audited__list_issues","tool_input":{"owner":"foo"}}`,
+		},
+	}
+	noEnv := func(string) string { return "" }
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ev, _, err := readClaudeCode([]byte(tc.stdin), noEnv)
+			if err != nil {
+				t.Fatalf("readClaudeCode: %v", err)
+			}
+			if ev.Target.System != tc.wantSys {
+				t.Errorf("Target.System = %q; want %q", ev.Target.System, tc.wantSys)
+			}
+			if ev.Target.Resource != tc.wantRes {
+				t.Errorf("Target.Resource = %q; want %q", ev.Target.Resource, tc.wantRes)
+			}
+		})
+	}
+}
+
 // --- resolveVersion unit tests ---
 
 // TestResolveVersion_PrefersLDFlagInjection pins the precedence the

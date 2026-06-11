@@ -108,6 +108,14 @@ type Tool struct {
 	Name   string
 }
 
+// Target identifies the system and resource the action operates on.
+// System names a resource domain (e.g. "filesystem"); Resource is the
+// path or identifier within that domain (e.g. a file path).
+type Target struct {
+	System   string
+	Resource string
+}
+
 // Event is one tool invocation forwarded to the daemon. Input and Output
 // are raw JSON bytes; the daemon canonicalises them (RFC 8785) and writes
 // only the SHA-256 digest to the receipt. Either may be nil to indicate
@@ -170,6 +178,11 @@ type Event struct {
 	// derived receipts are distinguishable from other ingesters. Optional;
 	// omitted when empty.
 	CaptureMethod string
+
+	// Target identifies the resource the action operates on (e.g. a file path
+	// for filesystem tools). Optional; omitted from the frame when System and
+	// Resource are both empty.
+	Target Target
 }
 
 // Option configures an Emitter at construction.
@@ -335,6 +348,8 @@ type frame struct {
 	Model          string          `json:"model,omitempty"`
 	Usage          json.RawMessage `json:"usage,omitempty"`
 	CaptureMethod  string          `json:"capture_method,omitempty"`
+	TargetSystem   string          `json:"target_system,omitempty"`
+	TargetResource string          `json:"target_resource,omitempty"`
 }
 
 type frameTool struct {
@@ -477,6 +492,8 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		Model:          ev.Model,
 		Usage:          ev.Usage,
 		CaptureMethod:  ev.CaptureMethod,
+		TargetSystem:   ev.Target.System,
+		TargetResource: ev.Target.Resource,
 	})
 	if err != nil {
 		// Marshal failure is a caller bug, not a transient outage. Restore

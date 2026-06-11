@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/agent-receipts/ar/sdk/go/emitter"
 )
@@ -68,6 +69,11 @@ func readClaudeCode(stdin []byte, env func(string) string) (emitter.Event, strin
 	// slices and the daemon expects nil to mean "no payload".
 	if len(f.ToolInput) > 0 {
 		ev.Input = f.ToolInput
+		if sys, res, warn := extractFileTarget(f.ToolName, f.ToolInput); res != "" {
+			ev.Target = emitter.Target{System: sys, Resource: res}
+		} else if warn != "" {
+			fmt.Fprintln(os.Stderr, warn)
+		}
 	}
 	if len(f.ToolResponse) > 0 {
 		ev.Output = f.ToolResponse
@@ -96,4 +102,58 @@ func readClaudeCode(stdin []byte, env func(string) string) (emitter.Event, strin
 	}
 
 	return ev, f.SessionID, nil
+}
+
+// fileTools is the set of tools known to always operate on a named file and
+// expected to carry file_path in their input. An absent file_path for any tool
+// in this set is returned as a warning string so the caller can surface the
+// schema drift without failing the hook.
+var fileTools = map[string]bool{
+	"Read": true, "Write": true, "Edit": true, "MultiEdit": true,
+}
+
+// skipTools is the set of non-filesystem tools excluded from file_path
+// extraction. Everything outside this set (and not MCP-namespaced) is
+// attempted opportunistically, so new filesystem tools are auto-captured
+// without requiring an explicit listing.
+var skipTools = map[string]bool{
+	"Bash": true, "Agent": true, "WebFetch": true, "WebSearch": true,
+}
+
+// extractFileTarget attempts to extract a file path from a tool's input JSON.
+//
+// Skip rules (in order):
+//  1. MCP-namespaced tools (prefix "mcp__") — dynamic schema, not ours to predict.
+//  2. Tools in skipTools — known non-filesystem tools.
+//
+// For all other tools, file_path is attempted. On success: returns
+// ("filesystem", path, ""). When file_path is absent for a tool in fileTools
+// (the known-important set), returns a non-empty warning so the caller can
+// log the degradation — these tools should always have file_path, so absence
+// means Claude Code's payload schema may have changed. For any other tool
+// without file_path: returns ("", "", "") silently, since the tool may simply
+// not touch files.
+func extractFileTarget(toolName string, input json.RawMessage) (system, resource, warning string) {
+	if strings.HasPrefix(toolName, "mcp__") {
+		return "", "", ""
+	}
+	if skipTools[toolName] {
+		return "", "", ""
+	}
+	if len(input) == 0 {
+		return "", "", ""
+	}
+	var inp struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := json.Unmarshal(input, &inp); err != nil || inp.FilePath == "" {
+		if fileTools[toolName] {
+			return "", "", fmt.Sprintf(
+				"agent-receipts-hook: %s input has no file_path; action.target.resource will be empty",
+				toolName,
+			)
+		}
+		return "", "", ""
+	}
+	return "filesystem", inp.FilePath, ""
 }

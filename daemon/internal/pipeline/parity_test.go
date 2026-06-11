@@ -35,6 +35,8 @@ func TestEmitterFrameParityKnownFields(t *testing.T) {
 		"operator_name",
 		"output",
 		"session_id",
+		"target_resource",
+		"target_system",
 		"tool",
 		"ts_emit",
 		"usage",
