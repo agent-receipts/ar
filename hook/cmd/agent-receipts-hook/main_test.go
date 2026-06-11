@@ -500,6 +500,43 @@ func TestExtractFileTarget_WarningNamesTheTool(t *testing.T) {
 	}
 }
 
+// TestExtractFileTarget_WhitespaceFilePath checks that a file_path containing
+// only whitespace is treated as absent (trimmed to empty), not as a valid path.
+// Known file tools must still warn; unknown tools must be silent.
+func TestExtractFileTarget_WhitespaceFilePath(t *testing.T) {
+	t.Run("fileTools warns on whitespace-only path", func(t *testing.T) {
+		sys, res, warn := extractFileTarget("Read", json.RawMessage(`{"file_path":"   "}`))
+		if sys != "" || res != "" {
+			t.Errorf("system=%q resource=%q; want both empty for whitespace path", sys, res)
+		}
+		if warn == "" {
+			t.Error("expected warning for whitespace-only path on Read; got empty")
+		}
+	})
+	t.Run("unknown tool is silent on whitespace-only path", func(t *testing.T) {
+		sys, res, warn := extractFileTarget("Move", json.RawMessage(`{"file_path":"\t"}`))
+		if sys != "" || res != "" {
+			t.Errorf("system=%q resource=%q; want both empty for whitespace path", sys, res)
+		}
+		if warn != "" {
+			t.Errorf("unexpected warning for unknown tool with whitespace path: %q", warn)
+		}
+	})
+}
+
+// TestExtractFileTarget_MalformedJSON verifies that malformed JSON input is
+// treated as a silent miss (no warning, no resource). Malformed JSON is not
+// a schema-drift signal — it should not trigger the fileTools warning.
+func TestExtractFileTarget_MalformedJSON(t *testing.T) {
+	sys, res, warn := extractFileTarget("Read", json.RawMessage(`{bad json`))
+	if sys != "" || res != "" {
+		t.Errorf("system=%q resource=%q; want both empty for malformed JSON", sys, res)
+	}
+	if warn != "" {
+		t.Errorf("warning = %q; want empty (malformed JSON is not a schema-drift signal)", warn)
+	}
+}
+
 // TestReadClaudeCode_Target verifies that readClaudeCode populates ev.Target
 // for filesystem tools, auto-captures unknown tools with file_path, and leaves
 // target empty for skip-listed and MCP tools.

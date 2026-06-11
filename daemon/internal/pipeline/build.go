@@ -34,6 +34,11 @@ const multibaseBase64URL = "u"
 // messages legible.
 const maxIdentityFieldLen = 256
 
+// maxTargetResourceLen caps the byte length of TargetResource. File paths can
+// reach 4096 bytes on Linux (PATH_MAX), so a separate, wider cap is used
+// rather than the identity-field limit.
+const maxTargetResourceLen = 4096
+
 // SupportedFrameVersion is the only emitter-frame schema this daemon accepts.
 // Bumping it requires a migration plan and a daemon-side translator for the
 // old version; until that exists, accepting unknown versions would silently
@@ -529,6 +534,19 @@ func validateFrame(f *EmitterFrame) error {
 	if len(f.CaptureMethod) > maxIdentityFieldLen {
 		return fmt.Errorf("capture_method exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.CaptureMethod))
 	}
+	if len(f.TargetSystem) > maxIdentityFieldLen {
+		return fmt.Errorf("target_system exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.TargetSystem))
+	}
+	if len(f.TargetResource) > maxTargetResourceLen {
+		return fmt.Errorf("target_resource exceeds %d bytes (got %d)", maxTargetResourceLen, len(f.TargetResource))
+	}
+	// target_system and target_resource must both be set or both absent.
+	// A half-populated target would produce ActionTarget{System:""} or
+	// ActionTarget{Resource:""} in the signed receipt because ActionTarget.System
+	// carries no omitempty tag.
+	if (f.TargetSystem != "") != (f.TargetResource != "") {
+		return fmt.Errorf("target_system and target_resource must both be set or both absent")
+	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
 	// JSON syntax, so anything reaching this point is well-formed. The hash
@@ -697,7 +715,7 @@ func (p *Pipeline) buildAndSign(
 		PeerCredential: peerCred,
 		IdempotencyKey: f.IdempotencyKey,
 	}
-	if f.TargetSystem != "" || f.TargetResource != "" {
+	if f.TargetSystem != "" && f.TargetResource != "" {
 		action.Target = &receipt.ActionTarget{
 			System:   f.TargetSystem,
 			Resource: f.TargetResource,

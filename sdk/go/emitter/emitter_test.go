@@ -544,6 +544,39 @@ func TestEmit_ValidatesEvent(t *testing.T) {
 	}
 }
 
+// TestEmit_RejectsHalfPopulatedTarget pins the XOR validation: Target.System
+// and Target.Resource must both be set or both empty. A half-populated Target
+// produces a malformed ActionTarget in the receipt; the emitter catches it
+// before the write so it is a caller error, not a transport failure.
+func TestEmit_RejectsHalfPopulatedTarget(t *testing.T) {
+	em, err := emitter.NewDaemon(
+		emitter.WithSocketPath("/nonexistent/events.sock"),
+		emitter.WithLogger(silentLogger),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	ctx := context.Background()
+	base := emitter.Event{Channel: "claude-code", Tool: emitter.Tool{Name: "Read"}, Decision: "allowed"}
+
+	t.Run("system without resource", func(t *testing.T) {
+		ev := base
+		ev.Target = emitter.Target{System: "filesystem"}
+		if err := em.Emit(ctx, ev); err == nil {
+			t.Error("Emit returned nil for system-only target; want error")
+		}
+	})
+	t.Run("resource without system", func(t *testing.T) {
+		ev := base
+		ev.Target = emitter.Target{Resource: "/etc/hosts"}
+		if err := em.Emit(ctx, ev); err == nil {
+			t.Error("Emit returned nil for resource-only target; want error")
+		}
+	})
+}
+
 // TestEmit_WithSessionIDOverride pins the OQ4 host-id forwarding path:
 // when WithSessionID supplies a non-empty value, every receipt carries
 // that exact id rather than a freshly generated UUID. Mirrors the

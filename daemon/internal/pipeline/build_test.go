@@ -2136,3 +2136,67 @@ func TestProcess_NoTargetLeavesActionTargetNil(t *testing.T) {
 		t.Errorf("action.target = %+v; want nil", *target)
 	}
 }
+
+// TestValidateFrame_RejectsOversizeTargetSystem verifies that validateFrame rejects
+// a target_system value exceeding maxIdentityFieldLen bytes.
+func TestValidateFrame_RejectsOversizeTargetSystem(t *testing.T) {
+	f := &EmitterFrame{
+		Version:        "1",
+		TsEmit:         "2026-06-12T00:00:00Z",
+		SessionID:      "s",
+		Channel:        "claude-code",
+		Tool:           EmitterTool{Name: "Read"},
+		Decision:       "allowed",
+		TargetSystem:   strings.Repeat("x", maxIdentityFieldLen+1),
+		TargetResource: "/etc/hosts",
+	}
+	if err := validateFrame(f); err == nil {
+		t.Error("validateFrame accepted an oversize target_system; want rejection")
+	}
+}
+
+// TestValidateFrame_RejectsOversizeTargetResource verifies that validateFrame rejects
+// a target_resource value exceeding maxTargetResourceLen bytes.
+func TestValidateFrame_RejectsOversizeTargetResource(t *testing.T) {
+	f := &EmitterFrame{
+		Version:        "1",
+		TsEmit:         "2026-06-12T00:00:00Z",
+		SessionID:      "s",
+		Channel:        "claude-code",
+		Tool:           EmitterTool{Name: "Read"},
+		Decision:       "allowed",
+		TargetSystem:   "filesystem",
+		TargetResource: strings.Repeat("x", maxTargetResourceLen+1),
+	}
+	if err := validateFrame(f); err == nil {
+		t.Error("validateFrame accepted an oversize target_resource; want rejection")
+	}
+}
+
+// TestValidateFrame_RejectsHalfPopulatedTarget verifies that validateFrame rejects
+// frames where only one of target_system/target_resource is set.
+func TestValidateFrame_RejectsHalfPopulatedTarget(t *testing.T) {
+	base := EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-06-12T00:00:00Z",
+		SessionID: "s",
+		Channel:   "claude-code",
+		Tool:      EmitterTool{Name: "Read"},
+		Decision:  "allowed",
+	}
+
+	t.Run("system without resource", func(t *testing.T) {
+		f := base
+		f.TargetSystem = "filesystem"
+		if err := validateFrame(&f); err == nil {
+			t.Error("validateFrame accepted target_system without target_resource; want rejection")
+		}
+	})
+	t.Run("resource without system", func(t *testing.T) {
+		f := base
+		f.TargetResource = "/etc/hosts"
+		if err := validateFrame(&f); err == nil {
+			t.Error("validateFrame accepted target_resource without target_system; want rejection")
+		}
+	})
+}

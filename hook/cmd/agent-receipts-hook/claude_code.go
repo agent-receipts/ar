@@ -146,7 +146,12 @@ func extractFileTarget(toolName string, input json.RawMessage) (system, resource
 	var inp struct {
 		FilePath string `json:"file_path"`
 	}
-	if err := json.Unmarshal(input, &inp); err != nil || inp.FilePath == "" {
+	if err := json.Unmarshal(input, &inp); err != nil {
+		// Malformed JSON is not a schema-drift signal — don't warn.
+		return "", "", ""
+	}
+	filePath := strings.TrimSpace(inp.FilePath)
+	if filePath == "" {
 		if fileTools[toolName] {
 			return "", "", fmt.Sprintf(
 				"agent-receipts-hook: %s input has no file_path; action.target.resource will be empty",
@@ -155,5 +160,5 @@ func extractFileTarget(toolName string, input json.RawMessage) (system, resource
 		}
 		return "", "", ""
 	}
-	return "filesystem", inp.FilePath, ""
+	return "filesystem", filePath, ""
 }

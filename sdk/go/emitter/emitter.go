@@ -451,6 +451,15 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		e.dropCount.Add(pendingDrops)
 		return fmt.Errorf("emitter: operator_name requires operator_id")
 	}
+	// Target.System and Target.Resource must both be set or both empty.
+	// A half-populated Target produces ActionTarget{System:""} or
+	// ActionTarget{Resource:""} in the signed receipt — the daemon enforces
+	// the same rule in validateFrame; catching it here surfaces a clear error
+	// at the call site before the write.
+	if (ev.Target.System != "") != (ev.Target.Resource != "") {
+		e.dropCount.Add(pendingDrops)
+		return fmt.Errorf("emitter: Target.System and Target.Resource must both be set or both empty")
+	}
 	// Mirror the daemon's per-field length cap so oversized values are caught
 	// at the emitter rather than silently rejected by the daemon after the write.
 	for _, f := range [9]struct{ name, val string }{
