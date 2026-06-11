@@ -1433,7 +1433,7 @@ func buildPTYChain(t *testing.T, kp KeyPair, withClose bool) []AgentReceipt {
 	openUnsigned := Create(CreateInput{
 		Issuer:    Issuer{ID: "did:agent:test"},
 		Principal: Principal{ID: "did:user:test"},
-		Action:    Action{Type: "system.pty.open", RiskLevel: RiskCritical},
+		Action:    Action{Type: ActionTypePTYOpen, RiskLevel: RiskCritical},
 		Outcome:   Outcome{Status: StatusSuccess},
 		Chain:     Chain{Sequence: 3, PreviousReceiptHash: &prevHash, ChainID: "chain-1"},
 	})
@@ -1451,7 +1451,7 @@ func buildPTYChain(t *testing.T, kp KeyPair, withClose bool) []AgentReceipt {
 		closeUnsigned := Create(CreateInput{
 			Issuer:    Issuer{ID: "did:agent:test"},
 			Principal: Principal{ID: "did:user:test"},
-			Action:    Action{Type: "system.pty.close", RiskLevel: RiskCritical},
+			Action:    Action{Type: ActionTypePTYClose, RiskLevel: RiskHigh},
 			Outcome:   Outcome{Status: StatusSuccess},
 			Chain:     Chain{Sequence: 4, PreviousReceiptHash: &openHash, ChainID: "chain-1"},
 		})
@@ -1514,6 +1514,38 @@ func TestIncompleteSessionIsAdvisory(t *testing.T) {
 	}
 	if !result.IncompleteSession {
 		t.Error("expected IncompleteSession=true")
+	}
+}
+
+func TestIncompleteSessionOrphanedClose(t *testing.T) {
+	// A chain with a pty.close but no prior pty.open (e.g. a replayed close
+	// receipt or a chain viewed after its open was truncated) must also be
+	// flagged — closes > opens is equally anomalous to opens > closes.
+	kp, _ := GenerateKeyPair()
+	chain := buildChain(t, kp, 2)
+	prevHash, err := HashReceipt(chain[len(chain)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeUnsigned := Create(CreateInput{
+		Issuer:    Issuer{ID: "did:agent:test"},
+		Principal: Principal{ID: "did:user:test"},
+		Action:    Action{Type: ActionTypePTYClose, RiskLevel: RiskHigh},
+		Outcome:   Outcome{Status: StatusSuccess},
+		Chain:     Chain{Sequence: 3, PreviousReceiptHash: &prevHash, ChainID: "chain-1"},
+	})
+	closeSigned, err := Sign(closeUnsigned, kp.PrivateKey, "did:agent:test#key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain = append(chain, closeSigned)
+
+	result := VerifyChain(chain, kp.PublicKey)
+	if !result.Valid {
+		t.Errorf("orphaned close must not break verification; broken at %d: %s", result.BrokenAt, result.Error)
+	}
+	if !result.IncompleteSession {
+		t.Error("expected IncompleteSession=true for closes > opens (orphaned close)")
 	}
 }
 
