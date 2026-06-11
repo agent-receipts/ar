@@ -23,15 +23,21 @@ import (
 // e2eDaemon is a live agent-receipts daemon started in-process for the
 // full-stack e2e test. It owns an AF_UNIX socket the spawned proxy binary
 // connects to over --socket.
+//
+// runErr is written before exited is closed (single writer goroutine), so any
+// reader observing a closed exited can read runErr without further
+// synchronisation.
 type e2eDaemon struct {
 	cfg    daemon.Config
 	pubPEM string
+	exited chan struct{} // closed when daemon.Run returns
+	runErr error         // result of Run; read only after exited is closed
 }
 
 // startE2EDaemon brings up a real daemon on a short /tmp socket path and waits
 // for it to accept connections. It returns the config (for the socket path and
 // store location) and the PEM public key for receipt verification.
-func startE2EDaemon(t *testing.T) e2eDaemon {
+func startE2EDaemon(t *testing.T) *e2eDaemon {
 	t.Helper()
 
 	// Keep the socket under /tmp to stay within the 104-byte AF_UNIX sun_path
@@ -72,9 +78,13 @@ func startE2EDaemon(t *testing.T) e2eDaemon {
 	}
 	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 
+	d := &e2eDaemon{cfg: cfg, pubPEM: pubPEM, exited: make(chan struct{})}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- daemon.Run(ctx, cfg) }()
+	go func() {
+		d.runErr = daemon.Run(ctx, cfg)
+		close(d.exited)
+	}()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -83,9 +93,9 @@ func startE2EDaemon(t *testing.T) e2eDaemon {
 			break
 		}
 		select {
-		case err := <-done:
+		case <-d.exited:
 			cancel()
-			t.Fatalf("daemon exited during startup: %v", err)
+			t.Fatalf("daemon exited during startup: %v", d.runErr)
 		default:
 		}
 		if time.Now().After(deadline) {
@@ -98,13 +108,13 @@ func startE2EDaemon(t *testing.T) e2eDaemon {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case <-d.exited:
 		case <-time.After(3 * time.Second):
 			t.Error("daemon did not shut down within 3s")
 		}
 	})
 
-	return e2eDaemon{cfg: cfg, pubPEM: pubPEM}
+	return d
 }
 
 // TestE2EProxyEmitsReceiptToDaemon drives the compiled proxy binary, wired to a
@@ -135,7 +145,7 @@ func TestE2EProxyEmitsReceiptToDaemon(t *testing.T) {
 
 	// Emission is fire-and-forget relative to the JSON-RPC reply, so poll the
 	// daemon's store rather than assuming the receipt is durable by reply time.
-	receipts := waitForE2EReceipts(t, d.cfg.DBPath, d.cfg.ChainID, 1, 5*time.Second)
+	receipts := d.waitForReceipts(t, 1, 5*time.Second)
 
 	// Find the read_file receipt and verify it against the daemon's key.
 	var found *receipt.AgentReceipt
@@ -156,23 +166,32 @@ func TestE2EProxyEmitsReceiptToDaemon(t *testing.T) {
 	waitForExit(t, stdin, cmd)
 }
 
-// waitForE2EReceipts polls the daemon's read-only store until at least want
-// receipts exist in the chain or the timeout elapses.
-func waitForE2EReceipts(t *testing.T, dbPath, chainID string, want int, timeout time.Duration) []receipt.AgentReceipt {
+// waitForReceipts polls the daemon's read-only store until at least want
+// receipts exist in the chain or the timeout elapses. It surfaces an early
+// daemon exit directly instead of letting a crashed daemon look like a slow
+// one: a closed exited channel during the test means Run returned before
+// cleanup cancelled it.
+func (d *e2eDaemon) waitForReceipts(t *testing.T, want int, timeout time.Duration) []receipt.AgentReceipt {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for {
-		s, err := store.OpenReadOnly(dbPath)
+		select {
+		case <-d.exited:
+			t.Fatalf("daemon exited before %d receipts landed: %v", want, d.runErr)
+		default:
+		}
+
+		s, err := store.OpenReadOnly(d.cfg.DBPath)
 		if err != nil {
 			t.Fatalf("open store: %v", err)
 		}
-		got, err := s.GetChain(chainID)
+		got, err := s.GetChain(d.cfg.ChainID)
 		s.Close()
 		if err == nil && len(got) >= want {
 			return got
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %d receipts in chain %s; got %d (err=%v)", want, chainID, len(got), err)
+			t.Fatalf("timed out waiting for %d receipts in chain %s; got %d (err=%v)", want, d.cfg.ChainID, len(got), err)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

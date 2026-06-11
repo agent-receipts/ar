@@ -37,12 +37,15 @@ func TestEmitterDropsSurfaceAsEventsDroppedReceipt(t *testing.T) {
 	// the emitter's first sends fail their dial and accumulate the drop count.
 	cfg, pubPEM := newDaemonConfig(t, 0)
 
+	// Surface-error mode (not best-effort): the down-phase sends must fail
+	// visibly so we can assert each one dropped, and the recovery send must
+	// fail loudly rather than silently swallow a missed delivery — best-effort
+	// would turn a dropped recovery frame into a nil return and bump the drop
+	// counter instead, which would later surface only as a confusing
+	// WaitForReceiptCount timeout.
 	em, err := emitter.NewDaemon(
 		emitter.WithSocketPath(cfg.SocketPath),
 		emitter.WithSessionID("drop-session"),
-		// Best-effort so the failing sends return nil; the drop counter still
-		// increments on every failed send regardless of the opt-out.
-		emitter.WithBestEffort(),
 	)
 	if err != nil {
 		t.Fatalf("NewDaemon: %v", err)
@@ -55,17 +58,23 @@ func TestEmitterDropsSurfaceAsEventsDroppedReceipt(t *testing.T) {
 		Decision: "allowed",
 	}
 
-	// Daemon is down: every send fails its dial and bumps the drop counter.
+	// Daemon is down: every send must fail its dial and bump the drop counter.
+	// Asserting the error confirms the frame really dropped (and so feeds the
+	// accumulated count), rather than silently succeeding against a stale socket.
 	for i := 0; i < drops; i++ {
-		if err := em.Emit(context.Background(), ev); err != nil {
-			t.Fatalf("emit %d to down daemon: got %v, want nil (best-effort)", i, err)
+		if err := em.Emit(context.Background(), ev); err == nil {
+			t.Fatalf("emit %d to down daemon: got nil, want a transport error (frame should have dropped)", i)
 		}
 	}
 
 	// Bring the daemon up at the same socket path.
 	fix := StartDaemonFromConfig(t, cfg, pubPEM)
 
-	// First successful send re-dials and carries the accumulated drop count.
+	// First send after the daemon is up re-dials and carries the accumulated
+	// drop count. StartDaemonFromConfig already confirmed the socket is
+	// accepting, so this dial should succeed first try; a failure here returns a
+	// real error (not best-effort) so it is reported directly instead of as a
+	// downstream receipt-count timeout.
 	if err := em.Emit(context.Background(), ev); err != nil {
 		t.Fatalf("recovery emit: %v", err)
 	}
@@ -78,9 +87,9 @@ func TestEmitterDropsSurfaceAsEventsDroppedReceipt(t *testing.T) {
 			len(receipts), fix.Trace())
 	}
 
-	// GetChain returns rows in insert order, which for this single-connection
-	// pair is synthetic-then-live; assert that ordering via sequence rather than
-	// assuming it.
+	// GetChain returns rows in sequence order (ORDER BY sequence ASC), so the
+	// synthetic (seq 1) precedes the live receipt (seq 2); assert the sequence
+	// values explicitly rather than relying on positional ordering.
 	synthetic, live := receipts[0], receipts[1]
 	if synthetic.CredentialSubject.Chain.Sequence != 1 {
 		t.Fatalf("synthetic seq = %d, want 1", synthetic.CredentialSubject.Chain.Sequence)
