@@ -443,6 +443,9 @@ func checkChainHead(dbPath, pubKeyPath, chainID string) Result {
 	if result.IncompleteToolRoundtrip {
 		reason += "; advisory: final tool call has no result receipt"
 	}
+	if result.IncompleteSession {
+		reason += "; advisory: PTY session has no close receipt"
+	}
 	return Result{Check: name, Status: StatusOK, Reason: reason}
 }
 
