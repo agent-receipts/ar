@@ -18,6 +18,7 @@ func TestFrameParityKnownFields(t *testing.T) {
 	expected := []string{
 		"agent_id",
 		"agent_type",
+		"capture_method",
 		"channel",
 		"correlation_id",
 		"decision",
@@ -27,12 +28,14 @@ func TestFrameParityKnownFields(t *testing.T) {
 		"input",
 		"issuer_model",
 		"issuer_name",
+		"model",
 		"operator_id",
 		"operator_name",
 		"output",
 		"session_id",
 		"tool",
 		"ts_emit",
+		"usage",
 		"v",
 	}
 

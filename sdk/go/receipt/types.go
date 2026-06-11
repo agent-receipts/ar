@@ -93,6 +93,21 @@ type Runtime struct {
 	AgentID string
 	// AgentType is the runtime-reported agent type label (e.g. "general-purpose").
 	AgentType string
+	// Model is the model the runtime observed producing this action (e.g. a
+	// transcript-derived "claude-opus-4-8"). It is observability-oriented
+	// (ADR-0026 D5) and distinct from the identity-bearing top-level
+	// issuer.model: runtime.model records what an auditor can *correlate* the
+	// call with, not what they verify identity against. Absent when unknown.
+	Model string
+	// Usage is the token-usage object exactly as the agent runtime reported it
+	// (input/output/cache tokens). It is stored verbatim and never recomputed,
+	// so field names and shape track the runtime's own report across versions.
+	// Absent when unknown.
+	Usage json.RawMessage
+	// CaptureMethod records how Model/Usage were captured (e.g. "transcript"),
+	// so transcript-derived receipts can be distinguished from receipts enriched
+	// by other ingesters (OTLP, daemon). Absent when unknown.
+	CaptureMethod string
 	// Extra holds runtime keys this SDK version does not model as typed fields,
 	// preserved verbatim so they survive a round-trip and hash identically.
 	Extra map[string]json.RawMessage
@@ -102,7 +117,10 @@ type Runtime struct {
 // key, so unknown runtime members round-trip. Key ordering is irrelevant:
 // Canonicalize re-sorts per RFC 8785.
 func (r Runtime) MarshalJSON() ([]byte, error) {
-	m := make(map[string]json.RawMessage, len(r.Extra)+2)
+	// +5 reserves space for every typed member emitted below (agent_id,
+	// agent_type, model, usage, capture_method) so a fully-populated runtime
+	// does not reallocate the map.
+	m := make(map[string]json.RawMessage, len(r.Extra)+5)
 	for k, v := range r.Extra {
 		m[k] = v
 	}
@@ -119,6 +137,26 @@ func (r Runtime) MarshalJSON() ([]byte, error) {
 			return nil, fmt.Errorf("marshal runtime.agent_type: %w", err)
 		}
 		m["agent_type"] = b
+	}
+	if r.Model != "" {
+		b, err := json.Marshal(r.Model)
+		if err != nil {
+			return nil, fmt.Errorf("marshal runtime.model: %w", err)
+		}
+		m["model"] = b
+	}
+	if len(r.Usage) > 0 {
+		// Stored verbatim — the runtime's own token-usage object, never
+		// recomputed. Canonicalize re-serialises it deterministically at hash
+		// time, so the byte form here need not be pre-canonicalised.
+		m["usage"] = r.Usage
+	}
+	if r.CaptureMethod != "" {
+		b, err := json.Marshal(r.CaptureMethod)
+		if err != nil {
+			return nil, fmt.Errorf("marshal runtime.capture_method: %w", err)
+		}
+		m["capture_method"] = b
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
@@ -146,6 +184,24 @@ func (r *Runtime) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("runtime.agent_type: %w", err)
 		}
 		delete(m, "agent_type")
+	}
+	if v, ok := m["model"]; ok {
+		if err := json.Unmarshal(v, &r.Model); err != nil {
+			return fmt.Errorf("runtime.model: %w", err)
+		}
+		delete(m, "model")
+	}
+	if v, ok := m["usage"]; ok {
+		// Keep the verbatim bytes so the token-usage object round-trips and
+		// hashes identically — it is the runtime's report, not ours to reshape.
+		r.Usage = v
+		delete(m, "usage")
+	}
+	if v, ok := m["capture_method"]; ok {
+		if err := json.Unmarshal(v, &r.CaptureMethod); err != nil {
+			return fmt.Errorf("runtime.capture_method: %w", err)
+		}
+		delete(m, "capture_method")
 	}
 	if len(m) > 0 {
 		r.Extra = m

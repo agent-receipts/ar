@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 
 	"github.com/agent-receipts/ar/sdk/go/emitter"
 )
@@ -10,14 +12,15 @@ import (
 // claudeCodeFrame is the JSON envelope Claude Code sends on stdin for
 // PostToolUse and PreToolUse hooks.
 type claudeCodeFrame struct {
-	HookEventName string          `json:"hook_event_name"`
-	SessionID     string          `json:"session_id"`
-	ToolUseID     string          `json:"tool_use_id"`
-	ToolName      string          `json:"tool_name"`
-	ToolInput     json.RawMessage `json:"tool_input"`
-	ToolResponse  json.RawMessage `json:"tool_response"`
-	AgentID       string          `json:"agent_id"`
-	AgentType     string          `json:"agent_type"`
+	HookEventName  string          `json:"hook_event_name"`
+	SessionID      string          `json:"session_id"`
+	ToolUseID      string          `json:"tool_use_id"`
+	ToolName       string          `json:"tool_name"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+	ToolResponse   json.RawMessage `json:"tool_response"`
+	AgentID        string          `json:"agent_id"`
+	AgentType      string          `json:"agent_type"`
+	TranscriptPath string          `json:"transcript_path"`
 }
 
 // readClaudeCode parses a Claude Code PostToolUse or PreToolUse stdin frame
@@ -28,7 +31,7 @@ type claudeCodeFrame struct {
 //
 // The returned sessionID is the host-supplied session identifier from the
 // frame; it is the empty string when absent.
-func readClaudeCode(stdin []byte, _ func(string) string) (emitter.Event, string, error) {
+func readClaudeCode(stdin []byte, env func(string) string) (emitter.Event, string, error) {
 	if len(stdin) == 0 {
 		return emitter.Event{}, "", errors.New("empty stdin")
 	}
@@ -68,6 +71,28 @@ func readClaudeCode(stdin []byte, _ func(string) string) (emitter.Event, string,
 	}
 	if len(f.ToolResponse) > 0 {
 		ev.Output = f.ToolResponse
+	}
+
+	// Enrich with the model and token usage for this tool call, read from the
+	// session transcript (works with OTEL disabled — no proxy involved). This is
+	// strictly best-effort: a missing transcript, an unmatched id, or a turn with
+	// no usage object simply leaves the fields unset. Enrichment never fails the
+	// hook, so lookup errors are swallowed rather than surfaced.
+	if f.ToolUseID != "" {
+		path := resolveTranscriptPath(f.TranscriptPath, f.SessionID, env)
+		model, usage, found, lookupErr := lookupTranscriptUsage(path, f.ToolUseID)
+		switch {
+		case lookupErr != nil:
+			// Enrichment is best-effort and must never fail the hook, but a
+			// genuine read error (unreadable or corrupt transcript) is worth a
+			// non-fatal note so it is not silently indistinguishable from a
+			// tool_use_id that is simply absent. We do not exit non-zero.
+			fmt.Fprintf(os.Stderr, "agent-receipts-hook: transcript enrichment skipped: %v\n", lookupErr)
+		case found:
+			ev.Model = model
+			ev.Usage = usage
+			ev.CaptureMethod = "transcript"
+		}
 	}
 
 	return ev, f.SessionID, nil
