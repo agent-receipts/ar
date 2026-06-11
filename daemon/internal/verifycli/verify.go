@@ -3,7 +3,7 @@
 // SQLite store and the daemon-published public key. For a chain that has
 // survived an offline key rotation the published key is the post-rotation key,
 // so verification resolves the genesis key — the key that signed the first
-// receipt — from the archives `agent-receipts rotate` leaves beside it, then
+// receipt — from the archives `agent-receipts-daemon --rotate` leaves beside it, then
 // traverses each key_rotated receipt forward (spec §7.3.7). It opens the
 // database read-only (sdk/go/store.OpenReadOnly) so it is safe to run while the
 // daemon is the active writer, and it does not require the daemon socket to be
@@ -131,8 +131,9 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	// Resolve the genesis key before verifying. After an offline key rotation
 	// the *published* .pub holds the post-rotation key, but a chain is anchored
 	// to the key that signed its first receipt: VerifyChain must start there and
-	// traverse each key_rotated receipt forward (spec §7.3.7). `agent-receipts
-	// rotate` archives every superseded public key beside the live one as
+	// traverse each key_rotated receipt forward (spec §7.3.7).
+	// `agent-receipts-daemon --rotate` archives every superseded public key beside
+	// the live one as
 	// `<public-key>.rotated-<fingerprint>`, so a verify run pointed only at the
 	// current .pub would otherwise report a rotated chain as BROKEN at receipt 0.
 	// With no rotation the published key already is the genesis key and this is a
@@ -286,7 +287,7 @@ type candidate struct {
 // resolveGenesisKey selects the public key that signed the chain's first
 // receipt — the key VerifyChain must start from to traverse key rotations
 // (spec §7.3.7). The published key (provided) is tried first, then every
-// archived pre-rotation key written beside it by `agent-receipts rotate` as
+// archived pre-rotation key written beside it by `agent-receipts-daemon --rotate` as
 // `<public-key>.rotated-*`. The first candidate whose key verifies receipt[0]'s
 // signature is the genesis key.
 //

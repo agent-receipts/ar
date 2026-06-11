@@ -24,16 +24,16 @@ import (
 // path. An empty path or any dial error reports not-reachable — the check
 // guards against the obvious footgun (rotating under a live daemon) without
 // blocking rotation when the socket location is unknown.
-func socketReachable(path string) (bool, error) {
+func socketReachable(path string) bool {
 	if path == "" {
-		return false, nil
+		return false
 	}
 	conn, err := net.DialTimeout("unix", path, 200*time.Millisecond)
 	if err != nil {
-		return false, err
+		return false
 	}
 	_ = conn.Close()
-	return true, nil
+	return true
 }
 
 // actionTypeKeyRotate is the action.type stamped on a key_rotated receipt so
@@ -79,7 +79,7 @@ type RotateSummary struct {
 // files are swapped (with rollback on failure), and only then is the receipt
 // inserted (rolling the key files back if the insert fails). The residual
 // window — a crash between the key swap and the insert — is the gap the
-// external anchor (a later slice) closes.
+// external anchor (--anchor-log, written before any local change) closes.
 func RotateKey(cfg Config) (RotateSummary, error) {
 	if cfg.KeyPath == "" {
 		return RotateSummary{}, errors.New("KeyPath is required")
@@ -99,7 +99,7 @@ func RotateKey(cfg Config) (RotateSummary, error) {
 	if cfg.VerificationMethodID == "" {
 		return RotateSummary{}, errors.New("VerificationMethodID is required")
 	}
-	if reachable, _ := socketReachable(cfg.SocketPath); reachable {
+	if socketReachable(cfg.SocketPath) {
 		return RotateSummary{}, fmt.Errorf(
 			"a daemon appears to be running on %s — stop it before rotating the signing key", cfg.SocketPath)
 	}

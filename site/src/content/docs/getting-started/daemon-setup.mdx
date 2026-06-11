@@ -74,7 +74,7 @@ This appends a `key_rotated` receipt — signed with the **outgoing** key — to
 
 `--rotate` refuses to run while the daemon's socket is reachable — stop the daemon first, or you will get a torn state where the running process keeps signing with the old key while the chain records a handover.
 
-> **Verifying a rotated chain.** Verify from the **genesis** public key — the key that signed the chain's first receipt — not the freshly published `signing.key.pub` (which is now the *new* key only). The SDK chain verifiers traverse the rotation from the genesis key automatically; the archived `signing.key.pub.rotated-*` files preserve the older keys for this. Pointing `agent-receipts verify` at the genesis key for a rotated chain is a current follow-up.
+> **Verifying a rotated chain.** A rotated chain is anchored to the **genesis** public key — the key that signed the chain's first receipt — not the freshly published `signing.key.pub` (which is now the *new* key only). `agent-receipts verify` handles this for you: pointed at the published `signing.key.pub`, it rediscovers the genesis key from the archived `signing.key.pub.rotated-*` files and traverses the rotation automatically, and it reports `BROKEN` if those archives are missing or the chain does not hand off to the published key. (The SDK chain verifiers also traverse the rotation when given the genesis key directly.)
 
 Do **not** "rotate" by deleting `signing.key` and re-running `--init`. That new key has no `key_rotated` receipt bridging it to the old one, so every receipt signed by the retired key fails verification and the chain is split with no in-chain handover.
 

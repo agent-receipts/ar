@@ -150,7 +150,9 @@ The status above is superseded for the rotation mechanism itself:
 
 - **External anchor write contract (anchor-first ordering)** landed. A `Sink` interface (`Write(eventType, payload)` + `Close`) lives at `daemon/internal/anchor`, with a dependency-free append-only file-log reference adapter. `--rotate --anchor-log <path>` writes the rotation event (the receipt's RFC 8785 canonical form) to the sink *before* any local change; a sink-write failure aborts the rotation with nothing committed, exactly the anchor-first abort this ADR specifies. This narrows the residual crash window to the gap between a successful anchor write and the local commit.
 
-Still **not** landed: real anchor *adapters* that meet the append-only + sink-controlled-ordering bar (S3 object-lock, transparency log, SIEM ingest) — the file-log adapter is a reference that is only as tamper-evident as the storage beneath it. **Checkpoint anchoring (Phase B)** for tail-truncation detection is unstarted. The verify CLI also still defaults to the current published key; rotated chains must be verified from the genesis key explicitly.
+- **Rotation-aware `agent-receipts verify`** landed. Pointed at the published key, the verify CLI rediscovers a rotated chain's genesis key from the archived `.rotated-*` keys, traverses the rotation, and pins the result to the published key (a chain that does not hand its rotation lineage off to the published key reports `BROKEN`, so a planted archive cannot forge a `VALID`).
+
+Still **not** landed: real anchor *adapters* that meet the append-only + sink-controlled-ordering bar (S3 object-lock, transparency log, SIEM ingest) — the file-log adapter is a reference that is only as tamper-evident as the storage beneath it. **Checkpoint anchoring (Phase B)** for tail-truncation detection is unstarted.
 
 ## Consequences
 

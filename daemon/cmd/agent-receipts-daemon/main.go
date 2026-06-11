@@ -136,9 +136,9 @@ func main() {
 		} else {
 			fmt.Printf("  anchored to:         (none — set --anchor-log for post-compromise integrity)\n")
 		}
-		fmt.Printf("\nRestart the daemon to sign with the new key. Verify the rotated chain\n")
-		fmt.Printf("from the genesis public key (it traverses the rotation); the freshly\n")
-		fmt.Printf("published %s is the new key only.\n", r.cfg.PublicKeyPath)
+		fmt.Printf("\nRestart the daemon to sign with the new key. `agent-receipts verify`\n")
+		fmt.Printf("checks the rotated chain when pointed at the published key %s —\n", r.cfg.PublicKeyPath)
+		fmt.Printf("it resolves the archived genesis key and traverses the rotation automatically.\n")
 		return
 	}
 
