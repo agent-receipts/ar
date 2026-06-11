@@ -178,6 +178,22 @@ so it is safe to run while the daemon is the active writer, and it does not
 require the daemon socket to be reachable. Independent verifiability is not
 gated on daemon availability (issue #236, Section 4).
 
+**Rotated chains verify with no extra flags.** After an offline
+`agent-receipts-daemon --rotate`, the published `--public-key` holds the *new*
+key, but a chain is anchored to the key that signed its first receipt. `verify`
+resolves that genesis key automatically from the superseded keys `--rotate`
+archives beside the live one (`<public-key>.rotated-<fingerprint>`), then traverses each
+`key_rotated` receipt forward (spec §7.3.7) — so a rotated chain reports `VALID`
+against the published key path. If those archives are missing, the chain reports
+`BROKEN` at the first receipt rather than silently passing.
+
+Resolution stays pinned to the operator's key: a chain reached through an
+archive must end its rotation lineage at the `--public-key` it was verified
+against. A cryptographically self-consistent chain that rotates to some *other*
+key — e.g. an attacker who planted a `<public-key>.rotated-*` archive and a
+chain signed under their own key — reports `BROKEN` (the published key is not
+the chain's current key), so a forged archive cannot turn into a `VALID` result.
+
 Exit codes are stable for scripting:
 
 | Code | Meaning |

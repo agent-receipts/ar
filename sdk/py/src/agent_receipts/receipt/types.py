@@ -294,6 +294,27 @@ class Delegation(BaseModel):
     delegator: Delegator
 
 
+class KeyRotation(BaseModel):
+    """Key-rotation event (ADR-0015).
+
+    Present only on a key_rotated receipt; absent on every other receipt. The
+    receipt carrying it is signed with the OUTGOING key (``signed_with="old"``);
+    ``new_public_key`` holds the incoming key inline so verifiers chain through
+    the rotation without an external key registry. All seven fields are required
+    when the object is present. See spec §7.3.7.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    event_type: Literal["key_rotated"]
+    new_public_key: str
+    old_key_fingerprint: str
+    new_key_fingerprint: str
+    old_algorithm: str
+    new_algorithm: str
+    signed_with: Literal["old"]
+
+
 class CredentialSubject(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -303,6 +324,9 @@ class CredentialSubject(BaseModel):
     outcome: Outcome
     authorization: Authorization | None = None
     chain: Chain
+    # Present only on a key_rotated receipt (ADR-0015); camelCase on the wire,
+    # unlike its snake_case siblings.
+    key_rotation: KeyRotation | None = Field(None, alias="keyRotation")
     correlation_id: str | None = Field(None, min_length=1)
     delegation: Delegation | None = None
 

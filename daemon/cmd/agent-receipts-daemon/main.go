@@ -49,6 +49,7 @@ type resolved struct {
 	showProtocol    bool
 	initKeys        bool
 	initForensicKey bool
+	rotate          bool
 	forensicKeyPath string
 	printConfig     bool
 }
@@ -119,6 +120,28 @@ func main() {
 		r.cfg.PublicKeyPath = daemon.DefaultPublicKeyPath(r.cfg.KeyPath)
 	}
 
+	if r.rotate {
+		summary, err := daemon.RotateKey(r.cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --rotate: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("rotated signing key on chain %s (seq %d)\n", summary.ChainID, summary.Sequence)
+		fmt.Printf("  key_rotated receipt: %s\n", summary.ReceiptID)
+		fmt.Printf("  outgoing key:        %s\n", summary.OldFingerprint)
+		fmt.Printf("  incoming key:        %s\n", summary.NewFingerprint)
+		fmt.Printf("  archived public key: %s\n", summary.ArchivedPublicKey)
+		if summary.AnchoredTo != "" {
+			fmt.Printf("  anchored to:         %s\n", summary.AnchoredTo)
+		} else {
+			fmt.Printf("  anchored to:         (none — set --anchor-log for post-compromise integrity)\n")
+		}
+		fmt.Printf("\nRestart the daemon to sign with the new key. `agent-receipts verify`\n")
+		fmt.Printf("checks the rotated chain when pointed at the published key %s —\n", r.cfg.PublicKeyPath)
+		fmt.Printf("it resolves the archived genesis key and traverses the rotation automatically.\n")
+		return
+	}
+
 	if r.printConfig {
 		printConfig(os.Stdout, r.cfg)
 		return
@@ -155,6 +178,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	configPath := fs.String("config", "", "Path to a TOML config file (default: $XDG_DATA_HOME/agent-receipts/daemon.toml; ignored if absent)")
 	initKeys := fs.Bool("init", false, "Generate a new signing key pair and exit (must not exist)")
 	initForensicKey := fs.Bool("init-forensic-key", false, "Generate a new X25519 forensic key pair (ADR-0012) and exit. Writes the private key to --forensic-key and the public key to --forensic-public-key (must not exist)")
+	rotate := fs.Bool("rotate", false, "Rotate the signing key (ADR-0015): append a key_rotated receipt signed by the current key, archive the current public key, and swap in a new key, then exit. Stop the daemon first.")
 	showVersion := fs.Bool("version", false, "Print version and exit")
 	showProtocol := fs.Bool("protocol-version", false, "Print the daemon's spoken wire-protocol version range as JSON and exit")
 	printConfigFlag := fs.Bool("print-config", false, "Print the resolved config (file < env < flags) and exit")
@@ -191,6 +215,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 	fs.StringVar(&cfg.ChainID, "chain-id", cfg.ChainID, "Chain id to write under (env: AGENTRECEIPTS_CHAIN_ID)")
 	fs.StringVar(&cfg.IssuerID, "issuer-id", cfg.IssuerID, "Receipt issuer.id (env: AGENTRECEIPTS_ISSUER_ID)")
 	fs.StringVar(&cfg.VerificationMethodID, "verification-method", cfg.VerificationMethodID, "proof.verificationMethod (env: AGENTRECEIPTS_VERIFICATION_METHOD)")
+	fs.StringVar(&cfg.AnchorLogPath, "anchor-log", cfg.AnchorLogPath, "Append-only external-witness log for rotation events (ADR-0015). When set, --rotate writes the rotation event here before committing locally; a write failure aborts the rotation. (env: AGENTRECEIPTS_ANCHOR_LOG)")
 	fs.StringVar(&cfg.ParameterDisclosure, "parameter-disclosure", cfg.ParameterDisclosure, "Which actions encrypt their parameters into parameters_disclosure (ADR-0012): false|true|high|<comma-separated action types>. Requires --forensic-public-key. (env: AGENTRECEIPTS_PARAMETER_DISCLOSURE)")
 	fs.BoolVar(&cfg.UnsafeSocketPath, "unsafe-socket-path", cfg.UnsafeSocketPath, "Permit a --socket/AGENTRECEIPTS_SOCKET path outside the per-platform safe set (logs a warning; does not override TCP rejection) (env: AGENTRECEIPTS_UNSAFE_SOCKET_PATH)")
 	fs.StringVar(&cfg.RedactPatternsPath, "redact-patterns", cfg.RedactPatternsPath, "Path to a YAML file of additional redaction patterns (merged with built-in defaults) (env: AGENTRECEIPTS_REDACT_PATTERNS)")
@@ -212,6 +237,7 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 		showProtocol:    *showProtocol,
 		initKeys:        *initKeys,
 		initForensicKey: *initForensicKey,
+		rotate:          *rotate,
 		forensicKeyPath: *forensicKeyPath,
 		printConfig:     *printConfigFlag,
 	}, nil
@@ -372,6 +398,9 @@ func envOverlay(cfg *daemon.Config, getenv func(string) string) error {
 	}
 	if v := getenv("AGENTRECEIPTS_VERIFICATION_METHOD"); v != "" {
 		cfg.VerificationMethodID = v
+	}
+	if v := getenv("AGENTRECEIPTS_ANCHOR_LOG"); v != "" {
+		cfg.AnchorLogPath = v
 	}
 	if v := getenv("AGENTRECEIPTS_PARAMETER_DISCLOSURE"); v != "" {
 		cfg.ParameterDisclosure = v

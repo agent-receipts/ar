@@ -718,7 +718,6 @@ func (panicSigningKeySource) Init() error                { return nil }
 func (panicSigningKeySource) Teardown() error            { return nil }
 func (panicSigningKeySource) PublicKey() (string, error) { return "", nil }
 func (panicSigningKeySource) VerificationMethod() string { return "did:test#k1" }
-func (panicSigningKeySource) Rotate() error              { return nil }
 func (panicSigningKeySource) Sign(_ []byte) ([]byte, error) {
 	panic("simulated panic during signing")
 }

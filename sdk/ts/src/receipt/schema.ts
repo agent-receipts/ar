@@ -217,6 +217,20 @@ const delegationSchema = z
 	})
 	.passthrough();
 
+// --- Key rotation ---
+
+const keyRotationSchema = z
+	.object({
+		event_type: z.literal("key_rotated"),
+		new_public_key: z.string().regex(/^u[A-Za-z0-9_-]+$/),
+		old_key_fingerprint: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+		new_key_fingerprint: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+		old_algorithm: z.string().min(1),
+		new_algorithm: z.string().min(1),
+		signed_with: z.literal("old"),
+	})
+	.passthrough();
+
 // --- Credential Subject ---
 
 const credentialSubjectSchema = z
@@ -227,6 +241,7 @@ const credentialSubjectSchema = z
 		outcome: outcomeSchema,
 		authorization: authorizationSchema.optional(),
 		chain: chainSchema,
+		keyRotation: keyRotationSchema.optional(),
 		correlation_id: z.string().min(1).optional(),
 		delegation: delegationSchema.optional(),
 	})

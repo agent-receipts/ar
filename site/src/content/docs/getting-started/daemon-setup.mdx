@@ -60,7 +60,35 @@ Override these paths with environment variables: `AGENTRECEIPTS_KEY` (signing ke
 
 The receipt database (`$XDG_DATA_HOME/agent-receipts/receipts.db`, falling back to `~/.local/share/agent-receipts/receipts.db`) is created automatically the first time the daemon starts, not by `--init`. Override with `AGENTRECEIPTS_DB`.
 
-`--init` refuses to overwrite an existing key and exits non-zero. Only run it once, or delete the old key first if rotating.
+`--init` refuses to overwrite an existing key and exits non-zero. It is a one-time bootstrap, not a rotation command — run it once per machine.
+
+#### Rotate the signing key
+
+To rotate the daemon's signing key, stop the daemon and run `--rotate` ([ADR-0015](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md)):
+
+```bash
+agent-receipts-daemon --rotate
+```
+
+This appends a `key_rotated` receipt — signed with the **outgoing** key — to the head of the current chain, archives the outgoing public key next to `signing.key.pub` (as `signing.key.pub.rotated-<fingerprint>`), and swaps the new key pair into place. The `key_rotated` receipt carries the incoming public key inline, so a verifier chains through the rotation: receipts before it verify under the old key, receipts after it under the new key. Restart the daemon afterwards to sign with the new key.
+
+`--rotate` refuses to run while the daemon's socket is reachable — stop the daemon first, or you will get a torn state where the running process keeps signing with the old key while the chain records a handover.
+
+> **Verifying a rotated chain.** A rotated chain is anchored to the **genesis** public key — the key that signed the chain's first receipt — not the freshly published `signing.key.pub` (which is now the *new* key only). `agent-receipts verify` handles this for you: pointed at the published `signing.key.pub`, it rediscovers the genesis key from the archived `signing.key.pub.rotated-*` files and traverses the rotation automatically, and it reports `BROKEN` if those archives are missing or the chain does not hand off to the published key. (The SDK chain verifiers also traverse the rotation when given the genesis key directly.)
+
+Do **not** "rotate" by deleting `signing.key` and re-running `--init`. That new key has no `key_rotated` receipt bridging it to the old one, so every receipt signed by the retired key fails verification and the chain is split with no in-chain handover.
+
+##### Anchoring rotation events
+
+For the rotation history to survive a future daemon-key compromise, the rotation event must be recorded somewhere the daemon cannot later rewrite. Pass `--anchor-log <path>` (env `AGENTRECEIPTS_ANCHOR_LOG`) and `--rotate` writes the rotation event to that append-only log **before** committing locally — an anchor-write failure aborts the rotation cleanly, leaving nothing changed:
+
+```bash
+agent-receipts-daemon --rotate --anchor-log /var/log/agent-receipts/anchor.log
+```
+
+The built-in log is a **reference** sink: it appends newline-delimited JSON records, but a plain file is only as tamper-evident as the storage under it. To get the real post-compromise guarantee, point `--anchor-log` at a path backed by append-only/immutable storage (object-lock volume, a write-only log host, a transparency log). Adapters that speak directly to such systems (S3 object-lock, SIEM ingest) are follow-up work. Without `--anchor-log`, rotation still works and verifies — you simply opt out of the post-compromise guarantee.
+
+> Periodic *checkpoint* anchoring (for tail-truncation detection) is a separate, still-pending phase — see ADR-0015.
 
 ### Start
 

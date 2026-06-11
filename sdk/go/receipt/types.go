@@ -364,6 +364,33 @@ type Delegation struct {
 	Delegator       Delegator `json:"delegator"`
 }
 
+// KeyRotation records a key-rotation event (ADR-0015). It is present only on a
+// key_rotated receipt and absent on every other receipt. The receipt carrying
+// it is signed with the OUTGOING key (SignedWith == "old"); NewPublicKey holds
+// the incoming key inline so verifiers chain through the rotation without an
+// external key registry. All seven fields are required when the object is
+// present. See spec §7.3.7 for verifier traversal.
+type KeyRotation struct {
+	// EventType is the constant "key_rotated".
+	EventType string `json:"event_type"`
+	// NewPublicKey is the incoming public key inline: raw key bytes per the
+	// algorithm's canonical encoding (Ed25519: 32 bytes, RFC 8032 §5.1.5),
+	// multibase-encoded with the "u" base64url prefix.
+	NewPublicKey string `json:"new_public_key"`
+	// OldKeyFingerprint is sha256:<hex> of the outgoing public key's raw bytes.
+	OldKeyFingerprint string `json:"old_key_fingerprint"`
+	// NewKeyFingerprint is sha256:<hex> of the incoming public key's raw bytes;
+	// it MUST equal the SHA-256 of the bytes decoded from NewPublicKey.
+	NewKeyFingerprint string `json:"new_key_fingerprint"`
+	// OldAlgorithm is the algorithm tag of the outgoing key (e.g. "ed25519").
+	OldAlgorithm string `json:"old_algorithm"`
+	// NewAlgorithm is the algorithm tag of the incoming key.
+	NewAlgorithm string `json:"new_algorithm"`
+	// SignedWith is the constant "old": the rotation event is signed with the
+	// outgoing key.
+	SignedWith string `json:"signed_with"`
+}
+
 // CredentialSubject contains the core receipt payload.
 type CredentialSubject struct {
 	Principal     Principal      `json:"principal"`
@@ -372,6 +399,9 @@ type CredentialSubject struct {
 	Outcome       Outcome        `json:"outcome"`
 	Authorization *Authorization `json:"authorization,omitempty"`
 	Chain         Chain          `json:"chain"`
+	// KeyRotation is present only on a key_rotated receipt (ADR-0015); absent on
+	// all other receipts.
+	KeyRotation *KeyRotation `json:"keyRotation,omitempty"`
 	// CorrelationID links related receipts for the same logical tool invocation
 	// (e.g. hook pre-check to MCP proxy post-action). Populated from the
 	// runtime's tool-use correlation token; absent when not available.

@@ -208,10 +208,17 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 	brokenAt := -1
 	var firstSigErr string
 	var firstSigErrAt int = -1
+	var firstRotationErr string
+	var firstRotationErrAt int = -1
 	var firstHashComputeErr string
 	var firstHashComputeErrAt int = -1
 	var schemaErr string
 	var schemaErrAt int = -1
+
+	// activeKeyPEM is the public key that the current receipt must verify
+	// against. It starts as the caller-supplied genesis key and is replaced by
+	// the incoming key after each verified key_rotated receipt (spec §7.3.7).
+	activeKeyPEM := publicKeyPEM
 
 	for i, r := range receipts {
 		chain := r.CredentialSubject.Chain
@@ -239,7 +246,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 			}
 		}
 
-		sigValid, sigErr := verifyReceipt(r, publicKeyPEM)
+		sigValid, sigErr := verifyReceipt(r, activeKeyPEM)
 		if sigErr != nil {
 			sigValid = false
 			if firstSigErr == "" {
@@ -285,6 +292,28 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		if brokenAt == -1 && schemaErrAt == i {
 			brokenAt = i
 		}
+
+		// Key-rotation traversal (ADR-0015 / spec §7.3.7). A key_rotated receipt
+		// is signed with the OUTGOING (currently active) key; once that signature
+		// and the rotation-event fields check out, the incoming key carried inline
+		// takes over for every subsequent receipt until the next rotation.
+		if kr := r.CredentialSubject.KeyRotation; kr != nil {
+			newKeyPEM, rotErr := verifyRotationEvent(activeKeyPEM, kr)
+			if rotErr != nil {
+				if firstRotationErr == "" {
+					firstRotationErr = "key rotation invalid at index " + strconv.Itoa(i) + ": " + rotErr.Error()
+					firstRotationErrAt = i
+				}
+				if brokenAt == -1 {
+					brokenAt = i
+				}
+			} else if sigValid {
+				// Only adopt the incoming key when the rotation receipt itself
+				// verified under the outgoing key; otherwise the binding of
+				// new_public_key to the prior chain segment is not trustworthy.
+				activeKeyPEM = newKeyPEM
+			}
+		}
 	}
 
 	// Pick whichever compute / schema error occurred first in the chain.
@@ -301,6 +330,7 @@ func VerifyChain(receipts []AgentReceipt, publicKeyPEM string, opts ...ChainVeri
 		at  int
 	}{
 		{firstSigErr, firstSigErrAt},
+		{firstRotationErr, firstRotationErrAt},
 		{firstHashComputeErr, firstHashComputeErrAt},
 		{schemaErr, schemaErrAt},
 	}

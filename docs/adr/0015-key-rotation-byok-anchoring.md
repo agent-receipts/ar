@@ -140,6 +140,20 @@ What has **not** landed and is in scope for Phase A:
 
 Phase B (checkpoint anchoring) and Phase C (HSM/KMS adapters) are explicitly deferred and not on a schedule.
 
+### Update (2026-06-10): rotation verification and offline rotation landed
+
+The status above is superseded for the rotation mechanism itself:
+
+- **Wire format + verifier traversal** landed across the schema, the spec (§4.3.2, §7.3.7), and all three SDKs. `credentialSubject.keyRotation` is modelled and the chain verifiers chain through a rotation: a `key_rotated` receipt is verified under the outgoing key, then the inline `new_public_key` takes over. The spec rotation-event vector is verified by all three SDKs (matching canonical hashes) and schema-validated in CI.
+- **Offline rotation** landed as `agent-receipts-daemon --rotate` (`daemon.RotateKey`): it appends a `key_rotated` receipt signed by the outgoing key, archives the outgoing public key, and swaps in the new key pair. Restart picks up the new key.
+- **Interface deviation from the *`KeySource` interface* section above.** `Rotate()` was **removed** from `KeySource` rather than implemented on it. A `key_rotated` receipt's signature covers the whole envelope (including chain fields the `KeySource` cannot know), and the file backend needs the public-key path and the receipt store — neither of which a `KeySource` holds. Rotation is therefore daemon-orchestrated (the chain owner). A live-rotation prepare/commit pair on the interface can be designed later against a concrete HSM/KMS backend rather than speculatively against the file backend.
+
+- **External anchor write contract (anchor-first ordering)** landed. A `Sink` interface (`Write(eventType, payload)` + `Close`) lives at `daemon/internal/anchor`, with a dependency-free append-only file-log reference adapter. `--rotate --anchor-log <path>` writes the rotation event (the receipt's RFC 8785 canonical form) to the sink *before* any local change; a sink-write failure aborts the rotation with nothing committed, exactly the anchor-first abort this ADR specifies. This narrows the residual crash window to the gap between a successful anchor write and the local commit.
+
+- **Rotation-aware `agent-receipts verify`** landed. Pointed at the published key, the verify CLI rediscovers a rotated chain's genesis key from the archived `.rotated-*` keys, traverses the rotation, and pins the result to the published key (a chain that does not hand its rotation lineage off to the published key reports `BROKEN`, so a planted archive cannot forge a `VALID`).
+
+Still **not** landed: real anchor *adapters* that meet the append-only + sink-controlled-ordering bar (S3 object-lock, transparency log, SIEM ingest) — the file-log adapter is a reference that is only as tamper-evident as the storage beneath it. **Checkpoint anchoring (Phase B)** for tail-truncation detection is unstarted.
+
 ## Consequences
 
 ### Positive
