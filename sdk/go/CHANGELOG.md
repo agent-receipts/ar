@@ -11,6 +11,12 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.19.0-alpha.1] - 2026-06-12
+
+### Added
+
+- **`action.target.{system,resource}` on emitter events** ([#784](https://github.com/agent-receipts/ar/pull/784), ADR-0029) — `emitter.Target{System, Resource}` added to `emitter.Event`; wired into the wire frame as `target_system`/`target_resource` (both `omitempty`). New exported constant `MaxTargetResourceLen = 4096` (Linux PATH_MAX) caps `Target.Resource` client-side, mirroring the daemon's `validateFrame` limit. Client-side XOR validation in `Emit` rejects half-populated `Target` (system without resource, or vice versa) before the write.
+
 ## [0.18.0-alpha.1] - 2026-06-11
 
 ### Added
