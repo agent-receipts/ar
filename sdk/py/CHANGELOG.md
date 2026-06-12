@@ -12,6 +12,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-12
+
+Graduates `0.13.0a2` after the alpha pass. No source changes since the alpha; see the `0.13.0a2` and `0.13.0a1` entries below for the full surface (`obsigna` rename, `KeyRotation` dataclass and chain-verifier traversal).
+
 ## [0.13.0a2] - 2026-06-12
 
 First release under the **`obsigna`** distribution name (no functional change

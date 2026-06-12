@@ -316,7 +316,7 @@ wheels = [
 
 [[package]]
 name = "obsigna"
-version = "0.13.0a2"
+version = "0.13.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
