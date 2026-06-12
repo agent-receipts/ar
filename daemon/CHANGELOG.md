@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0-alpha.1] - 2026-06-12
+
+### Changed
+
+- **Daemon binary renamed `agent-receipts-daemon` → `obsigna-daemon`** (ADR-0031) — the daemon process binary is now `obsigna-daemon`, built from `./cmd/obsigna-daemon`. `obsigna daemon run` execs the renamed binary via `syscall.Exec`, preserving the attestation tuple (the daemon's issuer identity and signing key are unchanged — `did:agent-receipts-daemon:` issuer strings are untouched). The Homebrew formulae, `brew services`, and the release archives now install and launch `obsigna-daemon`. **Breaking for operators:** any install script, systemd unit, launchd plist, `brew services` invocation, or wrapper that references the `agent-receipts-daemon` binary by name must be updated to `obsigna-daemon`, and the service restarted after upgrading. The Homebrew formula names are unchanged (`agent-receipts-daemon` / `agent-receipts-daemon-alpha`) — only the installed binary was renamed.
+
+### Build
+
+- **Reproducible-build attestation gates** (ADR-0031) — two CI gates protect the rename and the build provenance. **Gate A** is a lean import-graph test (`cmd/obsigna-daemon/import_guard_test.go`) that fails if the long-running `obsigna-daemon` signing process links any operator read-side CLI package (`internal/*cli`) — a blast-radius control keyed on the `cli` suffix so new operator packages are denied automatically. **Gate B** is a reproducible-build gate: the `obsigna-daemon` build pins the toolchain (`go.mod` `toolchain`, consumed via `go-version-file` in CI), sets `-trimpath`, `-buildvcs=false`, `CGO_ENABLED=0`, and `mod_timestamp` from the commit timestamp so the binary is a deterministic function of the commit. The PR check rebuilds along two paths and compares; the release side rebuilds and publishes a SHA-256 attestation. Build flags are kept in lockstep between `daemon/.goreleaser.yaml` and `daemon/scripts/reproducible-build.sh`.
+
 ## [0.21.0-alpha.1] - 2026-06-12
 
 ### Added

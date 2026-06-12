@@ -71,7 +71,7 @@ GO_DAEMON_MODULE = "github.com/agent-receipts/ar/daemon"
 TS_PACKAGE = "@obsigna/sdk-ts"
 PY_PACKAGE = "obsigna"
 
-REPO = "agent-receipts/ar"
+REPO = "agent-receipts/obsigna"
 
 # The daemon GoReleaser archive is named daemon_<version>_<os>_<arch>.tar.gz and
 # uploaded to the GitHub release for the prefixed tag daemon/v<version>. The

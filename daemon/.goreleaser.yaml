@@ -130,8 +130,8 @@ brews:
         base:
           branch: main
     directory: Formula
-    url_template: "https://github.com/agent-receipts/ar/releases/download/daemon%2Fv{{ .Version }}/{{ .ArtifactName }}"
-    homepage: "https://github.com/agent-receipts/ar/tree/main/daemon"
+    url_template: "https://github.com/agent-receipts/obsigna/releases/download/daemon%2Fv{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/agent-receipts/obsigna/tree/main/daemon"
     description: "Agent Receipts daemon and companion verify CLI"
     license: "Apache-2.0"
     commit_author:
@@ -169,6 +169,12 @@ brews:
 
       def caveats
         <<~EOS
+          The daemon binary is now obsigna-daemon (was agent-receipts-daemon).
+          If you reference the old binary name in any install script, systemd unit,
+          launchd plist, or `brew services` wrapper, update it to obsigna-daemon and
+          restart the service after upgrading:
+            brew services restart agent-receipts/tap/agent-receipts-daemon
+
           agent-receipts-hook is now a separate formula. If you previously installed
           it via this formula, run:
             brew install agent-receipts/tap/agent-receipts-hook
@@ -199,7 +205,7 @@ brews:
       conflicts_with "agent-receipts-daemon-alpha", because: "both install the same binaries"
 
       livecheck do
-        url "https://github.com/agent-receipts/ar"
+        url "https://github.com/agent-receipts/obsigna"
         strategy :github_releases
         regex(/^daemon\/v?(\d+(?:\.\d+)+)$/i)
       end
@@ -219,8 +225,8 @@ brews:
         base:
           branch: main
     directory: Formula
-    url_template: "https://github.com/agent-receipts/ar/releases/download/daemon%2Fv{{ .Version }}/{{ .ArtifactName }}"
-    homepage: "https://github.com/agent-receipts/ar/tree/main/daemon"
+    url_template: "https://github.com/agent-receipts/obsigna/releases/download/daemon%2Fv{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/agent-receipts/obsigna/tree/main/daemon"
     description: "Agent Receipts daemon and companion verify CLI (alpha/beta track)"
     license: "Apache-2.0"
     commit_author:
@@ -254,6 +260,12 @@ brews:
           This is the alpha/beta track — it tracks every release including pre-releases.
           For stable-only installs use: brew install agent-receipts/tap/agent-receipts-daemon
 
+          The daemon binary is now obsigna-daemon (was agent-receipts-daemon).
+          If you reference the old binary name in any install script, systemd unit,
+          launchd plist, or `brew services` wrapper, update it to obsigna-daemon and
+          restart the service after upgrading:
+            brew services restart agent-receipts/tap/agent-receipts-daemon-alpha
+
           Before starting the service for the first time, generate your signing key:
             obsigna-daemon --init
 
@@ -278,7 +290,7 @@ brews:
       end
 
       livecheck do
-        url "https://github.com/agent-receipts/ar"
+        url "https://github.com/agent-receipts/obsigna"
         strategy :github_releases
         regex(/^daemon\/v?(\d+(?:\.\d+)+(?:-[a-z0-9.]+)?)$/i)
       end
