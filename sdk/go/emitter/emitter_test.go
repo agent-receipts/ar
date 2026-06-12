@@ -577,6 +577,44 @@ func TestEmit_RejectsHalfPopulatedTarget(t *testing.T) {
 	})
 }
 
+// TestEmit_RejectsOversizeTargetFields mirrors the daemon's per-field length
+// caps client-side: an oversized Target.System or Target.Resource must be
+// caught at Emit rather than silently dropped after a daemon-side rejection.
+func TestEmit_RejectsOversizeTargetFields(t *testing.T) {
+	em, err := emitter.NewDaemon(
+		emitter.WithSocketPath("/nonexistent/events.sock"),
+		emitter.WithLogger(silentLogger),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer em.Close()
+
+	ctx := context.Background()
+	base := emitter.Event{Channel: "claude-code", Tool: emitter.Tool{Name: "Read"}, Decision: "allowed"}
+
+	t.Run("oversize target_system", func(t *testing.T) {
+		ev := base
+		ev.Target = emitter.Target{
+			System:   strings.Repeat("x", emitter.MaxIdentityFieldLen+1),
+			Resource: "/etc/hosts",
+		}
+		if err := em.Emit(ctx, ev); err == nil {
+			t.Error("Emit returned nil for oversize target_system; want error")
+		}
+	})
+	t.Run("oversize target_resource", func(t *testing.T) {
+		ev := base
+		ev.Target = emitter.Target{
+			System:   "filesystem",
+			Resource: strings.Repeat("x", emitter.MaxTargetResourceLen+1),
+		}
+		if err := em.Emit(ctx, ev); err == nil {
+			t.Error("Emit returned nil for oversize target_resource; want error")
+		}
+	})
+}
+
 // TestEmit_WithSessionIDOverride pins the OQ4 host-id forwarding path:
 // when WithSessionID supplies a non-empty value, every receipt carries
 // that exact id rather than a freshly generated UUID. Mirrors the

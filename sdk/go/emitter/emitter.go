@@ -64,6 +64,11 @@ const MaxFrameSize = 1 << 20
 // before the write rather than as silent daemon-side rejections.
 const MaxIdentityFieldLen = 256
 
+// MaxTargetResourceLen is the maximum byte length of Target.Resource. File
+// paths can reach 4096 bytes on Linux (PATH_MAX), so a wider cap is used
+// rather than MaxIdentityFieldLen. The daemon enforces the same limit.
+const MaxTargetResourceLen = 4096
+
 // SupportedFrameVersion mirrors the daemon's pipeline.SupportedFrameVersion.
 // The wire format is versioned; bumping it requires a daemon-side
 // translator, so a single supported value is the only safe contract.
@@ -459,6 +464,14 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 	if (ev.Target.System != "") != (ev.Target.Resource != "") {
 		e.dropCount.Add(pendingDrops)
 		return fmt.Errorf("emitter: Target.System and Target.Resource must both be set or both empty")
+	}
+	if len(ev.Target.System) > MaxIdentityFieldLen {
+		e.dropCount.Add(pendingDrops)
+		return fmt.Errorf("emitter: target_system exceeds %d bytes (got %d)", MaxIdentityFieldLen, len(ev.Target.System))
+	}
+	if len(ev.Target.Resource) > MaxTargetResourceLen {
+		e.dropCount.Add(pendingDrops)
+		return fmt.Errorf("emitter: target_resource exceeds %d bytes (got %d)", MaxTargetResourceLen, len(ev.Target.Resource))
 	}
 	// Mirror the daemon's per-field length cap so oversized values are caught
 	// at the emitter rather than silently rejected by the daemon after the write.
