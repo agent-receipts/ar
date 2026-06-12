@@ -1,4 +1,4 @@
-# agent-receipts-daemon
+# obsigna-daemon
 
 Single OS-user process that owns the Ed25519 signing key and the SQLite
 receipt store. Emitters (mcp-proxy, OpenClaw, SDK consumers) connect over a
@@ -19,7 +19,7 @@ OpenClaw / SDK ships in later phases.
 ## Build
 
 ```sh
-go build ./cmd/agent-receipts-daemon
+go build ./cmd/obsigna-daemon
 go test ./...                     # unit tests
 go test -tags=integration ./...   # integration tests (real socket, real DB)
 ```
@@ -27,7 +27,7 @@ go test -tags=integration ./...   # integration tests (real socket, real DB)
 Build from a clone of the monorepo: the repo-root `go.work` wires the in-tree
 `sdk/go` so `go build` from `daemon/` picks up `ReceiptStore.GetChainTail`.
 
-`go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@latest`
+`go install github.com/agent-receipts/ar/daemon/cmd/obsigna-daemon@latest`
 is **not yet supported**: the daemon depends on `sdk/go.GetChainTail`, which
 is not in the latest published `sdk/go` tag (`v0.6.0`). Standalone install
 becomes possible once the next `sdk/go` tag is released and a follow-up bumps
@@ -57,7 +57,7 @@ prints the fully resolved config (paths only — never key material) in the same
 shape, so it doubles as a starting `daemon.toml`.
 
 ```sh
-agent-receipts-daemon \
+obsigna-daemon \
   --socket /run/agentreceipts/events.sock \
   --db    /var/lib/agentreceipts/receipts.db \
   --key   /etc/agentreceipts/signing.key \
@@ -171,7 +171,7 @@ agent-receipts verify \
 ```
 
 Defaults match the daemon's: a verify run without flags works after
-`agent-receipts-daemon` has run at least once with the same per-user paths.
+`obsigna-daemon` has run at least once with the same per-user paths.
 
 `verify` opens the SQLite store **read-only** via `sdk/go/store.OpenReadOnly`
 so it is safe to run while the daemon is the active writer, and it does not
@@ -179,7 +179,7 @@ require the daemon socket to be reachable. Independent verifiability is not
 gated on daemon availability (issue #236, Section 4).
 
 **Rotated chains verify with no extra flags.** After an offline
-`agent-receipts-daemon --rotate`, the published `--public-key` holds the *new*
+`obsigna-daemon --rotate`, the published `--public-key` holds the *new*
 key, but a chain is anchored to the key that signed its first receipt. `verify`
 resolves that genesis key automatically from the superseded keys `--rotate`
 archives beside the live one (`<public-key>.rotated-<fingerprint>`), then traverses each
@@ -337,7 +337,7 @@ Checks, in pipeline order:
 
 | Check | What it asserts | `fail` means |
 |---|---|---|
-| `daemon process` | A daemon is reachable on the resolved socket. | No daemon is listening — start `agent-receipts-daemon`. |
+| `daemon process` | A daemon is reachable on the resolved socket. | No daemon is listening — start it with `obsigna daemon run`. |
 | `socket` | The socket file exists, is a socket, and is not world-accessible (daemon binds `0660`). | Missing/usurped path, or a non-socket file at the path. |
 | `emitter dial path` | The path an emitter on this host would dial matches the daemon's. | (warns) Emitter and daemon disagree — events would never arrive. |
 | `db permissions` | The receipt DB is no looser than `0640` (ADR-0010 § Read interface). | World-readable receipts leak peer attestation / disclosures. |
@@ -445,7 +445,7 @@ The following are deliberate Phase 1 choices, all callable out for follow-up:
 
 ```
 daemon.go                                  # Run() entrypoint and Config; publishes the public key on startup
-cmd/agent-receipts-daemon/main.go          # daemon CLI: flag/env parsing, signal handling
+cmd/obsigna-daemon/main.go                 # daemon CLI: flag/env parsing, signal handling
 cmd/agent-receipts/main.go                 # read CLI: thin shim over internal/{listcli,showcli,verifycli,doctorcli}
 internal/
   chain/state.go                           # in-memory (seq, prev_hash) owner; sole writer

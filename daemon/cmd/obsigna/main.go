@@ -44,6 +44,12 @@ func run(args []string, stdout, stderr io.Writer, getenv func(string) string) in
 		return exitOK
 	}
 
+	// Process launchers (ADR-0031) exec a sibling binary in place rather than
+	// calling a subcommand library, so they dispatch from their own table.
+	if l, ok := t.launchers[cmd]; ok {
+		return runLauncher(cmd, l, rest, stdout, stderr)
+	}
+
 	if g, ok := t.groups[cmd]; ok {
 		return t.dispatchGroup(cmd, g, rest, stdout, stderr, getenv)
 	}
@@ -105,6 +111,15 @@ func (t tree) usage() string {
 		fmt.Fprintf(w.tab, "  obsigna %s\t%s\n", name, t.topLeaves[name].summary)
 	}
 	w.flush()
+
+	if len(t.launcherOrder) > 0 {
+		fmt.Fprintf(w.buf, "\nProcesses:\n")
+		w.start()
+		for _, name := range t.launcherOrder {
+			fmt.Fprintf(w.tab, "  obsigna %s run\t%s\n", name, t.launchers[name].summary)
+		}
+		w.flush()
+	}
 
 	fmt.Fprintf(w.buf, "\nAliases:\n")
 	w.start()

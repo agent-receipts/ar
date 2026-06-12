@@ -51,7 +51,7 @@ const SupportedFrameVersion = "1"
 // so min == max and the value equals SupportedFrameVersion; when a future
 // version ships with a daemon-side translator for an older shape, the max
 // widens and the accept check above widens with it. Gate #8 reads this range
-// (via `agent-receipts-daemon --protocol-version`) and asserts it intersects
+// (via `obsigna-daemon --protocol-version`) and asserts it intersects
 // the range each released SDK declares it can emit, so a release can never
 // ship an SDK/daemon pair that cannot talk to each other. Keeping these as the
 // single source of the daemon's spoken range — alongside a test that ties them

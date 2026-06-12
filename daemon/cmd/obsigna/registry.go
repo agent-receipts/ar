@@ -36,6 +36,16 @@ type aliasTarget struct {
 	verb  string
 }
 
+// launcher is a noun whose `run` verb replaces the process image with a sibling
+// binary (ADR-0031) instead of dispatching to a library subcommand. Launchers
+// live in their own table rather than the receipt/keys tree because they exec
+// rather than return, and because they must stay out of obsigna's own import
+// graph (Gate A) — obsigna resolves and execs the binary, it never links it.
+type launcher struct {
+	summary string
+	binary  string // sibling binary to exec, e.g. "obsigna-daemon"
+}
+
 // commandTree is the single source of truth for the obsigna command surface.
 // Both the dispatcher and the golden surface test read it, so any drift from the
 // ADR-0030 contract (the receipt + keys subtrees, the two carried-over
@@ -43,8 +53,9 @@ type aliasTarget struct {
 //
 // ADR-0030 freezes the canonical grouped form; `verify-event` and `doctor` are
 // carried over from the legacy `agent-receipts` CLI so the deprecation shim can
-// preserve every current subcommand. Reserved nouns (daemon, collector, mcp) are
-// intentionally absent — they are out of scope until the consolidation ADR.
+// preserve every current subcommand. The reserved process nouns live in the
+// launchers table below: `daemon` is wired (ADR-0031); `collector` and `mcp`
+// remain out of scope until their consolidation ADRs.
 func commandTree() tree {
 	return tree{
 		groupOrder: []string{"receipt", "keys"},
@@ -81,15 +92,21 @@ func commandTree() tree {
 			"verify": {"receipt", "verify"},
 			"show":   {"receipt", "show"},
 		},
+		launcherOrder: []string{"daemon"},
+		launchers: map[string]launcher{
+			"daemon": {"Launch the receipts daemon (execs obsigna-daemon; ADR-0031).", "obsigna-daemon"},
+		},
 	}
 }
 
 // tree is the resolved command surface.
 type tree struct {
-	groupOrder []string
-	groups     map[string]group
-	topOrder   []string
-	topLeaves  map[string]leaf
-	aliasOrder []string
-	aliases    map[string]aliasTarget
+	groupOrder    []string
+	groups        map[string]group
+	topOrder      []string
+	topLeaves     map[string]leaf
+	aliasOrder    []string
+	aliases       map[string]aliasTarget
+	launcherOrder []string
+	launchers     map[string]launcher
 }

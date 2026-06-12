@@ -82,7 +82,7 @@ func TestTopLevelHelp(t *testing.T) {
 	if code != exitOK {
 		t.Errorf("--help exit = %d, want %d", code, exitOK)
 	}
-	for _, want := range []string{"obsigna receipt verify", "obsigna keys rotate", "obsigna doctor", "shortcut for 'obsigna receipt verify'"} {
+	for _, want := range []string{"obsigna receipt verify", "obsigna keys rotate", "obsigna doctor", "obsigna daemon run", "shortcut for 'obsigna receipt verify'"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("--help missing %q\n%s", want, stdout)
 		}

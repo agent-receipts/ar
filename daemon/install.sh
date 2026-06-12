@@ -95,10 +95,10 @@ main() {
   # Smoke-test the extracted binary BEFORE overwriting any installed version.
   # If the new binary is incompatible (glibc mismatch, bad arch) the existing
   # install is preserved and the script aborts cleanly.
-  "${WORK_DIR}/extract/agent-receipts-daemon" --version >/dev/null 2>&1 || \
+  "${WORK_DIR}/extract/obsigna-daemon" --version >/dev/null 2>&1 || \
     die "New binary failed to run on this host — aborting to preserve existing install"
 
-  install -m 0755 "${WORK_DIR}/extract/agent-receipts-daemon" "${INSTALL_DIR}/"
+  install -m 0755 "${WORK_DIR}/extract/obsigna-daemon" "${INSTALL_DIR}/"
   install -m 0755 "${WORK_DIR}/extract/agent-receipts"        "${INSTALL_DIR}/"
 
   # Key init — attempt unconditionally and handle both outcomes.
@@ -107,7 +107,7 @@ main() {
   # on re-runs). Otherwise warn — the key may exist at a custom AGENTRECEIPTS_KEY
   # or XDG_DATA_HOME path and the user should verify it before proceeding.
   step "Generating signing key..."
-  if "${INSTALL_DIR}/agent-receipts-daemon" -init 2>"${WORK_DIR}/init.err"; then
+  if "${INSTALL_DIR}/obsigna-daemon" -init 2>"${WORK_DIR}/init.err"; then
     echo "    key: ${KEY_FILE}"
   elif [ -f "$KEY_FILE" ]; then
     echo "    signing key already present — skipping"
@@ -141,8 +141,8 @@ ExecStartPre=/bin/sh -c '\
   if test -f "%h/.local/share/agent-receipts/signing.key"; then exit 0;\
   elif test -f "%h/.local/share/agent-receipts/receipts.db"; then\
     printf "signing key missing but receipts.db exists -- recover the key before restarting\n" >&2; exit 1;\
-  else exec "%h/.local/bin/agent-receipts-daemon" -init; fi'
-ExecStart=%h/.local/bin/agent-receipts-daemon \
+  else exec "%h/.local/bin/obsigna-daemon" -init; fi'
+ExecStart=%h/.local/bin/obsigna-daemon \
   -socket %t/agentreceipts/events.sock
 Restart=on-failure
 RestartSec=5s

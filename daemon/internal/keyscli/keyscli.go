@@ -7,7 +7,7 @@
 // CLI surface. Keeping it here, away from cmd/obsigna/main.go, lets tests drive
 // each verb directly with captured I/O and an injected environment.
 //
-// The verbs are the obsigna home for what `agent-receipts-daemon --init` and
+// The verbs are the obsigna home for what `obsigna-daemon --init` and
 // `--rotate` do today; the daemon binary keeps those flags untouched (ADR-0030,
 // ADR-0015).
 package keyscli
@@ -41,7 +41,7 @@ const (
 const pubkeyVerificationMethod = "did:obsigna:pubkey"
 
 // RunGenerate implements `obsigna keys generate`: create a fresh Ed25519 signing
-// key pair, refusing to overwrite existing files. Mirrors `agent-receipts-daemon
+// key pair, refusing to overwrite existing files. Mirrors `obsigna-daemon
 // --init`.
 func RunGenerate(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
 	getenv = orOsGetenv(getenv)
@@ -124,7 +124,7 @@ func RunPubkey(args []string, stdout, stderr io.Writer, getenv func(string) stri
 
 // RunRotate implements `obsigna keys rotate`: append a key_rotated receipt
 // signed by the current key, archive the current public key, and swap in a new
-// key (ADR-0015). Mirrors `agent-receipts-daemon --rotate`; the daemon must be
+// key (ADR-0015). Mirrors `obsigna-daemon --rotate`; the daemon must be
 // stopped first (daemon.RotateKey refuses while the socket is reachable).
 func RunRotate(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
 	getenv = orOsGetenv(getenv)

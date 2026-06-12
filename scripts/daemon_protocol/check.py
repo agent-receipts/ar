@@ -13,7 +13,7 @@ The protocol surface this gate reads:
   speak to the daemon — its *declared range* (Go ``emitter.DaemonProtocolMin``/
   ``Max``, TS ``DAEMON_PROTOCOL_RANGE``, Python ``DAEMON_PROTOCOL_RANGE``).
 - The daemon declares the inclusive range of frame versions it can interpret —
-  its *spoken range* (``agent-receipts-daemon --protocol-version`` prints
+  its *spoken range* (``obsigna-daemon --protocol-version`` prints
   ``{"frame_version":{"min":N,"max":M}}``).
 
 The gate, against the *published* artifacts:
@@ -405,7 +405,10 @@ def download_daemon(version: str, workdir: str) -> DaemonBinaries:
     os.makedirs(extract_dir, exist_ok=True)
     with tarfile.open(tarball) as tf:
         _safe_extract(tf, extract_dir)
-    daemon_bin = os.path.join(extract_dir, "agent-receipts-daemon")
+    daemon_bin = os.path.join(extract_dir, "obsigna-daemon")
+    # The CLI stays the agent-receipts deprecation shim, which forwards each
+    # legacy subcommand (verify/show/list/verify-event/doctor) to its obsigna
+    # equivalent — this gate uses `list`. Both binaries ship in the same archive.
     cli_bin = os.path.join(extract_dir, "agent-receipts")
     for path in (daemon_bin, cli_bin):
         if not os.path.exists(path):

@@ -17,8 +17,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
+
+	"github.com/agent-receipts/ar/daemon/internal/binresolve"
 )
 
 // deprecationShimMarker identifies this entrypoint as the agent-receipts → obsigna
@@ -88,7 +89,7 @@ func printDeprecationNotice(w io.Writer, target []string) {
 // execObsigna runs the obsigna binary with target and forwards stdio, returning
 // its exit code.
 func execObsigna(target []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	bin, err := resolveObsigna()
+	bin, err := binresolve.Sibling(obsignaBinary)
 	if err != nil {
 		fmt.Fprintf(stderr, "agent-receipts: %v\n", err)
 		return 1
@@ -108,27 +109,6 @@ func execObsigna(target []string, stdin io.Reader, stdout, stderr io.Writer) int
 	return 0
 }
 
-// resolveObsigna locates the obsigna binary. It prefers a binary installed
-// alongside this shim (the Homebrew/goreleaser layout installs both into the
-// same bin dir), falling back to $PATH. Resolving beside the shim avoids picking
-// up an unrelated obsigna earlier on PATH.
-func resolveObsigna() (string, error) {
-	if self, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(self), obsignaBinary)
-		if isExecutableFile(candidate) {
-			return candidate, nil
-		}
-	}
-	if p, err := exec.LookPath(obsignaBinary); err == nil {
-		return p, nil
-	}
-	return "", fmt.Errorf("cannot locate the '%s' binary (expected next to this binary or on $PATH)", obsignaBinary)
-}
-
-func isExecutableFile(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return false
-	}
-	return info.Mode().Perm()&0o111 != 0
-}
+// The obsigna binary is located via binresolve.Sibling: beside this shim (the
+// Homebrew/goreleaser layout installs both into the same bin dir), falling back
+// to $PATH.

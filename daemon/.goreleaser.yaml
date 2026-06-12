@@ -13,12 +13,29 @@ before:
     - go mod download
     - sh -c "cp ../LICENSE LICENSE"
 
+# Reproducible builds are an attestation requirement (ADR-0031), not a nicety:
+# auditors must independently rebuild obsigna-daemon and match the published
+# hash. Determinism comes from CGO_ENABLED=0 (no host toolchain bytes),
+# -trimpath (no absolute $GOPATH/working-dir paths baked in), a patch-pinned
+# toolchain (go.mod `toolchain`, consumed via go-version-file in CI), and
+# version stamping that derives only from the tag/commit — never wall-clock
+# time. mod_timestamp uses the commit timestamp so archive/file mtimes are a
+# function of the commit, not of when the release runner happened to build.
+# -buildvcs=false omits git VCS stamping: the `before` hook copies LICENSE into
+# daemon/ (an untracked file), which would otherwise flip go's vcs.modified and
+# make the released binary differ from a clean rebuild that has no such file.
+# Keep these obsigna-daemon flags in lockstep with daemon/scripts/reproducible-build.sh,
+# the shared script the Gate B reproducibility checks rebuild with (ADR-0031).
 builds:
-  - id: agent-receipts-daemon
-    main: ./cmd/agent-receipts-daemon
-    binary: agent-receipts-daemon
+  - id: obsigna-daemon
+    main: ./cmd/obsigna-daemon
+    binary: obsigna-daemon
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - darwin
       - linux
@@ -36,6 +53,10 @@ builds:
     binary: obsigna
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - darwin
       - linux
@@ -53,6 +74,10 @@ builds:
     binary: agent-receipts
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - darwin
       - linux
@@ -64,7 +89,7 @@ builds:
 
 archives:
   - ids:
-      - agent-receipts-daemon
+      - obsigna-daemon
       - obsigna
       - agent-receipts
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -114,11 +139,11 @@ brews:
       email: bot@agentreceipts.ai
     commit_msg_template: "chore(daemon): bump to v{{ .Version }}"
     install: |
-      bin.install "agent-receipts-daemon"
+      bin.install "obsigna-daemon"
       bin.install "obsigna"
       bin.install "agent-receipts"
     test: |
-      system "#{bin}/agent-receipts-daemon", "--version"
+      system "#{bin}/obsigna-daemon", "--version"
       system "#{bin}/obsigna", "--help"
       system "#{bin}/agent-receipts", "--help"
     # `brew outdated` and `brew livecheck` use this to detect new releases.
@@ -136,7 +161,7 @@ brews:
       end
 
       service do
-        run opt_bin/"agent-receipts-daemon"
+        run opt_bin/"obsigna-daemon"
         keep_alive crashed: true
         log_path var/"log/agent-receipts/daemon.log"
         error_log_path var/"log/agent-receipts/daemon.log"
@@ -149,7 +174,7 @@ brews:
             brew install agent-receipts/tap/agent-receipts-hook
 
           Before starting the service for the first time, generate your signing key:
-            agent-receipts-daemon --init
+            obsigna-daemon --init
 
           Then start the daemon:
             brew services start agent-receipts/tap/agent-receipts-daemon
@@ -203,11 +228,11 @@ brews:
       email: bot@agentreceipts.ai
     commit_msg_template: "chore(daemon): bump alpha to v{{ .Version }}"
     install: |
-      bin.install "agent-receipts-daemon"
+      bin.install "obsigna-daemon"
       bin.install "obsigna"
       bin.install "agent-receipts"
     test: |
-      system "#{bin}/agent-receipts-daemon", "--version"
+      system "#{bin}/obsigna-daemon", "--version"
       system "#{bin}/obsigna", "--help"
       system "#{bin}/agent-receipts", "--help"
     custom_block: |
@@ -218,7 +243,7 @@ brews:
       end
 
       service do
-        run opt_bin/"agent-receipts-daemon"
+        run opt_bin/"obsigna-daemon"
         keep_alive crashed: true
         log_path var/"log/agent-receipts/daemon.log"
         error_log_path var/"log/agent-receipts/daemon.log"
@@ -230,7 +255,7 @@ brews:
           For stable-only installs use: brew install agent-receipts/tap/agent-receipts-daemon
 
           Before starting the service for the first time, generate your signing key:
-            agent-receipts-daemon --init
+            obsigna-daemon --init
 
           Then start the daemon:
             brew services start agent-receipts/tap/agent-receipts-daemon-alpha
