@@ -80,7 +80,7 @@ func startProxyWithSocket(t *testing.T, socketPath string) (io.WriteCloser, *buf
 	tmpDir := t.TempDir()
 
 	mockBin := buildBinary(t, "./testdata", tmpDir, "mock-server")
-	proxyBin := buildBinary(t, "./cmd/mcp-proxy", tmpDir, "mcp-proxy")
+	proxyBin := buildBinary(t, "./cmd/obsigna-mcp", tmpDir, "obsigna-mcp")
 
 	cmd := exec.Command(proxyBin,
 		"--socket", socketPath,

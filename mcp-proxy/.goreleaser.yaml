@@ -2,17 +2,66 @@ version: 2
 
 project_name: mcp-proxy
 
+# Disable the Go workspace so GoReleaser resolves dependencies strictly from
+# mcp-proxy/go.mod (published sdk/go and daemon) rather than the in-tree modules
+# wired up by the repo-root go.work. The release attestation (Gate B) rebuilds
+# with GOWORK=off too, so the released bytes and the independent rebuild resolve
+# the same dependency versions.
+env:
+  - GOWORK=off
+
 before:
   hooks:
     - go mod download
     - sh -c "cp ../LICENSE LICENSE"
 
+# Reproducible builds are an attestation requirement (ADR-0033), not a nicety:
+# auditors must independently rebuild obsigna-mcp and match the published hash.
+# Determinism comes from CGO_ENABLED=0 (no host toolchain bytes), -trimpath (no
+# absolute $GOPATH/working-dir paths baked in), a patch-pinned toolchain
+# (go.mod `toolchain`, consumed via go-version-file in CI), and version stamping
+# that derives only from the tag/commit — never wall-clock time. mod_timestamp
+# uses the commit timestamp so archive/file mtimes are a function of the commit,
+# not of when the release runner happened to build. -buildvcs=false omits git
+# VCS stamping: the `before` hook copies LICENSE into mcp-proxy/ (an untracked
+# file), which would otherwise flip go's vcs.modified and make the released
+# binary differ from a clean rebuild that has no such file. Keep these obsigna-mcp
+# flags in lockstep with mcp-proxy/scripts/reproducible-build.sh, the shared
+# script the Gate B reproducibility checks rebuild with (ADR-0033).
 builds:
+  # The proxy, renamed mcp-proxy -> obsigna-mcp (ADR-0033). This is the primary
+  # binary, launched in production via `obsigna mcp run` (ADR-0030); the
+  # mcp-proxy entry below is a thin deprecation shim that execs into it.
+  - id: obsigna-mcp
+    main: ./cmd/obsigna-mcp
+    binary: obsigna-mcp
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version=v{{.Version}}
+
+  # Deprecation shim: keeps `mcp-proxy <cmd>` working by exec-forwarding to
+  # obsigna-mcp with a one-line stderr notice. Ships alongside obsigna-mcp so
+  # existing MCP client configs keep running through the rename.
   - id: mcp-proxy
     main: ./cmd/mcp-proxy
     binary: mcp-proxy
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - darwin
       - linux
@@ -23,7 +72,10 @@ builds:
       - -s -w -X main.version=v{{.Version}}
 
 archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - ids:
+      - obsigna-mcp
+      - mcp-proxy
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     files:
       - README.md
@@ -70,16 +122,32 @@ brews:
       email: bot@agentreceipts.ai
     commit_msg_template: "chore(mcp-proxy): bump to v{{ .Version }}"
     install: |
+      bin.install "obsigna-mcp"
       bin.install "mcp-proxy"
     test: |
+      system "#{bin}/obsigna-mcp", "--version"
       system "#{bin}/mcp-proxy", "--version"
     # `brew outdated` and `brew livecheck` use this to detect new releases.
     # The `ar` repo ships multiple taggable components, so we can't use
     # `:github_latest` (which returns repo-wide latest). `:github_releases`
     # scans all releases; regex extracts version from the `mcp-proxy/vX.Y.Z`
     # tag prefix.
+    #
+    # The caveats are emitted via custom_block so they survive formula
+    # regeneration on each release (GoReleaser overwrites the formula file;
+    # anything not in custom_block or the named fields would be lost).
     custom_block: |
-      conflicts_with "mcp-proxy-alpha", because: "both install the same binary"
+      conflicts_with "mcp-proxy-alpha", because: "both install the same binaries"
+
+      def caveats
+        <<~EOS
+          The proxy binary is now obsigna-mcp (was mcp-proxy). The mcp-proxy
+          command still works as a thin deprecation shim that forwards to
+          obsigna-mcp, so existing MCP client configs keep running — but update
+          them to obsigna-mcp (or `obsigna mcp run`) when convenient; the shim
+          will be removed in a future release.
+        EOS
+      end
 
       livecheck do
         url "https://github.com/agent-receipts/ar"
@@ -110,11 +178,26 @@ brews:
       email: bot@agentreceipts.ai
     commit_msg_template: "chore(mcp-proxy): bump alpha to v{{ .Version }}"
     install: |
+      bin.install "obsigna-mcp"
       bin.install "mcp-proxy"
     test: |
+      system "#{bin}/obsigna-mcp", "--version"
       system "#{bin}/mcp-proxy", "--version"
     custom_block: |
-      conflicts_with "mcp-proxy", because: "both install the same binary"
+      conflicts_with "mcp-proxy", because: "both install the same binaries"
+
+      def caveats
+        <<~EOS
+          This is the alpha/beta track — it tracks every release including pre-releases.
+          For stable-only installs use: brew install agent-receipts/tap/mcp-proxy
+
+          The proxy binary is now obsigna-mcp (was mcp-proxy). The mcp-proxy
+          command still works as a thin deprecation shim that forwards to
+          obsigna-mcp, so existing MCP client configs keep running — but update
+          them to obsigna-mcp (or `obsigna mcp run`) when convenient; the shim
+          will be removed in a future release.
+        EOS
+      end
 
       livecheck do
         url "https://github.com/agent-receipts/ar"
