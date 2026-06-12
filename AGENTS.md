@@ -8,7 +8,7 @@ Monorepo for the Agent Receipts protocol — cryptographically signed audit trai
 spec/          # Protocol specification and JSON schemas
 sdk/go/        # Go SDK (receipt, store, taxonomy)
 sdk/ts/        # TypeScript SDK (@obsigna/sdk-ts)
-sdk/py/        # Python SDK (agent-receipts)
+sdk/py/        # Python SDK (obsigna)
 mcp-proxy/     # MCP STDIO proxy with audit, policy, and receipts (Go)
 hook/          # PostToolUse hook binary for Claude Code and other runtimes (Go)
 site/          # Documentation site (Astro)
