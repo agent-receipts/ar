@@ -1,13 +1,13 @@
 ---
 title: Claude Code Integration
-description: Wire up agent-receipts-hook as a PostToolUse hook in Claude Code to capture native tool calls.
+description: Wire up obsigna-hook as a PostToolUse hook in Claude Code to capture native tool calls.
 ---
 
-Claude Code fires `PostToolUse` hooks after every tool call — including native host tools that never go through an MCP server. Wiring up `agent-receipts-hook` as a PostToolUse hook ensures those calls appear in the daemon receipt chain alongside MCP tool calls captured by `mcp-proxy`.
+Claude Code fires `PostToolUse` hooks after every tool call — including native host tools that never go through an MCP server. Wiring up `obsigna-hook` as a PostToolUse hook ensures those calls appear in the daemon receipt chain alongside MCP tool calls captured by `mcp-proxy`.
 
 ## Prerequisites
 
-- [agent-receipts-hook installed](/hook/installation/) and on `$PATH`
+- [obsigna-hook installed](/hook/installation/) and on `$PATH`
 - `agent-receipts-daemon` running (see [Daemon Setup](/getting-started/daemon-setup/))
 
 ## Wire up the hook
@@ -20,17 +20,21 @@ Add the following to your `~/.claude/settings.json` (user-global, all projects) 
     "PostToolUse": [
       {
         "matcher": "",
-        "hooks": [{ "type": "command", "command": "agent-receipts-hook" }]
+        "hooks": [{ "type": "command", "command": "obsigna-hook" }]
       }
     ]
   }
 }
 ```
 
-The empty `matcher` string covers all tools. Claude Code spawns `agent-receipts-hook` with a JSON frame on stdin after each tool call completes.
+The empty `matcher` string covers all tools. Claude Code spawns `obsigna-hook` with a JSON frame on stdin after each tool call completes.
+
+:::note[Upgrading from `agent-receipts-hook`]
+The hook binary was renamed `agent-receipts-hook` → `obsigna-hook` (ADR-0036). Existing configs that still set `"command": "agent-receipts-hook"` keep working — the old binary is now a thin shim that forwards to `obsigna-hook` — but update them to `obsigna-hook` when convenient; the shim will be removed in a future release.
+:::
 
 :::note[Absolute path]
-If `agent-receipts-hook` is not on the `$PATH` Claude Code uses when launching hooks, replace `"agent-receipts-hook"` with the absolute path from `which agent-receipts-hook`. Claude Code hooks inherit a limited environment.
+If `obsigna-hook` is not on the `$PATH` Claude Code uses when launching hooks, replace `"obsigna-hook"` with the absolute path from `which obsigna-hook`. Claude Code hooks inherit a limited environment.
 :::
 
 :::tip[User-global vs project-level]
@@ -59,7 +63,7 @@ Claude Code serialises each PostToolUse event as a JSON object on stdin:
 }
 ```
 
-`agent-receipts-hook` maps this to:
+`obsigna-hook` maps this to:
 
 | Receipt field | Source |
 |---|---|

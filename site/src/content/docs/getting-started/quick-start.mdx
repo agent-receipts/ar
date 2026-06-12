@@ -23,7 +23,7 @@ graph LR
     P[mcp-proxy] -- "wraps" --> M[MCP Server]
   end
   subgraph hook["Hook"]
-    H[agent-receipts-hook] -- "PostToolUse" --> NT[Native tools]
+    H[obsigna-hook] -- "PostToolUse" --> NT[Native tools]
   end
   subgraph plugin["OpenClaw Plugin"]
     O[OpenClaw gateway] -- "hooks" --> T[Tools]
@@ -293,4 +293,4 @@ The equivalent TypeScript and Go signing APIs are documented in each SDK README
 - Follow [Daemon Setup](/getting-started/daemon-setup/) for install, socket paths, and running the daemon as a service
 - See the [Agent Receipt Schema](/specification/agent-receipt-schema/) for the full receipt structure
 - Explore the [Action Taxonomy](/specification/action-taxonomy/) to understand action types and risk levels
-- Set up `agent-receipts-hook` to capture native tool calls — see [Hook: Claude Code](/hook/claude-code/)
+- Set up `obsigna-hook` to capture native tool calls — see [Hook: Claude Code](/hook/claude-code/)

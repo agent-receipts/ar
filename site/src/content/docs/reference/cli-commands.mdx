@@ -1,13 +1,13 @@
 ---
 title: CLI Commands
-description: Command reference for the Agent Receipts CLI tools — the mcp-proxy policy proxy, the agent-receipts read/verify CLI, and agent-receipts-hook.
+description: Command reference for the Agent Receipts CLI tools — the mcp-proxy policy proxy, the agent-receipts read/verify CLI, and obsigna-hook.
 ---
 
 This page covers three binaries:
 
 - **`mcp-proxy`** — wraps an MCP server, enforces policy, and forwards completed tool-call events to `agent-receipts-daemon`. Since v0.9.0 the proxy holds **no store of its own** — signing, chaining, and persistence are the daemon's job ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). It has no signing key and no `list`/`verify` subcommands.
 - **`agent-receipts`** — the daemon's read-side companion CLI. Lists, shows, and verifies receipts from the daemon-written store. Installed alongside `agent-receipts-daemon` (Homebrew installs both).
-- **`agent-receipts-hook`** — the PostToolUse hook binary that captures native host tool calls.
+- **`obsigna-hook`** — the PostToolUse hook binary that captures native host tool calls (formerly `agent-receipts-hook`, which still works as a deprecation shim).
 
 > The `agent-receipts` `--db` and `--public-key` defaults resolve via the same per-user paths the daemon uses (`$XDG_DATA_HOME/agent-receipts/`, falling back to `~/.local/share/agent-receipts/`). See [Daemon Setup](/getting-started/daemon-setup/) for how those paths are chosen and how to override them.
 
@@ -198,12 +198,12 @@ agent-receipts doctor --json
 | `-warn-as-error` | Exit non-zero when any check warns, not only on failures |
 | `-json` | Structured JSON output |
 
-## `agent-receipts-hook`
+## `obsigna-hook`
 
-Short-lived PostToolUse hook binary that captures native host tool calls and forwards them to `agent-receipts-daemon`. Invoked automatically by agent runtimes that support PostToolUse hooks — not meant to be run interactively.
+Short-lived PostToolUse hook binary that captures native host tool calls and forwards them to `agent-receipts-daemon`. Invoked automatically by agent runtimes that support PostToolUse hooks — not meant to be run interactively. Renamed from `agent-receipts-hook` (ADR-0036); the old name still works as a thin deprecation shim that forwards to `obsigna-hook`.
 
 ```bash
-agent-receipts-hook [--format=<name>]
+obsigna-hook [--format=<name>]
 ```
 
 | Flag | Description |

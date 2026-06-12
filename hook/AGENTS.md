@@ -5,20 +5,31 @@ Short-lived PostToolUse hook binary. Currently supports Claude Code; designed to
 ## Getting started
 
 ```sh
-go build ./cmd/agent-receipts-hook  # build binary
-go test ./...                       # run tests (includes integration tests on linux/darwin)
-go vet ./...                        # static analysis
+go build ./cmd/...   # build obsigna-hook + the agent-receipts-hook shim
+go test ./...        # run tests (includes integration tests on linux/darwin)
+go vet ./...         # static analysis
 ```
 
 ## Project structure
 
 ```
-cmd/agent-receipts-hook/
-  main.go              # stdin read, format detection, emitter dispatch
-  claude_code.go       # Claude Code PostToolUse frame parser
-  main_test.go         # unit tests for readClaudeCode and detect
-  integration_test.go  # end-to-end tests against a real AF_UNIX listener (linux/darwin)
+cmd/obsigna-hook/          # primary binary (ADR-0036)
+  main.go                  # stdin read, format detection, emitter dispatch
+  claude_code.go           # Claude Code PostToolUse frame parser
+  claude_transcript.go     # transcript-derived model/token-usage lookup
+  main_test.go             # unit tests for readClaudeCode and detect
+  integration_test.go      # end-to-end tests against a real AF_UNIX listener (linux/darwin)
+  import_guard_test.go     # Gate A — fail-closed lean-import allowlist
+  entrypoint_guard_test.go # obsigna-hook is primary; agent-receipts-hook only as shim
+cmd/agent-receipts-hook/   # deprecation shim — syscall.Execs into obsigna-hook
+  main.go
+  main_test.go
 ```
+
+The binary was renamed `agent-receipts-hook` → `obsigna-hook` (ADR-0036). The
+shim keeps every existing runtime hook config working through the rename; it
+must stay a thin forwarder (its guard test enforces that). The hook gets no
+`obsigna hook run` launcher — it is a per-tool-call callback (ADR-0034 decision 5).
 
 ## Conventions
 
@@ -44,5 +55,12 @@ when building or installing the hook binary.
 ## Release
 
 Tagged `hook/vX.Y.Z` — triggers `.github/workflows/release-hook.yml`, which runs GoReleaser
-from the `hook/` directory and publishes `agent-receipts-hook` to the Homebrew tap.
+from the `hook/` directory and publishes `obsigna-hook` plus the `agent-receipts-hook` shim
+to the Homebrew tap (formula name `agent-receipts-hook`, installs both binaries).
 The `release-hook` GitHub environment must exist before the first release.
+
+The release is reproducible-build attested (Gate B, ADR-0036): the workflow independently
+rebuilds `obsigna-hook` and asserts its sha256 matches the released artifact, publishing the
+hash. CI (`hook.yml`) also runs the lean-import guard (Gate A) and a cross-path byte-identity
+check. Keep `hook/scripts/reproducible-build.sh` in lockstep with the `obsigna-hook` build
+flags in `hook/.goreleaser.yaml`.

@@ -1,13 +1,15 @@
-# agent-receipts-hook
+# obsigna-hook
 
 Short-lived hook binary for [Agent Receipts](https://github.com/agent-receipts/ar). Invoked by agent runtimes on `PostToolUse` events — reads a JSON frame from stdin, maps it to an audit event, and forwards it to `agent-receipts-daemon` over a Unix-domain socket. It exits 0 silently when the frame is unreadable or the runtime isn't recognised; once the runtime is identified, a failure to record the receipt exits 1 with a stderr message (surfacing a broken audit pipeline rather than dropping receipts). It never pauses or modifies the tool call.
+
+> **Renamed from `agent-receipts-hook`** (ADR-0036). The old `agent-receipts-hook` binary still ships as a thin deprecation shim that forwards to `obsigna-hook`, so existing runtime hook configs keep working — point new configs at `obsigna-hook`. The Homebrew formula name is unchanged for now and installs both binaries.
 
 ## Install
 
 ```bash
 brew install agent-receipts/tap/agent-receipts-hook
 # or
-go install github.com/agent-receipts/ar/hook/cmd/agent-receipts-hook@latest
+go install github.com/agent-receipts/ar/hook/cmd/obsigna-hook@latest
 ```
 
 Requires `agent-receipts-daemon` to be running to capture events.
@@ -25,7 +27,7 @@ In your Claude Code settings (`~/.claude/settings.json`):
         "hooks": [
           {
             "type": "command",
-            "command": "agent-receipts-hook"
+            "command": "obsigna-hook"
           }
         ]
       }
