@@ -214,7 +214,7 @@ func checkDaemonProcess(socketPath string) Result {
 			Check:  name,
 			Status: StatusFail,
 			Reason: fmt.Sprintf("no daemon listening on %s (%v)", socketPath, err),
-			Fix:    "start the daemon: agent-receipts-daemon",
+			Fix:    "start the daemon: obsigna daemon run",
 		}
 	}
 	_ = conn.Close()
@@ -231,7 +231,7 @@ func checkSocket(socketPath string) Result {
 	info, err := os.Lstat(socketPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("%s does not exist", socketPath), Fix: "start the daemon: agent-receipts-daemon"}
+			return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("%s does not exist", socketPath), Fix: "start the daemon: obsigna daemon run"}
 		}
 		return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("stat %s: %v", socketPath, err)}
 	}
@@ -297,7 +297,7 @@ func checkDBPermissions(dbPath string) Result {
 	info, err := os.Lstat(dbPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("%s does not exist (has the daemon ever run?)", dbPath), Fix: "start the daemon: agent-receipts-daemon"}
+			return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("%s does not exist (has the daemon ever run?)", dbPath), Fix: "start the daemon: obsigna daemon run"}
 		}
 		return Result{Check: name, Status: StatusFail, Reason: fmt.Sprintf("stat %s: %v", dbPath, err)}
 	}

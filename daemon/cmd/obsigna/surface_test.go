@@ -153,6 +153,48 @@ func TestFlatAliasInvariant(t *testing.T) {
 	}
 }
 
+// TestLauncherSurface pins the process-launcher table (ADR-0031). `daemon` is
+// the only wired launcher and must exec obsigna-daemon; collector/mcp stay out
+// until their ADRs. A launcher must never collide with a group, top leaf, or
+// alias, or dispatch would be ambiguous.
+func TestLauncherSurface(t *testing.T) {
+	tr := commandTree()
+
+	want := map[string]string{"daemon": "obsigna-daemon"}
+	if got := keys(tr.launchers); !equalSet(got, mapKeys(want)) {
+		t.Errorf("launcher set = %v, want %v", got, mapKeys(want))
+	}
+	if !equalSet(tr.launcherOrder, mapKeys(want)) {
+		t.Errorf("launcherOrder = %v, want a permutation of %v", tr.launcherOrder, mapKeys(want))
+	}
+	for name, binary := range want {
+		l, ok := tr.launchers[name]
+		if !ok {
+			t.Errorf("missing launcher %q", name)
+			continue
+		}
+		if l.binary != binary {
+			t.Errorf("launcher %q binary = %q, want %q", name, l.binary, binary)
+		}
+		if l.summary == "" {
+			t.Errorf("launcher %q has an empty summary", name)
+		}
+	}
+
+	// A launcher noun must not also be a group, top leaf, or alias.
+	for name := range tr.launchers {
+		if _, ok := tr.groups[name]; ok {
+			t.Errorf("launcher %q collides with a group", name)
+		}
+		if _, ok := tr.topLeaves[name]; ok {
+			t.Errorf("launcher %q collides with a top-level leaf", name)
+		}
+		if _, ok := tr.aliases[name]; ok {
+			t.Errorf("launcher %q collides with an alias", name)
+		}
+	}
+}
+
 func keys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

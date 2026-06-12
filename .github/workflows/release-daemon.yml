@@ -156,18 +156,15 @@ jobs:
           tar -xzf "released/${asset}" -C released
           released_hash="$(sha256sum released/obsigna-daemon | awk '{print $1}')"
 
-          # 2) Independent clean rebuild with the SAME flags as
-          #    daemon/.goreleaser.yaml: GOWORK=off (resolve the published sdk/go,
-          #    not the in-tree workspace), CGO off, -trimpath, -buildvcs=false, and
-          #    the identical version ldflag. -trimpath makes the result
-          #    path-independent (the PR Gate B proves that) and -buildvcs=false
-          #    matches the release build (which omits VCS stamping because its
-          #    LICENSE-copy hook would otherwise dirty the tree), so building in
-          #    this checkout is sufficient.
+          # 2) Independent clean rebuild via the shared reproducible-build script
+          #    (the same one Gate B uses), so the release rebuild and the PR gate
+          #    can't drift. GOWORK=off resolves the published sdk/go rather than
+          #    the in-tree workspace, matching the release build; GOOS/GOARCH pin
+          #    the linux/amd64 artifact. The script keeps CGO off, -trimpath, and
+          #    -buildvcs=false in lockstep with daemon/.goreleaser.yaml.
           ( cd daemon && GOWORK=off go mod download )
-          ( cd daemon && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-              go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v${VERSION}" \
-              -o /tmp/obsigna-daemon-rebuild ./cmd/obsigna-daemon )
+          GOWORK=off GOOS=linux GOARCH=amd64 \
+            daemon/scripts/reproducible-build.sh daemon /tmp/obsigna-daemon-rebuild "${VERSION}"
           rebuilt_hash="$(sha256sum /tmp/obsigna-daemon-rebuild | awk '{print $1}')"
 
           echo "released sha256: $released_hash"

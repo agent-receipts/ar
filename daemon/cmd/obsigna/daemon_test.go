@@ -19,7 +19,18 @@ import (
 // subprocess exercises the real syscall.Exec path rather than a stub.
 const attestRoleEnv = "OBSIGNA_TEST_ROLE"
 
-// stubDaemonSource is a throwaway obsigna-daemon: it prints its own attestation
+// daemonLauncher returns the registered daemon launcher (binary name + summary)
+// so tests track the registry rather than hardcoding "obsigna-daemon".
+func daemonLauncher(t *testing.T) launcher {
+	t.Helper()
+	l, ok := commandTree().launchers["daemon"]
+	if !ok {
+		t.Fatal("commandTree has no daemon launcher")
+	}
+	return l
+}
+
+// stubDaemonSource is a throwaway daemon binary: it prints its own attestation
 // tuple (pid, parent pid, resolved executable path) as JSON and exits. The
 // acceptance test execs into it and checks the tuple survived the launch.
 const stubDaemonSource = `package main
@@ -47,10 +58,14 @@ func main() {
 
 func TestMain(m *testing.M) {
 	// Launcher role: stand in for `obsigna daemon run` and exec the daemon
-	// binary, replacing this image. resolveDaemonBinary finds the stub via the
+	// binary, replacing this image. binresolve.Sibling finds the stub via the
 	// PATH the parent test set. This never returns when the exec succeeds.
 	if os.Getenv(attestRoleEnv) == "launcher" {
-		os.Exit(execDaemon(nil, os.Stderr))
+		l, ok := commandTree().launchers["daemon"]
+		if !ok {
+			os.Exit(3)
+		}
+		os.Exit(execLauncher("daemon", l.binary, nil, os.Stderr))
 	}
 	os.Exit(m.Run())
 }
@@ -65,17 +80,18 @@ func TestExecImageDefaultsToSyscallExec(t *testing.T) {
 	}
 }
 
-// TestRunDaemonRunExecsResolvedBinary checks the launch wiring without a real
-// exec: `run` resolves obsigna-daemon, builds argv[0]=binary + forwarded flags,
-// and passes the inherited environment through.
-func TestRunDaemonRunExecsResolvedBinary(t *testing.T) {
+// TestRunLauncherRunExecsResolvedBinary checks the launch wiring without a real
+// exec: `run` resolves the launcher binary, builds argv[0]=binary + forwarded
+// flags, and passes the inherited environment through.
+func TestRunLauncherRunExecsResolvedBinary(t *testing.T) {
+	l := daemonLauncher(t)
 	dir := t.TempDir()
-	stub := filepath.Join(dir, obsignaDaemonBinary)
+	stub := filepath.Join(dir, l.binary)
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// PATH-only resolution: the test binary's own dir has no obsigna-daemon, so
-	// resolveDaemonBinary falls through to this stub on PATH.
+	// PATH-only resolution: the test binary's own dir has no daemon binary, so
+	// binresolve.Sibling falls through to this stub on PATH.
 	t.Setenv("PATH", dir)
 
 	var gotArgv0 string
@@ -87,9 +103,9 @@ func TestRunDaemonRunExecsResolvedBinary(t *testing.T) {
 	}
 	t.Cleanup(func() { execImage = orig })
 
-	code := runDaemon([]string{"run", "--socket", "/tmp/x.sock"}, io.Discard, io.Discard)
+	code := runLauncher("daemon", l, []string{"run", "--socket", "/tmp/x.sock"}, io.Discard, io.Discard)
 	if code != exitOK {
-		t.Fatalf("runDaemon run exit = %d, want %d", code, exitOK)
+		t.Fatalf("runLauncher run exit = %d, want %d", code, exitOK)
 	}
 	if gotArgv0 != stub {
 		t.Errorf("argv0 = %q, want %q (resolved beside obsigna / on PATH)", gotArgv0, stub)
@@ -102,12 +118,14 @@ func TestRunDaemonRunExecsResolvedBinary(t *testing.T) {
 	}
 }
 
-// TestRunDaemonUsage covers the launcher's non-exec paths: a bare `daemon` and
-// an unknown subcommand are usage errors that name `daemon run`; `-h` prints
-// help and exits 0.
-func TestRunDaemonUsage(t *testing.T) {
+// TestRunLauncherUsage covers the launcher's non-exec paths: a bare noun and an
+// unknown subcommand are usage errors that name `<noun> run`; `-h` prints help
+// and exits 0.
+func TestRunLauncherUsage(t *testing.T) {
+	l := daemonLauncher(t)
+
 	var errb bytes.Buffer
-	if code := runDaemon(nil, io.Discard, &errb); code != exitUsageError {
+	if code := runLauncher("daemon", l, nil, io.Discard, &errb); code != exitUsageError {
 		t.Errorf("bare daemon exit = %d, want %d", code, exitUsageError)
 	}
 	if !strings.Contains(errb.String(), "obsigna daemon run") {
@@ -115,7 +133,7 @@ func TestRunDaemonUsage(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if code := runDaemon([]string{"-h"}, &out, io.Discard); code != exitOK {
+	if code := runLauncher("daemon", l, []string{"-h"}, &out, io.Discard); code != exitOK {
 		t.Errorf("daemon -h exit = %d, want %d", code, exitOK)
 	}
 	if !strings.Contains(out.String(), "obsigna daemon run") {
@@ -123,7 +141,7 @@ func TestRunDaemonUsage(t *testing.T) {
 	}
 
 	errb.Reset()
-	if code := runDaemon([]string{"frobnicate"}, io.Discard, &errb); code != exitUsageError {
+	if code := runLauncher("daemon", l, []string{"frobnicate"}, io.Discard, &errb); code != exitUsageError {
 		t.Errorf("unknown daemon subcommand exit = %d, want %d", code, exitUsageError)
 	}
 	if !strings.Contains(errb.String(), "unknown subcommand") {
@@ -134,12 +152,13 @@ func TestRunDaemonUsage(t *testing.T) {
 // TestDaemonRunPreservesAttestationTuple is the ADR-0031 acceptance test: after
 // `obsigna daemon run`, the daemon must run AS the launcher (same PID, image
 // replaced — not a forked child), keep the launcher's parent (systemd in
-// production, this test process here), and expose obsigna-daemon as its
+// production, this test process here), and expose the daemon binary as its
 // executable. It re-runs this test binary in the launcher role; that helper
 // execs a freshly built stub daemon which reports its own tuple.
 func TestDaemonRunPreservesAttestationTuple(t *testing.T) {
+	l := daemonLauncher(t)
 	binDir := t.TempDir()
-	daemonPath := filepath.Join(binDir, obsignaDaemonBinary)
+	daemonPath := filepath.Join(binDir, l.binary)
 	buildStubDaemon(t, daemonPath)
 
 	self, err := os.Executable()
@@ -180,15 +199,15 @@ func TestDaemonRunPreservesAttestationTuple(t *testing.T) {
 	if got.PPID != os.Getpid() {
 		t.Errorf("daemon ppid = %d, want %d (the launcher's parent, i.e. systemd in production)", got.PPID, os.Getpid())
 	}
-	// The attestation identity resolves to obsigna-daemon.
-	if base := filepath.Base(got.Exe); base != obsignaDaemonBinary {
-		t.Errorf("daemon exe = %q (base %q), want base %q", got.Exe, base, obsignaDaemonBinary)
+	// The attestation identity resolves to the daemon binary.
+	if base := filepath.Base(got.Exe); base != l.binary {
+		t.Errorf("daemon exe = %q (base %q), want base %q", got.Exe, base, l.binary)
 	}
 }
 
-// buildStubDaemon compiles stubDaemonSource into a binary at outPath named
-// obsigna-daemon. The single stdlib-only file builds standalone from a temp dir
-// outside the module, so it needs no go.mod.
+// buildStubDaemon compiles stubDaemonSource into a binary at outPath. The single
+// stdlib-only file builds standalone from a temp dir outside the module, so it
+// needs no go.mod.
 func buildStubDaemon(t *testing.T, outPath string) {
 	t.Helper()
 	srcDir := t.TempDir()

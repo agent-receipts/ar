@@ -90,7 +90,9 @@ jobs:
   # the operator CLI surface. A dependency edge from cmd/obsigna-daemon into the
   # receipt/keys/doctor/disclose *cli trees would drag operator-only code into
   # the long-running signing process and break the blast-radius claim the
-  # topology exists to make — so any such edge fails CI.
+  # topology exists to make. The rule lives in a Go test next to the code
+  # (cmd/obsigna-daemon/import_guard_test.go) so it is enforced locally too and
+  # auto-catches any new internal/*cli package; this job just runs it.
   import-graph:
     runs-on: ubuntu-latest
     steps:
@@ -100,20 +102,7 @@ jobs:
           go-version-file: daemon/go.mod
       - name: Assert obsigna-daemon excludes the operator CLI surface
         working-directory: daemon
-        run: |
-          set -euo pipefail
-          # Denylist = the operator read-side packages wired into cmd/obsigna
-          # (see cmd/obsigna/registry.go). The daemon legitimately shares
-          # crypto/store/canonicalization via internal/{anchor,chain,keysource,
-          # socket,pipeline} and sdk/go — those are allowed; only the *cli trees
-          # are forbidden.
-          denylist='github.com/agent-receipts/ar/daemon/internal/(verifycli|showcli|listcli|verifyeventcli|doctorcli|keyscli|disclosecli)'
-          deps="$(go list -deps ./cmd/obsigna-daemon)"
-          if echo "$deps" | grep -E "$denylist"; then
-            echo "::error::cmd/obsigna-daemon imports an operator CLI package (listed above). ADR-0031 requires a lean daemon import graph; move shared code into internal/{anchor,chain,keysource,socket,pipeline} or sdk/go rather than depending on a *cli package."
-            exit 1
-          fi
-          echo "ok: obsigna-daemon import graph excludes the operator CLI surface"
+        run: go test -run '^TestImportGraphExcludesOperatorSurface$' ./cmd/obsigna-daemon -v
 
   # Gate B (ADR-0031): reproducible build. Build obsigna-daemon twice from two
   # working-directory paths of different lengths and assert byte-identical
@@ -133,19 +122,17 @@ jobs:
           set -euo pipefail
           # Export the tracked tree (no .git, no untracked worktrees) into two
           # parent dirs whose paths differ in length, then build the daemon in
-          # each with the release determinism flags. The workspace (go.work) is
-          # exported too, so both builds resolve the in-tree sdk/go identically;
-          # the only difference between them is the absolute build path.
+          # each via the shared reproducible-build script (same determinism flags
+          # the release attestation uses). The workspace (go.work) is exported
+          # too, so both builds resolve the in-tree sdk/go identically; the only
+          # difference between them is the absolute build path.
           a=/tmp/p1
           b=/tmp/path-two-longer-than-one
           mkdir -p "$a/repo" "$b/repo"
           git archive --format=tar HEAD | tar -x -C "$a/repo"
           git archive --format=tar HEAD | tar -x -C "$b/repo"
-          build() {
-            ( cd "$1/repo/daemon" && CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-s -w' -o "$2" ./cmd/obsigna-daemon )
-          }
-          build "$a" /tmp/daemon-a
-          build "$b" /tmp/daemon-b
+          "$a/repo/daemon/scripts/reproducible-build.sh" "$a/repo/daemon" /tmp/daemon-a
+          "$b/repo/daemon/scripts/reproducible-build.sh" "$b/repo/daemon" /tmp/daemon-b
           h1="$(sha256sum /tmp/daemon-a | awk '{print $1}')"
           h2="$(sha256sum /tmp/daemon-b | awk '{print $1}')"
           echo "path-a sha256=$h1"

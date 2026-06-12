@@ -78,15 +78,22 @@ This is the value auditors compare their own rebuild against.
 Per ADR-0024 (every asserted property has a gate), the two claims above are enforced in
 CI rather than trusted:
 
-- **Gate A — lean import graph** (`daemon.yml`): `go list -deps ./cmd/obsigna-daemon`
-  filtered against a denylist of the operator CLI packages
-  (`internal/{verifycli,showcli,listcli,verifyeventcli,doctorcli,keyscli,disclosecli}`).
-  Any edge into that surface fails the build.
-- **Gate B — reproducible build** (`daemon.yml` + `release-daemon.yml`): on every PR,
-  build `obsigna-daemon` twice from two working-directory paths of different lengths and
-  assert byte-identical `sha256` (this is what proves `-trimpath` took effect). On
-  release, assert an independent clean rebuild matches the published artifact and emit the
-  hash; fail the release on mismatch.
+- **Gate A — lean import graph**: a Go test next to the code
+  (`cmd/obsigna-daemon/import_guard_test.go`) runs `go list -deps .` and fails on any
+  dependency matching `internal/<name>cli` — the operator read-side packages
+  (verifycli, showcli, listcli, verifyeventcli, doctorcli, keyscli, disclosecli, and any
+  future sibling). Keying on the `cli` suffix rather than an enumerated list means a newly
+  added operator package is denied automatically. It runs in the normal test suite and in
+  a dedicated `daemon.yml` job; the daemon's shared crypto/store packages
+  (`internal/{anchor,chain,keysource,socket,pipeline}`) and `sdk/go` carry no `cli`
+  suffix and are allowed.
+- **Gate B — reproducible build** (`daemon.yml` + `release-daemon.yml`): both rebuilds go
+  through one shared script (`daemon/scripts/reproducible-build.sh`) so the PR gate and the
+  release attestation can't drift, and it stays in lockstep with the goreleaser build
+  flags. On every PR, build `obsigna-daemon` twice from two working-directory paths of
+  different lengths and assert byte-identical `sha256` (this is what proves `-trimpath`
+  took effect). On release, assert an independent clean rebuild matches the published
+  artifact and emit the hash; fail the release on mismatch.
 
 The attestation tuple itself is covered by a unit test
 (`cmd/obsigna/daemon_test.go`): `obsigna daemon run` is shown to replace its image (the

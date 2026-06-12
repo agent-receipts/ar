@@ -49,14 +49,14 @@ The Python SDK is on PyPI:
 pip install agent-receipts
 ```
 
-Receipts are signed by a separate `agent-receipts-daemon` process, which also
+Receipts are signed by a separate `obsigna-daemon` process, which also
 ships the `agent-receipts` CLI (including the `verify` command). Install it on
 Linux or macOS (Windows is not supported yet) — see the
 [Daemon Setup guide](https://agentreceipts.ai/getting-started/daemon-setup/).
 
 ## Quick start
 
-Agent Receipts are signed by a separate `agent-receipts-daemon` process, not by
+Agent Receipts are signed by a separate `obsigna-daemon` process, not by
 your application. Your code sends tool-call *events* over a local Unix socket;
 the daemon holds the Ed25519 signing key, builds the receipt, signs it, and
 appends it to the hash-chained store. The signing key never enters your process —
@@ -74,8 +74,8 @@ default socket — see the
 socket paths and running it as a service.
 
 ```sh
-agent-receipts-daemon --init   # one-time: creates the signing key
-agent-receipts-daemon          # start the daemon (leave it running)
+obsigna-daemon --init   # one-time: creates the signing key
+obsigna-daemon          # start the daemon (leave it running)
 ```
 
 ### 2. Emit a receipt
@@ -478,7 +478,7 @@ uv run pyright             # type check
 | **[Python SDK](https://github.com/agent-receipts/ar/tree/main/sdk/py)** (this package) | [PyPI](https://pypi.org/project/agent-receipts/) |
 | [TypeScript SDK](https://github.com/agent-receipts/ar/tree/main/sdk/ts) | [npm](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts) |
 | [Go SDK](https://github.com/agent-receipts/ar/tree/main/sdk/go) | `go get github.com/agent-receipts/ar/sdk/go` |
-| [agent-receipts-daemon](https://github.com/agent-receipts/ar/tree/main/daemon) | Out-of-process signer + `agent-receipts` verify CLI (canonical deployment) |
+| [obsigna-daemon](https://github.com/agent-receipts/ar/tree/main/daemon) | Out-of-process signer + `agent-receipts` verify CLI (canonical deployment) |
 | [agent-receipts/spec](https://github.com/agent-receipts/spec) | Protocol specification, JSON Schemas, canonical taxonomy |
 | [ojongerius/attest](https://github.com/ojongerius/attest) | MCP proxy + CLI (reference implementation) |
 

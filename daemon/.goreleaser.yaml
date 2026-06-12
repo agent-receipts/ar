@@ -24,6 +24,8 @@ before:
 # -buildvcs=false omits git VCS stamping: the `before` hook copies LICENSE into
 # daemon/ (an untracked file), which would otherwise flip go's vcs.modified and
 # make the released binary differ from a clean rebuild that has no such file.
+# Keep these obsigna-daemon flags in lockstep with daemon/scripts/reproducible-build.sh,
+# the shared script the Gate B reproducibility checks rebuild with (ADR-0031).
 builds:
   - id: obsigna-daemon
     main: ./cmd/obsigna-daemon
