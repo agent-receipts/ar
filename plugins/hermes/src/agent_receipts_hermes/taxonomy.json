@@ -1,0 +1,80 @@
+{
+  "mappings": [
+    { "tool_name": "read_file",          "action_type": "filesystem.file.read",    "disclosure_fields": ["path", "file_path", "filename"] },
+    { "tool_name": "write_file",         "action_type": "filesystem.file.create",  "disclosure_fields": ["path", "file_path", "filename"] },
+    { "tool_name": "edit_file",          "action_type": "filesystem.file.modify",  "disclosure_fields": ["path", "file_path", "filename"] },
+    { "tool_name": "delete_file",        "action_type": "filesystem.file.delete",  "disclosure_fields": ["path", "file_path", "filename"] },
+    { "tool_name": "move_file",          "action_type": "filesystem.file.move" },
+    { "tool_name": "copy_file",          "action_type": "filesystem.file.create" },
+    { "tool_name": "list_directory",     "action_type": "filesystem.file.read" },
+    { "tool_name": "list_dir",           "action_type": "filesystem.file.read" },
+    { "tool_name": "create_directory",   "action_type": "filesystem.directory.create" },
+    { "tool_name": "remove_directory",   "action_type": "filesystem.directory.delete" },
+    { "tool_name": "search_files",       "action_type": "filesystem.file.read" },
+    { "tool_name": "grep",               "action_type": "filesystem.file.read" },
+    { "tool_name": "find",               "action_type": "filesystem.file.read" },
+
+    { "tool_name": "run_command",        "action_type": "system.command.execute",  "disclosure_fields": ["command", "cmd"] },
+    { "tool_name": "execute_command",    "action_type": "system.command.execute",  "disclosure_fields": ["command", "cmd"] },
+    { "tool_name": "shell",              "action_type": "system.command.execute",  "disclosure_fields": ["command", "cmd"] },
+    { "tool_name": "bash",               "action_type": "system.command.execute",  "disclosure_fields": ["command", "cmd", "script"] },
+    { "tool_name": "terminal",           "action_type": "system.command.execute",  "disclosure_fields": ["command", "cmd"] },
+    { "tool_name": "code_execution",     "action_type": "system.command.execute" },
+    { "tool_name": "python",             "action_type": "system.command.execute",  "disclosure_fields": ["code", "script"] },
+    { "tool_name": "exec",               "action_type": "system.command.execute",  "disclosure_fields": ["command", "cmd"] },
+
+    { "tool_name": "browser_navigate",   "action_type": "system.browser.navigate",  "disclosure_fields": ["url"] },
+    { "tool_name": "browser_click",      "action_type": "system.browser.form_submit" },
+    { "tool_name": "browser_type",       "action_type": "system.browser.form_submit" },
+    { "tool_name": "browser_screenshot", "action_type": "system.browser.navigate" },
+    { "tool_name": "browser_fill",       "action_type": "system.browser.form_submit" },
+    { "tool_name": "browser_submit",     "action_type": "system.browser.form_submit" },
+    { "tool_name": "web_fetch",          "action_type": "system.browser.navigate",  "disclosure_fields": ["url"] },
+    { "tool_name": "web_search",         "action_type": "system.browser.navigate",  "disclosure_fields": ["query"] },
+    { "tool_name": "fetch_url",          "action_type": "system.browser.navigate",  "disclosure_fields": ["url"] },
+
+    { "tool_name": "send_message",       "action_type": "system.application.control" },
+    { "tool_name": "reply",              "action_type": "system.application.control" },
+    { "tool_name": "post_message",       "action_type": "system.application.control" },
+
+    { "tool_name": "memory_store",       "action_type": "filesystem.file.create" },
+    { "tool_name": "memory_recall",      "action_type": "filesystem.file.read" },
+    { "tool_name": "memory_search",      "action_type": "filesystem.file.read" },
+    { "tool_name": "memory_get",         "action_type": "filesystem.file.read" },
+    { "tool_name": "memory_save",        "action_type": "filesystem.file.create" },
+    { "tool_name": "memory_delete",      "action_type": "filesystem.file.delete" },
+
+    { "tool_name": "skill_create",       "action_type": "filesystem.file.create" },
+    { "tool_name": "skill_update",       "action_type": "filesystem.file.modify" },
+    { "tool_name": "skill_delete",       "action_type": "filesystem.file.delete" },
+    { "tool_name": "skill_invoke",       "action_type": "system.application.control" },
+
+    { "tool_name": "subagent_spawn",     "action_type": "system.command.execute" },
+    { "tool_name": "subagent_send",      "action_type": "system.application.control" },
+    { "tool_name": "subagent_wait",      "action_type": "system.application.control" },
+
+    { "tool_name": "cron_schedule",      "action_type": "system.settings.modify" },
+    { "tool_name": "cron_cancel",        "action_type": "system.settings.modify" },
+
+    { "tool_name": "image_generate",     "action_type": "filesystem.file.create" },
+    { "tool_name": "image_describe",     "action_type": "filesystem.file.read" },
+    { "tool_name": "video_generate",     "action_type": "filesystem.file.create" },
+    { "tool_name": "tts",                "action_type": "system.application.control" },
+    { "tool_name": "transcribe",         "action_type": "filesystem.file.read" },
+
+    { "tool_name": "api_get",            "action_type": "data.api.read",            "disclosure_fields": ["url", "endpoint"] },
+    { "tool_name": "api_post",           "action_type": "data.api.write",           "disclosure_fields": ["url", "endpoint"] },
+    { "tool_name": "api_delete",         "action_type": "data.api.delete",          "disclosure_fields": ["url", "endpoint"] },
+    { "tool_name": "http_request",       "action_type": "data.api.read",            "disclosure_fields": ["url", "method"] }
+  ],
+  "patterns": [
+    { "prefix": "browser_",  "action_type": "system.browser.navigate" },
+    { "prefix": "fs_",       "action_type": "filesystem.file.read" },
+    { "prefix": "file_",     "action_type": "filesystem.file.read" },
+    { "prefix": "memory_",   "action_type": "filesystem.file.read" },
+    { "prefix": "skill_",    "action_type": "system.application.control" },
+    { "prefix": "subagent_", "action_type": "system.application.control" },
+    { "prefix": "cron_",     "action_type": "system.settings.modify" },
+    { "prefix": "api_",      "action_type": "data.api.read" }
+  ]
+}

@@ -1,0 +1,18 @@
+name: agent-receipts
+version: "0.1.0"
+description: >
+  Cryptographically signed, hash-linked audit trail for every tool call a
+  hermes agent makes. Built on the Agent Receipts protocol — each receipt
+  is a W3C Verifiable Credential signed by a local daemon, parameters are
+  hashed by default. Enable via `hermes plugins enable observability/agent-receipts`
+  or by checking the box in the interactive `hermes plugins` UI.
+author: agent-receipts.ai
+requires_env: []
+hooks:
+  - pre_tool_call
+  - post_tool_call
+# Agent-callable tools (ar_query_receipts, ar_verify_chain) are
+# registered at runtime via ctx — see register() in __init__.py —
+# rather than declared here. Hermes' manifest-driven tool format is
+# not documented in the public repo, so we avoid double-registration
+# by keeping the manifest hooks-only (matches plugins/observability/langfuse).

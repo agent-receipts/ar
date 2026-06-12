@@ -11,6 +11,7 @@ sdk/ts/        # TypeScript SDK (@agnt-rcpt/sdk-ts)
 sdk/py/        # Python SDK (agent-receipts)
 mcp-proxy/     # MCP STDIO proxy with audit, policy, and receipts (Go)
 hook/          # PostToolUse hook binary for Claude Code and other runtimes (Go)
+plugins/       # Third-party agent-runtime integrations (e.g. hermes); see plugins/AGENTS.md
 site/          # Documentation site (Astro)
 cross-sdk-tests/  # Cross-language receipt verification tests
 ```
@@ -26,6 +27,7 @@ Each subdirectory has its own AGENTS.md with project-specific details.
 | sdk/py | Python | `uv run pytest` | `uv build` |
 | mcp-proxy | Go | `go test ./...` | `go build ./cmd/mcp-proxy` |
 | hook | Go | `go test ./...` | `go build ./cmd/agent-receipts-hook` |
+| plugins/hermes | Python | `uv run pytest` | `uv build` |
 | site | TypeScript | — | `pnpm build` |
 | spec | — | — | JSON schema validation |
 
