@@ -46,6 +46,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0030](0030-cli-command-taxonomy.md) | CLI Command Taxonomy | Accepted |
 | [ADR-0031](0031-binary-topology.md) | Daemon Binary Topology — Dispatcher + Minimal Daemon | Accepted |
 | [ADR-0032](0032-mcp-proxy-transport.md) | mcp-proxy Transport — stdio, HTTP Deferred | Accepted |
+| [ADR-0033](0033-mcp-proxy-binary-topology.md) | mcp-proxy Binary Topology — Minimal obsigna-mcp, obsigna mcp run | Accepted |
 
 ## References
 

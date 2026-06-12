@@ -11,6 +11,29 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+### Changed
+
+- **Binary renamed `mcp-proxy` → `obsigna-mcp` (ADR-0033).** The proxy is now its own
+  minimal binary, `obsigna-mcp`, launched in production via `obsigna mcp run` (ADR-0030),
+  which `syscall.Exec`s straight into it. **Breaking for installers and MCP client configs
+  that invoke the binary by an absolute path to a renamed file.** A thin `mcp-proxy`
+  deprecation shim ships alongside `obsigna-mcp` and exec-forwards to it, so the common
+  `$(which mcp-proxy)` invocation and existing configs keep working — update them to
+  `obsigna-mcp` (or `obsigna mcp run`) when convenient; the shim will be removed in a
+  future release. The Homebrew formula names (`mcp-proxy`, `mcp-proxy-alpha`) are unchanged;
+  both binaries are installed.
+
+### Added
+
+- **Gate A — thin-emitter import graph (ADR-0033).** A CI-enforced test asserts
+  `obsigna-mcp`'s production import graph never reaches the receipt store, a SQLite driver,
+  receipt signing, or the daemon library, making ADR-0010's "daemon is the sole writer"
+  boundary structural.
+- **Gate B — reproducible builds (ADR-0033).** `obsigna-mcp` is now built with `-trimpath`,
+  `-buildvcs=false`, `mod_timestamp`, and a patch-pinned toolchain; CI proves byte-identical
+  rebuilds across paths on every PR and attests the released binary against an independent
+  rebuild on release.
+
 ## [0.14.0] - 2026-06-09
 
 Graduates `0.14.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.14.0-alpha.1` entry below for the full surface (`correlation_id` and `agent_id` forwarding, delegation receipts).

@@ -5,16 +5,17 @@ Thin MCP proxy: enforces policy on tool calls and forwards completed events to t
 ## Getting started
 
 ```sh
-go build ./...                         # build all
-go build -o mcp-proxy ./cmd/mcp-proxy  # build binary
-go test ./...                          # run tests
-go vet ./...                           # static analysis
+go build ./...                              # build all
+go build -o obsigna-mcp ./cmd/obsigna-mcp   # build the proxy binary
+go test ./...                               # run tests
+go vet ./...                                # static analysis
 ```
 
 ## Project structure
 
 ```
-cmd/mcp-proxy/     # CLI entry point (serve, doctor, init)
+cmd/obsigna-mcp/   # CLI entry point (serve, doctor, init) — the proxy binary (ADR-0033)
+cmd/mcp-proxy/     # thin deprecation shim: execs obsigna-mcp (ADR-0033)
 internal/
   proxy/           # STDIO proxy, JSON-RPC parsing
   audit/           # Classifier, risk scorer, approval manager (no persistence)
