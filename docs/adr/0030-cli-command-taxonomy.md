@@ -27,6 +27,7 @@ Noun groups and leaves:
 obsigna receipt verify <file|->     # alias: obsigna verify
 obsigna receipt show <id>           # alias: obsigna show
 obsigna receipt list
+obsigna receipt verify-event        # carried over from agent-receipts (PR #788)
 
 obsigna daemon run                  # foreground primitive
 obsigna daemon status
@@ -39,7 +40,13 @@ obsigna keys pubkey
 obsigna keys rotate                 # ADR-0015 surface
 
 obsigna mcp run                     # the mcp-proxy
+
+obsigna doctor                      # top-level diagnostic; carried over from agent-receipts (PR #788)
 ```
+
+`obsigna doctor` is an intentional exception to grouped noun-verb: a diagnostic
+entrypoint that mirrors `brew doctor`. It is not a precedent for other flat top-level
+verbs — new functionality still only ever receives a grouped command.
 
 **Flat aliases are a closed two-member set: `{verify, show}`**, mapping to
 `obsigna receipt verify` / `obsigna receipt show`.
@@ -70,6 +77,13 @@ the canonical form stays unambiguous without hurting discoverability.
   shipping a binary named `agent-receipts`).
 - The top-level noun groups, the leaf verbs, and the two flat aliases are now a frozen
   compatibility surface. Changing any of them later is itself a user-visible migration.
+- `obsigna receipt verify-event` and the top-level `obsigna doctor` were carried over from
+  the legacy `agent-receipts` CLI in PR #788. The golden surface test
+  (`daemon/cmd/obsigna/surface_test.go`) freezes the surface the `obsigna` binary actually
+  ships today — the `receipt` and `keys` groups, top-level `doctor`, and the flat aliases —
+  and is the enforcement that keeps that subset and this document in lockstep. The reserved
+  `daemon`, `collector`, and `mcp` nouns are not yet shipped, so they are intentionally
+  absent from the gate until the consolidation ADR lands.
 - This decision is agnostic to binary packaging — `obsigna daemon run` may be compiled-in
   or transparently exec `obsigna-daemon`; the verb contract and the formula consumer never
   see the difference.
