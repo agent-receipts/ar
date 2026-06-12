@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-12
+
+Graduates the 0.19.0-alpha.1 … 0.22.0-alpha.1 series to stable. No code changes since 0.22.0-alpha.1; this entry consolidates the CLI rename (ADR-0030) and daemon binary rename (ADR-0031) along with the reproducible-build attestation gates that shipped across those alphas.
+
+### Added
+
+- **`obsigna` CLI** (ADR-0030) — the receipt CLI is renamed `agent-receipts` → `obsigna` with a grouped noun-verb surface: `obsigna receipt {verify,show,list,verify-event}`, `obsigna keys {generate,pubkey,rotate}`, and `obsigna doctor`. Flat aliases `obsigna verify` / `obsigna show` are preserved as a closed set for the verbs that live in existing scripts. `keys generate` and `keys rotate` mirror `agent-receipts-daemon --init` / `--rotate`; `keys pubkey` prints the SPKI public key. A golden surface test freezes the command tree so any drift from ADR-0030 fails CI.
+
+### Changed
+
+- **Daemon binary renamed `agent-receipts-daemon` → `obsigna-daemon`** (ADR-0031) — the daemon process binary is now `obsigna-daemon`, built from `./cmd/obsigna-daemon`. `obsigna daemon run` execs the renamed binary via `syscall.Exec`, preserving the attestation tuple (the daemon's issuer identity and signing key are unchanged — `did:agent-receipts-daemon:` issuer strings are untouched). The Homebrew formulae, `brew services`, and the release archives now install and launch `obsigna-daemon`. **Breaking for operators:** any install script, systemd unit, launchd plist, `brew services` invocation, or wrapper that references the `agent-receipts-daemon` binary by name must be updated to `obsigna-daemon`, and the service restarted after upgrading. The Homebrew formula names are unchanged (`agent-receipts-daemon` / `agent-receipts-daemon-alpha`) — only the installed binary was renamed.
+
+- **`agent-receipts` is now a deprecation shim** — it keeps every historical subcommand working (`verify`, `show`, `list`, `verify-event`, `doctor`) by printing a one-line deprecation notice to **stderr** (never stdout, so piped output stays byte-clean) and forwarding to the equivalent `obsigna` command, exiting with the forwarded status. The Homebrew formula now installs `obsigna` alongside `obsigna-daemon` and the shim.
+
+### Build
+
+- **Reproducible-build attestation gates** (ADR-0031) — two CI gates protect the rename and the build provenance. **Gate A** is a lean import-graph test (`cmd/obsigna-daemon/import_guard_test.go`) that fails if the long-running `obsigna-daemon` signing process links any operator read-side CLI package (`internal/*cli`) — a blast-radius control keyed on the `cli` suffix so new operator packages are denied automatically. **Gate B** is a reproducible-build gate: the `obsigna-daemon` build pins the toolchain (`go.mod` `toolchain`, consumed via `go-version-file` in CI), sets `-trimpath`, `-buildvcs=false`, `CGO_ENABLED=0`, and `mod_timestamp` from the commit timestamp so the binary is a deterministic function of the commit. The PR check rebuilds along two paths and compares; the release side rebuilds and publishes a SHA-256 attestation. Build flags are kept in lockstep between `daemon/.goreleaser.yaml` and `daemon/scripts/reproducible-build.sh`.
+
+- **`action.target.{system,resource}` on signed receipts** ([#784](https://github.com/agent-receipts/ar/pull/784), ADR-0029) — `validateFrame` enforces XOR consistency (both fields set or both absent), caps `target_system` at 256 bytes and `target_resource` at 4096 bytes. `buildAndSign` maps validated frame target fields into `action.target` on the signed receipt.
+
 ## [0.22.0-alpha.1] - 2026-06-12
 
 ### Changed
@@ -332,6 +352,7 @@ Graduates `0.17.0-alpha.1` after the alpha pass. No code changes since the alpha
 - Comprehensive suite of integration tests covering socket communication,
   chain continuity, key generation, and verification workflows.
 
+[0.22.0]: https://github.com/agent-receipts/obsigna/releases/tag/daemon%2Fv0.22.0
 [0.8.1]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.1
 [0.8.0]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0
 [0.8.0-alpha.2]: https://github.com/agent-receipts/ar/releases/tag/daemon%2Fv0.8.0-alpha.2
