@@ -20,11 +20,14 @@ func isolate(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dir)
-	// Clear any inherited overrides so each test starts from the defaults it
-	// sets explicitly.
+	// Clear every AGENTRECEIPTS_* variable keyscli reads so each test starts from
+	// the defaults it sets explicitly — a host value (especially ANCHOR_LOG, which
+	// would write to an unintended path, or ISSUER_ID, which would fail the
+	// identity-default assertions) must not leak in.
 	for _, k := range []string{
 		"AGENTRECEIPTS_CONFIG", "AGENTRECEIPTS_KEY", "AGENTRECEIPTS_PUBLIC_KEY",
 		"AGENTRECEIPTS_DB", "AGENTRECEIPTS_CHAIN_ID", "AGENTRECEIPTS_SOCKET",
+		"AGENTRECEIPTS_ISSUER_ID", "AGENTRECEIPTS_VERIFICATION_METHOD", "AGENTRECEIPTS_ANCHOR_LOG",
 	} {
 		t.Setenv(k, "")
 	}
@@ -142,6 +145,23 @@ func TestRunRotate(t *testing.T) {
 	}
 	if iss := chain[0].Issuer.ID; iss != daemon.DefaultIssuerID {
 		t.Errorf("rotation receipt issuer = %q, want daemon default %q", iss, daemon.DefaultIssuerID)
+	}
+}
+
+func TestRotateMissingRequiredPathsAreUsageErrors(t *testing.T) {
+	dir := isolate(t)
+	db := filepath.Join(dir, "receipts.db")
+	cases := map[string][]string{
+		"empty key": {"--key", "", "--db", db},
+		"empty db":  {"--key", filepath.Join(dir, "signing.key"), "--db", ""},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			var errOut bytes.Buffer
+			if code := RunRotate(args, io.Discard, &errOut, nil); code != ExitUsageError {
+				t.Errorf("rotate with %s exit = %d, want %d (usage error, not operational)", name, code, ExitUsageError)
+			}
+		})
 	}
 }
 

@@ -149,6 +149,18 @@ func RunRotate(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		fmt.Fprintf(stderr, "obsigna keys rotate: %v\n", cfgErr)
 		return ExitUsageError
 	}
+	// Validate the inputs that can be empty (no flag/env and no resolvable home)
+	// here, as a usage error, rather than letting daemon.RotateKey report them as
+	// operational errors — this keeps the package's exit-code contract consistent
+	// with generate/pubkey (missing required path => ExitUsageError, not ExitError).
+	if *keyPath == "" {
+		fmt.Fprintln(stderr, "obsigna keys rotate: --key is required (no AGENTRECEIPTS_KEY and no home directory)")
+		return ExitUsageError
+	}
+	if *dbPath == "" {
+		fmt.Fprintln(stderr, "obsigna keys rotate: --db is required (no AGENTRECEIPTS_DB and no home directory)")
+		return ExitUsageError
+	}
 
 	cfg := daemon.Config{
 		KeyPath:              *keyPath,
