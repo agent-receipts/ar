@@ -153,14 +153,18 @@ func TestFlatAliasInvariant(t *testing.T) {
 	}
 }
 
-// TestLauncherSurface pins the process-launcher table (ADR-0031, ADR-0033).
-// `daemon` execs obsigna-daemon and `mcp` execs obsigna-mcp; collector stays out
-// until its ADR. A launcher must never collide with a group, top leaf, or alias,
-// or dispatch would be ambiguous.
+// TestLauncherSurface pins the process-launcher table (ADR-0031, ADR-0033,
+// ADR-0035). `daemon` execs obsigna-daemon, `mcp` execs obsigna-mcp, and
+// `collector` execs obsigna-collector. A launcher must never collide with a
+// group, top leaf, or alias, or dispatch would be ambiguous.
 func TestLauncherSurface(t *testing.T) {
 	tr := commandTree()
 
-	want := map[string]string{"daemon": "obsigna-daemon", "mcp": "obsigna-mcp"}
+	want := map[string]string{
+		"daemon":    "obsigna-daemon",
+		"mcp":       "obsigna-mcp",
+		"collector": "obsigna-collector",
+	}
 	if got := keys(tr.launchers); !equalSet(got, mapKeys(want)) {
 		t.Errorf("launcher set = %v, want %v", got, mapKeys(want))
 	}

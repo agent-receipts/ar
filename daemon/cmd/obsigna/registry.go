@@ -54,9 +54,9 @@ type launcher struct {
 // ADR-0030 freezes the canonical grouped form; `verify-event` and `doctor` are
 // carried over from the legacy `agent-receipts` CLI so the deprecation shim can
 // preserve every current subcommand. The reserved process nouns live in the
-// launchers table below: `daemon` is wired (ADR-0031) and `mcp` is wired
-// (ADR-0033, execs obsigna-mcp); `collector` remains out of scope until its
-// consolidation ADR.
+// launchers table below: `daemon` is wired (ADR-0031), `mcp` is wired
+// (ADR-0033, execs obsigna-mcp), and `collector` is wired (ADR-0035, execs
+// obsigna-collector).
 func commandTree() tree {
 	return tree{
 		groupOrder: []string{"receipt", "keys"},
@@ -93,10 +93,11 @@ func commandTree() tree {
 			"verify": {"receipt", "verify"},
 			"show":   {"receipt", "show"},
 		},
-		launcherOrder: []string{"daemon", "mcp"},
+		launcherOrder: []string{"daemon", "mcp", "collector"},
 		launchers: map[string]launcher{
-			"daemon": {"Launch the receipts daemon (execs obsigna-daemon; ADR-0031).", "obsigna-daemon"},
-			"mcp":    {"Launch the MCP proxy (execs obsigna-mcp; ADR-0030, ADR-0033).", "obsigna-mcp"},
+			"daemon":    {"Launch the receipts daemon (execs obsigna-daemon; ADR-0031).", "obsigna-daemon"},
+			"mcp":       {"Launch the MCP proxy (execs obsigna-mcp; ADR-0030, ADR-0033).", "obsigna-mcp"},
+			"collector": {"Launch the receipt collector (execs obsigna-collector; ADR-0034, ADR-0035).", "obsigna-collector"},
 		},
 	}
 }

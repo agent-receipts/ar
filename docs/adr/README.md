@@ -48,6 +48,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0032](0032-mcp-proxy-transport.md) | mcp-proxy Transport — stdio, HTTP Deferred | Accepted |
 | [ADR-0033](0033-mcp-proxy-binary-topology.md) | mcp-proxy Binary Topology — Minimal obsigna-mcp, obsigna mcp run | Accepted |
 | [ADR-0034](0034-consolidate-go-toolset-release-train.md) | Consolidate the Go Toolset into One obsigna Release Train | Accepted |
+| [ADR-0035](0035-collector-binary-topology.md) | Collector Binary Topology — Minimal obsigna-collector, obsigna collector run | Accepted |
 
 ## References
 
