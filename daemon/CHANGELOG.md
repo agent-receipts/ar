@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`obsigna doctor` auto-detects the daemon's active chain** — with no `--chain-id`/`AGENTRECEIPTS_CHAIN_ID`, doctor now resolves the chain to inspect from the store's most recently written root chain (via `store.LatestRootChainID`) instead of assuming today's UTC date. The old default produced a spurious `chain head` warn and a `round-trip` **fail** ("did not land … the daemon may not be the sole writer") whenever the daemon's chain id was not literally today's UTC date — i.e. a configured `chain_id`, a daemon running across a UTC-midnight rollover, or a rolled `-N` suffix. The synthetic event was traversing the pipeline correctly all along; doctor was just polling the wrong chain. The bare UTC date remains the fallback only for an empty store.
+
+### Changed
+
+- **Doctor output and error messages now say `obsigna doctor`** (not `agent-receipts doctor`), matching the renamed CLI.
+
 ## [0.23.0] - 2026-06-12
 
 ### Changed

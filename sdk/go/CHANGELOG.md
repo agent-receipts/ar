@@ -11,6 +11,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+### Added
+
+- **`Store.LatestRootChainID()`** — returns the chain id of the most recently written root receipt (the chain the daemon is currently appending to), or `found=false` for an empty store. Recency is by `rowid` (write order), not timestamp, so it is correct even when many receipts share the same RFC3339 second. Agent sub-chains (`…/agent/…`) are excluded. Used by `obsigna doctor` to target the live chain instead of guessing today's date.
+
 ## [0.19.0-alpha.1] - 2026-06-12
 
 ### Added
