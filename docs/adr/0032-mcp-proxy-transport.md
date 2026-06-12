@@ -29,8 +29,8 @@ unattributed action then gets stamped with a guessed identity and signed into th
   identity resolution, so the codepath that produced `did:user:unknown` ceases to exist.
   The bug is made unrepresentable, not merely fixed.
 - One-principal-per-process keeps the trust boundary **structural rather than enforced in
-  code** — the same argument that earned the daemon its own binary in
-  [ADR-0031](./0031-binary-topology.md). The process boundary *is* the principal boundary.
+  code** — the same argument that earned the daemon its own binary in ADR-0031 (Daemon
+  Binary Topology). The process boundary *is* the principal boundary.
 - It matches how MCP clients invoke servers today: spawned per session over stdio.
 
 ### Commitments this ADR locks in
