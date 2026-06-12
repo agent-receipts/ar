@@ -1,11 +1,17 @@
 # Changelog
 
-All notable changes to `agent-receipts-daemon` are documented in this file.
+All notable changes to `obsigna-daemon` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.23.0] - 2026-06-12
+
+### Changed
+
+- **Homebrew formula renamed `agent-receipts-daemon` → `obsigna-daemon`** (and `agent-receipts-daemon-alpha` → `obsigna-daemon-alpha`) — the final step of the Obsigna rebrand. The installed binary has been `obsigna-daemon` since 0.22.0 (ADR-0031); now the formula itself carries the brand: `brew install agent-receipts/tap/obsigna-daemon`. Existing installs migrate transparently — the tap's `tap_migrations.json` maps the old formula names to the new ones, so `brew update && brew upgrade` moves users with no manual step. The formula's `conflicts_with` (stable ↔ alpha) is updated accordingly. The `obsigna-daemon` binary, the `brew services` integration, data paths (`~/.local/share/agent-receipts/`), the `agentreceipts` OS user, `AGENTRECEIPTS_*` env vars, and `did:agent-receipts-daemon:` issuer strings are all unchanged.
 
 ## [0.22.0] - 2026-06-12
 
