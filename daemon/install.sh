@@ -30,7 +30,7 @@ die()  { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 main() {
   # Linux only
   [ "$(uname -s)" = "Linux" ] || \
-    die "Linux only. For macOS: brew install agent-receipts/tap/agent-receipts-daemon"
+    die "Linux only. For macOS: brew install agent-receipts/tap/obsigna-daemon"
 
   # Require systemd
   command -v systemctl >/dev/null 2>&1 || \

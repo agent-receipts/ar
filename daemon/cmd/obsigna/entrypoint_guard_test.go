@@ -94,6 +94,60 @@ func TestObsignaIsPrimaryEntrypoint(t *testing.T) {
 	}
 }
 
+// brewFormulaNames returns the formula `name:` of every entry under the
+// goreleaser `brews:` list. The name is the list-item's own key (`  - name:`),
+// which sits two spaces in; the nested `name: homebrew-tap` under `repository:`
+// is deeper-indented and is deliberately not captured.
+func brewFormulaNames(yaml string) []string {
+	topKey := regexp.MustCompile(`^[a-z]`)
+	nameRe := regexp.MustCompile(`^  - name:\s*(\S+)`)
+
+	inBrews := false
+	var names []string
+	for _, line := range strings.Split(yaml, "\n") {
+		if topKey.MatchString(line) {
+			inBrews = strings.HasPrefix(line, "brews:")
+			continue
+		}
+		if !inBrews {
+			continue
+		}
+		if m := nameRe.FindStringSubmatch(line); m != nil {
+			names = append(names, m[1])
+		}
+	}
+	return names
+}
+
+// TestBrewFormulaeUseObsignaName is the anti-regression gate for the Homebrew
+// formula rename (agent-receipts-daemon -> obsigna-daemon). The installed binary
+// has been obsigna-daemon since ADR-0031; this guards the final step where the
+// formula itself carries the Obsigna brand. The tap's tap_migrations.json moves
+// existing installs off the legacy names, so reintroducing them here would fork
+// users back onto an unmigrated formula.
+func TestBrewFormulaeUseObsignaName(t *testing.T) {
+	yaml := readFile(t, "../../.goreleaser.yaml")
+	names := brewFormulaNames(yaml)
+	if len(names) == 0 {
+		t.Fatal("no formula names found under goreleaser brews:")
+	}
+
+	want := map[string]bool{"obsigna-daemon": false, "obsigna-daemon-alpha": false}
+	for _, name := range names {
+		if strings.HasPrefix(name, "agent-receipts-daemon") {
+			t.Errorf("brew formula %q uses the legacy name; the daemon formula must be obsigna-daemon(-alpha)", name)
+		}
+		if _, ok := want[name]; ok {
+			want[name] = true
+		}
+	}
+	for name, seen := range want {
+		if !seen {
+			t.Errorf("expected a brew formula named %q, but it is missing", name)
+		}
+	}
+}
+
 // TestShimDoesNotReimplementSurface keeps cmd/agent-receipts a thin forwarder: it
 // must carry the shim marker and must NOT import the subcommand packages (which
 // would mean it had grown its own command surface again).
