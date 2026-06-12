@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from agent_receipts.daemon_emitter import (
+from obsigna.daemon_emitter import (
     DaemonEmitter,
     EmitTransportError,
     default_socket_path,

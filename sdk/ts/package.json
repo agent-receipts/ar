@@ -1,5 +1,5 @@
 {
-	"name": "@agnt-rcpt/sdk-ts",
+	"name": "@obsigna/sdk-ts",
 	"version": "0.13.0-alpha.1",
 	"description": "TypeScript SDK for the Agent Receipts protocol",
 	"license": "Apache-2.0",
