@@ -2,6 +2,12 @@ module github.com/agent-receipts/ar/mcp-proxy
 
 go 1.26.1
 
+// Pin the toolchain to the patch (ADR-0033): the reproducible-build attestation
+// (Gate B) requires the exact compiler so an independent rebuild matches the
+// published obsigna-mcp bytes. CI consumes this via setup-go's go-version-file,
+// so it cannot float to the latest 1.26.x.
+toolchain go1.26.1
+
 require (
 	github.com/agent-receipts/ar/daemon v0.16.0
 	github.com/agent-receipts/ar/sdk/go v0.15.0

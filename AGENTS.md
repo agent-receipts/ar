@@ -24,7 +24,7 @@ Each subdirectory has its own AGENTS.md with project-specific details.
 | sdk/go | Go | `go test ./...` | `go build ./...` |
 | sdk/ts | TypeScript | `pnpm test` | `pnpm build` |
 | sdk/py | Python | `uv run pytest` | `uv build` |
-| mcp-proxy | Go | `go test ./...` | `go build ./cmd/mcp-proxy` |
+| mcp-proxy | Go | `go test ./...` | `go build ./cmd/...` (obsigna-mcp + mcp-proxy shim) |
 | hook | Go | `go test ./...` | `go build ./cmd/agent-receipts-hook` |
 | site | TypeScript | — | `pnpm build` |
 | spec | — | — | JSON schema validation |

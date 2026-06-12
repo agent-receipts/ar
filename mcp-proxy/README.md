@@ -43,8 +43,18 @@ Download from the [releases page](https://github.com/agent-receipts/ar/releases?
 ### From source
 
 ```sh
-go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
+go install github.com/agent-receipts/ar/mcp-proxy/cmd/obsigna-mcp@latest
 ```
+
+### Binary name
+
+The proxy binary is **`obsigna-mcp`** (renamed from `mcp-proxy`; ADR-0033). In a full
+Obsigna install it is also launched as **`obsigna mcp run`** (ADR-0030), which execs
+straight into `obsigna-mcp`. The legacy **`mcp-proxy`** command still works as a thin
+deprecation shim that forwards to `obsigna-mcp`, so existing MCP client configs keep
+running — but prefer `obsigna-mcp` in new configs; the shim will be removed in a future
+release. The usage examples below use `mcp-proxy` for continuity; substitute `obsigna-mcp`
+freely.
 
 ## Usage
 

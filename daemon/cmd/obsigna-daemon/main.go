@@ -29,7 +29,7 @@ import (
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
 // Falls back to the module version from Go's build info (set automatically
 // for binaries installed with `go install`), then to "dev". Mirrors the
-// resolveVersion pattern in mcp-proxy/cmd/mcp-proxy/main.go so operators
+// resolveVersion pattern in mcp-proxy/cmd/obsigna-mcp/main.go so operators
 // see a useful string from `--version` in any install scenario.
 var version string
 

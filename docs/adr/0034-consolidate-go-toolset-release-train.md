@@ -1,4 +1,4 @@
-# ADR-0033: Consolidate the Go Toolset into One obsigna Release Train
+# ADR-0034: Consolidate the Go Toolset into One obsigna Release Train
 
 ## Status
 
@@ -120,10 +120,12 @@ per-component formulae** and, specifically, **no standalone `hook` formula**.
 
 ADR-0031 established the launcher mechanism: `obsigna <noun> run` replaces its
 process image with the sibling binary via `syscall.Exec`, preserving the
-attestation tuple. That table currently holds `daemon`. It **gains `mcp` and
-`collector`:** `obsigna mcp run` execs `obsigna-mcp`, `obsigna collector run`
-execs `obsigna-collector`, each beside `obsigna` on disk (else `$PATH`),
-exactly as `obsigna daemon run` execs `obsigna-daemon`.
+attestation tuple. That table holds `daemon` and — as of ADR-0033 — `mcp`. This
+ADR adds **`collector`:** `obsigna collector run` execs `obsigna-collector`
+beside `obsigna` on disk (else `$PATH`), exactly as `obsigna daemon run` /
+`obsigna mcp run` exec their binaries. (`obsigna-mcp` and its launcher already
+landed via ADR-0033; what this ADR changes for mcp is the *train*, not the
+binary — see decision 2 and PR 2.)
 
 **The hook gets no noun and no launcher.** It is invoked directly by path
 (`obsigna-hook`) by the agent runtime as a per-tool-call callback — see
@@ -241,12 +243,15 @@ The migration lands in two PRs, each independently shippable:
   identity correct before anything new folds in.
 
 - **PR 2 — fold `mcp-proxy` + `collector` (+ `hook`) into the obsigna train.**
-  Their binaries (`obsigna-mcp`, `obsigna-collector`, `obsigna-hook`) get built
-  by the unified GoReleaser; the `mcp` and `collector` launcher entries are
-  added (decision 5); `tap_migrations.json` is extended to cover `mcp-proxy`,
-  `collector`, and `agent-receipts-hook`; and the standalone `mcp-proxy/v*`,
-  `collector/v*`, and `hook/v*` trains and their `release-*.yml` workflows are
-  retired.
+  ADR-0033 already produced the `obsigna-mcp` binary and its `mcp` launcher on a
+  *standalone* `mcp-proxy/v*` train; this PR moves that binary (plus
+  `obsigna-collector` and `obsigna-hook`) under the unified GoReleaser, adds the
+  remaining `collector` launcher entry (decision 5), extends `tap_migrations.json`
+  to cover `mcp-proxy`, `collector`, and `agent-receipts-hook`, and retires the
+  standalone `mcp-proxy/v*`, `collector/v*`, and `hook/v*` trains and their
+  `release-*.yml` workflows. (The `collector` restructure to a minimal
+  `obsigna-collector` binary, ADR-0031-style, is its prerequisite — sequence it
+  ahead of or within this PR.)
 
 ## Implementation wrinkles
 
@@ -302,6 +307,12 @@ Flagged for the implementation PRs; **not solved here.**
 - **ADR-0032** (mcp-proxy Transport): the `obsigna-mcp` binary this ADR folds
   into the train is the stdio proxy ADR-0032 specifies; decision 7 flags Gate A
   as a candidate guard for it, given its signing-adjacent role.
+- **ADR-0033** (mcp-proxy Binary Topology): applied the ADR-0031 pattern to
+  mcp-proxy *per-component* — the `obsigna-mcp` binary, its `mcp` launcher, and
+  its Gate A/B already shipped on a standalone `mcp-proxy/v*` train. This ADR
+  keeps that binary and launcher and supersedes only its *release-train* stance:
+  the per-component `mcp-proxy/v*` train folds into the unified `obsigna` train
+  (decision 2, PR 2).
 
 ## Non-goals
 

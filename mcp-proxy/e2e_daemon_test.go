@@ -121,7 +121,7 @@ func startE2EDaemon(t *testing.T) *e2eDaemon {
 // live daemon via --socket, through a real tool call and asserts a signed
 // receipt lands in the daemon's chain. emitter_integration_test.go already
 // covers the proxy's emitToContext helper in-process; this closes the remaining
-// seam — that the shipped binary's --socket wiring (cmd/mcp-proxy/main.go)
+// seam — that the shipped binary's --socket wiring (cmd/obsigna-mcp/main.go)
 // actually forwards completed tool calls end to end: client → proxy process →
 // AF_UNIX → daemon → SQLite.
 func TestE2EProxyEmitsReceiptToDaemon(t *testing.T) {
