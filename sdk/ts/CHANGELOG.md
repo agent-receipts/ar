@@ -12,6 +12,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-12
+
+Graduates `0.13.0-alpha.1` after the alpha pass. The `@obsigna/sdk-ts` rename ships with this stable release (no source changes since the alpha); see the `0.13.0-alpha.1` entry below for the `KeyRotation` surface.
+
 ### Changed
 
 - **Package renamed to `@obsigna/sdk-ts`** (was `@agnt-rcpt/sdk-ts`). The import
