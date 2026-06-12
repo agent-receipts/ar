@@ -84,13 +84,17 @@ rather than trusted:
 
 - **Gate A — thin-emitter import graph**: a Go test next to the code
   (`cmd/obsigna-mcp/import_guard_test.go`) runs `go list -deps .` and fails on any
-  production dependency into `sdk/go/store`, `sdk/go/receipt`, the daemon library
-  (`ar/daemon…`), or a SQLite driver (`modernc.org/sqlite`, `mattn/go-sqlite3`). Keying on
-  these packages means a future reintroduction of a local store is caught automatically.
-  It runs in the normal test suite and in a dedicated `mcp-proxy.yml` job; the proxy's
-  `internal/{audit,host,policy,proxy}` and `sdk/go/emitter` carry none of those, so they
-  are allowed. (`database/sql/driver`, an interface-only package pulled in transitively by
-  `google/uuid`, is not matched — there is no DB engine behind it.)
+  production dependency outside a small **fail-closed allowlist** — stdlib, the proxy's own
+  `internal/{audit,host,policy,proxy}` and `cmd/…`, `sdk/go/emitter` (and only the emitter,
+  not the rest of `sdk/go`), `google/uuid`, and `gopkg.in/yaml.v3`. An allowlist rather than
+  a denylist is deliberate: persistence has no naming convention the daemon's `cli`-suffix
+  trick could key on, so listing forbidden packages would miss a store reintroduced under a
+  new path (e.g. `go.etcd.io/bbolt`, `dgraph-io/badger`). Failing closed makes *any*
+  unreviewed dependency — every DB driver, plus `sdk/go/store`/`sdk/go/receipt`/`ar/daemon`
+  by construction — trip the gate; adding a genuine new dependency is a deliberate edit to
+  the allowlist. It runs in the normal test suite and in a dedicated `mcp-proxy.yml` job.
+  (`database/sql/driver`, an interface-only package pulled in transitively by `google/uuid`,
+  is stdlib and so allowed — there is no DB engine behind it.)
 - **Gate B — reproducible build** (`mcp-proxy.yml` + `release-mcp-proxy.yml`): both
   rebuilds go through one shared script (`mcp-proxy/scripts/reproducible-build.sh`) so the
   PR gate and the release attestation can't drift, and it stays in lockstep with the

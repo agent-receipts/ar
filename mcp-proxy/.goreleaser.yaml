@@ -52,7 +52,10 @@ builds:
 
   # Deprecation shim: keeps `mcp-proxy <cmd>` working by exec-forwarding to
   # obsigna-mcp with a one-line stderr notice. Ships alongside obsigna-mcp so
-  # existing MCP client configs keep running through the rename.
+  # existing MCP client configs keep running through the rename. It carries no
+  # main.version symbol (it never prints its own version — `mcp-proxy --version`
+  # forwards to obsigna-mcp), so no -X main.version stamp is applied here; the
+  # determinism flags still match obsigna-mcp so the shim is reproducible too.
   - id: mcp-proxy
     main: ./cmd/mcp-proxy
     binary: mcp-proxy
@@ -69,7 +72,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version=v{{.Version}}
+      - -s -w
 
 archives:
   - ids:

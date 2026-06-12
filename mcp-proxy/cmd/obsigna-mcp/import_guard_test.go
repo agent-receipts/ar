@@ -2,65 +2,96 @@ package main
 
 import (
 	"os/exec"
-	"regexp"
 	"strings"
 	"testing"
 )
 
-// persistenceOrSigningPattern matches packages that would turn obsigna-mcp into
-// a receipt writer instead of a thin emitter. ADR-0010 makes the daemon the sole
-// writer — it owns redaction, hashing, signing, chaining, and persistence — and
-// the proxy only forwards completed events over a socket (sdk/go/emitter). This
-// gate (ADR-0033's Gate A) makes that boundary structural rather than a
-// convention: the proxy's production import graph must never reach
+// allowedNonStdlibDeps is the fail-closed allowlist of non-stdlib packages
+// obsigna-mcp's production graph may reach (ADR-0033's Gate A). ADR-0010 makes
+// the daemon the sole receipt writer — it owns redaction, hashing, signing,
+// chaining, and persistence — and the proxy is only a thin emitter that forwards
+// completed events over a socket (sdk/go/emitter). This gate makes that boundary
+// structural rather than a convention.
 //
-//   - the receipt store (sdk/go/store) or any SQLite driver — no local store
-//     (the "do not reintroduce a local store" rule, ADR-0010);
-//   - receipt construction/signing (sdk/go/receipt) — the proxy must not build
-//     or sign receipts; it emits events and the daemon signs them;
-//   - the daemon library itself (ar/daemon…) — the proxy is a separate process,
-//     not a linked-in daemon.
+// It is an ALLOWLIST, not a denylist, and that is deliberate. A denylist of
+// known persistence packages (sdk/go/store, a SQLite driver, …) only catches a
+// reintroduced store imported under those exact paths; a new embedded DB
+// (go.etcd.io/bbolt, dgraph-io/badger, cockroachdb/pebble, …) would slip past.
+// The daemon's Gate A can key on the structural `cli` suffix to auto-catch new
+// operator packages, but persistence has no such naming convention — so the proxy
+// fails closed instead: any non-stdlib dependency that is not on this list trips
+// the gate, including every DB driver and `sdk/go/store`/`sdk/go/receipt`/
+// `ar/daemon` by construction. Adding a genuinely new dependency is then a
+// deliberate, reviewed edit to this list.
 //
-// Unlike the daemon's Gate A, the rationale is not "code next to the private
-// key" (the proxy holds no key) but "one writer, enforced at the binary
-// boundary" — the same one-principal/one-responsibility-per-process argument
-// ADR-0032 makes for the proxy's transport.
-//
-// google/uuid pulls in database/sql/driver (it implements driver.Valuer); that
-// is an interface-only package with no DB engine behind it, so it is allowed —
-// the pattern targets sdk/go/store, sdk/go/receipt, the daemon, and real SQLite
-// drivers, not the driver interfaces.
-var persistenceOrSigningPattern = regexp.MustCompile(
-	`^(` +
-		`github\.com/agent-receipts/ar/sdk/go/(store|receipt)` +
-		`|github\.com/agent-receipts/ar/daemon(/.*)?` +
-		`|modernc\.org/sqlite` +
-		`|github\.com/mattn/go-sqlite3` +
-		`)$`,
-)
+// Crucially, only `sdk/go/emitter` is allowed from the SDK — not the whole
+// `sdk/go/` tree — so if the emitter ever began pulling in `sdk/go/receipt` or
+// `sdk/go/store`, that would surface here as an offender rather than slip in
+// transitively.
+var allowedNonStdlibDeps = []allowedDep{
+	// The proxy's own packages (internal/{audit,host,policy,proxy} and cmd/...).
+	{prefix: "github.com/agent-receipts/ar/mcp-proxy/"},
+	// The daemon emitter — the proxy's one writer-side dependency (ADR-0010).
+	{exact: "github.com/agent-receipts/ar/sdk/go/emitter"},
+	{prefix: "github.com/agent-receipts/ar/sdk/go/emitter/"},
+	// Session IDs (google/uuid) and policy-rule YAML (gopkg.in/yaml.v3).
+	{exact: "github.com/google/uuid"},
+	{exact: "gopkg.in/yaml.v3"},
+}
 
-// TestImportGraphExcludesPersistenceAndSigning is Gate A (ADR-0033): obsigna-mcp
-// stays a thin emitter. A dependency edge into the store, a SQLite driver,
-// receipt signing, or the daemon library would mean the proxy had grown writer
-// responsibilities that ADR-0010 reserves for the daemon. Keying on packages
-// (not an enumerated allowlist) means a future reintroduction of a local store
-// is caught automatically. The proxy legitimately depends on internal/{audit,
-// host,policy,proxy} and sdk/go/emitter — none of which match.
+type allowedDep struct {
+	exact  string
+	prefix string
+}
+
+func (a allowedDep) matches(dep string) bool {
+	if a.exact != "" && dep == a.exact {
+		return true
+	}
+	return a.prefix != "" && strings.HasPrefix(dep, a.prefix)
+}
+
+// isStdlib reports whether an import path is a standard-library package. The
+// standard heuristic: stdlib paths have no dot in their first segment
+// (e.g. "fmt", "encoding/json", "database/sql/driver"), whereas external modules
+// start with a domain ("github.com/…", "gopkg.in/…").
+func isStdlib(dep string) bool {
+	first, _, _ := strings.Cut(dep, "/")
+	return !strings.Contains(first, ".")
+}
+
+// TestImportGraphIsThinEmitter is Gate A (ADR-0033): obsigna-mcp stays a thin
+// emitter. Its production import graph may contain only stdlib plus the
+// allowlisted non-stdlib packages above; anything else — a receipt store, a
+// SQLite or other embedded-DB driver, receipt signing, the daemon library, or
+// any not-yet-reviewed dependency — fails the gate, because reaching it would
+// mean the proxy had grown writer responsibilities ADR-0010 reserves for the
+// daemon.
 //
 // This is the source of truth for Gate A; the mcp-proxy.yml import-graph job
 // just runs this test so the rule lives in one place next to the code it guards.
-func TestImportGraphExcludesPersistenceAndSigning(t *testing.T) {
+func TestImportGraphIsThinEmitter(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", ".").Output()
 	if err != nil {
 		t.Fatalf("go list -deps .: %v", err)
 	}
 	var offenders []string
 	for _, dep := range strings.Fields(string(out)) {
-		if persistenceOrSigningPattern.MatchString(dep) {
+		if isStdlib(dep) {
+			continue
+		}
+		allowed := false
+		for _, a := range allowedNonStdlibDeps {
+			if a.matches(dep) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
 			offenders = append(offenders, dep)
 		}
 	}
 	if len(offenders) > 0 {
-		t.Errorf("obsigna-mcp imports persistence/signing package(s) %v; ADR-0033 keeps the proxy a thin emitter — the daemon is the sole receipt writer (ADR-0010). Forward events via sdk/go/emitter instead of constructing, signing, or storing receipts in-process", offenders)
+		t.Errorf("obsigna-mcp's production graph reaches non-allowlisted package(s) %v; ADR-0033 keeps the proxy a thin emitter (the daemon is the sole receipt writer, ADR-0010). If this is a receipt store, a DB driver, receipt signing, or the daemon library, forward events via sdk/go/emitter instead. If it is a legitimate new dependency, add it to allowedNonStdlibDeps with review", offenders)
 	}
 }

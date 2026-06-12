@@ -63,9 +63,9 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: mcp-proxy/go.mod
-      - name: Assert obsigna-mcp excludes persistence and signing
+      - name: Assert obsigna-mcp stays a thin emitter
         working-directory: mcp-proxy
-        run: go test -run '^TestImportGraphExcludesPersistenceAndSigning$' ./cmd/obsigna-mcp -v
+        run: go test -run '^TestImportGraphIsThinEmitter$' ./cmd/obsigna-mcp -v
 
   # Gate B (ADR-0033): reproducible build. Build obsigna-mcp twice from two
   # working-directory paths of different lengths and assert byte-identical

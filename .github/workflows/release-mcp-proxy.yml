@@ -120,6 +120,13 @@ jobs:
             exit 1
           fi
 
+          # Derive the exact toolchain from go.mod so the published rebuild
+          # command can't drift from the compiler CI actually used: the
+          # `toolchain` directive is the single source of truth (setup-go reads
+          # it via go-version-file). Fall back to the `go` directive if no
+          # explicit toolchain is pinned.
+          toolchain="$(cd mcp-proxy && go mod edit -json | python3 -c 'import json,sys; m=json.load(sys.stdin); print(m.get("Toolchain") or "go"+m["Go"])')"
+
           # 3) Publish the known-good hash: a .sha256 asset and a release-notes
           #    line. The notes append is guarded by a marker so re-runs don't
           #    duplicate it.
@@ -130,6 +137,6 @@ jobs:
           marker="<!-- obsigna-mcp-attestation -->"
           notes="$(gh release view "${GITHUB_REF_NAME}" --json body -q .body)"
           if ! printf '%s' "$notes" | grep -qF "$marker"; then
-            printf '%s\n\n%s\n**Reproducible build (ADR-0033):** linux/amd64 `obsigna-mcp` sha256 `%s` — independently rebuilt from source and matched byte-for-byte. Rebuild with `GOTOOLCHAIN=go1.26.1 GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v%s" ./cmd/obsigna-mcp`.\n' \
-              "$notes" "$marker" "$released_hash" "$VERSION" | gh release edit "${GITHUB_REF_NAME}" --notes-file -
+            printf '%s\n\n%s\n**Reproducible build (ADR-0033):** linux/amd64 `obsigna-mcp` sha256 `%s` — independently rebuilt from source and matched byte-for-byte. Rebuild with `GOTOOLCHAIN=%s GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v%s" ./cmd/obsigna-mcp`.\n' \
+              "$notes" "$marker" "$released_hash" "$toolchain" "$VERSION" | gh release edit "${GITHUB_REF_NAME}" --notes-file -
           fi
