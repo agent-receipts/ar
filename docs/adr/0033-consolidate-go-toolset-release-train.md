@@ -6,11 +6,12 @@ Accepted (2026-06-12).
 
 ## Context
 
-The repo carries roughly eight independent release trains spread across two
-repositories: `sdk/go`, `sdk/ts`, `sdk/py` (and `sdk/ts-aws`), plus `daemon`,
+This repo carries roughly eight independent release trains across its
+modules: `sdk/go`, `sdk/ts`, `sdk/py` (and `sdk/ts-aws`), plus `daemon`,
 `mcp-proxy`, `hook`, and `collector`. Each has its own tag scheme, its own
 release workflow, its own changelog, and — for the Go tools — its own Homebrew
-formula. Cutting a coordinated release means driving N trains in lockstep by
+formula. A ninth, the dashboard, lives in a *second* repository (a POC; see
+decision 8), so the full release surface spans two repos. Cutting a coordinated release means driving N trains in lockstep by
 hand, and a single cross-cutting fix (a shared-library bump, a protocol nudge)
 fans out into N tag-and-publish dances. Releasing is painful out of proportion
 to the size of most changes.
