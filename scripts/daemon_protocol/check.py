@@ -73,9 +73,9 @@ PY_PACKAGE = "obsigna"
 
 REPO = "agent-receipts/obsigna"
 
-# The daemon GoReleaser archive is named daemon_<version>_<os>_<arch>.tar.gz and
-# uploaded to the GitHub release for the prefixed tag daemon/v<version>. The
-# gate runs on linux/amd64.
+# The obsigna GoReleaser archive is named obsigna_<version>_<os>_<arch>.tar.gz
+# and uploaded to the GitHub release for the prefixed tag obsigna/v<version>.
+# The gate runs on linux/amd64.
 DAEMON_ASSET_OS = "linux"
 DAEMON_ASSET_ARCH = "amd64"
 
@@ -177,14 +177,14 @@ def count_receipts(list_json_stdout: str) -> int:
 
 
 def daemon_asset_url(version: str) -> str:
-    """Build the GitHub release download URL for the daemon tarball.
+    """Build the GitHub release download URL for the obsigna tarball.
 
-    ``version`` carries no leading ``v``; the tag is ``daemon/v<version>`` and
-    the asset is ``daemon_<version>_<os>_<arch>.tar.gz``.
+    ``version`` carries no leading ``v``; the tag is ``obsigna/v<version>`` and
+    the asset is ``obsigna_<version>_<os>_<arch>.tar.gz``.
     """
-    asset = f"daemon_{version}_{DAEMON_ASSET_OS}_{DAEMON_ASSET_ARCH}.tar.gz"
+    asset = f"obsigna_{version}_{DAEMON_ASSET_OS}_{DAEMON_ASSET_ARCH}.tar.gz"
     # The tag's slash is percent-encoded in the download path.
-    return f"https://github.com/{REPO}/releases/download/daemon%2Fv{version}/{asset}"
+    return f"https://github.com/{REPO}/releases/download/obsigna%2Fv{version}/{asset}"
 
 
 class NoStableReleaseError(Exception):
@@ -307,7 +307,7 @@ def _http_json(url: str) -> dict | list:
 def resolve_latest_daemon(allow_prerelease: bool) -> str:
     """Newest released daemon version (no leading v) from the GitHub releases.
 
-    Pages the newest-first releases list until ``daemon/v*`` tags satisfying the
+    Pages the newest-first releases list until ``obsigna/v*`` tags satisfying the
     stable/prerelease filter appear (or ``MAX_RELEASE_PAGES`` are exhausted), so
     the most recent daemon release is found even when many other-component
     releases sit above it. Raises ``NoReleaseError`` if no such release exists
@@ -324,15 +324,15 @@ def resolve_latest_daemon(allow_prerelease: bool) -> str:
             break  # ran off the end of the releases list
         for rel in batch:
             tag = rel.get("tag_name", "")
-            if tag.startswith("daemon/v"):
-                versions.append(tag[len("daemon/v") :])
+            if tag.startswith("obsigna/v"):
+                versions.append(tag[len("obsigna/v") :])
         # Releases are newest-first, so once a daemon version matching the filter
         # has appeared we have the most recent ones — stop rather than page
         # through the entire release history of every other component.
         if any(allow_prerelease or not is_prerelease(v) for v in versions):
             break
     if not versions:
-        raise NoReleaseError("no daemon/v* release found in recent releases")
+        raise NoReleaseError("no obsigna/v* release found in recent releases")
     try:
         return pick_latest(versions, allow_prerelease)
     except NoStableReleaseError as exc:  # only pre-releases exist, excluded

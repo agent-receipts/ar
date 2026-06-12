@@ -1,9 +1,9 @@
-name: "Release: daemon"
+name: "Release: obsigna"
 
 on:
   push:
     tags:
-      - "daemon/v*"
+      - "obsigna/v*"
 
 permissions:
   contents: write
@@ -28,13 +28,13 @@ jobs:
           # with, not a floating latest 1.26.x.
           go-version-file: daemon/go.mod
 
-      # GoReleaser can't parse the prefixed tag `daemon/vX.Y.Z` as semver.
+      # GoReleaser can't parse the prefixed tag `obsigna/vX.Y.Z` as semver.
       # Create a local lightweight `vX.Y.Z` tag at the same commit so
       # GoReleaser computes a clean .Version; this tag is never pushed.
       - name: Prepare version
         run: |
-          VERSION="${GITHUB_REF_NAME#daemon/}"
-          echo "DAEMON_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          VERSION="${GITHUB_REF_NAME#obsigna/}"
+          echo "OBSIGNA_VERSION=${VERSION}" >> "$GITHUB_ENV"
           git tag "${VERSION}" HEAD
 
       # Single GoReleaser run: builds, archives, pushes Homebrew formula.
@@ -50,7 +50,7 @@ jobs:
           args: release --clean --skip=validate,announce
           workdir: daemon
         env:
-          GORELEASER_CURRENT_TAG: ${{ env.DAEMON_VERSION }}
+          GORELEASER_CURRENT_TAG: ${{ env.OBSIGNA_VERSION }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           # Disable the Go workspace so builds resolve from daemon/go.mod
           # (published sdk/go) rather than the in-tree ./sdk/go module.
@@ -63,7 +63,7 @@ jobs:
           # Mark pre-release tags (e.g. v0.8.0-alpha.1) so they don't show
           # up as "latest" on the GitHub Releases page.
           PRERELEASE_ARG=()
-          if [[ "${DAEMON_VERSION}" == *-* ]]; then
+          if [[ "${OBSIGNA_VERSION}" == *-* ]]; then
             PRERELEASE_ARG+=(--prerelease)
           fi
           # Create the release if it doesn't already exist (e.g. pre-created
@@ -73,11 +73,11 @@ jobs:
           # a pre-release tag to appear as the latest stable release.
           if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
             gh release edit "${GITHUB_REF_NAME}" \
-              --title "daemon ${DAEMON_VERSION}" \
+              --title "obsigna ${OBSIGNA_VERSION}" \
               "${PRERELEASE_ARG[@]}"
           else
             gh release create "${GITHUB_REF_NAME}" \
-              --title "daemon ${DAEMON_VERSION}" \
+              --title "obsigna ${OBSIGNA_VERSION}" \
               --generate-notes \
               "${PRERELEASE_ARG[@]}"
           fi
@@ -118,7 +118,7 @@ jobs:
           python-version: "3.13"
       - name: Verify daemon ↔ SDK protocol compatibility (Gate #8)
         run: |
-          VERSION="${GITHUB_REF_NAME#daemon/v}"
+          VERSION="${GITHUB_REF_NAME#obsigna/v}"
           python3 scripts/daemon_protocol/check.py \
             --sdk-lang ${{ matrix.lang }} --sdk-version latest --daemon-version "$VERSION"
       - name: Run unit tests for daemon-protocol gate
@@ -146,8 +146,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#daemon/v}"   # e.g. 0.20.0-alpha.1 (no leading v)
-          asset="daemon_${VERSION}_linux_amd64.tar.gz"
+          VERSION="${GITHUB_REF_NAME#obsigna/v}"   # e.g. 0.20.0-alpha.1 (no leading v)
+          asset="obsigna_${VERSION}_linux_amd64.tar.gz"
 
           # 1) Hash obsigna-daemon as shipped, from the archive uploaded by the
           #    release job above.
