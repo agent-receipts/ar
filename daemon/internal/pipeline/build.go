@@ -34,6 +34,11 @@ const multibaseBase64URL = "u"
 // messages legible.
 const maxIdentityFieldLen = 256
 
+// maxTargetResourceLen caps the byte length of TargetResource. File paths can
+// reach 4096 bytes on Linux (PATH_MAX), so a separate, wider cap is used
+// rather than the identity-field limit.
+const maxTargetResourceLen = 4096
+
 // SupportedFrameVersion is the only emitter-frame schema this daemon accepts.
 // Bumping it requires a migration plan and a daemon-side translator for the
 // old version; until that exists, accepting unknown versions would silently
@@ -118,6 +123,13 @@ type EmitterFrame struct {
 	Model         string          `json:"model,omitempty"`
 	Usage         json.RawMessage `json:"usage,omitempty"`
 	CaptureMethod string          `json:"capture_method,omitempty"`
+	// TargetSystem and TargetResource together identify the resource the action
+	// operates on. The daemon maps them into action.target.{system,resource}.
+	// For filesystem tools (Read, Write, Edit, MultiEdit) on the claude-code
+	// channel, TargetSystem is "filesystem" and TargetResource is the file path.
+	// Both are optional; omitted when the tool has no addressable resource.
+	TargetSystem   string `json:"target_system,omitempty"`
+	TargetResource string `json:"target_resource,omitempty"`
 }
 
 // EmitterTool identifies the tool the agent invoked.
@@ -522,6 +534,19 @@ func validateFrame(f *EmitterFrame) error {
 	if len(f.CaptureMethod) > maxIdentityFieldLen {
 		return fmt.Errorf("capture_method exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.CaptureMethod))
 	}
+	if len(f.TargetSystem) > maxIdentityFieldLen {
+		return fmt.Errorf("target_system exceeds %d bytes (got %d)", maxIdentityFieldLen, len(f.TargetSystem))
+	}
+	if len(f.TargetResource) > maxTargetResourceLen {
+		return fmt.Errorf("target_resource exceeds %d bytes (got %d)", maxTargetResourceLen, len(f.TargetResource))
+	}
+	// target_system and target_resource must both be set or both absent.
+	// A half-populated target would produce ActionTarget{System:""} or
+	// ActionTarget{Resource:""} in the signed receipt because ActionTarget.System
+	// carries no omitempty tag.
+	if (f.TargetSystem != "") != (f.TargetResource != "") {
+		return fmt.Errorf("target_system and target_resource must both be set or both absent")
+	}
 	// Input and Output are accepted as any valid JSON value (object, array,
 	// primitive, or null). json.Unmarshal into EmitterFrame already validated
 	// JSON syntax, so anything reaching this point is well-formed. The hash
@@ -689,6 +714,12 @@ func (p *Pipeline) buildAndSign(
 		Timestamp:      now,
 		PeerCredential: peerCred,
 		IdempotencyKey: f.IdempotencyKey,
+	}
+	if f.TargetSystem != "" && f.TargetResource != "" {
+		action.Target = &receipt.ActionTarget{
+			System:   f.TargetSystem,
+			Resource: f.TargetResource,
+		}
 	}
 	if hasJSONPayload(f.Input) {
 		hash, err := canonicalSHA256(f.Input)

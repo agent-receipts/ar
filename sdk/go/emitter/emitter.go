@@ -64,6 +64,11 @@ const MaxFrameSize = 1 << 20
 // before the write rather than as silent daemon-side rejections.
 const MaxIdentityFieldLen = 256
 
+// MaxTargetResourceLen is the maximum byte length of Target.Resource. File
+// paths can reach 4096 bytes on Linux (PATH_MAX), so a wider cap is used
+// rather than MaxIdentityFieldLen. The daemon enforces the same limit.
+const MaxTargetResourceLen = 4096
+
 // SupportedFrameVersion mirrors the daemon's pipeline.SupportedFrameVersion.
 // The wire format is versioned; bumping it requires a daemon-side
 // translator, so a single supported value is the only safe contract.
@@ -106,6 +111,14 @@ var ErrTransport = errors.New("emitter: transport failure")
 type Tool struct {
 	Server string
 	Name   string
+}
+
+// Target identifies the system and resource the action operates on.
+// System names a resource domain (e.g. "filesystem"); Resource is the
+// path or identifier within that domain (e.g. a file path).
+type Target struct {
+	System   string
+	Resource string
 }
 
 // Event is one tool invocation forwarded to the daemon. Input and Output
@@ -170,6 +183,11 @@ type Event struct {
 	// derived receipts are distinguishable from other ingesters. Optional;
 	// omitted when empty.
 	CaptureMethod string
+
+	// Target identifies the resource the action operates on (e.g. a file path
+	// for filesystem tools). Optional; omitted from the frame when System and
+	// Resource are both empty.
+	Target Target
 }
 
 // Option configures an Emitter at construction.
@@ -335,6 +353,8 @@ type frame struct {
 	Model          string          `json:"model,omitempty"`
 	Usage          json.RawMessage `json:"usage,omitempty"`
 	CaptureMethod  string          `json:"capture_method,omitempty"`
+	TargetSystem   string          `json:"target_system,omitempty"`
+	TargetResource string          `json:"target_resource,omitempty"`
 }
 
 type frameTool struct {
@@ -436,6 +456,23 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		e.dropCount.Add(pendingDrops)
 		return fmt.Errorf("emitter: operator_name requires operator_id")
 	}
+	// Target.System and Target.Resource must both be set or both empty.
+	// A half-populated Target produces ActionTarget{System:""} or
+	// ActionTarget{Resource:""} in the signed receipt — the daemon enforces
+	// the same rule in validateFrame; catching it here surfaces a clear error
+	// at the call site before the write.
+	if (ev.Target.System != "") != (ev.Target.Resource != "") {
+		e.dropCount.Add(pendingDrops)
+		return fmt.Errorf("emitter: Target.System and Target.Resource must both be set or both empty")
+	}
+	if len(ev.Target.System) > MaxIdentityFieldLen {
+		e.dropCount.Add(pendingDrops)
+		return fmt.Errorf("emitter: target_system exceeds %d bytes (got %d)", MaxIdentityFieldLen, len(ev.Target.System))
+	}
+	if len(ev.Target.Resource) > MaxTargetResourceLen {
+		e.dropCount.Add(pendingDrops)
+		return fmt.Errorf("emitter: target_resource exceeds %d bytes (got %d)", MaxTargetResourceLen, len(ev.Target.Resource))
+	}
 	// Mirror the daemon's per-field length cap so oversized values are caught
 	// at the emitter rather than silently rejected by the daemon after the write.
 	for _, f := range [9]struct{ name, val string }{
@@ -477,6 +514,8 @@ func (e *DaemonEmitter) Emit(ctx context.Context, ev Event) error {
 		Model:          ev.Model,
 		Usage:          ev.Usage,
 		CaptureMethod:  ev.CaptureMethod,
+		TargetSystem:   ev.Target.System,
+		TargetResource: ev.Target.Resource,
 	})
 	if err != nil {
 		// Marshal failure is a caller bug, not a transient outage. Restore

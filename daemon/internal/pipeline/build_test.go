@@ -2067,3 +2067,136 @@ func TestEmitTerminator_TerminatesAgentChains(t *testing.T) {
 		}
 	}
 }
+
+// TestProcess_TargetResourcePopulatesActionTarget verifies that TargetSystem and
+// TargetResource in the emitter frame flow through into action.target on the
+// signed receipt.
+func TestProcess_TargetResourcePopulatesActionTarget(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("root")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	body, err := json.Marshal(EmitterFrame{
+		Version:        "1",
+		TsEmit:         "2026-05-03T00:00:00Z",
+		SessionID:      "sess-target",
+		Channel:        "claude-code",
+		Tool:           EmitterTool{Name: "Read"},
+		Decision:       "allowed",
+		TargetSystem:   "filesystem",
+		TargetResource: "/home/user/project/main.go",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Process(socket.Frame{Payload: body}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	receipts, err := st.GetChain("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts; want 1", len(receipts))
+	}
+	target := receipts[0].CredentialSubject.Action.Target
+	if target == nil {
+		t.Fatal("action.target is nil; want populated")
+	}
+	if target.System != "filesystem" {
+		t.Errorf("action.target.system = %q; want filesystem", target.System)
+	}
+	if target.Resource != "/home/user/project/main.go" {
+		t.Errorf("action.target.resource = %q; want /home/user/project/main.go", target.Resource)
+	}
+}
+
+// TestProcess_NoTargetLeavesActionTargetNil verifies that a frame with no
+// TargetSystem/TargetResource leaves action.target nil.
+func TestProcess_NoTargetLeavesActionTargetNil(t *testing.T) {
+	ks := newTestKeySource(t)
+	st := newTestStore(t)
+	state := chain.New("root")
+	p := New(state, ks, st, "did:agent-receipts-daemon:test")
+
+	if err := p.Process(sampleFrame(t)); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	receipts, err := st.GetChain("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("got %d receipts; want 1", len(receipts))
+	}
+	if target := receipts[0].CredentialSubject.Action.Target; target != nil {
+		t.Errorf("action.target = %+v; want nil", *target)
+	}
+}
+
+// TestValidateFrame_RejectsOversizeTargetSystem verifies that validateFrame rejects
+// a target_system value exceeding maxIdentityFieldLen bytes.
+func TestValidateFrame_RejectsOversizeTargetSystem(t *testing.T) {
+	f := &EmitterFrame{
+		Version:        "1",
+		TsEmit:         "2026-06-12T00:00:00Z",
+		SessionID:      "s",
+		Channel:        "claude-code",
+		Tool:           EmitterTool{Name: "Read"},
+		Decision:       "allowed",
+		TargetSystem:   strings.Repeat("x", maxIdentityFieldLen+1),
+		TargetResource: "/etc/hosts",
+	}
+	if err := validateFrame(f); err == nil {
+		t.Error("validateFrame accepted an oversize target_system; want rejection")
+	}
+}
+
+// TestValidateFrame_RejectsOversizeTargetResource verifies that validateFrame rejects
+// a target_resource value exceeding maxTargetResourceLen bytes.
+func TestValidateFrame_RejectsOversizeTargetResource(t *testing.T) {
+	f := &EmitterFrame{
+		Version:        "1",
+		TsEmit:         "2026-06-12T00:00:00Z",
+		SessionID:      "s",
+		Channel:        "claude-code",
+		Tool:           EmitterTool{Name: "Read"},
+		Decision:       "allowed",
+		TargetSystem:   "filesystem",
+		TargetResource: strings.Repeat("x", maxTargetResourceLen+1),
+	}
+	if err := validateFrame(f); err == nil {
+		t.Error("validateFrame accepted an oversize target_resource; want rejection")
+	}
+}
+
+// TestValidateFrame_RejectsHalfPopulatedTarget verifies that validateFrame rejects
+// frames where only one of target_system/target_resource is set.
+func TestValidateFrame_RejectsHalfPopulatedTarget(t *testing.T) {
+	base := EmitterFrame{
+		Version:   "1",
+		TsEmit:    "2026-06-12T00:00:00Z",
+		SessionID: "s",
+		Channel:   "claude-code",
+		Tool:      EmitterTool{Name: "Read"},
+		Decision:  "allowed",
+	}
+
+	t.Run("system without resource", func(t *testing.T) {
+		f := base
+		f.TargetSystem = "filesystem"
+		if err := validateFrame(&f); err == nil {
+			t.Error("validateFrame accepted target_system without target_resource; want rejection")
+		}
+	})
+	t.Run("resource without system", func(t *testing.T) {
+		f := base
+		f.TargetResource = "/etc/hosts"
+		if err := validateFrame(&f); err == nil {
+			t.Error("validateFrame accepted target_resource without target_system; want rejection")
+		}
+	})
+}
