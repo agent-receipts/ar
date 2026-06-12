@@ -11,7 +11,17 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
-## [0.15.0-alpha.1] - 2026-06-13
+## [0.15.0-alpha.2] - 2026-06-13
+
+### Fixed
+
+- **Pin `sdk/go` to a published version that matches the code (v0.15.0 → v0.17.0).** The
+  proxy uses `emitter.Event.CorrelationID` (added to `sdk/go` in v0.16.0), but `go.mod`
+  still pinned v0.15.0. Prior releases built against the in-tree workspace `sdk/go` (via
+  `go.work`), masking the stale pin; once the release build was switched to published deps
+  (`GOWORK=off`, ADR-0033 Gate B), it failed to compile. Bumping the pin makes the proxy
+  genuinely buildable from its declared published dependencies. (Supersedes the
+  `0.15.0-alpha.1` tag, which failed to release for this reason.)
 
 ### Changed
 
