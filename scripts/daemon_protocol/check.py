@@ -68,8 +68,8 @@ import urllib.request
 
 GO_SDK_MODULE = "github.com/agent-receipts/ar/sdk/go"
 GO_DAEMON_MODULE = "github.com/agent-receipts/ar/daemon"
-TS_PACKAGE = "@agnt-rcpt/sdk-ts"
-PY_PACKAGE = "agent-receipts"
+TS_PACKAGE = "@obsigna/sdk-ts"
+PY_PACKAGE = "obsigna"
 
 REPO = "agent-receipts/ar"
 
@@ -486,7 +486,7 @@ func main() {
 """
 
 _TS_DRIVER = """\
-import { DAEMON_PROTOCOL_RANGE, DaemonEmitter } from "@agnt-rcpt/sdk-ts";
+import { DAEMON_PROTOCOL_RANGE, DaemonEmitter } from "@obsigna/sdk-ts";
 
 const mode = process.argv[2];
 if (mode === "range") {
@@ -515,7 +515,7 @@ _PY_DRIVER = """\
 import json
 import sys
 
-from agent_receipts import DAEMON_PROTOCOL_RANGE, DaemonEmitter
+from obsigna import DAEMON_PROTOCOL_RANGE, DaemonEmitter
 
 mode = sys.argv[1]
 if mode == "range":

@@ -1,6 +1,7 @@
 # Changelog
 
-All notable changes to `agent-receipts` (Python SDK) are documented in this file.
+All notable changes to `obsigna` (Python SDK, formerly `agent-receipts`) are
+documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -10,6 +11,15 @@ A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
+
+### Changed
+
+- **Package renamed to `obsigna`** (was `agent-receipts`), and the import module
+  renamed `agent_receipts` → `obsigna`. The public API is otherwise unchanged.
+  The legacy `agent-receipts` distribution remains published and gains a final
+  redirect release: a shim that depends on `obsigna`, re-exports it, and emits a
+  `DeprecationWarning` on `import agent_receipts`. Existing installs keep working.
+  Migrate with `pip install obsigna` and update imports to `obsigna`.
 
 ## [0.13.0a1] - 2026-06-11
 

@@ -16,7 +16,7 @@ uv run pyright src         # type check (pre-existing Pydantic errors are expect
 
 ```
 src/
-  agent_receipts/
+  obsigna/
     receipt/
       types.py       # Pydantic v2 models for all receipt types
       create.py      # Receipt creation with auto-generated IDs
@@ -45,8 +45,8 @@ tests/                 # Mirrors src structure, uses conftest.py fixtures
 
 ## Reference files
 
-- `src/agent_receipts/receipt/signing.py` — Ed25519 signing with proper type guards, RFC 8785 canonicalization, and cross-SDK compatibility
-- `src/agent_receipts/receipt/hash.py` — RFC 8785 canonical JSON + SHA-256 hashing with detailed spec-compliance comments
+- `src/obsigna/receipt/signing.py` — Ed25519 signing with proper type guards, RFC 8785 canonicalization, and cross-SDK compatibility
+- `src/obsigna/receipt/hash.py` — RFC 8785 canonical JSON + SHA-256 hashing with detailed spec-compliance comments
 - `tests/test_cross_language.py` — cross-language test vectors: how to verify byte-identical output across SDKs
 
 ## Testing

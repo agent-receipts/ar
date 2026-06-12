@@ -1,6 +1,7 @@
 # Changelog
 
-All notable changes to `@agnt-rcpt/sdk-ts` are documented in this file.
+All notable changes to `@obsigna/sdk-ts` (formerly `@agnt-rcpt/sdk-ts`) are
+documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -10,6 +11,14 @@ A repo-wide effort to auto-generate changelogs from Conventional Commits is
 tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
+
+### Changed
+
+- **Package renamed to `@obsigna/sdk-ts`** (was `@agnt-rcpt/sdk-ts`). The import
+  surface, exports, and subpath entry points are unchanged — only the package
+  name moves to the `@obsigna` scope. The legacy `@agnt-rcpt/sdk-ts` package
+  remains published and is deprecated on npm pointing at the new name; existing
+  installs keep working. Update imports to `@obsigna/sdk-ts`.
 
 ## [0.13.0-alpha.1] - 2026-06-11
 

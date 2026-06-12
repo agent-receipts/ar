@@ -3,38 +3,6 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
-name = "agent-receipts"
-version = "0.13.0a1"
-source = { editable = "." }
-dependencies = [
-    { name = "cryptography" },
-    { name = "pydantic" },
-]
-
-[package.optional-dependencies]
-aws = [
-    { name = "boto3" },
-]
-dev = [
-    { name = "jsonschema", extra = ["format-nongpl"] },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.40" },
-    { name = "cryptography", specifier = ">=41.0" },
-    { name = "jsonschema", extras = ["format-nongpl"], marker = "extra == 'dev'", specifier = ">=4.0" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
-]
-provides-extras = ["aws", "dev"]
-
-[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -345,6 +313,38 @@ sdist = { url = "https://files.pythonhosted.org/packages/24/bf/d1bda4f6168e0b2e9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/b2/d0896bdcdc8d28a7fc5717c305f1a861c26e18c05047949fb371034d98bd/nodeenv-1.10.0-py2.py3-none-any.whl", hash = "sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827", size = 23438, upload-time = "2025-12-20T14:08:52.782Z" },
 ]
+
+[[package]]
+name = "obsigna"
+version = "0.13.0a1"
+source = { editable = "." }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pydantic" },
+]
+
+[package.optional-dependencies]
+aws = [
+    { name = "boto3" },
+]
+dev = [
+    { name = "jsonschema", extra = ["format-nongpl"] },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.40" },
+    { name = "cryptography", specifier = ">=41.0" },
+    { name = "jsonschema", extras = ["format-nongpl"], marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
+]
+provides-extras = ["aws", "dev"]
 
 [[package]]
 name = "packaging"

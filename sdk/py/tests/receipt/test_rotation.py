@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from agent_receipts import generate_key_pair, hash_receipt, verify_chain
-from agent_receipts.receipt.rotation import (
+from obsigna import generate_key_pair, hash_receipt, verify_chain
+from obsigna.receipt.rotation import (
     ed25519_raw_to_pem,
     key_fingerprint,
     pem_to_ed25519_raw,
     verify_rotation_event,
 )
-from agent_receipts.receipt.signing import sign_receipt
-from agent_receipts.receipt.types import (
+from obsigna.receipt.signing import sign_receipt
+from obsigna.receipt.types import (
     CONTEXT,
     CREDENTIAL_TYPE,
     VERSION,

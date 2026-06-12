@@ -18,8 +18,8 @@
 | **API reference** | [Go](https://agentreceipts.ai/sdk-go/api-reference/) · [TypeScript](https://agentreceipts.ai/sdk-ts/api-reference/) · [Python](https://agentreceipts.ai/sdk-py/api-reference/) |
 | **Blog** | [Your AI Agent Just Sent an Email](https://jongerius.solutions/post/your-ai-agent-just-sent-an-email/) · [Every MCP Tool Call My AI Makes Now Gets a Signed Receipt](https://jongerius.solutions/post/auditing-github-mcp-agent-receipts/) |
 | **Go** | [sdk/go](https://pkg.go.dev/github.com/agent-receipts/ar/sdk/go) · [mcp-proxy](https://pkg.go.dev/github.com/agent-receipts/ar/mcp-proxy) · [dashboard](https://pkg.go.dev/github.com/agent-receipts/dashboard) |
-| **npm** | [@agnt-rcpt/sdk-ts](https://www.npmjs.com/package/@agnt-rcpt/sdk-ts) |
-| **PyPI** | [agent-receipts](https://pypi.org/project/agent-receipts/) |
+| **npm** | [@obsigna/sdk-ts](https://www.npmjs.com/package/@obsigna/sdk-ts) |
+| **PyPI** | [obsigna](https://pypi.org/project/obsigna/) |
 
 ---
 
@@ -121,7 +121,7 @@ signed, _ := receipt.Sign(unsigned, keys.PrivateKey, "did:agent:my-agent#key-1")
 ### TypeScript
 
 ```bash
-npm install @agnt-rcpt/sdk-ts
+npm install @obsigna/sdk-ts
 ```
 
 ```typescript
@@ -129,7 +129,7 @@ import {
   createReceipt,
   generateKeyPair,
   signReceipt,
-} from "@agnt-rcpt/sdk-ts";
+} from "@obsigna/sdk-ts";
 
 const keys = generateKeyPair();
 const unsigned = createReceipt({
@@ -145,15 +145,15 @@ const signed = signReceipt(unsigned, keys.privateKey, "did:agent:my-agent#key-1"
 ### Python
 
 ```bash
-pip install agent-receipts
+pip install obsigna
 ```
 
 ```python
-from agent_receipts import (
+from obsigna import (
     create_receipt, generate_key_pair, sign_receipt,
     CreateReceiptInput, Issuer, Principal, Outcome, Chain,
 )
-from agent_receipts.receipt.create import ActionInput
+from obsigna.receipt.create import ActionInput
 
 keys = generate_key_pair()
 unsigned = create_receipt(CreateReceiptInput(
