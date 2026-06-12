@@ -12,6 +12,12 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.13.0a2] - 2026-06-12
+
+First release under the **`obsigna`** distribution name (no functional change
+over `0.13.0a1`; the bump exists because the `sdk-py-v0.13.0a1` tag was already
+consumed by the final `agent-receipts` release).
+
 ### Changed
 
 - **Package renamed to `obsigna`** (was `agent-receipts`), and the import module
