@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agent-receipts/ar/daemon"
+	"github.com/agent-receipts/ar/sdk/go/store"
 )
 
 // isolate points the per-user default paths (config, key, db, socket) at a fresh
@@ -119,6 +122,66 @@ func TestRunRotate(t *testing.T) {
 	}
 	if strings.Contains(got, "agent-receipts verify") {
 		t.Fatalf("rotate stdout still references the deprecated `agent-receipts verify`: %q", got)
+	}
+
+	// The rotation receipt must carry the SAME issuer the daemon defaults to, so
+	// a chain rotated via `obsigna keys rotate` and one rotated via the daemon
+	// share one identity. This guards against keyscli drifting from
+	// daemon.DefaultIssuerID.
+	st, err := store.OpenReadOnly(filepath.Join(dir, "receipts.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	chain, err := st.GetChain("test-chain")
+	if err != nil {
+		t.Fatalf("get chain: %v", err)
+	}
+	if len(chain) == 0 {
+		t.Fatal("rotation wrote no receipt to the chain")
+	}
+	if iss := chain[0].Issuer.ID; iss != daemon.DefaultIssuerID {
+		t.Errorf("rotation receipt issuer = %q, want daemon default %q", iss, daemon.DefaultIssuerID)
+	}
+}
+
+func TestHelpWorksWithBrokenConfig(t *testing.T) {
+	dir := isolate(t)
+	// Point AGENTRECEIPTS_CONFIG at a file that does not exist — baseConfig will
+	// error, but --help must still succeed for every verb.
+	t.Setenv("AGENTRECEIPTS_CONFIG", filepath.Join(dir, "missing.toml"))
+
+	verbs := map[string]func([]string, io.Writer, io.Writer, func(string) string) int{
+		"generate": RunGenerate,
+		"pubkey":   RunPubkey,
+		"rotate":   RunRotate,
+	}
+	for name, run := range verbs {
+		t.Run(name+"/help-ok", func(t *testing.T) {
+			if code := run([]string{"--help"}, io.Discard, io.Discard, nil); code != ExitOK {
+				t.Errorf("%s --help exit = %d, want %d (broken config must not block help)", name, code, ExitOK)
+			}
+		})
+		t.Run(name+"/exec-reports-config-error", func(t *testing.T) {
+			var errOut bytes.Buffer
+			if code := run(nil, io.Discard, &errOut, nil); code != ExitUsageError {
+				t.Errorf("%s exec exit = %d, want %d (config error surfaced on execute)", name, code, ExitUsageError)
+			}
+		})
+	}
+}
+
+func TestBaseConfigUsesDaemonIdentityDefaults(t *testing.T) {
+	isolate(t)
+	base, err := baseConfig(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("baseConfig: %v", err)
+	}
+	if base.IssuerID != daemon.DefaultIssuerID {
+		t.Errorf("default issuer = %q, want %q", base.IssuerID, daemon.DefaultIssuerID)
+	}
+	if base.VerificationMethodID != daemon.DefaultVerificationMethodID {
+		t.Errorf("default verification method = %q, want %q", base.VerificationMethodID, daemon.DefaultVerificationMethodID)
 	}
 }
 

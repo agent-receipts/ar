@@ -14,38 +14,50 @@ type goreleaserBuild struct {
 
 // parseGoreleaserBuilds extracts (id, main, binary) for each build by scanning
 // the YAML lines. A tiny hand parser avoids pulling a YAML dependency into the
-// daemon module just for a guard test; the goreleaser build entries use a fixed
-// two-space/four-space indentation this relies on.
+// daemon module just for a guard test. A new build begins at each `  - ` list
+// marker inside the `builds:` section; id/main/binary are captured in ANY order
+// within a build (the first may sit on the dash line), so reformatting that
+// reorders fields cannot silently misassign them.
 func parseGoreleaserBuilds(t *testing.T, yaml string) []goreleaserBuild {
 	t.Helper()
-	idRe := regexp.MustCompile(`^\s*- id:\s*(\S+)`)
-	mainRe := regexp.MustCompile(`^\s+main:\s*(\S+)`)
-	binRe := regexp.MustCompile(`^\s+binary:\s*(\S+)`)
+	topKey := regexp.MustCompile(`^[a-z]`)
+	// "  - key: value" — a build list item with its first key on the dash line.
+	itemRe := regexp.MustCompile(`^  - (\w[\w-]*):\s*(\S+)`)
+	// "    key: value" — any subsequent key inside the current build.
+	keyRe := regexp.MustCompile(`^\s+(\w[\w-]*):\s*(\S+)`)
+
+	set := func(b *goreleaserBuild, key, val string) {
+		switch key {
+		case "id":
+			b.id = val
+		case "main":
+			b.main = val
+		case "binary":
+			b.binary = val
+		}
+	}
 
 	inBuilds := false
 	var builds []goreleaserBuild
 	for _, line := range strings.Split(yaml, "\n") {
-		// The builds: section ends at the next top-level (column 0) key.
-		if regexp.MustCompile(`^[a-z]`).MatchString(line) {
-			inBuilds = line == "builds:"
+		// Any column-0 key ends the builds: section.
+		if topKey.MatchString(line) {
+			inBuilds = strings.HasPrefix(line, "builds:")
 			continue
 		}
 		if !inBuilds {
 			continue
 		}
-		if m := idRe.FindStringSubmatch(line); m != nil {
-			builds = append(builds, goreleaserBuild{id: m[1]})
+		if m := itemRe.FindStringSubmatch(line); m != nil {
+			builds = append(builds, goreleaserBuild{})
+			set(&builds[len(builds)-1], m[1], m[2])
 			continue
 		}
 		if len(builds) == 0 {
 			continue
 		}
-		cur := &builds[len(builds)-1]
-		if m := mainRe.FindStringSubmatch(line); m != nil {
-			cur.main = m[1]
-		}
-		if m := binRe.FindStringSubmatch(line); m != nil {
-			cur.binary = m[1]
+		if m := keyRe.FindStringSubmatch(line); m != nil {
+			set(&builds[len(builds)-1], m[1], m[2])
 		}
 	}
 	return builds

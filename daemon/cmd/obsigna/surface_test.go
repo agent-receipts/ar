@@ -1,8 +1,16 @@
 package main
 
 import (
+	"reflect"
 	"sort"
 	"testing"
+
+	"github.com/agent-receipts/ar/daemon/internal/doctorcli"
+	"github.com/agent-receipts/ar/daemon/internal/keyscli"
+	"github.com/agent-receipts/ar/daemon/internal/listcli"
+	"github.com/agent-receipts/ar/daemon/internal/showcli"
+	"github.com/agent-receipts/ar/daemon/internal/verifycli"
+	"github.com/agent-receipts/ar/daemon/internal/verifyeventcli"
 )
 
 // TestGoldenSurface pins the obsigna command surface to the frozen ADR-0030
@@ -81,6 +89,46 @@ func TestGoldenSurface(t *testing.T) {
 			t.Errorf("alias %q -> %+v, want %+v", name, got, want)
 		}
 	}
+}
+
+// TestLeafWiring asserts each leaf is wired to the CORRECT implementation, not
+// merely to some non-nil function. Without this, a registry mix-up that points
+// two verbs at the same Run (e.g. both `verify` and `show` → showcli.Run) would
+// pass TestGoldenSurface and TestAliasMatchesGrouped while silently running the
+// wrong command — so the "frozen surface" guarantee would cover verb names but
+// not behaviour.
+func TestLeafWiring(t *testing.T) {
+	tr := commandTree()
+
+	wantGroupRun := map[string]map[string]runFunc{
+		"receipt": {
+			"verify":       verifycli.Run,
+			"show":         showcli.Run,
+			"list":         listcli.Run,
+			"verify-event": verifyeventcli.Run,
+		},
+		"keys": {
+			"generate": keyscli.RunGenerate,
+			"pubkey":   keyscli.RunPubkey,
+			"rotate":   keyscli.RunRotate,
+		},
+	}
+	for gname, verbs := range wantGroupRun {
+		for v, want := range verbs {
+			if got := tr.groups[gname].leaves[v].run; !sameFunc(got, want) {
+				t.Errorf("group %q verb %q is wired to the wrong function", gname, v)
+			}
+		}
+	}
+	if !sameFunc(tr.topLeaves["doctor"].run, doctorcli.Run) {
+		t.Error("doctor is wired to the wrong function")
+	}
+}
+
+// sameFunc reports whether two func values point at the same code. Go funcs are
+// not comparable with ==, so compare their code pointers via reflect.
+func sameFunc(a, b runFunc) bool {
+	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
 
 // TestFlatAliasInvariant enforces ADR-0030's bound against alias sprawl: the flat

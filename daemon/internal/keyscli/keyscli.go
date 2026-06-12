@@ -33,17 +33,6 @@ const (
 	ExitUsageError = 2
 )
 
-// These mirror the daemon's own resolveConfig defaults (see
-// cmd/agent-receipts-daemon/main.go). They MUST match so a rotation performed
-// via `obsigna keys rotate` records the same issuer / verification method as one
-// the daemon would write — the issuer DID is part of the signed receipt, so a
-// divergent default here would fork chain identity. The literal daemon name is
-// intentional and not rebranded with the binary.
-const (
-	defaultIssuerID             = "did:agent-receipts-daemon:local"
-	defaultVerificationMethodID = "did:agent-receipts-daemon:local#k1"
-)
-
 // pubkeyVerificationMethod is a placeholder fed to keysource.NewFile so Init's
 // "verification method required" guard passes. `keys pubkey` only derives the
 // public half of the key and never signs, so the value is never embedded in a
@@ -56,11 +45,12 @@ const pubkeyVerificationMethod = "did:obsigna:pubkey"
 // --init`.
 func RunGenerate(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
 	getenv = orOsGetenv(getenv)
-	base, err := baseConfig(getenv)
-	if err != nil {
-		fmt.Fprintf(stderr, "obsigna keys generate: %v\n", err)
-		return ExitUsageError
-	}
+	// The config error is deferred until after flag parsing so `--help` still
+	// works when the config file is malformed or AGENTRECEIPTS_CONFIG names a
+	// missing file — help must not depend on a readable config. On error base is
+	// the zero Config; the flag defaults are then empty, which is harmless
+	// because cfgErr short-circuits before they are used.
+	base, cfgErr := baseConfig(getenv)
 
 	fs := flag.NewFlagSet("keys generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -68,6 +58,10 @@ func RunGenerate(args []string, stdout, stderr io.Writer, getenv func(string) st
 	pubPath := fs.String("public-key", base.PublicKeyPath, "Public key output path as PEM, mode 0644 (default: <key>.pub) (env: AGENTRECEIPTS_PUBLIC_KEY)")
 	if code, done := parse(fs, args, stderr, "keys generate"); done {
 		return code
+	}
+	if cfgErr != nil {
+		fmt.Fprintf(stderr, "obsigna keys generate: %v\n", cfgErr)
+		return ExitUsageError
 	}
 	if *keyPath == "" {
 		fmt.Fprintln(stderr, "obsigna keys generate: --key is required (no AGENTRECEIPTS_KEY and no home directory)")
@@ -93,17 +87,19 @@ func RunGenerate(args []string, stdout, stderr io.Writer, getenv func(string) st
 // a previously published .pub file.
 func RunPubkey(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
 	getenv = orOsGetenv(getenv)
-	base, err := baseConfig(getenv)
-	if err != nil {
-		fmt.Fprintf(stderr, "obsigna keys pubkey: %v\n", err)
-		return ExitUsageError
-	}
+	// Config error deferred past parse so `--help` works regardless of config
+	// validity (see RunGenerate).
+	base, cfgErr := baseConfig(getenv)
 
 	fs := flag.NewFlagSet("keys pubkey", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	keyPath := fs.String("key", base.KeyPath, "Ed25519 PEM private key path to derive the public key from (env: AGENTRECEIPTS_KEY)")
 	if code, done := parse(fs, args, stderr, "keys pubkey"); done {
 		return code
+	}
+	if cfgErr != nil {
+		fmt.Fprintf(stderr, "obsigna keys pubkey: %v\n", cfgErr)
+		return ExitUsageError
 	}
 	if *keyPath == "" {
 		fmt.Fprintln(stderr, "obsigna keys pubkey: --key is required (no AGENTRECEIPTS_KEY and no home directory)")
@@ -132,11 +128,9 @@ func RunPubkey(args []string, stdout, stderr io.Writer, getenv func(string) stri
 // stopped first (daemon.RotateKey refuses while the socket is reachable).
 func RunRotate(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
 	getenv = orOsGetenv(getenv)
-	base, err := baseConfig(getenv)
-	if err != nil {
-		fmt.Fprintf(stderr, "obsigna keys rotate: %v\n", err)
-		return ExitUsageError
-	}
+	// Config error deferred past parse so `--help` works regardless of config
+	// validity (see RunGenerate).
+	base, cfgErr := baseConfig(getenv)
 
 	fs := flag.NewFlagSet("keys rotate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -150,6 +144,10 @@ func RunRotate(args []string, stdout, stderr io.Writer, getenv func(string) stri
 	socketPath := fs.String("socket", base.SocketPath, "Daemon socket path; rotation is refused if a daemon is reachable here (env: AGENTRECEIPTS_SOCKET)")
 	if code, done := parse(fs, args, stderr, "keys rotate"); done {
 		return code
+	}
+	if cfgErr != nil {
+		fmt.Fprintf(stderr, "obsigna keys rotate: %v\n", cfgErr)
+		return ExitUsageError
 	}
 
 	cfg := daemon.Config{
@@ -230,8 +228,8 @@ func baseConfig(getenv func(string) string) (daemon.Config, error) {
 		DBPath:               daemon.DefaultDBPath(),
 		SocketPath:           daemon.DefaultSocketPath(),
 		ChainID:              time.Now().UTC().Format("2006-01-02"),
-		IssuerID:             defaultIssuerID,
-		VerificationMethodID: defaultVerificationMethodID,
+		IssuerID:             daemon.DefaultIssuerID,
+		VerificationMethodID: daemon.DefaultVerificationMethodID,
 	}
 
 	fc, err := loadConfigFile(getenv)
