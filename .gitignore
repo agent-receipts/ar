@@ -19,4 +19,6 @@ __pycache__/
 /collector/collector
 /daemon/bin/
 /daemon/agent-receipts-daemon
+/daemon/obsigna
+/daemon/agent-receipts
 /daemon/bin/

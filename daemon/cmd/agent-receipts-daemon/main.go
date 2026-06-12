@@ -191,8 +191,8 @@ func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) 
 		DBPath:               daemon.DefaultDBPath(),
 		KeyPath:              daemon.DefaultKeyPath(),
 		ChainID:              time.Now().UTC().Format("2006-01-02"),
-		IssuerID:             "did:agent-receipts-daemon:local",
-		VerificationMethodID: "did:agent-receipts-daemon:local#k1",
+		IssuerID:             daemon.DefaultIssuerID,
+		VerificationMethodID: daemon.DefaultVerificationMethodID,
 		ShutdownDeadline:     200 * time.Millisecond,
 	}
 

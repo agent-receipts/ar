@@ -28,6 +28,26 @@ builds:
     ldflags:
       - -s -w -X main.version=v{{.Version}}
 
+  # The receipt CLI, renamed agent-receipts -> obsigna (ADR-0030). This is the
+  # primary CLI; the agent-receipts entry below is a thin deprecation shim that
+  # forwards to it.
+  - id: obsigna
+    main: ./cmd/obsigna
+    binary: obsigna
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+  # Deprecation shim: keeps `agent-receipts <cmd>` working by forwarding to
+  # obsigna with a one-line stderr notice. Ships alongside obsigna so existing
+  # scripts/CI keep running through the rename.
   - id: agent-receipts
     main: ./cmd/agent-receipts
     binary: agent-receipts
@@ -45,6 +65,7 @@ builds:
 archives:
   - ids:
       - agent-receipts-daemon
+      - obsigna
       - agent-receipts
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
@@ -94,9 +115,11 @@ brews:
     commit_msg_template: "chore(daemon): bump to v{{ .Version }}"
     install: |
       bin.install "agent-receipts-daemon"
+      bin.install "obsigna"
       bin.install "agent-receipts"
     test: |
       system "#{bin}/agent-receipts-daemon", "--version"
+      system "#{bin}/obsigna", "--help"
       system "#{bin}/agent-receipts", "--help"
     # `brew outdated` and `brew livecheck` use this to detect new releases.
     # The `ar` repo ships multiple taggable components, so we can't use
@@ -181,9 +204,11 @@ brews:
     commit_msg_template: "chore(daemon): bump alpha to v{{ .Version }}"
     install: |
       bin.install "agent-receipts-daemon"
+      bin.install "obsigna"
       bin.install "agent-receipts"
     test: |
       system "#{bin}/agent-receipts-daemon", "--version"
+      system "#{bin}/obsigna", "--help"
       system "#{bin}/agent-receipts", "--help"
     custom_block: |
       conflicts_with "agent-receipts-daemon", because: "both install the same binaries"

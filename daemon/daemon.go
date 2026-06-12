@@ -187,6 +187,18 @@ func DefaultPublicKeyPath(keyPath string) string {
 	return keyPath + ".pub"
 }
 
+// DefaultIssuerID and DefaultVerificationMethodID are the identity defaults a
+// local daemon signs under when no issuer/verification-method is configured.
+// They are exported so any tool that builds a Config for the same local install
+// — the daemon's own config resolution and `obsigna keys rotate` — shares one
+// source of truth: the issuer DID and verification method are embedded in every
+// signed receipt, so two callers defaulting them differently would fork chain
+// identity for the same operator.
+const (
+	DefaultIssuerID             = "did:agent-receipts-daemon:local"
+	DefaultVerificationMethodID = DefaultIssuerID + "#k1"
+)
+
 // DefaultForensicKeyPath returns the default forensic private-key path,
 // co-located with the signing key and receipt store. Empty when the XDG data
 // home cannot be resolved, matching the other Default*Path helpers.
