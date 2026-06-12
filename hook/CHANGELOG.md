@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0-alpha.1] - 2026-06-12
+
+### Added
+
+- **`action.target.resource` population from tool input** ([#784](https://github.com/agent-receipts/ar/pull/784), ADR-0029) — `extractFileTarget` parses `file_path` from Claude Code tool input and forwards `target_system: "filesystem"` + `target_resource: "<path>"` in the emitter frame. Opportunistic heuristic: skip-listed tools (`Bash`, `Agent`, `WebFetch`, `WebSearch`) and MCP-namespaced tools are ignored; all other tools are attempted so new filesystem tools are auto-captured. Known file tools (`Read`, `Write`, `Edit`, `MultiEdit`) emit a stderr warning when `file_path` is absent (schema-drift signal). Whitespace-only paths are treated as absent; malformed JSON is silently skipped.
+
+### Dependencies
+
+- Pin `github.com/agent-receipts/ar/sdk/go` to `v0.19.0-alpha.1` (provides `emitter.Target`, `MaxTargetResourceLen`, and client-side XOR + length validation).
+
 ## [0.16.0-alpha.1] - 2026-06-11
 
 ### Added

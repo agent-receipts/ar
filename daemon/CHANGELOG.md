@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0-alpha.1] - 2026-06-12
+
+### Added
+
+- **`action.target.{system,resource}` on signed receipts** ([#784](https://github.com/agent-receipts/ar/pull/784), ADR-0029) — `validateFrame` enforces XOR consistency (both fields set or both absent), caps `target_system` at 256 bytes and `target_resource` at 4096 bytes (Linux PATH_MAX). `buildAndSign` maps validated frame target fields into `action.target` on the signed receipt. Enables dashboard session attribution to build state-dependency edges and blast-radius annotations.
+
+### Dependencies
+
+- Pin `github.com/agent-receipts/ar/sdk/go` to `v0.19.0-alpha.1`.
+
 ## [0.19.0-alpha.1] - 2026-06-11
 
 ### Added
