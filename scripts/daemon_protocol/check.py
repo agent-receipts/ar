@@ -406,8 +406,9 @@ def download_daemon(version: str, workdir: str) -> DaemonBinaries:
     with tarfile.open(tarball) as tf:
         _safe_extract(tf, extract_dir)
     daemon_bin = os.path.join(extract_dir, "obsigna-daemon")
-    # The CLI stays the agent-receipts deprecation shim, which forwards `list`
-    # to `obsigna receipt list`; both binaries ship in the same archive.
+    # The CLI stays the agent-receipts deprecation shim, which forwards each
+    # legacy subcommand (verify/show/list/verify-event/doctor) to its obsigna
+    # equivalent — this gate uses `list`. Both binaries ship in the same archive.
     cli_bin = os.path.join(extract_dir, "agent-receipts")
     for path in (daemon_bin, cli_bin):
         if not os.path.exists(path):
