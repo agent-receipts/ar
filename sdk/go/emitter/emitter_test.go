@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"strings"
 	"time"
 
 	"github.com/agent-receipts/ar/daemon"
