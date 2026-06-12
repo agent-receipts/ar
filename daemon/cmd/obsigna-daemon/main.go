@@ -1,7 +1,10 @@
-// Command agent-receipts-daemon runs the receipts daemon: a single OS-user
-// process that owns the Ed25519 signing key and the SQLite receipt store, and
-// receives fire-and-forget event frames from emitters over a Unix-domain
-// socket. See ADR-0010 for design.
+// Command obsigna-daemon runs the receipts daemon: a single OS-user process
+// that owns the Ed25519 signing key and the SQLite receipt store, and receives
+// fire-and-forget event frames from emitters over a Unix-domain socket. See
+// ADR-0010 for design and ADR-0031 for why the daemon is its own minimal binary
+// (a lean import graph that never reaches the operator CLI surface, launched via
+// `obsigna daemon run` which execs straight into this image to keep the
+// attestation tuple — /proc/self/exe, parent PID, start time — intact).
 package main
 
 import (
@@ -60,12 +63,12 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
-		fmt.Fprintf(os.Stderr, "agent-receipts-daemon: %v\n", err)
+		fmt.Fprintf(os.Stderr, "obsigna-daemon: %v\n", err)
 		os.Exit(1)
 	}
 
 	if r.showVersion {
-		fmt.Printf("agent-receipts-daemon %s\n", resolveVersion())
+		fmt.Printf("obsigna-daemon %s\n", resolveVersion())
 		return
 	}
 
@@ -75,7 +78,7 @@ func main() {
 		// range each released SDK declares it can emit.
 		out, err := json.Marshal(daemon.SpokenProtocolVersion())
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --protocol-version: %v\n", err)
+			fmt.Fprintf(os.Stderr, "obsigna-daemon --protocol-version: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println(string(out))
@@ -87,7 +90,7 @@ func main() {
 			r.cfg.PublicKeyPath = daemon.DefaultPublicKeyPath(r.cfg.KeyPath)
 		}
 		if err := daemon.GenerateKey(r.cfg.KeyPath, r.cfg.PublicKeyPath); err != nil {
-			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --init: %v\n", err)
+			fmt.Fprintf(os.Stderr, "obsigna-daemon --init: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("generated signing key: %s\n", r.cfg.KeyPath)
@@ -101,7 +104,7 @@ func main() {
 		}
 		fingerprint, err := daemon.GenerateForensicKey(r.forensicKeyPath, r.cfg.ForensicPublicKeyPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --init-forensic-key: %v\n", err)
+			fmt.Fprintf(os.Stderr, "obsigna-daemon --init-forensic-key: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("generated forensic private key: %s (keep this offline; the daemon never reads it)\n", r.forensicKeyPath)
@@ -123,7 +126,7 @@ func main() {
 	if r.rotate {
 		summary, err := daemon.RotateKey(r.cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "agent-receipts-daemon --rotate: %v\n", err)
+			fmt.Fprintf(os.Stderr, "obsigna-daemon --rotate: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("rotated signing key on chain %s (seq %d)\n", summary.ChainID, summary.Sequence)
@@ -136,7 +139,7 @@ func main() {
 		} else {
 			fmt.Printf("  anchored to:         (none — set --anchor-log for post-compromise integrity)\n")
 		}
-		fmt.Printf("\nRestart the daemon to sign with the new key. `agent-receipts verify`\n")
+		fmt.Printf("\nRestart the daemon to sign with the new key. `obsigna verify`\n")
 		fmt.Printf("checks the rotated chain when pointed at the published key %s —\n", r.cfg.PublicKeyPath)
 		fmt.Printf("it resolves the archived genesis key and traverses the rotation automatically.\n")
 		return
@@ -147,14 +150,14 @@ func main() {
 		return
 	}
 
-	logger := log.New(os.Stderr, "agent-receipts-daemon ", log.LstdFlags|log.Lmicroseconds)
+	logger := log.New(os.Stderr, "obsigna-daemon ", log.LstdFlags|log.Lmicroseconds)
 	r.cfg.Logger = logger
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	if err := daemon.Run(ctx, r.cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "agent-receipts-daemon: %v\n", err)
+		fmt.Fprintf(os.Stderr, "obsigna-daemon: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -172,7 +175,7 @@ func main() {
 // getenv and errOut are injected so the merge is unit-testable without touching
 // the process environment or global flag state.
 func resolveConfig(args []string, getenv func(string) string, errOut io.Writer) (resolved, error) {
-	fs := flag.NewFlagSet("agent-receipts-daemon", flag.ContinueOnError)
+	fs := flag.NewFlagSet("obsigna-daemon", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 
 	configPath := fs.String("config", "", "Path to a TOML config file (default: $XDG_DATA_HOME/agent-receipts/daemon.toml; ignored if absent)")

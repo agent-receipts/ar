@@ -44,6 +44,7 @@ Use `0000-template.md` as the starting point for new ADRs. Name each new ADR fil
 | [ADR-0028](0028-reversibility-taxonomy-and-cascade-model.md) | Reversibility Taxonomy and Cascade Model | Accepted |
 | [ADR-0029](0029-attribution-primary-product-model.md) | Attribution-Primary Product Model | Accepted |
 | [ADR-0030](0030-cli-command-taxonomy.md) | CLI Command Taxonomy | Accepted |
+| [ADR-0031](0031-binary-topology.md) | Daemon Binary Topology — Dispatcher + Minimal Daemon | Accepted |
 
 ## References
 

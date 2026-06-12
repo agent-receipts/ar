@@ -44,6 +44,13 @@ func run(args []string, stdout, stderr io.Writer, getenv func(string) string) in
 		return exitOK
 	}
 
+	// `daemon` is the process launcher (ADR-0031), not part of the frozen
+	// ADR-0030 read-side surface — it execs obsigna-daemon rather than calling a
+	// subcommand library, so it lives outside the command tree.
+	if cmd == "daemon" {
+		return runDaemon(rest, stdout, stderr)
+	}
+
 	if g, ok := t.groups[cmd]; ok {
 		return t.dispatchGroup(cmd, g, rest, stdout, stderr, getenv)
 	}
@@ -104,6 +111,11 @@ func (t tree) usage() string {
 	for _, name := range t.topOrder {
 		fmt.Fprintf(w.tab, "  obsigna %s\t%s\n", name, t.topLeaves[name].summary)
 	}
+	w.flush()
+
+	fmt.Fprintf(w.buf, "\nDaemon:\n")
+	w.start()
+	fmt.Fprintf(w.tab, "  obsigna daemon run\t%s\n", "Launch the receipts daemon (execs obsigna-daemon; ADR-0031).")
 	w.flush()
 
 	fmt.Fprintf(w.buf, "\nAliases:\n")

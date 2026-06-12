@@ -2,6 +2,11 @@ module github.com/agent-receipts/ar/daemon
 
 go 1.26.1
 
+// Pin the toolchain to the patch (ADR-0031): reproducible-build attestation
+// requires every builder use the same compiler bytes. CI consumes this via
+// `setup-go` with go-version-file so it stops floating to the latest 1.26.x.
+toolchain go1.26.1
+
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/agent-receipts/ar/sdk/go v0.19.0-alpha.1

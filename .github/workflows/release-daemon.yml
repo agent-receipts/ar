@@ -23,7 +23,10 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version: "1.26"
+          # Pin to daemon/go.mod's toolchain (ADR-0031): the release build must
+          # use the exact compiler the reproducible-attestation gate rebuilds
+          # with, not a floating latest 1.26.x.
+          go-version-file: daemon/go.mod
 
       # GoReleaser can't parse the prefixed tag `daemon/vX.Y.Z` as semver.
       # Create a local lightweight `vX.Y.Z` tag at the same commit so
@@ -105,7 +108,7 @@ jobs:
       - if: matrix.lang == 'go'
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version: "1.26"
+          go-version-file: daemon/go.mod
       - if: matrix.lang == 'ts'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -120,3 +123,70 @@ jobs:
             --sdk-lang ${{ matrix.lang }} --sdk-version latest --daemon-version "$VERSION"
       - name: Run unit tests for daemon-protocol gate
         run: python3 scripts/daemon_protocol/test_check.py
+
+  # Gate B (release side, ADR-0031): the attestation claim is that auditors can
+  # independently rebuild obsigna-daemon and match a published hash. Prove it on
+  # every release — independently rebuild the binary with the same deterministic
+  # flags GoReleaser used, assert its sha256 equals the binary inside the just-
+  # released archive, then publish that hash (a .sha256 asset + a notes line) as
+  # the daemon's known-good attestation value. A mismatch means the build is not
+  # reproducible, so we refuse to publish a hash and fail the release.
+  reproducible-attest:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: daemon/go.mod
+      - name: Rebuild obsigna-daemon and match the released artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#daemon/v}"   # e.g. 0.20.0-alpha.1 (no leading v)
+          asset="daemon_${VERSION}_linux_amd64.tar.gz"
+
+          # 1) Hash obsigna-daemon as shipped, from the archive uploaded by the
+          #    release job above.
+          mkdir -p released
+          gh release download "${GITHUB_REF_NAME}" --pattern "$asset" --dir released
+          tar -xzf "released/${asset}" -C released
+          released_hash="$(sha256sum released/obsigna-daemon | awk '{print $1}')"
+
+          # 2) Independent clean rebuild with the SAME flags as
+          #    daemon/.goreleaser.yaml: GOWORK=off (resolve the published sdk/go,
+          #    not the in-tree workspace), CGO off, -trimpath, -buildvcs=false, and
+          #    the identical version ldflag. -trimpath makes the result
+          #    path-independent (the PR Gate B proves that) and -buildvcs=false
+          #    matches the release build (which omits VCS stamping because its
+          #    LICENSE-copy hook would otherwise dirty the tree), so building in
+          #    this checkout is sufficient.
+          ( cd daemon && GOWORK=off go mod download )
+          ( cd daemon && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+              go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v${VERSION}" \
+              -o /tmp/obsigna-daemon-rebuild ./cmd/obsigna-daemon )
+          rebuilt_hash="$(sha256sum /tmp/obsigna-daemon-rebuild | awk '{print $1}')"
+
+          echo "released sha256: $released_hash"
+          echo "rebuilt  sha256: $rebuilt_hash"
+          if [ "$released_hash" != "$rebuilt_hash" ]; then
+            echo "::error::Released obsigna-daemon (linux/amd64) does not match an independent clean rebuild ($released_hash vs $rebuilt_hash). The build is not reproducible; refusing to publish an attestation hash."
+            exit 1
+          fi
+
+          # 3) Publish the known-good hash: a .sha256 asset and a release-notes
+          #    line. The notes append is guarded by a marker so re-runs don't
+          #    duplicate it.
+          hashfile="obsigna-daemon-linux-amd64.sha256"
+          echo "${released_hash}  obsigna-daemon" > "$hashfile"
+          gh release upload "${GITHUB_REF_NAME}" "$hashfile" --clobber
+
+          marker="<!-- obsigna-daemon-attestation -->"
+          notes="$(gh release view "${GITHUB_REF_NAME}" --json body -q .body)"
+          if ! printf '%s' "$notes" | grep -qF "$marker"; then
+            printf '%s\n\n%s\n**Reproducible build (ADR-0031):** linux/amd64 `obsigna-daemon` sha256 `%s` — independently rebuilt from source and matched byte-for-byte. Rebuild with `GOTOOLCHAIN=go1.26.1 GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v%s" ./cmd/obsigna-daemon`.\n' \
+              "$notes" "$marker" "$released_hash" "$VERSION" | gh release edit "${GITHUB_REF_NAME}" --notes-file -
+          fi

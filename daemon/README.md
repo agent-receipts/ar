@@ -19,7 +19,7 @@ OpenClaw / SDK ships in later phases.
 ## Build
 
 ```sh
-go build ./cmd/agent-receipts-daemon
+go build ./cmd/obsigna-daemon
 go test ./...                     # unit tests
 go test -tags=integration ./...   # integration tests (real socket, real DB)
 ```
@@ -27,7 +27,7 @@ go test -tags=integration ./...   # integration tests (real socket, real DB)
 Build from a clone of the monorepo: the repo-root `go.work` wires the in-tree
 `sdk/go` so `go build` from `daemon/` picks up `ReceiptStore.GetChainTail`.
 
-`go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@latest`
+`go install github.com/agent-receipts/ar/daemon/cmd/obsigna-daemon@latest`
 is **not yet supported**: the daemon depends on `sdk/go.GetChainTail`, which
 is not in the latest published `sdk/go` tag (`v0.6.0`). Standalone install
 becomes possible once the next `sdk/go` tag is released and a follow-up bumps
@@ -445,7 +445,7 @@ The following are deliberate Phase 1 choices, all callable out for follow-up:
 
 ```
 daemon.go                                  # Run() entrypoint and Config; publishes the public key on startup
-cmd/agent-receipts-daemon/main.go          # daemon CLI: flag/env parsing, signal handling
+cmd/obsigna-daemon/main.go                 # daemon CLI: flag/env parsing, signal handling
 cmd/agent-receipts/main.go                 # read CLI: thin shim over internal/{listcli,showcli,verifycli,doctorcli}
 internal/
   chain/state.go                           # in-memory (seq, prev_hash) owner; sole writer

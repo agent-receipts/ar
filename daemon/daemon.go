@@ -1,7 +1,7 @@
-// Package daemon assembles the agent-receipts-daemon's components — chain
-// state, key source, receipt store, frame socket — into a single Run
-// entrypoint. cmd/agent-receipts-daemon/main.go wraps Run with flag/env
-// parsing and signal handling.
+// Package daemon assembles the obsigna-daemon's components — chain state, key
+// source, receipt store, frame socket — into a single Run entrypoint.
+// cmd/obsigna-daemon/main.go wraps Run with flag/env parsing and signal
+// handling.
 package daemon
 
 import (
@@ -29,7 +29,7 @@ import (
 )
 
 // Config is the daemon's startup configuration. Resolve from flags/env in
-// cmd/agent-receipts-daemon/main.go and pass to Run.
+// cmd/obsigna-daemon/main.go and pass to Run.
 type Config struct {
 	// SocketPath is the Unix-domain socket the daemon listens on.
 	SocketPath string
@@ -392,7 +392,7 @@ func Run(ctx context.Context, cfg Config) error {
 	switch runtime.GOOS {
 	case "linux", "darwin":
 	default:
-		return fmt.Errorf("agent-receipts-daemon: unsupported platform %q (Phase 1 supports linux and darwin only)", runtime.GOOS)
+		return fmt.Errorf("obsigna-daemon: unsupported platform %q (Phase 1 supports linux and darwin only)", runtime.GOOS)
 	}
 	if err := validateConfig(&cfg); err != nil {
 		return err
@@ -562,7 +562,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	defer ln.Close()
-	cfg.Logger.Printf("agent-receipts-daemon listening on %s (chain=%s, db=%s)", ln.Path(), cfg.ChainID, cfg.DBPath)
+	cfg.Logger.Printf("obsigna-daemon listening on %s (chain=%s, db=%s)", ln.Path(), cfg.ChainID, cfg.DBPath)
 
 	if err := ln.Serve(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
@@ -583,7 +583,7 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 
-	cfg.Logger.Printf("agent-receipts-daemon shutdown complete")
+	cfg.Logger.Printf("obsigna-daemon shutdown complete")
 	return nil
 }
 

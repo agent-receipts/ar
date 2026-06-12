@@ -271,7 +271,7 @@ func TestPublishPublicKey_FreshWriteRefusesPreCreatedSymlink(t *testing.T) {
 }
 
 // TestValidateConfig_PublicKeyPathDefaultsFromKeyPath pins the contract the
-// agent-receipts-daemon CLI relies on: when PublicKeyPath is left empty by
+// obsigna-daemon CLI relies on: when PublicKeyPath is left empty by
 // the caller, validateConfig fills it from the final KeyPath, so a
 // `--key /tmp/x.key` invocation publishes to `/tmp/x.key.pub` — not whatever
 // path was computed before flag.Parse.
