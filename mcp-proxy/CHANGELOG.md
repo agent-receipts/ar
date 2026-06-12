@@ -11,6 +11,8 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+## [0.15.0-alpha.1] - 2026-06-13
+
 ### Changed
 
 - **Binary renamed `mcp-proxy` → `obsigna-mcp` (ADR-0033).** The proxy is now its own
