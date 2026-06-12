@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0-alpha.1] - 2026-06-12
+
+### Added
+
+- **`obsigna` CLI** (ADR-0030) — the receipt CLI is renamed `agent-receipts` → `obsigna` with a grouped noun-verb surface: `obsigna receipt {verify,show,list,verify-event}`, `obsigna keys {generate,pubkey,rotate}`, and `obsigna doctor`. Flat aliases `obsigna verify` / `obsigna show` are preserved as a closed set for the verbs that live in existing scripts. `keys generate` and `keys rotate` mirror `agent-receipts-daemon --init` / `--rotate`; `keys pubkey` prints the SPKI public key. A golden surface test freezes the command tree so any drift from ADR-0030 fails CI. The daemon, collector, and mcp-proxy binaries are unchanged (out of scope for this rename).
+
+### Changed
+
+- **`agent-receipts` is now a deprecation shim** — it keeps every historical subcommand working (`verify`, `show`, `list`, `verify-event`, `doctor`) by printing a one-line deprecation notice to **stderr** (never stdout, so piped output stays byte-clean) and forwarding to the equivalent `obsigna` command, exiting with the forwarded status. The Homebrew formula now installs `obsigna` alongside `agent-receipts-daemon` and the shim.
+
 ## [0.20.0-alpha.1] - 2026-06-12
 
 ### Added
