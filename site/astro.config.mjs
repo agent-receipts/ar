@@ -77,6 +77,10 @@ export default defineConfig({
               slug: "specification/how-it-works",
             },
             {
+              label: "Trust Model",
+              slug: "specification/trust-model",
+            },
+            {
               label: "Agent Receipt Schema",
               slug: "specification/agent-receipt-schema",
             },
