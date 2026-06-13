@@ -46,19 +46,36 @@
 
 ## Start here
 
-The fastest way to try Agent Receipts is to put [`mcp-proxy/`](mcp-proxy/) in front of an MCP server you already use.
+Both paths below require the daemon — it holds the signing key and owns the audit chain. Install it first:
 
-In one step, you get:
+```bash
+brew install agent-receipts/tap/obsigna
+obsigna daemon start
+```
 
-- Signed receipts for every tool call
-- A tamper-evident audit chain you can verify later
-- Risk scoring and policy hooks without changing the client or server
+**Fastest path — PostToolUse hook (Claude Code):** one config snippet and every tool call gets a signed receipt automatically:
 
-If you want to audit GitHub MCP in a real agent workflow, start with:
+```json
+{
+  "hooks": {
+    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "obsigna-hook" }] }]
+  }
+}
+```
 
-- [Claude Desktop integration](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
-- [Claude Code integration](https://agentreceipts.ai/mcp-proxy/claude-code/)
-- [Codex integration](https://agentreceipts.ai/mcp-proxy/codex/)
+Add that to `~/.claude/settings.json`, then inspect the audit trail:
+
+```bash
+obsigna list
+obsigna show <seq>
+obsigna verify
+```
+
+**More control — MCP proxy:** wraps any MCP server and adds policy hooks and risk scoring on top of signed receipts:
+
+- [Claude Desktop setup](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
+- [Claude Code setup](https://agentreceipts.ai/mcp-proxy/claude-code/)
+- [Codex setup](https://agentreceipts.ai/mcp-proxy/codex/)
 
 ## Project layout
 
@@ -75,34 +92,6 @@ If you want to audit GitHub MCP in a real agent workflow, start with:
 | [`docs/adr/`](docs/adr/) | Architecture Decision Records |
 | [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
 | [openclaw](https://github.com/agent-receipts/openclaw) | Agent Receipts plugin for OpenClaw |
-
-## 10-minute audited MCP quick start
-
-Install the proxy:
-
-```bash
-go install github.com/agent-receipts/ar/mcp-proxy/cmd/obsigna-mcp@latest
-```
-
-Wrap any MCP server:
-
-```bash
-obsigna-mcp node /path/to/mcp-server.js
-```
-
-Then point your agent client at the proxy instead of the raw server:
-
-- [Claude Desktop setup](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
-- [Claude Code setup](https://agentreceipts.ai/mcp-proxy/claude-code/)
-- [Codex setup](https://agentreceipts.ai/mcp-proxy/codex/)
-
-Once your agent makes tool calls, inspect the signed audit trail:
-
-```bash
-obsigna list
-obsigna show <seq>
-obsigna verify
-```
 
 ## SDK quick start
 
