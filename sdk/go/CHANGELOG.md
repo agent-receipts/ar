@@ -17,6 +17,10 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 - **`Store.LatestRootChainID()`** — returns the chain id of the most recently written root receipt (the chain the daemon is currently appending to), or `found=false` for an empty store. Recency is by `rowid` (write order), not timestamp, so it is correct even when many receipts share the same RFC3339 second. Agent sub-chains (`…/agent/…`) are excluded. Used by `obsigna doctor` to target the live chain instead of guessing today's date.
 
+## [0.19.0] - 2026-06-13
+
+Graduates `0.19.0-alpha.1` after the alpha pass. No source changes since the alpha; see the `0.19.0-alpha.1` entry below for the full surface (`action.target.{system,resource}` on emitter events). Since the last stable `0.17.0`, this also carries the `0.18.0-alpha.1` surface (`KeyRotation` chain-verifier traversal, transcript-derived model/usage on `Runtime`, and the new taxonomy action types). The `0.20.0-alpha.1` line (`Store.LatestRootChainID()`) stays on the alpha track.
+
 ## [0.19.0-alpha.1] - 2026-06-12
 
 ### Added
