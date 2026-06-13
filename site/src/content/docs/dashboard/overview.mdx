@@ -34,7 +34,7 @@ Enter your Ed25519 public key in PEM format in the textarea beside the **Verify 
 For command-line verification, [`obsigna receipt verify`](/reference/cli-commands/) provides the same full check without a browser.
 
 :::caution[Known issue: false negatives]
-The dashboard (v0.3.0) can report a chain as **broken** when `obsigna receipt verify` confirms it is **valid** — its hash recomputation does not match the SDK's canonicalization. If the dashboard flags a break, confirm with `obsigna receipt verify` before treating it as real. Tracked in [#719](https://github.com/agent-receipts/ar/issues/719).
+The dashboard can report a chain as **broken** when `obsigna receipt verify` confirms it is **valid** — its hash recomputation does not match the SDK's canonicalization. If the dashboard flags a break, confirm with `obsigna receipt verify` before treating it as real. Tracked in [#719](https://github.com/agent-receipts/ar/issues/719) — see that issue for the current status.
 :::
 
 ## How it works
