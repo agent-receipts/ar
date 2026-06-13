@@ -6,7 +6,7 @@ on:
       - "hook/v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release:
