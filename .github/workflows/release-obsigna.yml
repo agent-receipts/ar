@@ -224,7 +224,7 @@ jobs:
           if ! printf '%s' "$notes" | grep -qF "$marker"; then
             {
               printf '%s\n\n%s\n' "$notes" "$marker"
-              printf '**Reproducible build (ADR-0034):** every primary toolset binary below was independently rebuilt from source and matched the released linux/amd64 archive byte-for-byte.\n\n'
+              printf '**Reproducible build (ADR-0031/0034):** every primary toolset binary below was independently rebuilt from source and matched the released linux/amd64 archive byte-for-byte (the attestation scheme is ADR-0031, consolidated onto one train by ADR-0034; each binary cites its own ADR below).\n\n'
               cat /tmp/attest-lines.txt
             } | gh release edit "${GITHUB_REF_NAME}" --notes-file -
           fi

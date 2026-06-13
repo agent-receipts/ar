@@ -3,7 +3,7 @@
 #
 # Single source of the determinism flags shared by the two CI rebuilds — Gate B
 # (hook.yml, cross-path byte-identity) and the release attestation
-# (release-hook.yml, rebuild-matches-artifact). Keep these flags in lockstep
+# (release-obsigna.yml, rebuild-matches-artifact). Keep these flags in lockstep
 # with the obsigna-hook build in hook/.goreleaser.yaml: CGO off (no host C
 # toolchain bytes), -trimpath (no absolute build paths), -buildvcs=false (no git
 # stamp — the release LICENSE-copy hook would otherwise dirty the tree), and a

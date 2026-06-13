@@ -69,7 +69,7 @@ jobs:
   # sha256. This is what proves -trimpath actually took: without it the absolute
   # build path is baked into the binary and the two hashes diverge. The release
   # workflow extends this to an independent rebuild that must match the published
-  # artifact (release-hook.yml), which is the auditor-facing attestation.
+  # artifact (release-obsigna.yml), which is the auditor-facing attestation.
   reproducible-build:
     runs-on: ubuntu-latest
     steps:
