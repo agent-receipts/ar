@@ -12,7 +12,7 @@ for the work breakdown.
 
 This is **Phase 1** of the daemon roll-out — the foundation slice. It ships
 the standalone daemon binary, peer-cred capture, chain-tail resumption, the
-file-backed `KeySource`, and the `agent-receipts verify` read CLI (which
+file-backed `KeySource`, and the `obsigna receipt verify` read CLI (which
 works whether the daemon is up or down). Emitter refactor for mcp-proxy /
 OpenClaw / SDK ships in later phases.
 
@@ -61,7 +61,7 @@ obsigna-daemon \
   --socket /run/agentreceipts/events.sock \
   --db    /var/lib/agentreceipts/receipts.db \
   --key   /etc/agentreceipts/signing.key \
-  --chain-id default \
+  \
   --issuer-id "did:agent-receipts-daemon:$(hostname)" \
   --verification-method "did:agent-receipts-daemon:$(hostname)#k1"
 ```
@@ -121,7 +121,7 @@ suppress the warning, and it does not override the TCP rejection.
 
 On every startup the daemon publishes the matching SPKI public key to
 `--public-key` (default `<KeyPath>.pub`, tracking any `--key` override) with
-mode `0644`, so independent verifiers — `agent-receipts verify`, audit
+mode `0644`, so independent verifiers — `obsigna receipt verify`, audit
 scripts, CI checks — can load it without access to the private key path. If
 the file already exists with the same contents the publish is a no-op; if
 the contents differ the daemon refuses to start (a mismatch means either
@@ -159,15 +159,15 @@ Once a terminal receipt has been written, the daemon will refuse to start again 
 
 **TTL semantics (v1):** there is no idle-chain TTL in v1. The daemon emits `interrupted` for every open chain at shutdown time, regardless of how long ago the last receipt was written. Over-emitting `interrupted` for a long-idle chain is the lesser failure mode compared to designing TTL semantics under shutdown pressure. Follow-up issue tracked separately.
 
-## Read interface: `agent-receipts verify`
+## Read interface: `obsigna receipt verify`
 
 ```sh
-agent-receipts verify --chain-id default
+obsigna receipt verify
 # or, with explicit paths:
-agent-receipts verify \
+obsigna receipt verify \
   --db /var/lib/agentreceipts/receipts.db \
   --public-key /etc/agentreceipts/signing.key.pub \
-  --chain-id default
+ 
 ```
 
 Defaults match the daemon's: a verify run without flags works after
@@ -202,14 +202,14 @@ Exit codes are stable for scripting:
 | `1` | Chain failed verification (output lists per-receipt status) |
 | `2` | Usage error (bad flags, missing key file, unreadable DB) |
 
-## Read interface: `agent-receipts show <seq>`
+## Read interface: `obsigna receipt show <seq>`
 
 ```sh
-agent-receipts show 42
+obsigna receipt show 42
 # or, against a multi-chain store / explicit DB:
-agent-receipts show 42 --chain-id default --db /var/lib/agentreceipts/receipts.db
+obsigna receipt show 42 --db /var/lib/agentreceipts/receipts.db
 # pretty-printed JSON:
-agent-receipts show 42 --json
+obsigna receipt show 42 --json
 ```
 
 Prints the full fields of the receipt at chain sequence `<seq>` (1-indexed):
@@ -230,7 +230,7 @@ Exit codes are stable for scripting:
 | `1` | No receipt at the requested sequence (or empty store) |
 | `2` | Usage error (bad flags, ambiguous chain, unreadable DB) |
 
-## Read interface: `agent-receipts verify-event`
+## Read interface: `obsigna receipt verify-event`
 
 `verify` answers "is this chain internally consistent?". `verify-event` answers
 the narrower question that turns out to matter most for trust: **was this
@@ -243,16 +243,16 @@ is what is load-bearing.
 
 ```sh
 # A single receipt by id:
-agent-receipts verify-event --id urn:receipt:...
+obsigna receipt verify-event --id urn:receipt:...
 
 # The most recent receipt in the chain:
-agent-receipts verify-event --chain-head
+obsigna receipt verify-event --chain-head
 
 # Every receipt issued in a trailing window (e.g. post-incident triage):
-agent-receipts verify-event --since 10m --json
+obsigna receipt verify-event --since 10m --json
 
 # Pin the expected emitter(s) — mismatches warn, they do not fail:
-agent-receipts verify-event --chain-head \
+obsigna receipt verify-event --chain-head \
   --emitter-allowlist /usr/bin/mcp-proxy,/usr/bin/openclaw
 ```
 
@@ -308,16 +308,16 @@ Exit codes are stable for scripting:
 When a selector resolves to multiple receipts (`--since`), the process exit code
 is the worst case across them (`1` outranks `3`, which outranks `0`).
 
-## Health check: `agent-receipts doctor`
+## Health check: `obsigna doctor`
 
 ```sh
-agent-receipts doctor
+obsigna doctor
 # structured output for CI / healthchecks:
-agent-receipts doctor --json
+obsigna doctor --json
 # treat warnings as failures (stricter CI gate):
-agent-receipts doctor --json --warn-as-error
+obsigna doctor --json --warn-as-error
 # skip the synthetic round-trip (writes no event to the chain):
-agent-receipts doctor --no-roundtrip
+obsigna doctor --no-roundtrip
 ```
 
 `doctor` diagnoses the whole pipeline ADR-0010 describes — emitter → socket →
@@ -454,10 +454,10 @@ internal/
   socket/listener.go                       # Unix-domain socket + length-prefix framing
   socket/peercred_{linux,darwin,other}.go  # OS-specific peer-credential capture
   pipeline/build.go                        # frame + peer -> AgentReceipt -> sign -> store
-  listcli/list.go                          # `agent-receipts list` subcommand
-  showcli/show.go                          # `agent-receipts show <seq>` subcommand
-  verifycli/verify.go                      # `agent-receipts verify` subcommand
-  doctorcli/doctor.go                      # `agent-receipts doctor` pipeline health check
+  listcli/list.go                          # `obsigna receipt list` subcommand
+  showcli/show.go                          # `obsigna receipt show <seq>` subcommand
+  verifycli/verify.go                      # `obsigna receipt verify` subcommand
+  doctorcli/doctor.go                      # `obsigna doctor` pipeline health check
 integration_test.go                        # tags: integration. End-to-end concurrency, peer-cred, and verify-CLI fixtures.
-tests_doctor_test.go                       # tags: integration. `agent-receipts doctor` round-trip against a live daemon.
+tests_doctor_test.go                       # tags: integration. `obsigna doctor` round-trip against a live daemon.
 ```
