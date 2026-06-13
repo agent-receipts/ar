@@ -1,4 +1,4 @@
-// Package doctorcli implements the `agent-receipts doctor` subcommand: an
+// Package doctorcli implements the `obsigna doctor` subcommand: an
 // end-to-end health check of the receipts pipeline (emitter → socket → daemon
 // → SQLite → verify) described by ADR-0010. It exists because the failure
 // modes the pipeline can drift into are subtle — tool calls succeed, individual
