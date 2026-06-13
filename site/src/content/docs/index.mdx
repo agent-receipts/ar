@@ -7,6 +7,17 @@ An agent runs overnight. By morning, a customer's production data is gone — th
 
 **Agent Receipts** closes that gap. A separate daemon records a tamper-evident receipt for every tool call your agent makes. The signing keys and the receipt store live outside the agent process, so the audit trail holds up even if the agent is compromised.
 
+## Use it today
+
+This isn't just a spec — there's working tooling at **[obsigna.dev](https://obsigna.dev)** you can drop in right now:
+
+- **[Hook](https://obsigna.dev/hook/overview/)** — the fastest path: capture native tool calls in Claude Code and other runtimes.
+- **[MCP proxy](https://obsigna.dev/mcp-proxy/overview/)** — sit it in front of any MCP server and sign a receipt for every tool call, with no code changes.
+- **SDKs for [Go](https://obsigna.dev/sdk-go/overview/), [TypeScript](https://obsigna.dev/sdk-ts/overview/), and [Python](https://obsigna.dev/sdk-py/overview/)** — emit receipts directly from your own code.
+- **[Dashboard](https://obsigna.dev/dashboard/overview/)** — browse and verify the receipt chain.
+
+→ **[Get started in minutes](https://obsigna.dev/getting-started/quick-start/)**
+
 ## The protocol
 
 An **Agent Receipt** is a cryptographically signed record of a single action taken by an AI agent on behalf of a human. Each receipt is structured as a [W3C Verifiable Credential](https://www.w3.org/TR/vc-data-model-2.0/) with type `AgentReceipt`, signed with Ed25519, and hash-chained into a tamper-evident log.
@@ -51,8 +62,6 @@ See the [Specification Overview](/specification/overview/) for the full design.
 - [Parameter Disclosure](/specification/parameter-disclosure/) — privacy-preserving payload handling
 - [Spec (full text)](/spec/) — versioned canonical specification
 
-## Use the tooling
-
-The [obsigna.dev](https://obsigna.dev) site covers the concrete implementations: SDKs (Go, TypeScript, Python), the MCP proxy, the hook, and the dashboard.
+## Ecosystem
 
 For the agent security tooling landscape — how Agent Receipts fits alongside observability platforms, policy engines, and other approaches — see the [Ecosystem](/ecosystem/).
