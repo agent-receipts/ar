@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-06-13
+
+Graduates `0.18.0-alpha.1` after the alpha pass. No code changes since the alpha; the only change is pinning the now-released stable `github.com/agent-receipts/ar/sdk/go` `v0.19.0` (the alpha pinned `v0.19.0-alpha.1`). See the `0.18.0-alpha.1` entry below for the full surface (the `agent-receipts-hook` → `obsigna-hook` binary rename, ADR-0036).
+
 ## [0.18.0-alpha.1] - 2026-06-13
 
 ### Changed

@@ -4,6 +4,8 @@ github.com/agent-receipts/ar/daemon v0.16.0 h1:IWEBHiC1HuG3+VTEKpmSX2V0+4IgOPTMz
 github.com/agent-receipts/ar/daemon v0.16.0/go.mod h1:vScXF225vmt3RXn8N33Bt39nLu6HGCjR7Faq9c+/C2I=
 github.com/agent-receipts/ar/sdk/go v0.19.0-alpha.1 h1:8bf6sLLq+ST5A4wZzgTC2dI9CpbTC02fw3Av+yWgggM=
 github.com/agent-receipts/ar/sdk/go v0.19.0-alpha.1/go.mod h1:aMH5iT4D4SdVbd16/+6+w0fSsmmfPU/ab5yhPRTmpN0=
+github.com/agent-receipts/ar/sdk/go v0.19.0 h1:4N5qohfN8B9n3ygimCuw2nLMV9LK8W39U6YC7TVtauA=
+github.com/agent-receipts/ar/sdk/go v0.19.0/go.mod h1:aMH5iT4D4SdVbd16/+6+w0fSsmmfPU/ab5yhPRTmpN0=
 github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
