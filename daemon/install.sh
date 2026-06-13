@@ -10,7 +10,7 @@
 
 set -eu
 
-REPO="agent-receipts/ar"
+REPO="agent-receipts/obsigna"
 INSTALL_DIR="${HOME}/.local/bin"
 # KEY_FILE is the XDG default path. The installer targets the default install layout;
 # custom AGENTRECEIPTS_KEY or XDG_DATA_HOME overrides are out of scope here.
