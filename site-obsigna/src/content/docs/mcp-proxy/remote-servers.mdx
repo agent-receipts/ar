@@ -92,8 +92,7 @@ The first time the server is invoked, `mcp-remote` opens a browser tab to comple
 
 The daemon stores action types in `<channel>.<server>.<tool>` form — for example, `mcp.atlassian.createJiraIssue`. Full taxonomy mapping that would reclassify Atlassian tools to canonical types like `data.api.write` and `data.api.read` is not yet applied at the daemon level and is tracked for a future release. The proxy's prefix-based operation classification drives policy risk scoring today.
 
-See the [Action Taxonomy](/specification/action-taxonomy/) reference for the full set of mappings, and open a PR against the [taxonomy definitions](https://github.com/agent-receipts/obsigna/tree/main/spec/spec/taxonomy) to add or correct entries.
-
+See the [Action Taxonomy](https://agentreceipts.ai/specification/action-taxonomy/) reference for the full set of mappings, and open a PR against the [taxonomy definitions](https://github.com/agent-receipts/obsigna/tree/main/spec/spec/taxonomy) to add or correct entries.
 ## Caveats
 
 - **OAuth is invisible to the proxy.** `mcp-remote` owns the credential. The proxy can't include token identity in receipts and can't log auth refreshes. Tracked in [#227](https://github.com/agent-receipts/obsigna/issues/227).

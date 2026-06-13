@@ -87,7 +87,7 @@ The legacy in-process fields `dbPath`, `keyPath`, and `daemonForwarding` are dep
 
 By default, action parameters are hashed (`parameters_hash`) but never stored in plaintext. Disclosure — attaching a recoverable, encrypted copy of the parameters — is **configured on the daemon**, not in this plugin. The daemon encrypts qualifying parameters to a forensic X25519 public key using HPKE and stores the result as an opaque `parameters_disclosure` envelope; only the holder of the forensic private key can recover them.
 
-Enable it with the daemon's `--parameter-disclosure` flag and a forensic public key — not in `openclaw.json`. For the full model — the HPKE envelope, the two-key separation, forensic recovery, and the threat/GDPR considerations — see [Parameter Disclosure](/specification/parameter-disclosure/) and [Daemon Setup](/getting-started/daemon-setup/).
+Enable it with the daemon's `--parameter-disclosure` flag and a forensic public key — not in `openclaw.json`. For the full model — the HPKE envelope, the two-key separation, forensic recovery, and the threat/GDPR considerations — see [Parameter Disclosure](https://agentreceipts.ai/specification/parameter-disclosure/) and [Daemon Setup](/getting-started/daemon-setup/).
 
 With disclosure active on the daemon, a `system.command.execute` receipt carries an opaque envelope alongside the hash:
 

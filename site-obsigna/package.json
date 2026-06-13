@@ -1,14 +1,14 @@
 {
-  "name": "agent-receipts-docs",
+  "name": "obsigna-docs",
   "type": "module",
   "version": "0.0.1",
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "sync-spec": "node scripts/sync-spec.mjs",
+    "sync-blog": "node scripts/sync-blog.mjs",
     "test": "node --test \"scripts/**/*.test.mjs\"",
-    "predev": "node scripts/sync-spec.mjs",
-    "prebuild": "node scripts/sync-spec.mjs",
+    "predev": "node scripts/sync-blog.mjs",
+    "prebuild": "node scripts/sync-blog.mjs",
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
