@@ -41,9 +41,7 @@ jobs:
 
       - name: Deploy to obsigna-site gh-pages
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: peaceiris/actions-gh-pages@v4
-        # TODO: pin to a full commit SHA — e.g. @<sha> # v4.0.0 — for supply chain safety
-        # consistent with how other actions in this repo are pinned.
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           personal_token: ${{ secrets.OBSIGNA_SITE_DEPLOY_PAT }}
           external_repository: agent-receipts/obsigna-site
