@@ -7,6 +7,9 @@
 [![Go Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-go.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-go.yml)
 [![TS Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-ts.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-ts.yml)
 [![Python Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-py.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-py.yml)
+[![Daemon](https://github.com/agent-receipts/obsigna/actions/workflows/daemon.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/daemon.yml)
+[![MCP Proxy](https://github.com/agent-receipts/obsigna/actions/workflows/mcp-proxy.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/mcp-proxy.yml)
+[![Hook](https://github.com/agent-receipts/obsigna/actions/workflows/hook.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/hook.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
@@ -23,72 +26,72 @@
 
 ---
 
-## Start here
-
-The fastest way to try Agent Receipts is to put [`mcp-proxy/`](mcp-proxy/) in front of an MCP server you already use.
-
-In one step, you get:
-
-- Signed receipts for every tool call
-- A tamper-evident audit chain you can verify later
-- Risk scoring and policy hooks without changing the client or server
-
-If you want to audit GitHub MCP in a real agent workflow, start with:
-
-- [Claude Desktop integration](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
-- [Claude Code integration](https://agentreceipts.ai/mcp-proxy/claude-code/)
-- [Codex integration](https://agentreceipts.ai/mcp-proxy/codex/)
-
 ## What is this?
 
-Agent Receipts is an open protocol and set of SDKs for producing cryptographically signed, tamper-evident records of AI agent actions. Every action an agent takes -- API calls, tool use, data access -- gets a verifiable receipt that can be audited later.
+**Agent Receipts** is an open protocol for producing cryptographically signed, tamper-evident records of AI agent actions. It defines the receipt format, signing scheme, chain structure, and taxonomy of action types. Anyone can implement it — in any language, in any runtime.
+
+**Obsigna** is the reference toolset that implements the protocol:
+
+| Tool | What it does |
+|------|-------------|
+| `obsigna-mcp` | MCP stdio proxy — signs every tool call, adds policy hooks |
+| `obsigna-daemon` | Out-of-process signing daemon — holds the key, owns the audit chain |
+| `obsigna-hook` | PostToolUse hook for Claude Code and other runtimes |
+| `obsigna` | CLI for browsing and verifying receipt databases |
+| `sdk/go`, `@obsigna/sdk-ts`, `obsigna` (Python) | SDKs for embedding receipt creation in your own code |
 
 <picture>
   <img alt="How it works: Authorize → Act → Sign → Link → Audit" src=".github/how-it-works.svg">
 </picture>
 
-## Project layout
+## Start here
 
-| Project | Description |
-|---------|-------------|
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records |
-| [`spec/`](spec/) | Protocol specification, JSON schemas, governance |
-| [`sdk/go/`](sdk/go/) | Go SDK |
-| [`sdk/ts/`](sdk/ts/) | TypeScript SDK |
-| [`sdk/py/`](sdk/py/) | Python SDK |
-| [`daemon/`](daemon/) | Signing daemon — out-of-process key custody, shared audit chain |
-| [`mcp-proxy/`](mcp-proxy/) | MCP proxy with receipt signing, policy engine, intent tracking |
-| [`cross-sdk-tests/`](cross-sdk-tests/) | Cross-language verification tests |
-| [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
-| [openclaw](https://github.com/agent-receipts/openclaw) | Agent Receipts plugin for OpenClaw |
-
-## 10-minute audited MCP quick start
-
-Install the proxy:
+Both paths below require the daemon — it holds the signing key and owns the audit chain. Install it first:
 
 ```bash
-go install github.com/agent-receipts/ar/mcp-proxy/cmd/obsigna-mcp@latest
+brew install agent-receipts/tap/obsigna
+obsigna daemon start
 ```
 
-Wrap any MCP server:
+**Fastest path — PostToolUse hook (Claude Code):** one config snippet and every tool call gets a signed receipt automatically:
 
-```bash
-obsigna-mcp node /path/to/mcp-server.js
+```json
+{
+  "hooks": {
+    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "obsigna-hook" }] }]
+  }
+}
 ```
 
-Then point your agent client at the proxy instead of the raw server:
-
-- [Claude Desktop setup](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
-- [Claude Code setup](https://agentreceipts.ai/mcp-proxy/claude-code/)
-- [Codex setup](https://agentreceipts.ai/mcp-proxy/codex/)
-
-Once your agent makes tool calls, inspect the signed audit trail:
+Add that to `~/.claude/settings.json`, then inspect the audit trail:
 
 ```bash
 obsigna list
 obsigna show <seq>
 obsigna verify
 ```
+
+**More control — MCP proxy:** wraps any MCP server and adds policy hooks and risk scoring on top of signed receipts:
+
+- [Claude Desktop setup](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
+- [Claude Code setup](https://agentreceipts.ai/mcp-proxy/claude-code/)
+- [Codex setup](https://agentreceipts.ai/mcp-proxy/codex/)
+
+## Project layout
+
+| Project | Description |
+|---------|-------------|
+| [`spec/`](spec/) | Protocol specification, JSON schemas, governance |
+| [`sdk/go/`](sdk/go/) | Go SDK |
+| [`sdk/ts/`](sdk/ts/) | TypeScript SDK |
+| [`sdk/py/`](sdk/py/) | Python SDK |
+| [`daemon/`](daemon/) | Signing daemon — out-of-process key custody, shared audit chain |
+| [`mcp-proxy/`](mcp-proxy/) | MCP proxy with receipt signing, policy engine, intent tracking |
+| [`hook/`](hook/) | PostToolUse hook binary for Claude Code and other runtimes |
+| [`cross-sdk-tests/`](cross-sdk-tests/) | Cross-language verification tests |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records |
+| [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
+| [openclaw](https://github.com/agent-receipts/openclaw) | Agent Receipts plugin for OpenClaw |
 
 ## SDK quick start
 
