@@ -1,5 +1,6 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import starlightThemeFlexoki from "starlight-theme-flexoki";
 import rehypeMermaid from "rehype-mermaid";
 
 export default defineConfig({
@@ -22,6 +23,7 @@ export default defineConfig({
     starlight({
       title: "Agent Receipts",
       tagline: "Cryptographically signed audit trails for AI agent actions",
+      plugins: [starlightThemeFlexoki()],
       head: [
         {
           tag: "link",
@@ -51,7 +53,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/agent-receipts/ar",
+          href: "https://github.com/agent-receipts/obsigna",
         },
       ],
       components: {

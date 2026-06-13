@@ -1,5 +1,6 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import starlightThemeFlexoki from "starlight-theme-flexoki";
 import rehypeMermaid from "rehype-mermaid";
 
 export default defineConfig({
@@ -17,6 +18,7 @@ export default defineConfig({
     starlight({
       title: "Obsigna",
       tagline: "Tooling for the Agent Receipts protocol",
+      plugins: [starlightThemeFlexoki()],
       head: [
         {
           tag: "link",
@@ -46,7 +48,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/agent-receipts/ar",
+          href: "https://github.com/agent-receipts/obsigna",
         },
       ],
       components: {
@@ -61,6 +63,14 @@ export default defineConfig({
             { label: "Quick Start", slug: "getting-started/quick-start" },
             { label: "Daemon Setup", slug: "getting-started/daemon-setup" },
             { label: "End-to-End Walkthrough", slug: "getting-started/end-to-end" },
+          ],
+        },
+        {
+          label: "Hook",
+          items: [
+            { label: "Overview", slug: "hook/overview" },
+            { label: "Installation", slug: "hook/installation" },
+            { label: "Claude Code", slug: "hook/claude-code" },
           ],
         },
         {
@@ -85,11 +95,10 @@ export default defineConfig({
           ],
         },
         {
-          label: "Hook",
+          label: "Dashboard",
           items: [
-            { label: "Overview", slug: "hook/overview" },
-            { label: "Installation", slug: "hook/installation" },
-            { label: "Claude Code", slug: "hook/claude-code" },
+            { label: "Overview", slug: "dashboard/overview" },
+            { label: "Installation", slug: "dashboard/installation" },
           ],
         },
         {
@@ -114,13 +123,6 @@ export default defineConfig({
             { label: "Overview", slug: "sdk-py/overview" },
             { label: "Installation", slug: "sdk-py/installation" },
             { label: "API Reference", slug: "sdk-py/api-reference" },
-          ],
-        },
-        {
-          label: "Dashboard",
-          items: [
-            { label: "Overview", slug: "dashboard/overview" },
-            { label: "Installation", slug: "dashboard/installation" },
           ],
         },
         {
