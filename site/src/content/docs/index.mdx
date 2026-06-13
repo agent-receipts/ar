@@ -132,7 +132,7 @@ graph LR
     D --> K[(Ed25519 key)]
     D --> DB[(receipts.db)]
   end
-  V["agent-receipts verify"] -- "read-only" --> DB
+  V["obsigna receipt verify"] -- "read-only" --> DB
 ```
 
 ## What is an Agent Receipt?

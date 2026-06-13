@@ -21,16 +21,16 @@ Agent Receipts signs receipts in a separate `obsigna-daemon` process rather than
 brew install agent-receipts/tap/obsigna
 ```
 
-Homebrew installs both the `obsigna-daemon` and `agent-receipts` (verify) binaries.
+Homebrew installs both the `obsigna-daemon` and the `obsigna` (read/verify) CLI binaries.
 
 **From source (macOS/Linux, requires Go 1.26.1+):**
 
 ```bash
 go install github.com/agent-receipts/ar/daemon/cmd/obsigna-daemon@latest
-go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@latest
+go install github.com/agent-receipts/ar/daemon/cmd/obsigna@latest
 ```
 
-Install both from the same `@latest` so the daemon and the `agent-receipts` CLI
+Install both from the same `@latest` so the daemon and the `obsigna` CLI
 are the same version — they share one module, and a version mismatch can make
 `verify` reject a chain the other wrote. `go install` drops the binaries in
 `$(go env GOPATH)/bin`; add it to your `PATH` if it isn't already:
@@ -54,7 +54,7 @@ Files created by `--init`:
 | Signing key | `$XDG_DATA_HOME/agent-receipts/signing.key` (falls back to `~/.local/share/agent-receipts/signing.key` when `$XDG_DATA_HOME` is unset or not an absolute path) |
 | Public key | `$XDG_DATA_HOME/agent-receipts/signing.key.pub` (same fallback) |
 
-Both `signing.key` and `signing.key.pub` are created together. The public key is needed by `agent-receipts verify` — keep it alongside the database when archiving.
+Both `signing.key` and `signing.key.pub` are created together. The public key is needed by `obsigna receipt verify` — keep it alongside the database when archiving.
 
 Override these paths with environment variables: `AGENTRECEIPTS_KEY` (signing key), `AGENTRECEIPTS_PUBLIC_KEY` (public key).
 
@@ -74,7 +74,7 @@ This appends a `key_rotated` receipt — signed with the **outgoing** key — to
 
 `--rotate` refuses to run while the daemon's socket is reachable — stop the daemon first, or you will get a torn state where the running process keeps signing with the old key while the chain records a handover.
 
-> **Verifying a rotated chain.** A rotated chain is anchored to the **genesis** public key — the key that signed the chain's first receipt — not the freshly published `signing.key.pub` (which is now the *new* key only). `agent-receipts verify` handles this for you: pointed at the published `signing.key.pub`, it rediscovers the genesis key from the archived `signing.key.pub.rotated-*` files and traverses the rotation automatically, and it reports `BROKEN` if those archives are missing or the chain does not hand off to the published key. (The SDK chain verifiers also traverse the rotation when given the genesis key directly.)
+> **Verifying a rotated chain.** A rotated chain is anchored to the **genesis** public key — the key that signed the chain's first receipt — not the freshly published `signing.key.pub` (which is now the *new* key only). `obsigna receipt verify` handles this for you: pointed at the published `signing.key.pub`, it rediscovers the genesis key from the archived `signing.key.pub.rotated-*` files and traverses the rotation automatically, and it reports `BROKEN` if those archives are missing or the chain does not hand off to the published key. (The SDK chain verifiers also traverse the rotation when given the genesis key directly.)
 
 Do **not** "rotate" by deleting `signing.key` and re-running `--init`. That new key has no `key_rotated` receipt bridging it to the old one, so every receipt signed by the retired key fails verification and the chain is split with no in-chain handover.
 
@@ -275,11 +275,11 @@ For the full model — disclosure modes, the two-key separation, forensic recove
 
 ## Verify your chain
 
-`agent-receipts verify` reads the database directly — the daemon does not need to be running:
+`obsigna receipt verify` reads the database directly — the daemon does not need to be running:
 
 ```bash
 AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
-  agent-receipts verify \
+  obsigna receipt verify \
   --public-key ~/.local/share/agent-receipts/signing.key.pub
 ```
 
@@ -291,18 +291,18 @@ A successful run prints the chain length and confirms hash linkage and signature
 
 ## Inspect a single receipt
 
-`agent-receipts show <seq>` prints the full fields of one receipt by its chain sequence number (1-indexed) — issuer, chain id, action type and tool, parameters hash, outcome, signature, and any action-specific payload (such as the drop count on an `events_dropped` receipt). Like `verify`, it opens the store read-only, so it is safe to run while the daemon is writing.
+`obsigna receipt show <seq>` prints the full fields of one receipt by its chain sequence number (1-indexed) — issuer, chain id, action type and tool, parameters hash, outcome, signature, and any action-specific payload (such as the drop count on an `events_dropped` receipt). Like `verify`, it opens the store read-only, so it is safe to run while the daemon is writing.
 
 ```bash
 AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
-  agent-receipts show 42
+  obsigna receipt show 42
 ```
 
 Add `--json` for the raw receipt JSON instead of the human-readable table:
 
 ```bash
 AGENTRECEIPTS_DB=~/.local/share/agent-receipts/receipts.db \
-  agent-receipts show 42 --json
+  obsigna receipt show 42 --json
 ```
 
 `--chain-id` is required only when the store holds more than one chain; with a single chain it is auto-detected. Without it on a multi-chain store, the command lists the available chain ids and exits with a usage error.

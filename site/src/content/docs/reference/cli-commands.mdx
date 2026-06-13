@@ -1,6 +1,6 @@
 ---
 title: CLI Commands
-description: Command reference for the Agent Receipts CLI tools — the mcp-proxy policy proxy, the agent-receipts read/verify CLI, and obsigna-hook.
+description: Command reference for the Agent Receipts CLI tools — the mcp-proxy policy proxy, the obsigna read/verify CLI, and obsigna-hook.
 ---
 
 This page covers three binaries:
@@ -13,7 +13,7 @@ This page covers three binaries:
 
 ## `mcp-proxy`
 
-`mcp-proxy` has three subcommands — `serve` (the default), `doctor`, and `init` — plus `-version`. There are no audit subcommands on the proxy; querying and verifying receipts is done with [`agent-receipts`](#agent-receipts).
+`mcp-proxy` has three subcommands — `serve` (the default), `doctor`, and `init` — plus `-version`. There are no audit subcommands on the proxy; querying and verifying receipts is done with [`obsigna`](#obsigna).
 
 ### `mcp-proxy -version`
 
@@ -84,19 +84,21 @@ mcp-proxy init -http-port 9000              # custom approval listener port in s
 
 **Exit codes:** `0` on success; `1` on setup errors (home directory resolve, directory create); `2` on invalid arguments (out-of-range `-http-port`, invalid `-name`) or flag/usage errors.
 
-## `agent-receipts`
+## `obsigna`
 
-The daemon's read-side CLI. `list`, `show`, `verify`, and `verify-event` open the store **read-only** — safe to run while the daemon is the active writer, and verification does not require the daemon socket to be reachable. `doctor` is the exception: by default it writes a synthetic round-trip event to confirm the full pipeline is live; pass `--no-roundtrip` to skip the write. Subcommands: `list`, `show`, `verify`, `verify-event`, `doctor`.
+The daemon's read-side CLI. `obsigna receipt list`, `show`, `verify`, and `verify-event` open the store **read-only** — safe to run while the daemon is the active writer, and verification does not require the daemon socket to be reachable. `obsigna doctor` is the exception: by default it writes a synthetic round-trip event to confirm the full pipeline is live; pass `--no-roundtrip` to skip the write. Subcommands: `receipt list`, `receipt show`, `receipt verify`, `receipt verify-event`, `doctor`.
 
-### `agent-receipts list`
+> The legacy `agent-receipts` command still works as a thin deprecation shim (ADR-0030): it forwards each subcommand to `obsigna` and prints a one-line notice to stderr. Use `obsigna` for new work.
+
+### `obsigna receipt list`
 
 List recent receipts, newest first. Default limit is 50.
 
 ```bash
-agent-receipts list                  # latest 50 receipts, newest first
-agent-receipts list -limit 100       # raise the limit
-agent-receipts list -json            # raw JSON array
-agent-receipts list -db /path/to/receipts.db
+obsigna receipt list                  # latest 50 receipts, newest first
+obsigna receipt list -limit 100       # raise the limit
+obsigna receipt list -json            # raw JSON array
+obsigna receipt list -db /path/to/receipts.db
 ```
 
 | Flag | Description |
@@ -108,23 +110,23 @@ agent-receipts list -db /path/to/receipts.db
 #### Example output
 
 ```
-$ agent-receipts list
-SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
-8    2026-04-24T02:05:19Z  default  getJiraIssue
-7    2026-04-24T01:58:45Z  default  issue_write
-6    2026-04-24T01:56:12Z  default  searchJiraIssuesUsingJql
-5    2026-04-24T01:45:07Z  default  list_issues
+$ obsigna receipt list
+SEQ  TIMESTAMP             CHAIN       TOOL / ACTION TYPE
+8    2026-04-24T02:05:19Z  2026-04-24  getJiraIssue
+7    2026-04-24T01:58:45Z  2026-04-24  issue_write
+6    2026-04-24T01:56:12Z  2026-04-24  searchJiraIssuesUsingJql
+5    2026-04-24T01:45:07Z  2026-04-24  list_issues
 ```
 
 The tabular view shows the chain sequence, timestamp, chain id, and the tool name (falling back to the action type when a tool name is absent). Issuer and operator identity are not in the tabular view — use `-json` to see them.
 
-### `agent-receipts show`
+### `obsigna receipt show`
 
 Print the full fields of a single receipt by its chain sequence number (1-indexed) — issuer, chain id, action type and tool, parameters hash, outcome, signature, and any action-specific payload.
 
 ```bash
-agent-receipts show 42               # human-readable table
-agent-receipts show 42 --json        # raw receipt JSON
+obsigna receipt show 42               # human-readable table
+obsigna receipt show 42 --json        # raw receipt JSON
 ```
 
 | Flag | Description |
@@ -137,12 +139,12 @@ agent-receipts show 42 --json        # raw receipt JSON
 
 **Exit codes:** `0` when the receipt is found and printed; `1` when there is no receipt at the requested sequence (or the store is empty); `2` on a usage error (bad flags, ambiguous chain, unreadable database).
 
-### `agent-receipts verify`
+### `obsigna receipt verify`
 
 Verify the integrity of a stored chain — signatures, hash linkage, and sequence numbers — against the daemon's published public key.
 
 ```bash
-agent-receipts verify \
+obsigna receipt verify \
   --public-key ~/.local/share/agent-receipts/signing.key.pub
 ```
 
@@ -156,14 +158,14 @@ A successful run prints `Chain <id>: VALID (<n> receipts)` (or `receipt` when n=
 
 **Exit codes:** `0` chain verified; `1` chain failed verification; `2` bad flags or an unreadable DB/key file.
 
-### `agent-receipts verify-event`
+### `obsigna receipt verify-event`
 
 Verify a single historical receipt's end-to-end pipeline provenance. Select the receipt by id, by chain head, or by a trailing time window.
 
 ```bash
-agent-receipts verify-event --id urn:receipt:a72ee10b...     # one receipt by id
-agent-receipts verify-event --chain-head                     # the most recent receipt
-agent-receipts verify-event --since 24h                      # every receipt in the last day
+obsigna receipt verify-event --id urn:receipt:a72ee10b...     # one receipt by id
+obsigna receipt verify-event --chain-head                     # the most recent receipt
+obsigna receipt verify-event --since 24h                      # every receipt in the last day
 ```
 
 | Flag | Description |
@@ -177,14 +179,14 @@ agent-receipts verify-event --since 24h                      # every receipt in 
 | `-emitter-allowlist` | Comma-separated `exe_path` allowlist of expected emitters (env: `AGENTRECEIPTS_EMITTER_ALLOWLIST`); mismatches warn, never fail |
 | `-json` | Machine-readable JSON output |
 
-### `agent-receipts doctor`
+### `obsigna doctor`
 
 Diagnose pipeline health end-to-end (emitter → socket → daemon → DB → verify), optionally writing a synthetic round-trip event to confirm the full path is live.
 
 ```bash
-agent-receipts doctor                  # full health check
-agent-receipts doctor --no-roundtrip   # skip the synthetic write
-agent-receipts doctor --json
+obsigna doctor                  # full health check
+obsigna doctor --no-roundtrip   # skip the synthetic write
+obsigna doctor --json
 ```
 
 | Flag | Description |

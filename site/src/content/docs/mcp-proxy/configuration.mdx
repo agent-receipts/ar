@@ -153,12 +153,12 @@ ps aux | grep mcp-proxy | grep -v grep
 mcp-proxy doctor                      # validate policy + approver wiring
 
 # Did a receipt for the call land in the daemon's store?
-agent-receipts list                   # recent receipts, newest first
+obsigna receipt list                   # recent receipts, newest first
 ```
 
 - **`mcp-proxy doctor` reports a pause rule with no approver** → case 2: paused calls fail with `-32003` until you start an approver (`-http <addr>`) or relax the policy.
 - **No receipt for the call, and the client reported the error before the tool ran** → client-side denial (case 1): the MCP client rejected the tool use before it reached the proxy, so nothing was forwarded. See [ar#157](https://github.com/agent-receipts/ar/issues/157) for the ongoing work to make these visible.
-- **A receipt exists but the call still errored** → the proxy forwarded it (case: downstream failure) or recorded a rejection. Use `agent-receipts show <seq>` to inspect the outcome, and check the proxy's stderr log and the server's own logs. Distinguish a pause rejection via the JSON-RPC error code: `-32003` is case 2 (no approver), `-32002` is case 3, whose `data.status` field (`"denied"` vs `"timed_out"`) names the sub-case.
+- **A receipt exists but the call still errored** → the proxy forwarded it (case: downstream failure) or recorded a rejection. Use `obsigna receipt show <seq>` to inspect the outcome, and check the proxy's stderr log and the server's own logs. Distinguish a pause rejection via the JSON-RPC error code: `-32003` is case 2 (no approver), `-32002` is case 3, whose `data.status` field (`"denied"` vs `"timed_out"`) names the sub-case.
 
 **If the error is `-32003` (no approver configured):**
 

@@ -191,7 +191,7 @@ If you add a message queue (SQS, Pub/Sub, Kafka) in front of the collector as a 
 
 This has two important operational consequences:
 
-1. **Chain verification is the auditor's job, not the collector's.** Auditors verify chains using only the agent's public key. They never need to trust the collector operator. This is what makes multi-tenant collector infrastructure safe — tenants can share a collector without trusting each other or the operator. Use the verifier tooling (`agent-receipts verify`, documented in [CLI Commands](/reference/cli-commands/)) to verify chains independently of the collector.
+1. **Chain verification is the auditor's job, not the collector's.** Auditors verify chains using only the agent's public key. They never need to trust the collector operator. This is what makes multi-tenant collector infrastructure safe — tenants can share a collector without trusting each other or the operator. Use the verifier tooling (`obsigna receipt verify`, documented in [CLI Commands](/reference/cli-commands/)) to verify chains independently of the collector.
 
 2. **A compromised collector cannot forge or alter receipts, but it can drop them.** If a collector is compromised or selectively drops receipts, the resulting chain will have gaps. The SDK's `WALEmitter` surfaces undelivered receipts; the verifier will flag a chain with missing sequence numbers. Receipts where a tool call occurred but no `tool_result` was delivered are classified as `incomplete_tool_roundtrip` by the verifier (see [ADR-0019 §O3](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)), distinguishing deliberate omission from a normal chain gap.
 
@@ -203,4 +203,4 @@ In short: the collector's role is delivery and storage. Correctness — whether 
 - [ADR-0019 — Protocol integrity gaps and mitigations](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)
 - [Collector README](https://github.com/agent-receipts/ar/blob/main/collector/README.md) — wire contract, validation scope, configuration flags
 - [Ephemeral Compute Deployment](/deployment/ephemeral-compute/) — adopter-side guide for SDK emitter configuration
-- [CLI Commands](/reference/cli-commands/) — verifier tooling (`agent-receipts verify`)
+- [CLI Commands](/reference/cli-commands/) — verifier tooling (`obsigna receipt verify`)

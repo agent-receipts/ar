@@ -25,7 +25,7 @@ Scores that cross 50: `create_token` (write 20 + sensitive 30 = 50), `update_aut
 - **Issuer identity** -- receipts identify the AI agent, model, and operator via CLI flags
 - **Intent tracking** -- groups related tool calls by temporal proximity
 - **Data redaction** (daemon) -- JSON-aware and pattern-based redaction of secrets before storage
-- **Audit CLI** -- list, show, and verify receipts with the [`agent-receipts`](/reference/cli-commands/#agent-receipts) CLI
+- **Audit CLI** -- list, show, and verify receipts with the [`obsigna`](/reference/cli-commands/#obsigna) CLI
 
 ```mermaid
 flowchart TD
@@ -180,19 +180,19 @@ Each tool call produces a signed W3C Verifiable Credential. Key fields shown (ab
 }
 ```
 
-Receipts are Ed25519-signed by the daemon, hash-chained, and stored in a local SQLite database. Use `agent-receipts list`, `agent-receipts show`, and `agent-receipts verify` to query and validate them.
+Receipts are Ed25519-signed by the daemon, hash-chained, and stored in a local SQLite database. Use `obsigna receipt list`, `obsigna receipt show`, and `obsigna receipt verify` to query and validate them.
 
-`agent-receipts list` gives a compact tabular view of the daemon's store. When you proxy multiple MCP servers — for example GitHub and Atlassian — the TOOL column lets you scan activity across all of them at once:
+`obsigna receipt list` gives a compact tabular view of the daemon's store. When you proxy multiple MCP servers — for example GitHub and Atlassian — the TOOL column lets you scan activity across all of them at once:
 
 ```
-$ agent-receipts list
-SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
-6    2026-04-24T02:05:19Z  default  getJiraIssue
-5    2026-04-24T01:58:45Z  default  issue_write
-4    2026-04-24T01:56:12Z  default  searchJiraIssuesUsingJql
-3    2026-04-24T01:56:06Z  default  getAccessibleAtlassianResources
-2    2026-04-24T01:48:55Z  default  issue_write
-1    2026-04-24T01:45:07Z  default  list_issues
+$ obsigna receipt list
+SEQ  TIMESTAMP             CHAIN       TOOL / ACTION TYPE
+6    2026-04-24T02:05:19Z  2026-04-24  getJiraIssue
+5    2026-04-24T01:58:45Z  2026-04-24  issue_write
+4    2026-04-24T01:56:12Z  2026-04-24  searchJiraIssuesUsingJql
+3    2026-04-24T01:56:06Z  2026-04-24  getAccessibleAtlassianResources
+2    2026-04-24T01:48:55Z  2026-04-24  issue_write
+1    2026-04-24T01:45:07Z  2026-04-24  list_issues
 ```
 
 See [Installation](/mcp-proxy/installation/) to get started, or [Configuration](/mcp-proxy/configuration/) for the full set of options.

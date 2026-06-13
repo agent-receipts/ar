@@ -377,7 +377,7 @@ import { decryptDisclosure } from "@obsigna/sdk-ts";
 // raw 32-byte private key written by --init-forensic-key (kept offline)
 const priv = new Uint8Array(readFileSync("/path/to/forensic.key"));
 
-// from: agent-receipts show <seq> --json > receipt.json
+// from: obsigna receipt show <seq> --json > receipt.json
 const receipt = JSON.parse(readFileSync("receipt.json", "utf8"));
 const env = receipt.credentialSubject.action.parameters_disclosure;
 
