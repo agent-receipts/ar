@@ -7,13 +7,13 @@
 [![PyPI](https://img.shields.io/pypi/v/obsigna)](https://pypi.org/project/obsigna/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![CI](https://github.com/agent-receipts/ar/actions/workflows/sdk-py.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/sdk-py.yml)
+[![CI](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-py.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-py.yml)
 
 ---
 
 Create, sign, hash-chain, store, and verify cryptographically signed audit trails for AI agent actions.
 
-[Spec](https://github.com/agent-receipts/spec) &bull; [TypeScript SDK](https://github.com/agent-receipts/ar/tree/main/sdk/ts) &bull; [Reference Implementation](https://github.com/ojongerius/attest)
+[Spec](https://github.com/agent-receipts/spec) &bull; [TypeScript SDK](https://github.com/agent-receipts/obsigna/tree/main/sdk/ts) &bull; [Reference Implementation](https://github.com/ojongerius/attest)
 
 </div>
 
@@ -62,7 +62,7 @@ the daemon holds the Ed25519 signing key, builds the receipt, signs it, and
 appends it to the hash-chained store. The signing key never enters your process —
 so the audit trail holds up even if the agent is compromised. This is the
 canonical deployment shape
-([ADR-0022](https://github.com/agent-receipts/ar/blob/main/docs/adr/0022-canonical-deployment-shape.md))
+([ADR-0022](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0022-canonical-deployment-shape.md))
 and the first thing you should reach for. To learn the receipt API without a
 daemon, see [the in-process appendix](#appendix-in-process-signing-tutorial-and-testing-only).
 
@@ -432,7 +432,7 @@ from obsigna import (
 
 ## Cross-language compatibility
 
-This SDK produces **byte-identical** output to [`@obsigna/sdk-ts`](https://github.com/agent-receipts/ar/tree/main/sdk/ts):
+This SDK produces **byte-identical** output to [`@obsigna/sdk-ts`](https://github.com/agent-receipts/obsigna/tree/main/sdk/ts):
 
 - RFC 8785 canonical JSON matches exactly
 - SHA-256 hashes are identical
@@ -474,11 +474,11 @@ uv run pyright             # type check
 
 | Component | Description |
 |:---|:---|
-| [agent-receipts/ar](https://github.com/agent-receipts/ar) | Monorepo: spec, SDKs, daemon, MCP proxy, hook |
-| **[Python SDK](https://github.com/agent-receipts/ar/tree/main/sdk/py)** (this package) | [PyPI](https://pypi.org/project/obsigna/) |
-| [TypeScript SDK](https://github.com/agent-receipts/ar/tree/main/sdk/ts) | [npm](https://www.npmjs.com/package/@obsigna/sdk-ts) |
-| [Go SDK](https://github.com/agent-receipts/ar/tree/main/sdk/go) | `go get github.com/agent-receipts/ar/sdk/go` |
-| [obsigna-daemon](https://github.com/agent-receipts/ar/tree/main/daemon) | Out-of-process signer + `agent-receipts` verify CLI (canonical deployment) |
+| [agent-receipts/obsigna](https://github.com/agent-receipts/obsigna) | Monorepo: spec, SDKs, daemon, MCP proxy, hook |
+| **[Python SDK](https://github.com/agent-receipts/obsigna/tree/main/sdk/py)** (this package) | [PyPI](https://pypi.org/project/obsigna/) |
+| [TypeScript SDK](https://github.com/agent-receipts/obsigna/tree/main/sdk/ts) | [npm](https://www.npmjs.com/package/@obsigna/sdk-ts) |
+| [Go SDK](https://github.com/agent-receipts/obsigna/tree/main/sdk/go) | `go get github.com/agent-receipts/ar/sdk/go` |
+| [obsigna-daemon](https://github.com/agent-receipts/obsigna/tree/main/daemon) | Out-of-process signer + `agent-receipts` verify CLI (canonical deployment) |
 | [agent-receipts/spec](https://github.com/agent-receipts/spec) | Protocol specification, JSON Schemas, canonical taxonomy |
 | [ojongerius/attest](https://github.com/ojongerius/attest) | MCP proxy + CLI (reference implementation) |
 

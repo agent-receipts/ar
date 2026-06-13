@@ -5,7 +5,7 @@ description: CLI flags, policy rules, operation classification, and data redacti
 
 ## CLI flags
 
-These are the flags for `mcp-proxy serve` (the default subcommand). The proxy no longer signs or stores receipts — `-key`, `-db`, `-receipt-db`, `-taxonomy`, `-issuer`, `-principal`, and `-chain` were removed when signing and persistence moved to `obsigna-daemon` ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). The signing key, receipt database, and chain identity now live in the daemon — see [Daemon Setup](/getting-started/daemon-setup/). Note: the `-taxonomy` flag is removed but daemon-side taxonomy remapping is not yet implemented; see [Action taxonomy](#action-taxonomy) below.
+These are the flags for `mcp-proxy serve` (the default subcommand). The proxy no longer signs or stores receipts — `-key`, `-db`, `-receipt-db`, `-taxonomy`, `-issuer`, `-principal`, and `-chain` were removed when signing and persistence moved to `obsigna-daemon` ([ADR-0010](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0010-daemon-process-separation.md)). The signing key, receipt database, and chain identity now live in the daemon — see [Daemon Setup](/getting-started/daemon-setup/). Note: the `-taxonomy` flag is removed but daemon-side taxonomy remapping is not yet implemented; see [Action taxonomy](#action-taxonomy) below.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -98,8 +98,7 @@ MCP tool names are automatically stripped of their `mcp__<server>__` prefix befo
 
 The daemon stores action types in `<channel>.<server>.<tool>` form — for example, `mcp.github-audited.create_branch`. Full taxonomy mapping that would reclassify tools to canonical types like `data.api.write` is not yet applied by the daemon; that work is tracked for a future release. Receipts for action types that do not match a built-in taxonomy entry carry `RiskMedium` as their risk level.
 
-Available action types include `filesystem.file.*`, `system.*`, and `data.api.*` (read, write, delete). See the [Action Taxonomy](https://agentreceipts.ai/specification/action-taxonomy/) reference and the [taxonomy definitions](https://github.com/agent-receipts/ar/tree/main/spec/spec/taxonomy) for the full list, and open a PR to add or correct mappings.
-
+Available action types include `filesystem.file.*`, `system.*`, and `data.api.*` (read, write, delete). See the [Action Taxonomy](https://agentreceipts.ai/specification/action-taxonomy/) reference and the [taxonomy definitions](https://github.com/agent-receipts/obsigna/tree/main/spec/spec/taxonomy) for the full list, and open a PR to add or correct mappings.
 The proxy's prefix-based [operation classification](#operation-classification) drives policy risk scoring today and is independent of the daemon's action type labelling.
 
 ## Approval workflow
@@ -131,8 +130,7 @@ Tool-call inputs and outputs are **not stored as plaintext** — the daemon stor
 
 ## Payload disclosure
 
-By default the daemon stores only a cryptographic hash of each tool call's input and output — the receipt proves what happened without retaining the raw payload. The daemon can optionally encrypt parameters to a forensic public key (HPKE, [ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md)) so they are recoverable only by the holder of the matching private key, never stored as plaintext. This is a daemon-side, operator-controlled concern — see [Parameter Disclosure](https://agentreceipts.ai/specification/parameter-disclosure/) for the model and [Daemon Setup → Payload disclosure](/getting-started/daemon-setup/#payload-disclosure) for configuration.
-
+By default the daemon stores only a cryptographic hash of each tool call's input and output — the receipt proves what happened without retaining the raw payload. The daemon can optionally encrypt parameters to a forensic public key (HPKE, [ADR-0012](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0012-payload-disclosure-policy.md)) so they are recoverable only by the holder of the matching private key, never stored as plaintext. This is a daemon-side, operator-controlled concern — see [Parameter Disclosure](https://agentreceipts.ai/specification/parameter-disclosure/) for the model and [Daemon Setup → Payload disclosure](/getting-started/daemon-setup/#payload-disclosure) for configuration.
 ## Troubleshooting
 
 ### Tool call errors (`-32002` / `-32003`)
@@ -157,7 +155,7 @@ obsigna receipt list                   # recent receipts, newest first
 ```
 
 - **`mcp-proxy doctor` reports a pause rule with no approver** → case 2: paused calls fail with `-32003` until you start an approver (`-http <addr>`) or relax the policy.
-- **No receipt for the call, and the client reported the error before the tool ran** → client-side denial (case 1): the MCP client rejected the tool use before it reached the proxy, so nothing was forwarded. See [ar#157](https://github.com/agent-receipts/ar/issues/157) for the ongoing work to make these visible.
+- **No receipt for the call, and the client reported the error before the tool ran** → client-side denial (case 1): the MCP client rejected the tool use before it reached the proxy, so nothing was forwarded. See [ar#157](https://github.com/agent-receipts/obsigna/issues/157) for the ongoing work to make these visible.
 - **A receipt exists but the call still errored** → the proxy forwarded it (case: downstream failure) or recorded a rejection. Use `obsigna receipt show <seq>` to inspect the outcome, and check the proxy's stderr log and the server's own logs. Distinguish a pause rejection via the JSON-RPC error code: `-32003` is case 2 (no approver), `-32002` is case 3, whose `data.status` field (`"denied"` vs `"timed_out"`) names the sub-case.
 
 **If the error is `-32003` (no approver configured):**

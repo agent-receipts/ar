@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This file starts at the `obsigna-collector` rename; earlier releases are recorded
 only in git history. A repo-wide effort to auto-generate changelogs from
 Conventional Commits is tracked in
-[#253](https://github.com/agent-receipts/ar/issues/253).
+[#253](https://github.com/agent-receipts/obsigna/issues/253).
 
 ## [Unreleased]
 

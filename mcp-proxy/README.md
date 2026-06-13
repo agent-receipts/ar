@@ -9,7 +9,7 @@
 
 **Audit, govern, and sign every AI agent action.**
 
-[SDK](https://github.com/agent-receipts/ar/tree/main/sdk/go) &bull; [Spec](https://github.com/agent-receipts/spec) &bull; [agentreceipts.ai](https://agentreceipts.ai)
+[SDK](https://github.com/agent-receipts/obsigna/tree/main/sdk/go) &bull; [Spec](https://github.com/agent-receipts/spec) &bull; [agentreceipts.ai](https://agentreceipts.ai)
 
 </div>
 
@@ -38,7 +38,7 @@ brew install agent-receipts/tap/obsigna
 
 ### Prebuilt binaries
 
-Download the `obsigna_<version>_<os>_<arch>` tarball from the [releases page](https://github.com/agent-receipts/ar/releases?q=obsigna) (darwin and linux, amd64 and arm64).
+Download the `obsigna_<version>_<os>_<arch>` tarball from the [releases page](https://github.com/agent-receipts/obsigna/releases?q=obsigna) (darwin and linux, amd64 and arm64).
 
 ### From source
 

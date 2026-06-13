@@ -31,7 +31,7 @@ The hook binary:
 3. Forwards the event to the daemon over a Unix socket
 4. Exits 0 on success
 
-The hook does not pause or modify the tool call. If the stdin frame is unreadable or the calling runtime isn't recognised, it exits 0 silently — the event isn't ours to record. But once the runtime **is** identified, a failure to record the receipt (daemon not running, socket missing, malformed or oversized frame) exits 1 with a message on stderr. This is deliberate: a broken audit pipeline is surfaced to the runtime rather than silently dropping receipts, the same surface-don't-drop stance as the SDK [emit-failure contract](https://github.com/agent-receipts/ar/blob/main/docs/adr/0025-emit-failure-contract.md).
+The hook does not pause or modify the tool call. If the stdin frame is unreadable or the calling runtime isn't recognised, it exits 0 silently — the event isn't ours to record. But once the runtime **is** identified, a failure to record the receipt (daemon not running, socket missing, malformed or oversized frame) exits 1 with a message on stderr. This is deliberate: a broken audit pipeline is surfaced to the runtime rather than silently dropping receipts, the same surface-don't-drop stance as the SDK [emit-failure contract](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0025-emit-failure-contract.md).
 
 ## Difference from mcp-proxy
 

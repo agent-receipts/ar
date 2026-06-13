@@ -45,7 +45,7 @@ Graduates `0.18.0-alpha.1` after the alpha pass. No code changes since the alpha
 
 ### Added
 
-- **`action.target.resource` population from tool input** ([#784](https://github.com/agent-receipts/ar/pull/784), ADR-0029) — `extractFileTarget` parses `file_path` from Claude Code tool input and forwards `target_system: "filesystem"` + `target_resource: "<path>"` in the emitter frame. Opportunistic heuristic: skip-listed tools (`Bash`, `Agent`, `WebFetch`, `WebSearch`) and MCP-namespaced tools are ignored; all other tools are attempted so new filesystem tools are auto-captured. Known file tools (`Read`, `Write`, `Edit`, `MultiEdit`) emit a stderr warning when `file_path` is absent (schema-drift signal). Whitespace-only paths are treated as absent; malformed JSON is silently skipped.
+- **`action.target.resource` population from tool input** ([#784](https://github.com/agent-receipts/obsigna/pull/784), ADR-0029) — `extractFileTarget` parses `file_path` from Claude Code tool input and forwards `target_system: "filesystem"` + `target_resource: "<path>"` in the emitter frame. Opportunistic heuristic: skip-listed tools (`Bash`, `Agent`, `WebFetch`, `WebSearch`) and MCP-namespaced tools are ignored; all other tools are attempted so new filesystem tools are auto-captured. Known file tools (`Read`, `Write`, `Edit`, `MultiEdit`) emit a stderr warning when `file_path` is absent (schema-drift signal). Whitespace-only paths are treated as absent; malformed JSON is silently skipped.
 
 ### Dependencies
 
@@ -69,7 +69,7 @@ Graduates `0.15.0-alpha.1` after the alpha pass. No code changes since the alpha
 
 ### Added
 
-- **`agent_type` forwarding** ([#761](https://github.com/agent-receipts/ar/pull/761), ADR-0026) — the Claude Code hook now parses `agent_type` from the PostToolUse payload and forwards it to the emitter alongside the existing `agent_id`. The daemon nests both under `issuer.runtime`.
+- **`agent_type` forwarding** ([#761](https://github.com/agent-receipts/obsigna/pull/761), ADR-0026) — the Claude Code hook now parses `agent_type` from the PostToolUse payload and forwards it to the emitter alongside the existing `agent_id`. The daemon nests both under `issuer.runtime`.
 
 ### Changed
 
@@ -83,8 +83,8 @@ Graduates `0.14.0-alpha.1` after the alpha pass. No code changes since the alpha
 
 ### Added
 
-- **`agent_id` forwarding** ([#753](https://github.com/agent-receipts/ar/pull/753)) — Claude Code sends a distinct `agent_id` per subagent in hook payloads. The hook now parses this field from the `claudeCodeFrame` and sets it on `emitter.Event.AgentID`, enabling the daemon to route subagent frames to per-agent chains and attach delegation backlinks.
-- **`correlation_id` forwarding** ([#752](https://github.com/agent-receipts/ar/pull/752)) — the hook now reads `tool_use_id` from the Claude Code payload and forwards it as `Event.CorrelationID`. This links every pre-check receipt to the corresponding post-action receipt emitted by the MCP proxy for the same tool invocation.
+- **`agent_id` forwarding** ([#753](https://github.com/agent-receipts/obsigna/pull/753)) — Claude Code sends a distinct `agent_id` per subagent in hook payloads. The hook now parses this field from the `claudeCodeFrame` and sets it on `emitter.Event.AgentID`, enabling the daemon to route subagent frames to per-agent chains and attach delegation backlinks.
+- **`correlation_id` forwarding** ([#752](https://github.com/agent-receipts/obsigna/pull/752)) — the hook now reads `tool_use_id` from the Claude Code payload and forwards it as `Event.CorrelationID`. This links every pre-check receipt to the corresponding post-action receipt emitted by the MCP proxy for the same tool invocation.
 
 ### Dependencies
 
@@ -100,7 +100,7 @@ Graduates `0.14.0-alpha.1` after the alpha pass. No code changes since the alpha
 
 ### Changed
 
-- **macOS default socket path moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/ar/issues/545)) — inherited from the SDK's updated `emitter.DefaultSocketPath`: the hook now resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. Avoids the silent path mismatch when the hook is spawned by a process that does not propagate TMPDIR (e.g., a GUI host). Operators on macOS should restart the daemon so both sides resolve to the same path.
+- **macOS default socket path moved off `$TMPDIR`** ([#545](https://github.com/agent-receipts/obsigna/issues/545)) — inherited from the SDK's updated `emitter.DefaultSocketPath`: the hook now resolves to `$XDG_DATA_HOME/agent-receipts/events.sock` (defaulting to `~/.local/share/agent-receipts/events.sock`) instead of `$TMPDIR/agentreceipts/events.sock`. Avoids the silent path mismatch when the hook is spawned by a process that does not propagate TMPDIR (e.g., a GUI host). Operators on macOS should restart the daemon so both sides resolve to the same path.
 
 ### Dependencies
 
@@ -122,7 +122,7 @@ Graduates `0.14.0-alpha.1` after the alpha pass. No code changes since the alpha
 
 ### Added
 
-- **PreToolUse support** ([#415](https://github.com/agent-receipts/ar/pull/415)):
+- **PreToolUse support** ([#415](https://github.com/agent-receipts/obsigna/pull/415)):
   The hook now handles `hook_event_name: "PreToolUse"` payloads in addition to
   `"PostToolUse"`. PreToolUse frames emit a receipt with `decision: "pending"`;
   PostToolUse frames continue to emit `decision: "allowed"`. Configure both in
@@ -131,7 +131,7 @@ Graduates `0.14.0-alpha.1` after the alpha pass. No code changes since the alpha
 
 ### Fixed
 
-- **Claude Code runtime detection** ([#411](https://github.com/agent-receipts/ar/pull/411)):
+- **Claude Code runtime detection** ([#411](https://github.com/agent-receipts/obsigna/pull/411)):
   Claude Code does not set `CLAUDE_SESSION_ID` as an environment variable —
   it passes `hook_event_name` in the stdin JSON payload instead. The previous
   detection check looked only at the env var, so every invocation was silently
@@ -141,7 +141,7 @@ Graduates `0.14.0-alpha.1` after the alpha pass. No code changes since the alpha
 
 ### Changed
 
-- **Fail hard once runtime is identified** ([#415](https://github.com/agent-receipts/ar/pull/415)):
+- **Fail hard once runtime is identified** ([#415](https://github.com/agent-receipts/obsigna/pull/415)):
   All error paths after format detection now exit 1 with a message to stderr
   instead of silent exit 0. Affected cases: unsupported format string,
   unparseable payload (schema change), `emitter.New()` failure, and
@@ -152,8 +152,8 @@ Graduates `0.14.0-alpha.1` after the alpha pass. No code changes since the alpha
 
 ### Changed
 
-- **Extracted into its own Go module** ([#405](https://github.com/agent-receipts/ar/issues/405),
-  [#407](https://github.com/agent-receipts/ar/pull/407)):
+- **Extracted into its own Go module** ([#405](https://github.com/agent-receipts/obsigna/issues/405),
+  [#407](https://github.com/agent-receipts/obsigna/pull/407)):
   `agent-receipts-hook` now lives at `github.com/agent-receipts/ar/hook` and is
   released independently of the daemon. Install path:
   `brew install agent-receipts/tap/agent-receipts-hook` or
