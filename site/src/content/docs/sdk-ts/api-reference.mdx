@@ -13,7 +13,7 @@ import {
   generateKeyPair,
   hashReceipt,
   verifyChain,
-} from "@agnt-rcpt/sdk-ts";
+} from "@obsigna/sdk-ts";
 ```
 
 ### Functions
@@ -281,7 +281,7 @@ import {
   type ForensicKeyPair,
   type DisclosureEnvelope,
   type DisclosureRecipient,
-} from "@agnt-rcpt/sdk-ts";
+} from "@obsigna/sdk-ts";
 ```
 
 HPKE-based envelope for encrypting tool-call parameters into a receipt's
@@ -372,7 +372,7 @@ of the receipt JSON at `credentialSubject.action.parameters_disclosure`:
 {/* snippet-check: skip */}
 ```typescript
 import { readFileSync } from "node:fs";
-import { decryptDisclosure } from "@agnt-rcpt/sdk-ts";
+import { decryptDisclosure } from "@obsigna/sdk-ts";
 
 // raw 32-byte private key written by --init-forensic-key (kept offline)
 const priv = new Uint8Array(readFileSync("/path/to/forensic.key"));
@@ -426,7 +426,7 @@ existing `sha256` export to compute the fingerprint string in TypeScript.
 ## Store
 
 ```typescript
-import { ReceiptStore, openStore, verifyStoredChain } from "@agnt-rcpt/sdk-ts";
+import { ReceiptStore, openStore, verifyStoredChain } from "@obsigna/sdk-ts";
 ```
 
 SQLite-backed receipt persistence and querying.
@@ -510,7 +510,7 @@ import {
   resolveActionType,
   loadTaxonomyConfig,
   ALL_ACTIONS,
-} from "@agnt-rcpt/sdk-ts";
+} from "@obsigna/sdk-ts";
 ```
 
 Action type registry and tool call classification.
@@ -582,5 +582,5 @@ const UNKNOWN_ACTION: ActionTypeEntry
 `DATA_ACTIONS` (3 data/API types) is exported from the `taxonomy` subpath, not the package root:
 
 ```typescript
-import { DATA_ACTIONS } from "@agnt-rcpt/sdk-ts/taxonomy";
+import { DATA_ACTIONS } from "@obsigna/sdk-ts/taxonomy";
 ```

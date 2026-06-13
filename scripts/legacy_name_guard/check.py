@@ -48,6 +48,11 @@ GATED_FILES = [
     "sdk/ts/README.md",
     "sdk/ts-aws/README.md",
     "sdk/py/README.md",
+    # User-facing install docs on the site — same shape as the README install
+    # commands, so they regress the same way (a snippet drifting back onto the
+    # legacy npm scope / PyPI name).
+    "site/src/content/docs/sdk-ts/installation.mdx",
+    "site/src/content/docs/sdk-py/installation.mdx",
 ]
 
 # Each entry: (compiled pattern, human description). The patterns match only the

@@ -67,13 +67,13 @@ Agent Receipts is an open protocol and set of SDKs for producing cryptographical
 Install the proxy:
 
 ```bash
-go install github.com/agent-receipts/mcp-proxy/cmd/mcp-proxy@latest
+go install github.com/agent-receipts/ar/mcp-proxy/cmd/obsigna-mcp@latest
 ```
 
 Wrap any MCP server:
 
 ```bash
-mcp-proxy node /path/to/mcp-server.js
+obsigna-mcp node /path/to/mcp-server.js
 ```
 
 Then point your agent client at the proxy instead of the raw server:
@@ -85,9 +85,9 @@ Then point your agent client at the proxy instead of the raw server:
 Once your agent makes tool calls, inspect the signed audit trail:
 
 ```bash
-mcp-proxy list
-mcp-proxy inspect <receipt-id>
-mcp-proxy verify --key pub.pem <chain-id>
+obsigna list
+obsigna show <seq>
+obsigna verify
 ```
 
 ## SDK quick start

@@ -43,7 +43,7 @@ Install `agent-receipts-daemon` (see [Daemon Setup](/getting-started/daemon-setu
 for your platform), then the Python SDK:
 
 ```bash
-pip install agent-receipts
+pip install obsigna
 ```
 
 ### 2. Start the daemon
@@ -64,7 +64,7 @@ and chains the receipt. It is fire-and-forget — start the daemon before your a
 
 {/* snippet-check: no-run */}
 ```python
-from agent_receipts import DaemonEmitter
+from obsigna import DaemonEmitter
 
 with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
     e.emit(
@@ -97,7 +97,7 @@ Install `agent-receipts-daemon` (see [Daemon Setup](/getting-started/daemon-setu
 for your platform), then the TypeScript SDK:
 
 ```bash
-npm install @agnt-rcpt/sdk-ts
+npm install @obsigna/sdk-ts
 ```
 
 ### 2. Start the daemon
@@ -118,7 +118,7 @@ and chains the receipt. It is fire-and-forget — start the daemon before your a
 
 {/* snippet-check: no-run */}
 ```typescript
-import { DaemonEmitter } from "@agnt-rcpt/sdk-ts";
+import { DaemonEmitter } from "@obsigna/sdk-ts";
 
 async function main() {
   const e = new DaemonEmitter();  // uses AGENTRECEIPTS_SOCKET or the per-OS default
@@ -248,7 +248,7 @@ shown above (see also [Daemon Setup](/getting-started/daemon-setup/)).
 :::
 
 ```python
-from agent_receipts import (
+from obsigna import (
     CreateReceiptInput,
     create_receipt,
     generate_key_pair,

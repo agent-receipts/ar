@@ -12,7 +12,7 @@ it, and chains it. Your process never touches the key. See
 [Quick Start](/getting-started/quick-start/) for the full emit → list → verify loop.
 
 ```python
-from agent_receipts import DaemonEmitter, EmitTransportError, default_socket_path
+from obsigna import DaemonEmitter, EmitTransportError, default_socket_path
 ```
 
 ### `DaemonEmitter`
@@ -67,7 +67,7 @@ emitter was constructed with `best_effort=True`.
 
 {/* snippet-check: no-run */}
 ```python
-from agent_receipts import DaemonEmitter
+from obsigna import DaemonEmitter
 
 with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
     e.emit(
@@ -106,7 +106,7 @@ Honours `AGENTRECEIPTS_SOCKET` when set.
 ## Receipts
 
 ```python
-from agent_receipts import (
+from obsigna import (
     create_receipt,
     sign_receipt,
     verify_receipt,
@@ -372,7 +372,7 @@ VERSION: str                # current package version
 ## Parameter disclosure (HPKE)
 
 ```python
-from agent_receipts import (
+from obsigna import (
     generate_forensic_key_pair,
     encrypt_disclosure,
     decrypt_disclosure,
@@ -443,7 +443,7 @@ malformed, or if AEAD authentication fails.
 
 {/* snippet-check: no-run */}
 ```python
-from agent_receipts import (
+from obsigna import (
     generate_forensic_key_pair,
     encrypt_disclosure,
     decrypt_disclosure,
@@ -479,7 +479,7 @@ receipt JSON at `credentialSubject.action.parameters_disclosure`:
 {/* snippet-check: no-run */}
 ```python
 import json
-from agent_receipts import decrypt_disclosure
+from obsigna import decrypt_disclosure
 
 # raw 32-byte private key written by --init-forensic-key (kept offline)
 with open("/path/to/forensic.key", "rb") as f:
@@ -534,7 +534,7 @@ to compute the `sha256:<hex>` fingerprint string in Python.
 ## Store
 
 ```python
-from agent_receipts import ReceiptStore, open_store, verify_stored_chain
+from obsigna import ReceiptStore, open_store, verify_stored_chain
 ```
 
 SQLite-backed receipt persistence and querying.
@@ -606,7 +606,7 @@ class StoreStats:
 ## Taxonomy
 
 ```python
-from agent_receipts import (
+from obsigna import (
     classify_tool_call,
     get_action_type,
     resolve_action_type,
@@ -684,7 +684,7 @@ UNKNOWN_ACTION: ActionTypeEntry
 `DATA_ACTIONS` (3 data/API types) is exported from the `taxonomy` submodule, not the package root:
 
 ```python
-from agent_receipts.taxonomy import DATA_ACTIONS
+from obsigna.taxonomy import DATA_ACTIONS
 ```
 
 ### Backwards compatibility aliases

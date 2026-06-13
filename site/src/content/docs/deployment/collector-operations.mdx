@@ -37,15 +37,15 @@ POST /receipts ───▶ │  (TLS termination, auth) │
 Build the binary. From the repo root, build the collector's main package by its module-qualified path and name the output binary explicitly:
 
 ```sh
-go build -o collector github.com/agent-receipts/ar/collector/cmd/collector
+go build -o obsigna-collector github.com/agent-receipts/ar/collector/cmd/obsigna-collector
 ```
 
-(The bare `go build ./cmd/collector` only resolves from inside the `collector/` module directory.)
+(The bare `go build ./cmd/obsigna-collector` only resolves from inside the `collector/` module directory.)
 
 Run it:
 
 ```sh
-./collector --addr 0.0.0.0:8787 --db /data/collector.db
+./obsigna-collector --addr 0.0.0.0:8787 --db /data/collector.db
 ```
 
 The default `--addr` binds loopback only (`127.0.0.1:8787`) — opt in explicitly when exposing beyond localhost. See [Configuration](#configuration) for the full flag reference.
