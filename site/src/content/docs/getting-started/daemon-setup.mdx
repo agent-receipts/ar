@@ -189,13 +189,13 @@ if err != nil {
 Install:
 
 ```bash
-npm install @agnt-rcpt/sdk-ts
+npm install @obsigna/sdk-ts
 ```
 
 **Option A: explicit socket path**
 
 ```typescript
-import { DaemonEmitter } from "@agnt-rcpt/sdk-ts";
+import { DaemonEmitter } from "@obsigna/sdk-ts";
 
 const e = new DaemonEmitter({ socketPath: "/path/to/events.sock" });
 ```
@@ -203,7 +203,7 @@ const e = new DaemonEmitter({ socketPath: "/path/to/events.sock" });
 **Option B: via environment variable (`AGENTRECEIPTS_SOCKET`)**
 
 ```typescript
-import { DaemonEmitter } from "@agnt-rcpt/sdk-ts";
+import { DaemonEmitter } from "@obsigna/sdk-ts";
 
 const e = new DaemonEmitter();
 ```
@@ -213,13 +213,13 @@ const e = new DaemonEmitter();
 Install:
 
 ```bash
-pip install agent-receipts
+pip install obsigna
 ```
 
 **Option A: explicit socket path**
 
 ```python
-from agent_receipts import DaemonEmitter
+from obsigna import DaemonEmitter
 
 e = DaemonEmitter(socket_path="/path/to/events.sock")
 ```
@@ -227,7 +227,7 @@ e = DaemonEmitter(socket_path="/path/to/events.sock")
 **Option B: via environment variable (`AGENTRECEIPTS_SOCKET`)**
 
 ```python
-from agent_receipts import DaemonEmitter
+from obsigna import DaemonEmitter
 
 e = DaemonEmitter()
 ```

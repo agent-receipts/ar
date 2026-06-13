@@ -6,13 +6,13 @@ description: Install and configure the Python SDK.
 ## Install
 
 ```bash
-pip install agent-receipts
+pip install obsigna
 ```
 
 Or with uv:
 
 ```bash
-uv add agent-receipts
+uv add obsigna
 ```
 
 ## Requirements
@@ -21,7 +21,7 @@ uv add agent-receipts
 
 ## You also need the daemon
 
-`pip install agent-receipts` installs the library only. Receipts are signed by a
+`pip install obsigna` installs the library only. Receipts are signed by a
 separate `agent-receipts-daemon` process, which also ships the `agent-receipts`
 CLI (`list`, `show`, `verify`). Install it on macOS or Linux — Windows is not
 supported yet:
@@ -31,7 +31,7 @@ supported yet:
 brew install agent-receipts/tap/obsigna-daemon
 
 # Linux / from source (requires Go 1.26.1+) — builds the daemon and the agent-receipts CLI
-go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@latest
+go install github.com/agent-receipts/ar/daemon/cmd/obsigna-daemon@latest
 go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@latest
 ```
 

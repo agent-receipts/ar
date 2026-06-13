@@ -23,7 +23,7 @@ receipt, signs it, and chains it. This is the canonical path — reach for it fi
 
 {/* snippet-check: no-run */}
 ```python
-from agent_receipts import DaemonEmitter
+from obsigna import DaemonEmitter
 
 with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
     e.emit(
@@ -43,7 +43,7 @@ This pattern keeps the signing key inside the agent process. Anyone with code ex
 :::
 
 ```python
-from agent_receipts import (
+from obsigna import (
     CreateReceiptInput,
     create_receipt,
     generate_key_pair,

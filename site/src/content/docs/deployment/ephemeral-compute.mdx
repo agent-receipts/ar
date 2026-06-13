@@ -252,7 +252,7 @@ import {
   MemoryWal,
   createReceipt,
   signReceipt,
-} from "@agnt-rcpt/sdk-ts";
+} from "@obsigna/sdk-ts";
 
 // Module scope: reused across warm invocations.
 const http = new HttpEmitter({
@@ -294,7 +294,7 @@ process.on("SIGTERM", async () => {
 import os
 import signal
 
-from agent_receipts import (
+from obsigna import (
     HttpEmitter,
     HttpEmitterConfig,
     BearerAuth,
@@ -340,7 +340,7 @@ Run the reference collector as your long-lived service (behind TLS termination a
 
 ```sh
 # The collector binds loopback by default; expose it explicitly in production.
-go run github.com/agent-receipts/ar/collector/cmd/collector --addr 0.0.0.0:8787
+go run github.com/agent-receipts/ar/collector/cmd/obsigna-collector --addr 0.0.0.0:8787
 
 curl -s http://localhost:8787/healthz          # 200 when the store is reachable
 ```
