@@ -1,6 +1,6 @@
 version: 2
 
-project_name: daemon
+project_name: obsigna
 
 # Disable the Go workspace so GoReleaser resolves dependencies strictly from
 # daemon/go.mod (published versions) rather than the in-tree ./sdk/go module
@@ -102,17 +102,17 @@ checksum:
   name_template: "checksums.txt"
 
 # GitHub release is created outside GoReleaser (against the prefixed tag
-# `daemon/vX.Y.Z`). GoReleaser only builds archives and publishes the
+# `obsigna/vX.Y.Z`). GoReleaser only builds archives and publishes the
 # Homebrew formula; the workflow uploads binaries with `gh`.
 release:
   disable: true
 
 brews:
-  - name: obsigna-daemon
+  - name: obsigna
     # `auto` skips the formula bump PR when the release version contains a
     # pre-release suffix (e.g. v0.8.0-alpha.1). The Homebrew tap stays
-    # locked to the latest stable daemon until a non-pre-release tag is cut,
-    # so `brew install agent-receipts/tap/obsigna-daemon` keeps giving
+    # locked to the latest stable release until a non-pre-release tag is cut,
+    # so `brew install agent-receipts/tap/obsigna` keeps giving
     # users a stable build during alpha/beta soak periods.
     skip_upload: auto
     repository:
@@ -130,14 +130,14 @@ brews:
         base:
           branch: main
     directory: Formula
-    url_template: "https://github.com/agent-receipts/obsigna/releases/download/daemon%2Fv{{ .Version }}/{{ .ArtifactName }}"
+    url_template: "https://github.com/agent-receipts/obsigna/releases/download/obsigna%2Fv{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/agent-receipts/obsigna/tree/main/daemon"
-    description: "Agent Receipts daemon and companion verify CLI"
+    description: "Obsigna — Agent Receipts CLI, signing daemon, and verify tooling"
     license: "Apache-2.0"
     commit_author:
       name: agent-receipts-bot
       email: bot@agentreceipts.ai
-    commit_msg_template: "chore(daemon): bump to v{{ .Version }}"
+    commit_msg_template: "chore(obsigna): bump to v{{ .Version }}"
     install: |
       bin.install "obsigna-daemon"
       bin.install "obsigna"
@@ -149,7 +149,7 @@ brews:
     # `brew outdated` and `brew livecheck` use this to detect new releases.
     # The `ar` repo ships multiple taggable components, so we can't use
     # `:github_latest` (which returns repo-wide latest). `:github_releases`
-    # scans all releases; regex extracts version from the `daemon/vX.Y.Z`
+    # scans all releases; regex extracts version from the `obsigna/vX.Y.Z`
     # tag prefix.
     #
     # post_install, service, and caveats are also emitted here so they survive
@@ -173,7 +173,7 @@ brews:
           If you reference the old binary name in any install script, systemd unit,
           launchd plist, or `brew services` wrapper, update it to obsigna-daemon and
           restart the service after upgrading:
-            brew services restart agent-receipts/tap/obsigna-daemon
+            brew services restart agent-receipts/tap/obsigna
 
           agent-receipts-hook is now a separate formula. If you previously installed
           it via this formula, run:
@@ -183,7 +183,7 @@ brews:
             obsigna-daemon --init
 
           Then start the daemon:
-            brew services start agent-receipts/tap/obsigna-daemon
+            brew services start agent-receipts/tap/obsigna
 
           Receipts database: $XDG_DATA_HOME/agent-receipts/receipts.db
                              (falls back to ~/.local/share/agent-receipts/receipts.db when $XDG_DATA_HOME is unset or relative)
@@ -202,19 +202,19 @@ brews:
         EOS
       end
 
-      conflicts_with "obsigna-daemon-alpha", because: "both install the same binaries"
+      conflicts_with "obsigna-alpha", because: "both install the same binaries"
 
       livecheck do
         url "https://github.com/agent-receipts/obsigna"
         strategy :github_releases
-        regex(/^daemon\/v?(\d+(?:\.\d+)+)$/i)
+        regex(/^obsigna\/v?(\d+(?:\.\d+)+)$/i)
       end
 
   # Alpha-track formula — updated on every release (stable and pre-release).
-  # `brew install agent-receipts/tap/obsigna-daemon-alpha` always gives
+  # `brew install agent-receipts/tap/obsigna-alpha` always gives
   # the latest cut; conflicts with the stable formula since both install the
   # same binaries.
-  - name: obsigna-daemon-alpha
+  - name: obsigna-alpha
     repository:
       owner: agent-receipts
       name: homebrew-tap
@@ -225,14 +225,14 @@ brews:
         base:
           branch: main
     directory: Formula
-    url_template: "https://github.com/agent-receipts/obsigna/releases/download/daemon%2Fv{{ .Version }}/{{ .ArtifactName }}"
+    url_template: "https://github.com/agent-receipts/obsigna/releases/download/obsigna%2Fv{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/agent-receipts/obsigna/tree/main/daemon"
-    description: "Agent Receipts daemon and companion verify CLI (alpha/beta track)"
+    description: "Obsigna — Agent Receipts CLI, signing daemon, and verify tooling (alpha/beta track)"
     license: "Apache-2.0"
     commit_author:
       name: agent-receipts-bot
       email: bot@agentreceipts.ai
-    commit_msg_template: "chore(daemon): bump alpha to v{{ .Version }}"
+    commit_msg_template: "chore(obsigna): bump alpha to v{{ .Version }}"
     install: |
       bin.install "obsigna-daemon"
       bin.install "obsigna"
@@ -242,7 +242,7 @@ brews:
       system "#{bin}/obsigna", "--help"
       system "#{bin}/agent-receipts", "--help"
     custom_block: |
-      conflicts_with "obsigna-daemon", because: "both install the same binaries"
+      conflicts_with "obsigna", because: "both install the same binaries"
 
       def post_install
         (var/"log/agent-receipts").mkpath
@@ -258,19 +258,19 @@ brews:
       def caveats
         <<~EOS
           This is the alpha/beta track — it tracks every release including pre-releases.
-          For stable-only installs use: brew install agent-receipts/tap/obsigna-daemon
+          For stable-only installs use: brew install agent-receipts/tap/obsigna
 
           The daemon binary is now obsigna-daemon (was agent-receipts-daemon).
           If you reference the old binary name in any install script, systemd unit,
           launchd plist, or `brew services` wrapper, update it to obsigna-daemon and
           restart the service after upgrading:
-            brew services restart agent-receipts/tap/obsigna-daemon-alpha
+            brew services restart agent-receipts/tap/obsigna-alpha
 
           Before starting the service for the first time, generate your signing key:
             obsigna-daemon --init
 
           Then start the daemon:
-            brew services start agent-receipts/tap/obsigna-daemon-alpha
+            brew services start agent-receipts/tap/obsigna-alpha
 
           Receipts database: $XDG_DATA_HOME/agent-receipts/receipts.db
                              (falls back to ~/.local/share/agent-receipts/receipts.db when $XDG_DATA_HOME is unset or relative)
@@ -292,5 +292,5 @@ brews:
       livecheck do
         url "https://github.com/agent-receipts/obsigna"
         strategy :github_releases
-        regex(/^daemon\/v?(\d+(?:\.\d+)+(?:-[a-z0-9.]+)?)$/i)
+        regex(/^obsigna\/v?(\d+(?:\.\d+)+(?:-[a-z0-9.]+)?)$/i)
       end

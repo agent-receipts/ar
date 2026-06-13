@@ -120,11 +120,11 @@ func brewFormulaNames(yaml string) []string {
 }
 
 // TestBrewFormulaeUseObsignaName is the anti-regression gate for the Homebrew
-// formula rename (agent-receipts-daemon -> obsigna-daemon). The installed binary
-// has been obsigna-daemon since ADR-0031; this guards the final step where the
-// formula itself carries the Obsigna brand. The tap's tap_migrations.json moves
-// existing installs off the legacy names, so reintroducing them here would fork
-// users back onto an unmigrated formula.
+// formula rename (obsigna-daemon -> obsigna; ADR-0034 PR 1). The umbrella
+// formula carries the bare Obsigna brand — `brew install agent-receipts/tap/obsigna`
+// installs the toolset. The tap's tap_migrations.json moves existing installs off
+// the legacy names (agent-receipts-daemon, obsigna-daemon), so reintroducing them
+// here would fork users back onto an unmigrated formula.
 func TestBrewFormulaeUseObsignaName(t *testing.T) {
 	yaml := readFile(t, "../../.goreleaser.yaml")
 	names := brewFormulaNames(yaml)
@@ -132,10 +132,13 @@ func TestBrewFormulaeUseObsignaName(t *testing.T) {
 		t.Fatal("no formula names found under goreleaser brews:")
 	}
 
-	want := map[string]bool{"obsigna-daemon": false, "obsigna-daemon-alpha": false}
+	want := map[string]bool{"obsigna": false, "obsigna-alpha": false}
 	for _, name := range names {
-		if strings.HasPrefix(name, "agent-receipts-daemon") {
-			t.Errorf("brew formula %q uses the legacy name; the daemon formula must be obsigna-daemon(-alpha)", name)
+		// "obsigna-daemon"/"obsigna-daemon-alpha" are the retired train-identity
+		// names; "agent-receipts-daemon" the hop before that. Both are migrated
+		// away in tap_migrations.json and must not reappear here.
+		if strings.HasPrefix(name, "obsigna-daemon") || strings.HasPrefix(name, "agent-receipts-daemon") {
+			t.Errorf("brew formula %q uses a legacy name; the umbrella formula must be obsigna(-alpha)", name)
 		}
 		if _, ok := want[name]; ok {
 			want[name] = true

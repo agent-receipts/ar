@@ -30,7 +30,7 @@ die()  { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 main() {
   # Linux only
   [ "$(uname -s)" = "Linux" ] || \
-    die "Linux only. For macOS: brew install agent-receipts/tap/obsigna-daemon"
+    die "Linux only. For macOS: brew install agent-receipts/tap/obsigna"
 
   # Require systemd
   command -v systemctl >/dev/null 2>&1 || \
@@ -47,28 +47,28 @@ main() {
     *)             die "Unsupported architecture: $(uname -m)" ;;
   esac
 
-  # Resolve latest stable daemon release.
+  # Resolve latest stable obsigna release.
   # The repo has multiple component release trains (sdk/go/v*, mcp-proxy/v*,
-  # daemon/v*) so we filter by tag prefix and skip pre-releases explicitly —
+  # obsigna/v*) so we filter by tag prefix and skip pre-releases explicitly —
   # the repo-wide "latest" pointer is not reliable here.
   step "Resolving latest release..."
   VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" | \
     awk '
-      /"tag_name":.*"daemon\/v/ {
-        match($0, /"daemon\/v[^"]+/)
-        tag = substr($0, RSTART + 9, RLENGTH - 9)
+      /"tag_name":.*"obsigna\/v/ {
+        match($0, /"obsigna\/v[^"]+/)
+        tag = substr($0, RSTART + 10, RLENGTH - 10)
       }
       tag != "" && /"prerelease": false/ { print tag; exit }
       /"prerelease": true/ { tag = "" }
     ')
-  [ -n "$VERSION" ] || die "Could not resolve latest stable daemon version from GitHub API"
+  [ -n "$VERSION" ] || die "Could not resolve latest stable obsigna version from GitHub API"
   echo "    version: ${VERSION}"
 
   # Download
-  ARCHIVE="daemon_${VERSION}_linux_${GOARCH}.tar.gz"
+  ARCHIVE="obsigna_${VERSION}_linux_${GOARCH}.tar.gz"
   # %2F-encode the slash in the tag so the URL matches the canonical form used
   # by the Homebrew formula (daemon/.goreleaser.yaml url_template).
-  RELEASE_BASE="https://github.com/${REPO}/releases/download/daemon%2Fv${VERSION}"
+  RELEASE_BASE="https://github.com/${REPO}/releases/download/obsigna%2Fv${VERSION}"
 
   step "Downloading ${ARCHIVE}..."
   WORK_DIR=$(mktemp -d)
@@ -89,8 +89,10 @@ main() {
   step "Installing binaries to ${INSTALL_DIR}..."
   mkdir -p "$INSTALL_DIR"
   mkdir -p "${WORK_DIR}/extract"
-  # Tarballs have a top-level directory (e.g. daemon_0.8.0_linux_amd64/); strip it.
-  tar -xzf "${WORK_DIR}/${ARCHIVE}" --strip-components=1 -C "${WORK_DIR}/extract"
+  # GoReleaser archives are flat: obsigna-daemon, obsigna, and agent-receipts sit
+  # at the archive root (no wrapping directory), matching how the release
+  # attestation gate and scripts/daemon_protocol/check.py extract them.
+  tar -xzf "${WORK_DIR}/${ARCHIVE}" -C "${WORK_DIR}/extract"
 
   # Smoke-test the extracted binary BEFORE overwriting any installed version.
   # If the new binary is incompatible (glibc mismatch, bad arch) the existing
