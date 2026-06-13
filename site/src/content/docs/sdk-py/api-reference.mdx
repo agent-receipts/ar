@@ -485,7 +485,7 @@ from obsigna import decrypt_disclosure
 with open("/path/to/forensic.key", "rb") as f:
     priv = f.read()
 
-# from: agent-receipts show <seq> --chain-id default --json > receipt.json
+# from: obsigna receipt show <seq> --json > receipt.json
 with open("receipt.json") as f:
     receipt = json.load(f)
 envelope = receipt["credentialSubject"]["action"]["parameters_disclosure"]

@@ -13,8 +13,8 @@ verified later.
 [Daemon Setup](/getting-started/daemon-setup/) first.
 
 **Fresh chain assumed:** sequence numbers below (`1`, `2`) are correct when the
-default chain has no prior receipts. If you have already emitted receipts, run
-`agent-receipts list` to find the current tail and substitute the actual
+current day's chain has no prior receipts. If you have already emitted receipts, run
+`obsigna receipt list` to find the current tail and substitute the actual
 sequence numbers.
 
 ---
@@ -85,23 +85,25 @@ and releases the socket.
 ## 3. List the chain
 
 ```sh
-agent-receipts list
+obsigna receipt list
 ```
 
-You should see one row: sequence `1`, tool `fs.write_file`, chain `default`.
+You should see one row: sequence `1`, tool `fs.write_file`, and a chain id that is
+today's UTC date (e.g. `2026-06-13`) — the daemon names each day's chain by date.
 
 To inspect the full receipt:
 
 ```sh
-agent-receipts show 1 --chain-id default
+obsigna receipt show 1
 ```
 
-This prints a human-readable table of the receipt's fields. To see the full
+With a single chain in the store, `show` auto-detects it; pass `--chain-id` only
+when the store holds more than one chain. This prints a human-readable table of the receipt's fields. To see the full
 W3C Verifiable Credential JSON — including the `proof` block with the Ed25519
 signature — pass `--json`:
 
 ```sh
-agent-receipts show 1 --chain-id default --json
+obsigna receipt show 1 --json
 ```
 
 In the JSON output, `credentialSubject.chain.previous_receipt_hash` is `null`
@@ -113,13 +115,13 @@ becomes visible once there is a second receipt to point back at it.
 ## 4. Verify the chain
 
 ```sh
-agent-receipts verify
+obsigna receipt verify
 ```
 
 Example output (on a fresh chain):
 
 ```
-Chain default: VALID (1 receipt)
+Chain 2026-06-13: VALID (1 receipt)
 ```
 
 The verifier re-derives the hash of each receipt, checks the signature against
@@ -133,7 +135,7 @@ The receipt DB and public key are self-contained. Copy them anywhere and verify
 without a running daemon:
 
 ```sh
-agent-receipts verify \
+obsigna receipt verify \
   --db         ~/.local/share/agent-receipts/receipts.db \
   --public-key ~/.local/share/agent-receipts/signing.key.pub
 ```
@@ -146,17 +148,17 @@ Rerun `emit.ts`:
 
 ```sh
 npx tsx emit.ts
-agent-receipts verify
+obsigna receipt verify
 ```
 
 Example output (count is one higher than after the first emit):
 
 ```
-Chain default: VALID (2 receipts)
+Chain 2026-06-13: VALID (2 receipts)
 ```
 
-Run `agent-receipts show 2 --chain-id default` (or substitute the sequence of
-your second receipt from `agent-receipts list`) — unlike receipt 1 (the chain
+Run `obsigna receipt show 2` (or substitute the sequence of
+your second receipt from `obsigna receipt list`) — unlike receipt 1 (the chain
 head), this receipt has a
 `Previous hash:` field containing the hash of receipt 1. That linkage is what
 makes the chain tamper-evident: altering receipt 1 changes its hash, invalidates

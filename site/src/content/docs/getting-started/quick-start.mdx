@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: Emit and verify your first Agent Receipt through the agent-receipts daemon.
+description: Emit and verify your first Agent Receipt through the obsigna-daemon.
 ---
 
 This guide walks you through emitting and verifying your first Agent Receipt with the
@@ -77,17 +77,17 @@ with DaemonEmitter() as e:  # uses AGENTRECEIPTS_SOCKET or the per-OS default
 
 ### 4. Verify
 
-`agent-receipts verify` reads the database directly and confirms hash linkage and
+`obsigna receipt verify` reads the database directly and confirms hash linkage and
 signatures — the daemon does not need to be running.
 
 ```bash
-agent-receipts verify   # resolves the default chain at $XDG_DATA_HOME (falls back to ~/.local/share)
+obsigna receipt verify   # verifies today's UTC-dated chain in the store at $XDG_DATA_HOME (falls back to ~/.local/share)
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
 started the daemon with a non-default chain id (`AGENTRECEIPTS_CHAIN_ID` / `--chain-id`)
 or overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY`, pass those same values
-here — otherwise `verify` reads the `default` chain at the default paths.
+here — otherwise `verify` reads today's UTC-dated chain at the default paths.
 
 ## TypeScript
 
@@ -144,17 +144,17 @@ main().catch((err) => {
 
 ### 4. Verify
 
-`agent-receipts verify` reads the database directly and confirms hash linkage and
+`obsigna receipt verify` reads the database directly and confirms hash linkage and
 signatures — the daemon does not need to be running.
 
 ```bash
-agent-receipts verify   # resolves the default chain at $XDG_DATA_HOME (falls back to ~/.local/share)
+obsigna receipt verify   # verifies today's UTC-dated chain in the store at $XDG_DATA_HOME (falls back to ~/.local/share)
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
 started the daemon with a non-default chain id (`AGENTRECEIPTS_CHAIN_ID` / `--chain-id`)
 or overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY`, pass those same values
-here — otherwise `verify` reads the `default` chain at the default paths.
+here — otherwise `verify` reads today's UTC-dated chain at the default paths.
 
 ## Go
 
@@ -223,17 +223,17 @@ go run .
 
 ### 4. Verify
 
-`agent-receipts verify` reads the database directly and confirms hash linkage and
+`obsigna receipt verify` reads the database directly and confirms hash linkage and
 signatures — the daemon does not need to be running.
 
 ```bash
-agent-receipts verify   # resolves the default chain at $XDG_DATA_HOME (falls back to ~/.local/share)
+obsigna receipt verify   # verifies today's UTC-dated chain in the store at $XDG_DATA_HOME (falls back to ~/.local/share)
 ```
 
 A successful run prints the chain length and confirms the signatures are intact. If you
 started the daemon with a non-default chain id (`AGENTRECEIPTS_CHAIN_ID` / `--chain-id`)
 or overrode `AGENTRECEIPTS_DB` or `AGENTRECEIPTS_PUBLIC_KEY`, pass those same values
-here — otherwise `verify` reads the `default` chain at the default paths.
+here — otherwise `verify` reads today's UTC-dated chain at the default paths.
 
 ## Appendix: in-process signing (tutorial and testing only)
 

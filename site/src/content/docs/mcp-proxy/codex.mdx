@@ -145,23 +145,23 @@ The daemon signs and stores every tool call. After making calls through Codex, q
 
 ```bash
 # List recent receipts (newest first)
-agent-receipts list
+obsigna receipt list
 
 # Verify the chain's signatures and hash links
-agent-receipts verify \
+obsigna receipt verify \
   --public-key ~/.local/share/agent-receipts/signing.key.pub
 ```
 
 ```
-$ agent-receipts list
-SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
-4    2026-04-15T00:06:48Z  default  create_pull_request
-3    2026-04-15T00:06:26Z  default  get_pull_request
-2    2026-04-15T00:01:39Z  default  push_files
-1    2026-04-14T23:54:09Z  default  list_issues
+$ obsigna receipt list
+SEQ  TIMESTAMP             CHAIN       TOOL / ACTION TYPE
+4    2026-04-15T00:06:48Z  2026-04-15  create_pull_request
+3    2026-04-15T00:06:26Z  2026-04-15  get_pull_request
+2    2026-04-15T00:01:39Z  2026-04-15  push_files
+1    2026-04-15T00:00:09Z  2026-04-15  list_issues
 ```
 
-`agent-receipts verify` prints `Chain default: VALID (4 receipts)` when signatures and hash links are intact. The `-issuer-name Codex` flag stamps each receipt so you can tell Codex sessions apart from Claude Code or Claude Desktop when reviewing a shared store — that issuer/operator metadata doesn't appear in the tabular view, but it's visible via `agent-receipts list -json` and `agent-receipts show <seq>`. See the [CLI reference](/reference/cli-commands/#agent-receipts) for all subcommands.
+`obsigna receipt verify` prints `Chain 2026-04-15: VALID (4 receipts)` when signatures and hash links are intact. The `-issuer-name Codex` flag stamps each receipt so you can tell Codex sessions apart from Claude Code or Claude Desktop when reviewing a shared store — that issuer/operator metadata doesn't appear in the tabular view, but it's visible via `obsigna receipt list -json` and `obsigna receipt show <seq>`. See the [CLI reference](/reference/cli-commands/#obsigna) for all subcommands.
 
 ## Gotchas
 
@@ -171,7 +171,7 @@ SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
-**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `obsigna-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
+**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `obsigna-daemon`. By default the daemon writes receipts to a chain named for the current UTC date (e.g. `2026-06-13`), advancing to a new chain each day. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
 
 **Want human-in-the-loop approvals? Opt in with `-http`.** The approval listener is off by default. If your server exposes tools that cross the risk-score threshold (e.g. `create_token` = 50, `update_auth_config` = 70), pass `-http 127.0.0.1:<port>` and run an approver — see [Approval Server](/mcp-proxy/approval-ui/). Without it, a paused call fails immediately with JSON-RPC code `-32003` (`no approver configured`). To prevent pausing entirely, drop `pause`/`block` rules from a custom `-rules` YAML.
 

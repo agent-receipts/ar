@@ -114,23 +114,23 @@ The daemon signs and stores every tool call. After making calls through Windsurf
 
 ```bash
 # List recent receipts (newest first)
-agent-receipts list
+obsigna receipt list
 
 # Verify the chain's signatures and hash links
-agent-receipts verify \
+obsigna receipt verify \
   --public-key ~/.local/share/agent-receipts/signing.key.pub
 ```
 
 ```
-$ agent-receipts list
-SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
-4    2026-04-24T02:05:19Z  default  get_file_contents
-3    2026-04-24T01:58:45Z  default  create_or_update_file
-2    2026-04-24T01:56:12Z  default  search_issues
-1    2026-04-24T01:45:07Z  default  list_issues
+$ obsigna receipt list
+SEQ  TIMESTAMP             CHAIN       TOOL / ACTION TYPE
+4    2026-04-24T02:05:19Z  2026-04-24  get_file_contents
+3    2026-04-24T01:58:45Z  2026-04-24  create_or_update_file
+2    2026-04-24T01:56:12Z  2026-04-24  search_issues
+1    2026-04-24T01:45:07Z  2026-04-24  list_issues
 ```
 
-`agent-receipts verify` prints `Chain default: VALID (4 receipts)` when signatures and hash links are intact. Inspect a single receipt — including its action type, risk level, and parameters hash — with `agent-receipts show <seq>`. See the [CLI reference](/reference/cli-commands/#agent-receipts) for all subcommands.
+`obsigna receipt verify` prints `Chain 2026-04-24: VALID (4 receipts)` when signatures and hash links are intact. Inspect a single receipt — including its action type, risk level, and parameters hash — with `obsigna receipt show <seq>`. See the [CLI reference](/reference/cli-commands/#obsigna) for all subcommands.
 
 ## Gotchas
 

@@ -237,24 +237,24 @@ The daemon signs and stores every tool call. After making calls through Claude C
 
 ```bash
 # List recent receipts (newest first)
-agent-receipts list
+obsigna receipt list
 
 # Verify the chain's signatures and hash links
-agent-receipts verify \
+obsigna receipt verify \
   --public-key ~/.local/share/agent-receipts/signing.key.pub
 ```
 
 ```
-$ agent-receipts list
-SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
-5    2026-04-24T01:45:07Z  default  list_issues
-4    2026-04-24T01:44:20Z  default  list_pull_requests
-3    2026-04-24T00:51:57Z  default  add_reply_to_pull_request
-2    2026-04-24T00:43:40Z  default  request_copilot_review
-1    2026-04-24T00:19:35Z  default  issue_write
+$ obsigna receipt list
+SEQ  TIMESTAMP             CHAIN       TOOL / ACTION TYPE
+5    2026-04-24T01:45:07Z  2026-04-24  list_issues
+4    2026-04-24T01:44:20Z  2026-04-24  list_pull_requests
+3    2026-04-24T00:51:57Z  2026-04-24  add_reply_to_pull_request
+2    2026-04-24T00:43:40Z  2026-04-24  request_copilot_review
+1    2026-04-24T00:19:35Z  2026-04-24  issue_write
 ```
 
-`agent-receipts verify` prints `Chain default: VALID (5 receipts)` when signatures and hash links are intact. Inspect a single receipt — including its action type, risk level, and parameters hash — with `agent-receipts show <seq>`. See the [CLI reference](/reference/cli-commands/#agent-receipts) for all subcommands.
+`obsigna receipt verify` prints `Chain 2026-04-24: VALID (5 receipts)` when signatures and hash links are intact. Inspect a single receipt — including its action type, risk level, and parameters hash — with `obsigna receipt show <seq>`. See the [CLI reference](/reference/cli-commands/#obsigna) for all subcommands.
 
 ## Gotchas
 
@@ -266,6 +266,6 @@ SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
-**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `obsigna-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
+**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `obsigna-daemon`. By default the daemon writes receipts to a chain named for the current UTC date (e.g. `2026-06-13`), advancing to a new chain each day. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
 
 **No receipts appearing?** The daemon must be running *before* Claude Code launches the proxied server, or emits fail. Confirm with `pgrep obsigna-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.
