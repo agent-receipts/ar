@@ -14,9 +14,9 @@ import (
 // (sdk/go/store, modernc.org/sqlite) plus the receipt type (sdk/go/receipt). An
 // allowlist that exists to keep persistence *out* — the proxy's property — is the
 // wrong tool here; enumerating SQLite's large transitive tree would also be
-// brittle. What the collector must *never* grow into is the signer or the
-// operator read-side, so we forbid exactly those, mirroring the daemon's
-// structural Gate A (ADR-0031):
+// brittle. What the collector must *never link* is the daemon's signing/chaining
+// library or the operator read-side, so we forbid exactly those imports, mirroring
+// the daemon's structural Gate A (ADR-0031):
 //
 //   - the daemon library (the signer that owns the private key, ADR-0010) — the
 //     hub must never link signing/chaining code; and
@@ -27,6 +27,13 @@ import (
 // operator package is caught automatically. The hub's legitimate dependencies —
 // sdk/go/store, sdk/go/receipt, modernc.org/sqlite, google/uuid — carry neither
 // signal and are allowed.
+//
+// Scope, so this gate is not over-read: it bounds what the collector *links*, not
+// which functions it calls within an allowed package. sdk/go/receipt is allowed (the
+// hub needs the AgentReceipt type) and also exposes Sign/Create; the collector does
+// not sign because it holds no signing key, not because this gate forbids the call.
+// Gate A's contract is the import boundary — keep the daemon signer and the operator
+// CLI out of the link.
 var forbiddenImports = []forbiddenRule{
 	{
 		// The daemon library: the signing process (ADR-0010). The collector

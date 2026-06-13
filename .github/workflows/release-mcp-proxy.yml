@@ -137,6 +137,6 @@ jobs:
           marker="<!-- obsigna-mcp-attestation -->"
           notes="$(gh release view "${GITHUB_REF_NAME}" --json body -q .body)"
           if ! printf '%s' "$notes" | grep -qF "$marker"; then
-            printf '%s\n\n%s\n**Reproducible build (ADR-0033):** linux/amd64 `obsigna-mcp` sha256 `%s` — independently rebuilt from source and matched byte-for-byte. Rebuild with `GOTOOLCHAIN=%s GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v%s" ./cmd/obsigna-mcp`.\n' \
+            printf '%s\n\n%s\n**Reproducible build (ADR-0033):** linux/amd64 `obsigna-mcp` sha256 `%s` — independently rebuilt from source and matched byte-for-byte. Rebuild from a clean checkout with `cd mcp-proxy && GOTOOLCHAIN=%s GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v%s" ./cmd/obsigna-mcp`.\n' \
               "$notes" "$marker" "$released_hash" "$toolchain" "$VERSION" | gh release edit "${GITHUB_REF_NAME}" --notes-file -
           fi

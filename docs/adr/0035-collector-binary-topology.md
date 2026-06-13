@@ -38,11 +38,21 @@ the shape of its import-graph gate:
    enumerating SQLite's large transitive tree would be brittle besides.
 
 What the collector's graph must enforce is the **converse** of the proxy's: the hub
-must never grow *into the signer* or *into the operator read-side*. If the collector
-could construct, sign, or chain receipts in-process, the "one writer" guarantee
-ADR-0010 rests on would erode; if it linked the operator verify/show/list/keys
-tooling, a hub process would carry an operator surface that has no business in it.
-Those are the two properties to make structural.
+must never *link the daemon's signing/chaining library* or the operator read-side. If
+the collector imported the daemon library, the "one writer" guarantee ADR-0010 rests
+on would erode; if it linked the operator verify/show/list/keys tooling, a hub process
+would carry an operator surface that has no business in it. Those are the two import
+edges to make structural.
+
+Note the limit of an import-graph gate, so it is not over-read: it bounds what the
+collector *links*, not which functions it calls within an allowed package.
+`sdk/go/receipt` is allowed — the hub needs the `AgentReceipt` type to deserialize and
+store — and that package also exposes `Sign`/`Create`, so the gate cannot by itself
+prove the collector never signs. That property holds for a *different* reason: the
+collector holds no signing key (point 1 above), so it cannot produce a valid signature
+regardless of what it links. Gate A's job is narrower and structural — keep the
+*daemon's* signing/chaining library and the operator CLI out of the link — not to
+police individual function calls.
 
 Separately, the collector ships as a downstream-installable binary that operators
 wire into deployment scripts and that SDK `HttpEmitter` clients post to. The rename
@@ -104,8 +114,12 @@ rather than trusted:
   fail-closed allowlist: the proxy fails closed because persistence has no naming
   convention and must be kept out, whereas the collector *legitimately* persists
   (`sdk/go/store`, `sdk/go/receipt`, `modernc.org/sqlite` are all allowed), so the
-  property to enforce is not "no store" but "never the signer, never the operator
-  CLI". It runs in the normal test suite and in a dedicated `collector.yml` job.
+  property to enforce is not "no store" but "never *links* the daemon's signing
+  library, never *links* the operator CLI". (The gate bounds the link, not function
+  calls within an allowed package — `sdk/go/receipt` is allowed and also exposes
+  `Sign`/`Create`; the collector does not sign because it holds no key, not because
+  the gate forbids the call.) It runs in the normal test suite and in a dedicated
+  `collector.yml` job.
 - **Gate B — reproducible build** (`collector.yml` + `release-collector.yml`): both
   rebuilds go through one shared script (`collector/scripts/reproducible-build.sh`)
   so the PR gate and the release attestation can't drift, and it stays in lockstep
