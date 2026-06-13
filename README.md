@@ -16,9 +16,10 @@
 
 | | |
 |---|---|
-| **Project site & docs** | [agentreceipts.ai](https://agentreceipts.ai) |
-| **Daemon setup & migration guide** | [agentreceipts.ai/getting-started/daemon-setup/](https://agentreceipts.ai/getting-started/daemon-setup/) |
-| **API reference** | [Go](https://agentreceipts.ai/sdk-go/api-reference/) · [TypeScript](https://agentreceipts.ai/sdk-ts/api-reference/) · [Python](https://agentreceipts.ai/sdk-py/api-reference/) |
+| **Protocol site & spec** | [agentreceipts.ai](https://agentreceipts.ai) |
+| **Tooling docs** | [obsigna.dev](https://obsigna.dev) |
+| **Daemon setup & migration guide** | [obsigna.dev/getting-started/daemon-setup/](https://obsigna.dev/getting-started/daemon-setup/) |
+| **API reference** | [Go](https://obsigna.dev/sdk-go/api-reference/) · [TypeScript](https://obsigna.dev/sdk-ts/api-reference/) · [Python](https://obsigna.dev/sdk-py/api-reference/) |
 | **Blog** | [Your AI Agent Just Sent an Email](https://jongerius.solutions/post/your-ai-agent-just-sent-an-email/) · [Every MCP Tool Call My AI Makes Now Gets a Signed Receipt](https://jongerius.solutions/post/auditing-github-mcp-agent-receipts/) |
 | **Go** | [sdk/go](https://pkg.go.dev/github.com/agent-receipts/ar/sdk/go) · [mcp-proxy](https://pkg.go.dev/github.com/agent-receipts/ar/mcp-proxy) · [dashboard](https://pkg.go.dev/github.com/agent-receipts/dashboard) |
 | **npm** | [@obsigna/sdk-ts](https://www.npmjs.com/package/@obsigna/sdk-ts) |
@@ -73,9 +74,9 @@ obsigna verify
 
 **More control — MCP proxy:** wraps any MCP server and adds policy hooks and risk scoring on top of signed receipts:
 
-- [Claude Desktop setup](https://agentreceipts.ai/mcp-proxy/claude-desktop/)
-- [Claude Code setup](https://agentreceipts.ai/mcp-proxy/claude-code/)
-- [Codex setup](https://agentreceipts.ai/mcp-proxy/codex/)
+- [Claude Desktop setup](https://obsigna.dev/mcp-proxy/claude-desktop/)
+- [Claude Code setup](https://obsigna.dev/mcp-proxy/claude-code/)
+- [Codex setup](https://obsigna.dev/mcp-proxy/codex/)
 
 ## Project layout
 
@@ -100,7 +101,7 @@ obsigna verify
 > and tamper-evidence is aimed at downstream parties. In this model, anyone with
 > code execution in the agent can forge receipts. To defend against a compromised
 > agent, use the
-> [daemon-mediated path](https://agentreceipts.ai/getting-started/daemon-setup/),
+> [daemon-mediated path](https://obsigna.dev/getting-started/daemon-setup/),
 > where a separate daemon owns the key and your app only sends events over a
 > socket. See the [Trust Model](https://agentreceipts.ai/specification/trust-model/)
 > page for the full spectrum (in-process → daemon-isolated → HSM/KMS).
