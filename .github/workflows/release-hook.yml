@@ -23,7 +23,10 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version: "1.26"
+          # Pin to hook/go.mod's toolchain (ADR-0036): the release build must use
+          # the exact compiler the reproducible-attestation gate rebuilds with,
+          # not a floating latest 1.26.x.
+          go-version-file: hook/go.mod
 
       # GoReleaser can't parse the prefixed tag `hook/vX.Y.Z` as semver.
       # Create a local lightweight `vX.Y.Z` tag at the same commit so
@@ -66,3 +69,74 @@ jobs:
             "${PRERELEASE_ARG[@]}" \
             hook/dist/*.tar.gz \
             hook/dist/checksums.txt
+
+  # Gate B (release side, ADR-0036): the attestation claim is that auditors can
+  # independently rebuild obsigna-hook and match a published hash. Prove it on
+  # every release — independently rebuild the binary with the same deterministic
+  # flags GoReleaser used, assert its sha256 equals the binary inside the just-
+  # released archive, then publish that hash (a .sha256 asset + a notes line) as
+  # the hook's known-good attestation value. A mismatch means the build is not
+  # reproducible, so we refuse to publish a hash and fail the release.
+  reproducible-attest:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: hook/go.mod
+      - name: Rebuild obsigna-hook and match the released artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#hook/v}"   # e.g. 0.17.0-alpha.1 (no leading v)
+          asset="agent-receipts-hook_${VERSION}_linux_amd64.tar.gz"
+
+          # 1) Hash obsigna-hook as shipped, from the archive uploaded by the
+          #    release job above.
+          mkdir -p released
+          gh release download "${GITHUB_REF_NAME}" --pattern "$asset" --dir released
+          tar -xzf "released/${asset}" -C released
+          released_hash="$(sha256sum released/obsigna-hook | awk '{print $1}')"
+
+          # 2) Independent clean rebuild via the shared reproducible-build script
+          #    (the same one Gate B uses), so the release rebuild and the PR gate
+          #    can't drift. GOWORK=off resolves the published sdk/go rather than
+          #    the in-tree workspace, matching the release build; GOOS/GOARCH pin
+          #    the linux/amd64 artifact. The script keeps CGO off, -trimpath, and
+          #    -buildvcs=false in lockstep with hook/.goreleaser.yaml.
+          ( cd hook && GOWORK=off go mod download )
+          GOWORK=off GOOS=linux GOARCH=amd64 \
+            hook/scripts/reproducible-build.sh hook /tmp/obsigna-hook-rebuild "${VERSION}"
+          rebuilt_hash="$(sha256sum /tmp/obsigna-hook-rebuild | awk '{print $1}')"
+
+          echo "released sha256: $released_hash"
+          echo "rebuilt  sha256: $rebuilt_hash"
+          if [ "$released_hash" != "$rebuilt_hash" ]; then
+            echo "::error::Released obsigna-hook (linux/amd64) does not match an independent clean rebuild ($released_hash vs $rebuilt_hash). The build is not reproducible; refusing to publish an attestation hash."
+            exit 1
+          fi
+
+          # Derive the exact toolchain from go.mod so the published rebuild
+          # command can't drift from the compiler CI actually used: the
+          # `toolchain` directive is the single source of truth (setup-go reads
+          # it via go-version-file). Fall back to the `go` directive if no
+          # explicit toolchain is pinned.
+          toolchain="$(cd hook && go mod edit -json | python3 -c 'import json,sys; m=json.load(sys.stdin); print(m.get("Toolchain") or "go"+m["Go"])')"
+
+          # 3) Publish the known-good hash: a .sha256 asset and a release-notes
+          #    line. The notes append is guarded by a marker so re-runs don't
+          #    duplicate it.
+          hashfile="obsigna-hook-linux-amd64.sha256"
+          echo "${released_hash}  obsigna-hook" > "$hashfile"
+          gh release upload "${GITHUB_REF_NAME}" "$hashfile" --clobber
+
+          marker="<!-- obsigna-hook-attestation -->"
+          notes="$(gh release view "${GITHUB_REF_NAME}" --json body -q .body)"
+          if ! printf '%s' "$notes" | grep -qF "$marker"; then
+            printf '%s\n\n%s\n**Reproducible build (ADR-0036):** linux/amd64 `obsigna-hook` sha256 `%s` — independently rebuilt from source and matched byte-for-byte. Rebuild with `GOTOOLCHAIN=%s GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v%s" ./cmd/obsigna-hook`.\n' \
+              "$notes" "$marker" "$released_hash" "$toolchain" "$VERSION" | gh release edit "${GITHUB_REF_NAME}" --notes-file -
+          fi

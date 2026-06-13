@@ -4,7 +4,9 @@ project_name: agent-receipts-hook
 
 # Disable the Go workspace so GoReleaser resolves dependencies strictly from
 # hook/go.mod (published versions) rather than the in-tree ./sdk/go module
-# wired up by the repo-root go.work.
+# wired up by the repo-root go.work. The release attestation (Gate B) rebuilds
+# with GOWORK=off too, so the released bytes and the independent rebuild resolve
+# the same dependency versions.
 env:
   - GOWORK=off
 
@@ -13,12 +15,35 @@ before:
     - go mod download
     - sh -c "cp ../LICENSE LICENSE"
 
+# Reproducible builds are an attestation requirement (ADR-0036), not a nicety:
+# auditors must independently rebuild obsigna-hook and match the published hash.
+# Determinism comes from CGO_ENABLED=0 (no host C toolchain bytes), -trimpath (no
+# absolute $GOPATH/working-dir paths baked in), a patch-pinned toolchain
+# (go.mod `go` directive, consumed via go-version-file in CI), and version
+# stamping that derives only from the tag/commit — never wall-clock time.
+# mod_timestamp uses the commit timestamp so archive/file mtimes are a function
+# of the commit, not of when the release runner happened to build.
+# -buildvcs=false omits git VCS stamping: the `before` hook copies LICENSE into
+# hook/ (an untracked file), which would otherwise flip go's vcs.modified and
+# make the released binary differ from a clean rebuild that has no such file.
+# Keep these obsigna-hook flags in lockstep with
+# hook/scripts/reproducible-build.sh, the shared script the Gate B
+# reproducibility checks rebuild with (ADR-0036).
 builds:
-  - id: agent-receipts-hook
-    main: ./cmd/agent-receipts-hook
-    binary: agent-receipts-hook
+  # The hook, renamed agent-receipts-hook -> obsigna-hook (ADR-0036). This is the
+  # primary binary, invoked directly by path from agent-runtime hook configs
+  # (ADR-0013). It gets no `obsigna hook run` launcher — wrapping a per-tool-call
+  # callback would tax every event (ADR-0034 decision 5). The agent-receipts-hook
+  # entry below is a thin deprecation shim that execs into it.
+  - id: obsigna-hook
+    main: ./cmd/obsigna-hook
+    binary: obsigna-hook
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - darwin
       - linux
@@ -28,8 +53,36 @@ builds:
     ldflags:
       - -s -w -X main.version=v{{.Version}}
 
+  # Deprecation shim: keeps `agent-receipts-hook` working by exec-forwarding to
+  # obsigna-hook with a one-line stderr notice. Ships alongside obsigna-hook so
+  # existing runtime hook configs (which invoke the hook by path) keep running
+  # through the rename. It carries no main.version symbol (it never prints its own
+  # version — `agent-receipts-hook --version` forwards to obsigna-hook), so no
+  # -X main.version stamp is applied here; the determinism flags still match
+  # obsigna-hook so the shim is reproducible too.
+  - id: agent-receipts-hook
+    main: ./cmd/agent-receipts-hook
+    binary: agent-receipts-hook
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
 archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - ids:
+      - obsigna-hook
+      - agent-receipts-hook
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     files:
       - README.md
@@ -69,23 +122,39 @@ brews:
     directory: Formula
     url_template: "https://github.com/agent-receipts/ar/releases/download/hook%2Fv{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/agent-receipts/ar/tree/main/hook"
-    description: "Claude Code PostToolUse hook that forwards tool-call events to agent-receipts-daemon"
+    description: "Hook that forwards agent tool-call events to the agent-receipts daemon"
     license: "Apache-2.0"
     commit_author:
       name: agent-receipts-bot
       email: bot@agentreceipts.ai
     commit_msg_template: "chore(hook): bump to v{{ .Version }}"
     install: |
+      bin.install "obsigna-hook"
       bin.install "agent-receipts-hook"
     test: |
+      system "#{bin}/obsigna-hook", "--version"
       system "#{bin}/agent-receipts-hook", "--version"
     # `brew outdated` and `brew livecheck` use this to detect new releases.
     # The `ar` repo ships multiple taggable components, so we can't use
     # `:github_latest` (which returns repo-wide latest). `:github_releases`
     # scans all releases; regex extracts version from the `hook/vX.Y.Z`
     # tag prefix.
+    #
+    # The caveats are emitted via custom_block so they survive formula
+    # regeneration on each release (GoReleaser overwrites the formula file;
+    # anything not in custom_block or the named fields would be lost).
     custom_block: |
-      conflicts_with "agent-receipts-hook-alpha", because: "both install the same binary"
+      conflicts_with "agent-receipts-hook-alpha", because: "both install the same binaries"
+
+      def caveats
+        <<~EOS
+          The hook binary is now obsigna-hook (was agent-receipts-hook). The
+          agent-receipts-hook command still works as a thin deprecation shim that
+          forwards to obsigna-hook, so existing runtime hook configs keep running
+          — but update them to obsigna-hook when convenient; the shim will be
+          removed in a future release.
+        EOS
+      end
 
       livecheck do
         url "https://github.com/agent-receipts/ar"
@@ -96,7 +165,7 @@ brews:
   # Alpha-track formula — updated on every release (stable and pre-release).
   # `brew install agent-receipts/tap/agent-receipts-hook-alpha` always gives
   # the latest cut; conflicts with the stable formula since both install the
-  # same binary.
+  # same binaries.
   - name: agent-receipts-hook-alpha
     repository:
       owner: agent-receipts
@@ -110,18 +179,33 @@ brews:
     directory: Formula
     url_template: "https://github.com/agent-receipts/ar/releases/download/hook%2Fv{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/agent-receipts/ar/tree/main/hook"
-    description: "Claude Code PostToolUse hook that forwards tool-call events to agent-receipts-daemon (alpha/beta track)"
+    description: "Hook that forwards agent tool-call events to the agent-receipts daemon (alpha/beta track)"
     license: "Apache-2.0"
     commit_author:
       name: agent-receipts-bot
       email: bot@agentreceipts.ai
     commit_msg_template: "chore(hook): bump alpha to v{{ .Version }}"
     install: |
+      bin.install "obsigna-hook"
       bin.install "agent-receipts-hook"
     test: |
+      system "#{bin}/obsigna-hook", "--version"
       system "#{bin}/agent-receipts-hook", "--version"
     custom_block: |
-      conflicts_with "agent-receipts-hook", because: "both install the same binary"
+      conflicts_with "agent-receipts-hook", because: "both install the same binaries"
+
+      def caveats
+        <<~EOS
+          This is the alpha/beta track — it tracks every release including pre-releases.
+          For stable-only installs use: brew install agent-receipts/tap/agent-receipts-hook
+
+          The hook binary is now obsigna-hook (was agent-receipts-hook). The
+          agent-receipts-hook command still works as a thin deprecation shim that
+          forwards to obsigna-hook, so existing runtime hook configs keep running
+          — but update them to obsigna-hook when convenient; the shim will be
+          removed in a future release.
+        EOS
+      end
 
       livecheck do
         url "https://github.com/agent-receipts/ar"

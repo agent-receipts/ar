@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Binary renamed `agent-receipts-hook` → `obsigna-hook`** (ADR-0036) — the hook
+  is now its own minimal binary at `cmd/obsigna-hook`, built reproducibly
+  (`CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, pinned toolchain,
+  commit-timestamped) and guarded by a fail-closed import graph (Gate A) so it
+  stays a thin forwarder — the daemon remains the sole receipt writer (ADR-0010).
+  The legacy `agent-receipts-hook` binary is now a thin deprecation shim that
+  `syscall.Exec`s into `obsigna-hook`, forwarding argv/env unchanged, so **every
+  existing runtime hook config keeps working** — update your `PostToolUse`/
+  `PreToolUse` `command` to `obsigna-hook` when convenient; the shim will be
+  removed in a future release. Unlike the daemon, mcp, and collector binaries,
+  the hook gets no `obsigna hook run` launcher: it is a per-tool-call callback,
+  and wrapping it would tax every event (ADR-0034 decision 5). Both binaries ship
+  in the same archive and Homebrew formula (`agent-receipts-hook`, unchanged for
+  now — formula/train consolidation is ADR-0034 PR 2).
+
 ## [0.17.0-alpha.1] - 2026-06-12
 
 ### Added
