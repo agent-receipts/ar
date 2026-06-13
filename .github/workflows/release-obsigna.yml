@@ -167,24 +167,23 @@ jobs:
           : > /tmp/attest-lines.txt
 
           # Rebuild one primary binary and assert it matches the shipped bytes.
-          #   $1 module dir | $2 reproducible-build.sh | $3 binary | $4 ADR
-          #   $5 main pkg   | $6 stamp ("version" to stamp -X main.version, else
-          #                  unstamped — the obsigna CLI ships with -s -w only).
-          # Each script rebuilds with GOWORK=off (published deps, not the in-tree
-          # workspace) and the CGO-off/-trimpath/-buildvcs=false flags kept in
-          # lockstep with daemon/.goreleaser.yaml. The shared daemon script takes
-          # the main pkg as a 4th arg so obsigna-daemon and the obsigna CLI both
-          # attest through it; the mcp/collector/hook scripts hardcode their own
-          # main pkg and harmlessly ignore the extra arg.
+          #   $1 module dir | $2 binary | $3 ADR | $4 main pkg
+          #   $5 stamp ("version" to stamp -X main.version, else unstamped — the
+          #            obsigna CLI ships with -s -w only).
+          # The one shared scripts/reproducible-build.sh rebuilds every binary
+          # with GOWORK=off (published deps, not the in-tree workspace) and the
+          # CGO-off/-trimpath/-buildvcs=false flags kept in lockstep with
+          # daemon/.goreleaser.yaml; it takes the main pkg as an explicit arg so
+          # every module's binary attests through the same script.
           attest() {
-            module="$1"; script="$2"; binary="$3"; adr="$4"; cmd="$5"; stamp="$6"
+            module="$1"; binary="$2"; adr="$3"; cmd="$4"; stamp="$5"
             echo "=== attesting ${binary} (${module}, ${adr}) ==="
             released_hash="$(sha256sum "released/${binary}" | awk '{print $1}')"
 
             ( cd "$module" && GOWORK=off go mod download )
             if [ "$stamp" = version ]; then ver="$VERSION"; else ver=""; fi
             GOWORK=off GOOS=linux GOARCH=amd64 \
-              "$script" "$module" "/tmp/${binary}-rebuild" "$ver" "$cmd"
+              scripts/reproducible-build.sh "$module" "/tmp/${binary}-rebuild" "$cmd" "$ver"
             rebuilt_hash="$(sha256sum "/tmp/${binary}-rebuild" | awk '{print $1}')"
 
             echo "released sha256: $released_hash"
@@ -211,11 +210,11 @@ jobs:
               "$binary" "$adr" "$released_hash" "$module" "$toolchain" "$ldflags" "$cmd" >> /tmp/attest-lines.txt
           }
 
-          attest daemon    daemon/scripts/reproducible-build.sh    obsigna-daemon    ADR-0031 ./cmd/obsigna-daemon    version
-          attest daemon    daemon/scripts/reproducible-build.sh    obsigna           ADR-0034 ./cmd/obsigna           none
-          attest mcp-proxy mcp-proxy/scripts/reproducible-build.sh obsigna-mcp       ADR-0033 ./cmd/obsigna-mcp       version
-          attest collector collector/scripts/reproducible-build.sh obsigna-collector ADR-0035 ./cmd/obsigna-collector version
-          attest hook      hook/scripts/reproducible-build.sh      obsigna-hook      ADR-0036 ./cmd/obsigna-hook      version
+          attest daemon    obsigna-daemon    ADR-0031 ./cmd/obsigna-daemon    version
+          attest daemon    obsigna           ADR-0034 ./cmd/obsigna           none
+          attest mcp-proxy obsigna-mcp       ADR-0033 ./cmd/obsigna-mcp       version
+          attest collector obsigna-collector ADR-0035 ./cmd/obsigna-collector version
+          attest hook      obsigna-hook      ADR-0036 ./cmd/obsigna-hook      version
 
           # One consolidated attestation block, marker-guarded so re-runs don't
           # duplicate it.

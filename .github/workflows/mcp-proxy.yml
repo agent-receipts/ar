@@ -35,8 +35,9 @@ jobs:
         run: go vet ./...
 
       - name: Build
-        # -trimpath mirrors the release build (mcp-proxy/.goreleaser.yaml): CI
-        # must exercise the same flags the attestation depends on (ADR-0033).
+        # -trimpath mirrors the release build (daemon/.goreleaser.yaml, the
+        # unified obsigna train): CI must exercise the same flags the attestation
+        # depends on (ADR-0033/0034).
         # ./cmd/... covers both the obsigna-mcp binary and the mcp-proxy shim.
         run: go build -trimpath ./cmd/...
 
@@ -94,8 +95,8 @@ jobs:
           mkdir -p "$a/repo" "$b/repo"
           git archive --format=tar HEAD | tar -x -C "$a/repo"
           git archive --format=tar HEAD | tar -x -C "$b/repo"
-          "$a/repo/mcp-proxy/scripts/reproducible-build.sh" "$a/repo/mcp-proxy" /tmp/mcp-a
-          "$b/repo/mcp-proxy/scripts/reproducible-build.sh" "$b/repo/mcp-proxy" /tmp/mcp-b
+          "$a/repo/scripts/reproducible-build.sh" "$a/repo/mcp-proxy" /tmp/mcp-a ./cmd/obsigna-mcp
+          "$b/repo/scripts/reproducible-build.sh" "$b/repo/mcp-proxy" /tmp/mcp-b ./cmd/obsigna-mcp
           h1="$(sha256sum /tmp/mcp-a | awk '{print $1}')"
           h2="$(sha256sum /tmp/mcp-b | awk '{print $1}')"
           echo "path-a sha256=$h1"

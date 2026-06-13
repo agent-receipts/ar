@@ -64,5 +64,6 @@ co-located daemon, so it ships inside the umbrella (ADR-0034 decision 6).
 The release is reproducible-build attested (Gate B, ADR-0036): `release-obsigna.yml`'s
 `reproducible-attest` job independently rebuilds `obsigna-hook` and asserts its sha256 matches
 the released artifact, publishing the hash. CI (`hook.yml`) also runs the lean-import guard
-(Gate A) and a cross-path byte-identity check. Keep `hook/scripts/reproducible-build.sh` in
-lockstep with the `obsigna-hook` build flags in `daemon/.goreleaser.yaml`.
+(Gate A) and a cross-path byte-identity check. The one shared
+`scripts/reproducible-build.sh` (used by every module's Gate B and the release attest) is kept
+in lockstep with the `obsigna-hook` build flags in `daemon/.goreleaser.yaml`.

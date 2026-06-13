@@ -35,8 +35,9 @@ jobs:
         run: go vet ./...
 
       - name: Build
-        # -trimpath mirrors the release build (collector/.goreleaser.yaml): CI
-        # must exercise the same flags the attestation depends on (ADR-0035).
+        # -trimpath mirrors the release build (daemon/.goreleaser.yaml, the
+        # unified obsigna train): CI must exercise the same flags the attestation
+        # depends on (ADR-0035/0034).
         # ./cmd/... covers both the obsigna-collector binary and the collector shim.
         run: go build -trimpath ./cmd/...
 
@@ -91,8 +92,8 @@ jobs:
           mkdir -p "$a/repo" "$b/repo"
           git archive --format=tar HEAD | tar -x -C "$a/repo"
           git archive --format=tar HEAD | tar -x -C "$b/repo"
-          "$a/repo/collector/scripts/reproducible-build.sh" "$a/repo/collector" /tmp/collector-a
-          "$b/repo/collector/scripts/reproducible-build.sh" "$b/repo/collector" /tmp/collector-b
+          "$a/repo/scripts/reproducible-build.sh" "$a/repo/collector" /tmp/collector-a ./cmd/obsigna-collector
+          "$b/repo/scripts/reproducible-build.sh" "$b/repo/collector" /tmp/collector-b ./cmd/obsigna-collector
           h1="$(sha256sum /tmp/collector-a | awk '{print $1}')"
           h2="$(sha256sum /tmp/collector-b | awk '{print $1}')"
           echo "path-a sha256=$h1"

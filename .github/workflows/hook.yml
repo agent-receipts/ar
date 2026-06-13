@@ -39,8 +39,9 @@ jobs:
         run: go vet ./...
 
       - name: Build
-        # -trimpath mirrors the release build (hook/.goreleaser.yaml): CI must
-        # exercise the same flags the attestation depends on (ADR-0036).
+        # -trimpath mirrors the release build (daemon/.goreleaser.yaml, the
+        # unified obsigna train): CI must exercise the same flags the attestation
+        # depends on (ADR-0036/0034).
         # ./cmd/... covers both the obsigna-hook binary and the agent-receipts-hook shim.
         run: go build -trimpath ./cmd/...
 
@@ -91,8 +92,8 @@ jobs:
           mkdir -p "$a/repo" "$b/repo"
           git archive --format=tar HEAD | tar -x -C "$a/repo"
           git archive --format=tar HEAD | tar -x -C "$b/repo"
-          "$a/repo/hook/scripts/reproducible-build.sh" "$a/repo/hook" /tmp/hook-a
-          "$b/repo/hook/scripts/reproducible-build.sh" "$b/repo/hook" /tmp/hook-b
+          "$a/repo/scripts/reproducible-build.sh" "$a/repo/hook" /tmp/hook-a ./cmd/obsigna-hook
+          "$b/repo/scripts/reproducible-build.sh" "$b/repo/hook" /tmp/hook-b ./cmd/obsigna-hook
           h1="$(sha256sum /tmp/hook-a | awk '{print $1}')"
           h2="$(sha256sum /tmp/hook-b | awk '{print $1}')"
           echo "path-a sha256=$h1"
