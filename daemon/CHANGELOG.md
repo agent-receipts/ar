@@ -10,14 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Release train renamed `daemon` → `obsigna`** (ADR-0034, PR 1) — the GoReleaser project, the release archive (`daemon_<ver>_<os>_<arch>.tar.gz` → `obsigna_<ver>_<os>_<arch>.tar.gz`), the tag scheme (`daemon/v*` → `obsigna/v*`), the release workflow (`release-daemon.yml` → `release-obsigna.yml`), and the Homebrew formulae (`obsigna-daemon` → `obsigna`, `obsigna-daemon-alpha` → `obsigna-alpha`) now carry the Obsigna brand, so `brew install agent-receipts/tap/obsigna` installs the toolset. This is the packaging-identity rename ADR-0031 deferred as a "downstream tap concern"; the next hop (folding `mcp-proxy`/`collector`/`hook` into the train) lands in PR 2. The tap's `tap_migrations.json` maps the retired formula names so `brew update && brew upgrade` moves existing installs with no manual step. **Binary names are unchanged** — the archive still ships `obsigna`, `obsigna-daemon`, and the `agent-receipts` shim, the Go module path stays `github.com/agent-receipts/ar/daemon`, and `did:agent-receipts-daemon:` issuer strings are untouched.
+- **Doctor output and error messages now say `obsigna doctor`** (not `agent-receipts doctor`), matching the renamed CLI.
 
 ### Fixed
 
+- **Linux `install.sh` extracts the release archive correctly** — the installer passed `tar --strip-components=1`, assuming a wrapping top-level directory, but GoReleaser archives are flat (binaries at the root, as the release attestation gate and `scripts/daemon_protocol/check.py` already assume). The strip dropped every file, so the post-extract smoke-test failed and no binaries were installed. Removed the strip so the curl-pipe installer works.
 - **`obsigna doctor` auto-detects the daemon's active chain** — with no `--chain-id`/`AGENTRECEIPTS_CHAIN_ID`, doctor now resolves the chain to inspect from the store's most recently written root chain (via `store.LatestRootChainID`) instead of assuming today's UTC date. The old default produced a spurious `chain head` warn and a `round-trip` **fail** ("did not land … the daemon may not be the sole writer") whenever the daemon's chain id was not literally today's UTC date — i.e. a configured `chain_id`, a daemon running across a UTC-midnight rollover, or a rolled `-N` suffix. The synthetic event was traversing the pipeline correctly all along; doctor was just polling the wrong chain. The bare UTC date remains the fallback only for an empty store.
-
-### Changed
-
-- **Doctor output and error messages now say `obsigna doctor`** (not `agent-receipts doctor`), matching the renamed CLI.
 
 ## [0.23.0] - 2026-06-12
 

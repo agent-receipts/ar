@@ -89,8 +89,10 @@ main() {
   step "Installing binaries to ${INSTALL_DIR}..."
   mkdir -p "$INSTALL_DIR"
   mkdir -p "${WORK_DIR}/extract"
-  # Tarballs have a top-level directory (e.g. obsigna_0.8.0_linux_amd64/); strip it.
-  tar -xzf "${WORK_DIR}/${ARCHIVE}" --strip-components=1 -C "${WORK_DIR}/extract"
+  # GoReleaser archives are flat: obsigna-daemon, obsigna, and agent-receipts sit
+  # at the archive root (no wrapping directory), matching how the release
+  # attestation gate and scripts/daemon_protocol/check.py extract them.
+  tar -xzf "${WORK_DIR}/${ARCHIVE}" -C "${WORK_DIR}/extract"
 
   # Smoke-test the extracted binary BEFORE overwriting any installed version.
   # If the new binary is incompatible (glibc mismatch, bad arch) the existing
