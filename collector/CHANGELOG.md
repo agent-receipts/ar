@@ -12,6 +12,14 @@ Conventional Commits is tracked in
 
 ## [Unreleased]
 
+> **This train has merged into the unified `obsigna` release train (ADR-0034, PR 2).**
+> collector no longer releases on `collector/v*`. `obsigna-collector` and the `collector`
+> deprecation shim now ship in the `obsigna_<ver>_<os>_<arch>.tar.gz` archive and the
+> `obsigna` Homebrew formula, versioned with the rest of the Go toolset. The `collector`
+> formula migrates to `obsigna` via the tap's `tap_migrations.json`. New entries are
+> recorded in `daemon/CHANGELOG.md` (the obsigna train changelog) from here on; the
+> per-module CI (Gate A + PR-side Gate B) still runs on changes here.
+
 ## [0.14.0] - 2026-06-13
 
 ### Changed
