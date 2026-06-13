@@ -60,13 +60,8 @@ export default defineConfig({
       customCss: ["./src/styles/custom.css"],
       sidebar: [
         {
-          label: "Getting Started",
-          items: [
-            { label: "Introduction", slug: "" },
-            { label: "Quick Start", slug: "getting-started/quick-start" },
-            { label: "Daemon Setup", slug: "getting-started/daemon-setup" },
-            { label: "End-to-End Walkthrough", slug: "getting-started/end-to-end" },
-          ],
+          label: "Overview",
+          slug: "",
         },
         {
           label: "Specification",
@@ -104,95 +99,6 @@ export default defineConfig({
           link: "/spec/",
         },
         {
-          label: "Go SDK",
-          items: [
-            { label: "Overview", slug: "sdk-go/overview" },
-            { label: "Installation", slug: "sdk-go/installation" },
-            { label: "API Reference", slug: "sdk-go/api-reference" },
-          ],
-        },
-        {
-          label: "TypeScript SDK",
-          items: [
-            { label: "Overview", slug: "sdk-ts/overview" },
-            { label: "Installation", slug: "sdk-ts/installation" },
-            { label: "API Reference", slug: "sdk-ts/api-reference" },
-          ],
-        },
-        {
-          label: "Python SDK",
-          items: [
-            { label: "Overview", slug: "sdk-py/overview" },
-            { label: "Installation", slug: "sdk-py/installation" },
-            { label: "API Reference", slug: "sdk-py/api-reference" },
-          ],
-        },
-        {
-          label: "Deployment",
-          items: [
-            {
-              label: "Ephemeral Compute",
-              slug: "deployment/ephemeral-compute",
-            },
-            {
-              label: "Collector Operations",
-              slug: "deployment/collector-operations",
-            },
-          ],
-        },
-        {
-          label: "MCP Proxy",
-          items: [
-            { label: "Overview", slug: "mcp-proxy/overview" },
-            { label: "Installation", slug: "mcp-proxy/installation" },
-            { label: "Configuration", slug: "mcp-proxy/configuration" },
-            { label: "Remote MCP Servers", slug: "mcp-proxy/remote-servers" },
-            { label: "Approval Server", slug: "mcp-proxy/approval-ui" },
-            { label: "Claude Desktop", slug: "mcp-proxy/claude-desktop" },
-            { label: "Claude Code", slug: "mcp-proxy/claude-code" },
-            { label: "Codex", slug: "mcp-proxy/codex" },
-            { label: "Cursor", slug: "mcp-proxy/cursor" },
-            { label: "Windsurf", slug: "mcp-proxy/windsurf" },
-            { label: "VS Code Copilot", slug: "mcp-proxy/vscode-copilot" },
-            {
-              label: "JetBrains AI Assistant",
-              slug: "mcp-proxy/jetbrains",
-            },
-            { label: "Cline", slug: "mcp-proxy/cline" },
-          ],
-        },
-        {
-          label: "Hook",
-          items: [
-            { label: "Overview", slug: "hook/overview" },
-            { label: "Installation", slug: "hook/installation" },
-            { label: "Claude Code", slug: "hook/claude-code" },
-          ],
-        },
-        {
-          label: "Dashboard",
-          items: [
-            { label: "Overview", slug: "dashboard/overview" },
-            { label: "Installation", slug: "dashboard/installation" },
-          ],
-        },
-        {
-          label: "OpenClaw",
-          items: [
-            { label: "Overview", slug: "openclaw/overview" },
-            { label: "Installation", slug: "openclaw/installation" },
-            { label: "CLI Reference", slug: "openclaw/cli-reference" },
-            { label: "Agent Tools", slug: "openclaw/agent-tools" },
-          ],
-        },
-        {
-          label: "Reference",
-          items: [
-            { label: "CLI Commands", slug: "reference/cli-commands" },
-            { label: "Configuration", slug: "reference/configuration" },
-          ],
-        },
-        {
           label: "Ecosystem",
           items: [
             { label: "Overview", slug: "ecosystem" },
@@ -223,6 +129,11 @@ export default defineConfig({
               slug: "blog/agent-security-tooling-landscape-april-2026",
             },
           ],
+        },
+        {
+          label: "SDKs & Tooling →",
+          link: "https://obsigna.dev",
+          attrs: { target: "_blank" },
         },
       ],
     }),
