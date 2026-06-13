@@ -18,7 +18,7 @@ export default defineConfig({
     starlight({
       title: "Obsigna",
       tagline: "Tooling for the Agent Receipts protocol",
-      plugins: [starlightThemeFlexoki()],
+      plugins: [starlightThemeFlexoki({ accentColor: "orange" })],
       head: [
         {
           tag: "link",

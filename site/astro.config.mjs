@@ -23,7 +23,7 @@ export default defineConfig({
     starlight({
       title: "Agent Receipts",
       tagline: "Cryptographically signed audit trails for AI agent actions",
-      plugins: [starlightThemeFlexoki()],
+      plugins: [starlightThemeFlexoki({ accentColor: "green" })],
       head: [
         {
           tag: "link",
