@@ -64,10 +64,10 @@ receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010
 
 ```mermaid
 flowchart LR
-  A["Agent process<br/>(emitter — no key)"] -->|event frame, Unix socket| D["agent-receipts-daemon<br/>(sole signer, sole key)"]
-  D -->|signed receipt| S[("receipts.db")]
-  D -.->|rotation / checkpoint| K[["external anchor<br/>(operator-controlled? no)"]]
-  P{{"peer credential<br/>SO_PEERCRED at accept()"}} -.-> D
+  A["Agent process (emitter, holds no key)"] -->|event frame over Unix socket| D["agent-receipts-daemon (sole signer, sole key)"]
+  P["peer credential: SO_PEERCRED captured at accept()"] -->|attested into receipt| D
+  D -->|signed receipt| S["receipts.db"]
+  D -->|rotation and checkpoint records| K["external anchor (not daemon-controlled)"]
 ```
 
 This boundary is enforced in code, not merely asserted:
