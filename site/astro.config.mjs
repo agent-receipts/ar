@@ -68,14 +68,18 @@ export default defineConfig({
           tag: "meta",
           attrs: { name: "twitter:card", content: "summary_large_image" },
         },
-        // Privacy-friendly, cookieless analytics.
+        // Privacy-friendly, cookieless analytics (Plausible per-site script).
         {
           tag: "script",
           attrs: {
-            defer: true,
-            "data-domain": "agentreceipts.ai",
-            src: "https://plausible.io/js/script.js",
+            async: true,
+            src: "https://plausible.io/js/pa-wNWKLsZ7QhfgLp3YwwaYB.js",
           },
+        },
+        {
+          tag: "script",
+          content:
+            "window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()",
         },
       ],
       social: [

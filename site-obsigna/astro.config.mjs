@@ -63,15 +63,6 @@ export default defineConfig({
           tag: "meta",
           attrs: { name: "twitter:card", content: "summary_large_image" },
         },
-        // Privacy-friendly, cookieless analytics.
-        {
-          tag: "script",
-          attrs: {
-            defer: true,
-            "data-domain": "obsigna.dev",
-            src: "https://plausible.io/js/script.js",
-          },
-        },
       ],
       social: [
         {
