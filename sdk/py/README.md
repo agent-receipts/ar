@@ -138,7 +138,7 @@ print(result.action_type, result.risk_level)
 ## Delivering receipts to a remote collector
 
 When the agent host and the receipt-storage host differ, sign receipts
-client-side and POST them to an `agent-receipts-collector` over HTTPS. This is an
+client-side and POST them to an `obsigna-collector` over HTTPS. This is an
 enterprise / multi-host shape, not the first-run path — the daemon above is what
 most adopters want.
 

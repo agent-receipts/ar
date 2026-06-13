@@ -164,7 +164,7 @@ differ, or when you are aggregating receipts from multiple agents across
 multiple hosts. Unlike the daemon emitter (which forwards *unsigned events* for
 daemon-side signing), `emitters` deliver *already-signed* `receipt.AgentReceipt`
 values — sign client-side (or accept pre-signed receipts), then POST them to a
-deployed `agent-receipts-collector`.
+deployed `obsigna-collector`.
 
 <!-- snippet-check: no-run -->
 ```go
