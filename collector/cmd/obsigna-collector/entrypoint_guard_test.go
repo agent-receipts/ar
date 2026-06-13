@@ -66,7 +66,10 @@ func parseGoreleaserBuilds(t *testing.T, yaml string) []goreleaserBuild {
 // points the obsigna-collector source at a collector binary, or builds the
 // collector binary from the real collector source — this fails.
 func TestObsignaCollectorIsPrimaryEntrypoint(t *testing.T) {
-	yaml := readFile(t, "../../.goreleaser.yaml")
+	// The collector is built by the unified obsigna train (ADR-0034 PR 2): there is
+	// no per-module collector/.goreleaser.yaml anymore, so this guard reads the
+	// single GoReleaser config in the daemon module that owns the umbrella.
+	yaml := readFile(t, "../../../daemon/.goreleaser.yaml")
 	builds := parseGoreleaserBuilds(t, yaml)
 
 	var primary *goreleaserBuild

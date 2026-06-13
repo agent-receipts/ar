@@ -131,8 +131,8 @@ jobs:
           mkdir -p "$a/repo" "$b/repo"
           git archive --format=tar HEAD | tar -x -C "$a/repo"
           git archive --format=tar HEAD | tar -x -C "$b/repo"
-          "$a/repo/daemon/scripts/reproducible-build.sh" "$a/repo/daemon" /tmp/daemon-a
-          "$b/repo/daemon/scripts/reproducible-build.sh" "$b/repo/daemon" /tmp/daemon-b
+          "$a/repo/scripts/reproducible-build.sh" "$a/repo/daemon" /tmp/daemon-a ./cmd/obsigna-daemon
+          "$b/repo/scripts/reproducible-build.sh" "$b/repo/daemon" /tmp/daemon-b ./cmd/obsigna-daemon
           h1="$(sha256sum /tmp/daemon-a | awk '{print $1}')"
           h2="$(sha256sum /tmp/daemon-b | awk '{print $1}')"
           echo "path-a sha256=$h1"

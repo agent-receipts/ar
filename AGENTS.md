@@ -128,5 +128,5 @@ When working in this repo as an AI coding agent, these rules apply in addition t
 - **Always run the full test suite** for any SDK you change before proposing a PR
 - **Cross-SDK changes require cross-language test verification** — if you change receipt format in one SDK, verify the cross-language tests still pass
 - **Write tests first** — new functions must have test coverage before pushing; writing tests first forces you to think about edge cases (nil inputs, corruption, concurrency)
-- **Use git worktrees** for new work — do not edit directly on main or shared branches, to avoid conflicts with other agents or in-progress work
+- **Use git worktrees** for new work — do not edit directly on main or shared branches, to avoid conflicts with other agents or in-progress work. Once the worktree exists, switch your session's working directory *into* it (Claude Code: the `EnterWorktree` tool, or `EnterWorktree` with the worktree `path`) and run commands from there. Do **not** prefix every shell command with `cd <worktree> && …`: the shell resets to the session's primary directory between calls, so a per-command `cd` re-triggers a permission prompt on every single invocation.
 - **Self-review before committing** — follow the Completing work checklist above

@@ -54,13 +54,16 @@ when building or installing the hook binary.
 
 ## Release
 
-Tagged `hook/vX.Y.Z` — triggers `.github/workflows/release-hook.yml`, which runs GoReleaser
-from the `hook/` directory and publishes `obsigna-hook` plus the `agent-receipts-hook` shim
-to the Homebrew tap (formula name `agent-receipts-hook`, installs both binaries).
-The `release-hook` GitHub environment must exist before the first release.
+The hook ships in the unified **obsigna** release train (ADR-0034) — it no longer has its own
+tag or workflow. Tagging `obsigna/vX.Y.Z` triggers `.github/workflows/release-obsigna.yml`,
+which builds `obsigna-hook` plus the `agent-receipts-hook` shim (from the `hook/` module, via a
+per-build `dir:`) into the umbrella `obsigna_<ver>_<os>_<arch>.tar.gz` archive and the `obsigna`
+Homebrew formula. There is no standalone hook formula — the hook is non-functional without a
+co-located daemon, so it ships inside the umbrella (ADR-0034 decision 6).
 
-The release is reproducible-build attested (Gate B, ADR-0036): the workflow independently
-rebuilds `obsigna-hook` and asserts its sha256 matches the released artifact, publishing the
-hash. CI (`hook.yml`) also runs the lean-import guard (Gate A) and a cross-path byte-identity
-check. Keep `hook/scripts/reproducible-build.sh` in lockstep with the `obsigna-hook` build
-flags in `hook/.goreleaser.yaml`.
+The release is reproducible-build attested (Gate B, ADR-0036): `release-obsigna.yml`'s
+`reproducible-attest` job independently rebuilds `obsigna-hook` and asserts its sha256 matches
+the released artifact, publishing the hash. CI (`hook.yml`) also runs the lean-import guard
+(Gate A) and a cross-path byte-identity check. The one shared
+`scripts/reproducible-build.sh` (used by every module's Gate B and the release attest) is kept
+in lockstep with the `obsigna-hook` build flags in `daemon/.goreleaser.yaml`.

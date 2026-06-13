@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-06-13
+
+### Changed
+
+- **Go toolset folded into one obsigna release train** (ADR-0034, PR 2) — `mcp-proxy`, `collector`, and `hook` no longer release on their own `mcp-proxy/v*`, `collector/v*`, and `hook/v*` trains. The single obsigna GoReleaser (`daemon/.goreleaser.yaml`) now builds all five primary binaries — `obsigna`, `obsigna-daemon`, `obsigna-mcp`, `obsigna-collector`, `obsigna-hook` — plus their four deprecation shims (`agent-receipts`, `mcp-proxy`, `collector`, `agent-receipts-hook`), each from its own Go module via a per-build `dir:` + `GOWORK=off` so published dependencies still resolve per module (not the in-tree `sdk/go`). All nine binaries ship in one `obsigna_<ver>_<os>_<arch>.tar.gz`. The standalone `release-mcp-proxy.yml`, `release-collector.yml`, and `release-hook.yml` workflows are deleted; their release-side reproducible-build attestations fold into `release-obsigna.yml`, which now rebuilds and publishes a sha256 for each of the five primary binaries from the one archive. Per-module CI (Gate A + the PR-side Gate B two-path byte-identity check) is unchanged.
+- **One umbrella Homebrew formula installs the whole toolset** (ADR-0034 decisions 4 & 6) — `brew install agent-receipts/tap/obsigna` now installs all five binaries and four shims. The hook returns to the umbrella, so the formula no longer directs users to a separate `agent-receipts-hook` formula. The retired `mcp-proxy`, `mcp-proxy-alpha`, `collector`, `agent-receipts-hook`, and `agent-receipts-hook-alpha` formulae migrate to `obsigna`/`obsigna-alpha` via the tap's `tap_migrations.json`, so `brew update && brew upgrade` moves existing installs with no manual step.
+- **Build tooling de-duplicated** — the now-orphaned per-module `mcp-proxy/.goreleaser.yaml`, `collector/.goreleaser.yaml`, and `hook/.goreleaser.yaml` (whose only consumers were the deleted release workflows) are removed; `daemon/.goreleaser.yaml` is the single GoReleaser config. The four per-module `reproducible-build.sh` scripts collapse into one `scripts/reproducible-build.sh` that takes the main package as an argument, so the determinism flags can no longer drift per module; every module's Gate B and the release attest call it.
+
+This is the unified-version step of ADR-0034 decision 3: every tool now ships at the obsigna train's version even when its bytes are unchanged (byte-identity is still proven by Gate B). The obsigna CLI is now attested too, alongside the four binaries that already were. **Go module paths (`github.com/agent-receipts/ar/...`), the `obsigna mcp`/`obsigna collector` launcher table, and `did:agent-receipts-daemon:` issuer strings are unchanged.**
+
 ## [0.24.0] - 2026-06-13
 
 ### Changed

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **This train has merged into the unified `obsigna` release train (ADR-0034, PR 2).**
+> hook no longer releases on `hook/v*`. `obsigna-hook` and the `agent-receipts-hook`
+> deprecation shim now ship in the `obsigna_<ver>_<os>_<arch>.tar.gz` archive and the
+> `obsigna` Homebrew formula, versioned with the rest of the Go toolset. The hook returns
+> to the umbrella formula (ADR-0034 decision 6 — it is non-functional without a co-located
+> daemon), so there is no standalone hook formula: `agent-receipts-hook` and
+> `agent-receipts-hook-alpha` migrate to `obsigna`/`obsigna-alpha` via the tap's
+> `tap_migrations.json`. New entries are recorded in `daemon/CHANGELOG.md` (the obsigna
+> train changelog) from here on; the per-module CI (Gate A + PR-side Gate B) still runs on
+> changes here.
+
 ## [0.18.0] - 2026-06-13
 
 Graduates `0.18.0-alpha.1` after the alpha pass. No code changes since the alpha; the only change is pinning the now-released stable `github.com/agent-receipts/ar/sdk/go` `v0.19.0` (the alpha pinned `v0.19.0-alpha.1`). See the `0.18.0-alpha.1` entry below for the full surface (the `agent-receipts-hook` → `obsigna-hook` binary rename, ADR-0036).

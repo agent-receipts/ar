@@ -68,7 +68,10 @@ func parseGoreleaserBuilds(t *testing.T, yaml string) []goreleaserBuild {
 // source at an mcp-proxy binary, or builds the mcp-proxy binary from the real
 // proxy source — this fails.
 func TestObsignaMCPIsPrimaryEntrypoint(t *testing.T) {
-	yaml := readFile(t, "../../.goreleaser.yaml")
+	// The proxy is built by the unified obsigna train (ADR-0034 PR 2): there is no
+	// per-module mcp-proxy/.goreleaser.yaml anymore, so this guard reads the single
+	// GoReleaser config in the daemon module that owns the umbrella.
+	yaml := readFile(t, "../../../daemon/.goreleaser.yaml")
 	builds := parseGoreleaserBuilds(t, yaml)
 
 	var primary *goreleaserBuild

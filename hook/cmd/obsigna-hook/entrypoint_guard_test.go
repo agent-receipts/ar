@@ -68,7 +68,10 @@ func parseGoreleaserBuilds(t *testing.T, yaml string) []goreleaserBuild {
 // binary, or builds the agent-receipts-hook binary from the real hook source —
 // this fails.
 func TestObsignaHookIsPrimaryEntrypoint(t *testing.T) {
-	yaml := readFile(t, "../../.goreleaser.yaml")
+	// The hook is built by the unified obsigna train (ADR-0034 PR 2): there is no
+	// per-module hook/.goreleaser.yaml anymore, so this guard reads the single
+	// GoReleaser config in the daemon module that owns the umbrella.
+	yaml := readFile(t, "../../../daemon/.goreleaser.yaml")
 	builds := parseGoreleaserBuilds(t, yaml)
 
 	var primary *goreleaserBuild

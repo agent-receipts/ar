@@ -11,6 +11,15 @@ tracked in [#253](https://github.com/agent-receipts/ar/issues/253).
 
 ## [Unreleased]
 
+> **This train has merged into the unified `obsigna` release train (ADR-0034, PR 2).**
+> mcp-proxy no longer releases on `mcp-proxy/v*`. `obsigna-mcp` and the `mcp-proxy`
+> deprecation shim now ship in the `obsigna_<ver>_<os>_<arch>.tar.gz` archive and the
+> `obsigna` Homebrew formula, versioned with the rest of the Go toolset. The `mcp-proxy`
+> and `mcp-proxy-alpha` formulae migrate to `obsigna`/`obsigna-alpha` via the tap's
+> `tap_migrations.json`. New entries are recorded in `daemon/CHANGELOG.md` (the obsigna
+> train changelog) from here on; the per-module CI (Gate A + PR-side Gate B) still runs
+> on changes here.
+
 ## [0.15.0-alpha.2] - 2026-06-13
 
 ### Fixed
