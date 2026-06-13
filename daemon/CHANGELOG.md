@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-06-13
+
 ### Changed
 
 - **Release train renamed `daemon` → `obsigna`** (ADR-0034, PR 1) — the GoReleaser project, the release archive (`daemon_<ver>_<os>_<arch>.tar.gz` → `obsigna_<ver>_<os>_<arch>.tar.gz`), the tag scheme (`daemon/v*` → `obsigna/v*`), the release workflow (`release-daemon.yml` → `release-obsigna.yml`), and the Homebrew formulae (`obsigna-daemon` → `obsigna`, `obsigna-daemon-alpha` → `obsigna-alpha`) now carry the Obsigna brand, so `brew install agent-receipts/tap/obsigna` installs the toolset. This is the packaging-identity rename ADR-0031 deferred as a "downstream tap concern"; the next hop (folding `mcp-proxy`/`collector`/`hook` into the train) lands in PR 2. The tap's `tap_migrations.json` maps the retired formula names so `brew update && brew upgrade` moves existing installs with no manual step. **Binary names are unchanged** — the archive still ships `obsigna`, `obsigna-daemon`, and the `agent-receipts` shim, the Go module path stays `github.com/agent-receipts/ar/daemon`, and `did:agent-receipts-daemon:` issuer strings are untouched.
