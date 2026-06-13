@@ -12,6 +12,8 @@ Conventional Commits is tracked in
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-13
+
 ### Changed
 
 - **Binary renamed `collector` → `obsigna-collector` (ADR-0035).** The collector is
