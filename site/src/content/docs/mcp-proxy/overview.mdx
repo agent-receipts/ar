@@ -3,9 +3,9 @@ title: MCP Proxy
 description: Transparent audit proxy for MCP servers — classifies and scores tool calls, applies proxy-layer policy rules, and forwards events to obsigna-daemon, which signs and stores the receipts.
 ---
 
-The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, Claude Code, etc.) and any MCP server. It intercepts every tool call, classifies and scores it, and applies proxy-layer policy rules — then forwards the completed event to `obsigna-daemon` over a Unix socket. The daemon redacts sensitive data, signs an Ed25519 receipt, hash-chains it, and persists it. The proxy holds no key and no store of its own ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)) — so a compromised proxy cannot rewrite the chain. It does this without modifying the server or client.
+The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, Claude Code, etc.) and any MCP server. It intercepts every tool call, classifies and scores it, and applies proxy-layer policy rules — then forwards the completed event to `obsigna-daemon` over a Unix socket. The daemon redacts sensitive data, signs an Ed25519 receipt, hash-chains it, and persists it. The proxy holds no key and no store of its own ([ADR-0010](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0010-daemon-process-separation.md)) — so a compromised proxy cannot rewrite the chain. It does this without modifying the server or client.
 
-**Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy)
+**Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/obsigna/tree/main/mcp-proxy)
 
 :::note[The default policy includes a `pause_high_risk` rule — approvals are opt-in]
 The built-in policy contains a `pause_high_risk` rule (`min_risk_score: 50`). The approval listener is **off by default**, so a paused call fails fast with a clear error (JSON-RPC code `-32003`, message `no approver configured…`) rather than timing out. To approve high-risk calls interactively instead, see [Approval Server](/mcp-proxy/approval-ui/).

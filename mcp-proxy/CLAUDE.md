@@ -1,6 +1,6 @@
 # mcp-proxy
 
-Thin MCP proxy: enforces policy on tool calls and forwards completed events to the [agent-receipts daemon](https://github.com/agent-receipts/ar/tree/main/daemon) for signing and persistence. The daemon is the sole writer; the proxy holds no SQLite store of its own (since v0.9.0 — see ADR-0010, [#421](https://github.com/agent-receipts/ar/pull/421), [#453](https://github.com/agent-receipts/ar/issues/453)).
+Thin MCP proxy: enforces policy on tool calls and forwards completed events to the [agent-receipts daemon](https://github.com/agent-receipts/obsigna/tree/main/daemon) for signing and persistence. The daemon is the sole writer; the proxy holds no SQLite store of its own (since v0.9.0 — see ADR-0010, [#421](https://github.com/agent-receipts/obsigna/pull/421), [#453](https://github.com/agent-receipts/obsigna/issues/453)).
 
 ## Toolchain
 

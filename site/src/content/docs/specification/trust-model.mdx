@@ -60,7 +60,7 @@ The production integration surfaces — the MCP proxy and the PostToolUse hook �
 ship as **thin emitters with no key material of their own**. They send an event
 frame over a local Unix socket; a separate `obsigna-daemon` process
 builds, canonicalizes, signs, and stores the
-receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)).
+receipt ([ADR-0010](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0010-daemon-process-separation.md)).
 Delivery semantics differ by emitter: the MCP proxy logs emit failures and lets
 the tool call proceed, while the hook exits non-zero so a failure to record the
 action is surfaced.
@@ -94,7 +94,7 @@ truth of which process sent it.
 The daemon boundary defends against the agent. Defending against the *operator*
 — or against a daemon that has itself been compromised — is a different boundary,
 and Agent Receipts answers it with two interlocking constructs from
-[ADR-0015](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md):
+[ADR-0015](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md):
 
 1. **Non-extractable key custody.** The `KeySource` interface lets the signing
    key live in an HSM (PKCS#11) or a cloud KMS, where the daemon submits

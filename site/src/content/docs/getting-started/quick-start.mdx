@@ -11,7 +11,7 @@ application. Your code sends tool-call *events* over a local Unix socket; the da
 holds the Ed25519 signing key, builds the receipt, signs it, and appends it to the
 hash-chained store. The signing key never enters your process — so the audit trail
 holds up even if the agent is compromised. This is the canonical deployment shape
-([ADR-0022](https://github.com/agent-receipts/ar/blob/main/docs/adr/0022-canonical-deployment-shape.md)),
+([ADR-0022](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0022-canonical-deployment-shape.md)),
 and it is the first thing you should reach for.
 
 ```mermaid
@@ -283,8 +283,8 @@ print(f"Signature valid: {valid}")  # True
 ```
 
 The equivalent TypeScript and Go signing APIs are documented in each SDK README
-([TypeScript](https://github.com/agent-receipts/ar/tree/main/sdk/ts),
-[Go](https://github.com/agent-receipts/ar/tree/main/sdk/go)). The same
+([TypeScript](https://github.com/agent-receipts/obsigna/tree/main/sdk/ts),
+[Go](https://github.com/agent-receipts/obsigna/tree/main/sdk/go)). The same
 "not for production" caveat applies to all of them.
 
 ## Next steps

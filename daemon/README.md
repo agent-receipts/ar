@@ -7,7 +7,7 @@ captures the connecting peer's OS-attested credentials, canonicalises the
 receipt (RFC 8785), signs it (Ed25519), and persists it.
 
 See [ADR-0010](../docs/adr/0010-daemon-process-separation.md) for design
-rationale and [issue #236](https://github.com/agent-receipts/ar/issues/236)
+rationale and [issue #236](https://github.com/agent-receipts/obsigna/issues/236)
 for the work breakdown.
 
 This is **Phase 1** of the daemon roll-out — the foundation slice. It ships

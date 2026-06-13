@@ -35,7 +35,7 @@ AI agents that read files, run commands, and browse the web are powerful — but
 
 ### Beyond local storage
 
-Today, this SDK stores receipts locally in SQLite — fully under your control. The [Agent Receipts protocol](https://github.com/agent-receipts/ar/tree/main/spec) is designed for receipts to travel further when you choose: publishing to a shared ledger, forwarding to a compliance system, or exchanging between agents as proof of prior actions. The receipts are portable W3C Verifiable Credentials, but where they go is always your decision.
+Today, this SDK stores receipts locally in SQLite — fully under your control. The [Agent Receipts protocol](https://github.com/agent-receipts/obsigna/tree/main/spec) is designed for receipts to travel further when you choose: publishing to a shared ledger, forwarding to a compliance system, or exchanging between agents as proof of prior actions. The receipts are portable W3C Verifiable Credentials, but where they go is always your decision.
 
 ## Install
 
@@ -301,7 +301,7 @@ pnpm run build         # compile to dist/
 | [agent-receipts/spec](https://github.com/agent-receipts/spec) | Protocol specification, JSON Schemas, canonical taxonomy |
 | **@obsigna/sdk-ts** (this package) | TypeScript SDK |
 | [ojongerius/attest](https://github.com/ojongerius/attest) | MCP proxy + CLI (reference implementation, consumes this SDK) |
-| [agent-receipts/sdk-py](https://github.com/agent-receipts/ar/tree/main/sdk/py) | Python SDK ([PyPI](https://pypi.org/project/obsigna/)) |
+| [agent-receipts/sdk-py](https://github.com/agent-receipts/obsigna/tree/main/sdk/py) | Python SDK ([PyPI](https://pypi.org/project/obsigna/)) |
 
 ## License
 

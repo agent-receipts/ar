@@ -14,7 +14,7 @@ The **agent process is untrusted with respect to the receipt chain.** It cannot 
 
 - **The host OS.** Process isolation, filesystem permissions, and user/group separation are how the daemon's exclusivity over the signing key is enforced.
 - **The init system.** systemd, launchd, and the Windows Service Manager are responsible for starting the daemon as the right user with the right permissions and for restarting it on crash.
-- **The daemon binary.** Supply-chain integrity of the daemon binary itself is out of scope for this document; tracked separately (see [#151](https://github.com/agent-receipts/ar/issues/151)).
+- **The daemon binary.** Supply-chain integrity of the daemon binary itself is out of scope for this document; tracked separately (see [#151](https://github.com/agent-receipts/obsigna/issues/151)).
 - **User/group separation between emitter and daemon.** Emitters run as the agent user; the daemon runs as `agentreceipts`. The DB is `0640` owned `agentreceipts:agentreceipts-read`; the public key is `0644` world-readable. If those modes are violated by misconfiguration, the daemon's exclusivity property collapses.
 - **Honest system clock.** Replay detection via timestamps and the temporal ordering of rotation events both assume the host clock is honest. An attacker who controls the clock can backdate events; the chain hash protects ordering relative to other receipts but cannot, on its own, attest to wall-clock truth.
 - **The external anchor sink, when configured.** The post-compromise integrity guarantee (see [What we explicitly claim](#what-we-explicitly-claim)) is conditional on an operator-configured external sink that the daemon does not control. Without an anchor, post-compromise integrity remains aspirational.
@@ -56,7 +56,7 @@ A compromised agent process is now a defended threat, not an admitted gap. The a
 
 An attacker who compromises the daemon can drop the most recent N receipts and present a clean prefix. Chain verification alone cannot detect this — the truncated chain is internally consistent.
 
-**Mitigation: external anchor checkpoints (ADR-0015 Phase B).** The daemon writes `(seq, tip_hash, public_key_fingerprint)` triples to an operator-configured external sink at configurable intervals (default: hourly). `tip_hash` commits to the most recently appended receipt itself, so a verifier comparing the local chain against the most recent anchored checkpoint detects truncation as a mismatch on either `seq` or `tip_hash`. ADR-0015 Phase A ships rotation anchoring; Phase B adds checkpoint anchoring. Tail-truncation defence is **partial until Phase B lands**; tracked at [#171](https://github.com/agent-receipts/ar/issues/171).
+**Mitigation: external anchor checkpoints (ADR-0015 Phase B).** The daemon writes `(seq, tip_hash, public_key_fingerprint)` triples to an operator-configured external sink at configurable intervals (default: hourly). `tip_hash` commits to the most recently appended receipt itself, so a verifier comparing the local chain against the most recent anchored checkpoint detects truncation as a mismatch on either `seq` or `tip_hash`. ADR-0015 Phase A ships rotation anchoring; Phase B adds checkpoint anchoring. Tail-truncation defence is **partial until Phase B lands**; tracked at [#171](https://github.com/agent-receipts/obsigna/issues/171).
 
 ### Forged rotation history
 
@@ -109,7 +109,7 @@ The IPC transport between emitter and daemon is a Unix domain socket (Linux/macO
 
 ### Supply-chain compromise of the daemon binary
 
-A malicious daemon binary can do anything. Out of scope here; tracked separately at [#151](https://github.com/agent-receipts/ar/issues/151) (binary signing, reproducible builds, distribution channel hardening).
+A malicious daemon binary can do anything. Out of scope here; tracked separately at [#151](https://github.com/agent-receipts/obsigna/issues/151) (binary signing, reproducible builds, distribution channel hardening).
 
 ## Current implementation status
 
@@ -127,11 +127,11 @@ What remains partial — and therefore bounds the claims above:
 
 | Concern | ADR | Issue | Status |
 |---|---|---|---|
-| Daemon process separation (signing/storage isolation from agent) | [ADR-0010](adr/0010-daemon-process-separation.md) | [#236](https://github.com/agent-receipts/ar/issues/236) | Accepted; shipped — MCP proxy and hook are keyless emitters; the daemon is the sole signer |
-| Key rotation, BYOK, external anchoring | [ADR-0015](adr/0015-key-rotation-byok-anchoring.md) | [#307](https://github.com/agent-receipts/ar/issues/307) (PR [#319](https://github.com/agent-receipts/ar/pull/319)) | Accepted; rotation + anchor-first writes + file-log reference adapter shipped; production anchor adapters & checkpoint anchoring (Phase B), HSM/KMS (Phase C) pending |
-| DID-based identity for issuer/key resolution | [ADR-0007](adr/0007-did-method-strategy.md) | [#46](https://github.com/agent-receipts/ar/issues/46) | Proposed |
-| Algorithm agility (PQ-ready signing) | — (`KeySource` interface in ADR-0015 is algorithm-agnostic by design) | [#32](https://github.com/agent-receipts/ar/issues/32) | Tracked |
-| Supply-chain integrity of the daemon binary | — | [#151](https://github.com/agent-receipts/ar/issues/151) | Tracked |
-| Key file permission hardening | — | [#156](https://github.com/agent-receipts/ar/issues/156) | Tracked |
+| Daemon process separation (signing/storage isolation from agent) | [ADR-0010](adr/0010-daemon-process-separation.md) | [#236](https://github.com/agent-receipts/obsigna/issues/236) | Accepted; shipped — MCP proxy and hook are keyless emitters; the daemon is the sole signer |
+| Key rotation, BYOK, external anchoring | [ADR-0015](adr/0015-key-rotation-byok-anchoring.md) | [#307](https://github.com/agent-receipts/obsigna/issues/307) (PR [#319](https://github.com/agent-receipts/obsigna/pull/319)) | Accepted; rotation + anchor-first writes + file-log reference adapter shipped; production anchor adapters & checkpoint anchoring (Phase B), HSM/KMS (Phase C) pending |
+| DID-based identity for issuer/key resolution | [ADR-0007](adr/0007-did-method-strategy.md) | [#46](https://github.com/agent-receipts/obsigna/issues/46) | Proposed |
+| Algorithm agility (PQ-ready signing) | — (`KeySource` interface in ADR-0015 is algorithm-agnostic by design) | [#32](https://github.com/agent-receipts/obsigna/issues/32) | Tracked |
+| Supply-chain integrity of the daemon binary | — | [#151](https://github.com/agent-receipts/obsigna/issues/151) | Tracked |
+| Key file permission hardening | — | [#156](https://github.com/agent-receipts/obsigna/issues/156) | Tracked |
 
-The `KeySource` interface in ADR-0015 is algorithm-agnostic by design — adding a post-quantum signing scheme later does not force a redesign of the interface, only a new adapter. This is the structural prerequisite for [#32](https://github.com/agent-receipts/ar/issues/32).
+The `KeySource` interface in ADR-0015 is algorithm-agnostic by design — adding a post-quantum signing scheme later does not force a redesign of the interface, only a new adapter. This is the structural prerequisite for [#32](https://github.com/agent-receipts/obsigna/issues/32).

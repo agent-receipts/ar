@@ -16,7 +16,7 @@ Runs as the logged-in user. No root or dedicated system user needed. Data lives 
 ### Quick install (Linux only)
 
 ```sh
-curl -fsSL https://github.com/agent-receipts/ar/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/agent-receipts/obsigna/releases/latest/download/install.sh | sh
 ```
 
 Handles binary download, key generation, unit install, and service start in one step. See [`daemon/install.sh`](../../install.sh) for details.
@@ -31,8 +31,8 @@ Install the binary (pick one):
 
 ```sh
 # Build from source (go install @latest is not yet supported — see daemon/README.md):
-git clone https://github.com/agent-receipts/ar
-cd ar/daemon
+git clone https://github.com/agent-receipts/obsigna
+cd obsigna/daemon
 go build -o ~/.local/bin/obsigna-daemon ./cmd/obsigna-daemon
 ```
 

@@ -3,7 +3,7 @@ title: Collector Operations Guide
 description: Day-2 operations guide for running the Agent Receipts reference collector in production — deployment shape, backing stores, authentication, scaling, observability, and trust boundaries.
 ---
 
-This guide covers how to run the [reference collector](https://github.com/agent-receipts/ar/tree/main/collector) in production. It is the day-2 operations story — how the process is deployed, kept running, and observed. It does **not** duplicate the wire contract (POST `/receipts` semantics, status codes, validation scope) — that lives in [ADR-0020](https://github.com/agent-receipts/ar/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md) and the [collector README](https://github.com/agent-receipts/ar/blob/main/collector/README.md). Cross-reference those for anything about the HTTP API itself.
+This guide covers how to run the [reference collector](https://github.com/agent-receipts/obsigna/tree/main/collector) in production. It is the day-2 operations story — how the process is deployed, kept running, and observed. It does **not** duplicate the wire contract (POST `/receipts` semantics, status codes, validation scope) — that lives in [ADR-0020](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md) and the [collector README](https://github.com/agent-receipts/obsigna/blob/main/collector/README.md). Cross-reference those for anything about the HTTP API itself.
 
 The companion guide for the adopter side — how your agent code emits receipts to the collector from ephemeral compute — is [Ephemeral Compute Deployment](/deployment/ephemeral-compute/).
 
@@ -80,7 +80,7 @@ A Postgres backing store is on the roadmap for deployments that need horizontal 
 
 **Trade-offs:** Postgres adds infrastructure complexity and a network hop. For most v0 deployments SQLite is sufficient. Postgres becomes relevant when you need to scale past a single machine or want direct SQL analytics without exporting from SQLite first.
 
-**GDPR erasure:** Postgres's row-level operations make targeted deletion easier to implement, but the collector schema is intentionally append-only and has no deletion endpoint. If your data-residency requirements mandate erasure, plan for a separate out-of-band erasure process that operates directly on the store. See ADR-0019 §S3 (tracked in [issue #478](https://github.com/agent-receipts/ar/issues/478)) for the payload-strategy design, which affects what is stored in receipts versus referenced off-chain — relevant to how much data needs erasing.
+**GDPR erasure:** Postgres's row-level operations make targeted deletion easier to implement, but the collector schema is intentionally append-only and has no deletion endpoint. If your data-residency requirements mandate erasure, plan for a separate out-of-band erasure process that operates directly on the store. See ADR-0019 §S3 (tracked in [issue #478](https://github.com/agent-receipts/obsigna/issues/478)) for the payload-strategy design, which affects what is stored in receipts versus referenced off-chain — relevant to how much data needs erasing.
 
 ### S3 / object storage (archival, planned)
 
@@ -90,7 +90,7 @@ Object storage (S3, GCS, R2, Azure Blob) is an append-only archive target — ea
 
 **Trade-offs:** object storage is not suitable for interactive queries (no SQL, no index). Use it alongside a queryable store (SQLite, Postgres), or fan out receipts to both using a `CompositeEmitter`. Alternatively, periodically bulk-export from SQLite to S3 for archival.
 
-**Object-lock / WORM:** Object Lock (S3) or equivalent WORM flags on other platforms enforce immutability at the storage layer — a useful operational control on top of the protocol's tamper-evidence properties. See ADR-0019 §O2 (tracked in [issue #484](https://github.com/agent-receipts/ar/issues/484)) for the store-completeness design and rationale.
+**Object-lock / WORM:** Object Lock (S3) or equivalent WORM flags on other platforms enforce immutability at the storage layer — a useful operational control on top of the protocol's tamper-evidence properties. See ADR-0019 §O2 (tracked in [issue #484](https://github.com/agent-receipts/obsigna/issues/484)) for the store-completeness design and rationale.
 
 :::note
 Neither Postgres nor S3/object-storage support is implemented in the reference collector today. The SQLite store is the only shipped backing store. These alternatives are documented here as the intended follow-up shapes.
@@ -98,7 +98,7 @@ Neither Postgres nor S3/object-storage support is implemented in the reference c
 
 ## Authentication
 
-**v0 ships without authentication.** This is a deliberate starting point, not an oversight. The client side — `HttpEmitter` — already supports `api-key`, `bearer`, and `mTLS` via `HttpEmitterAuth` ([ADR-0020](https://github.com/agent-receipts/ar/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md)), so the authentication vocabulary exists. Server-side enforcement is tracked as future work.
+**v0 ships without authentication.** This is a deliberate starting point, not an oversight. The client side — `HttpEmitter` — already supports `api-key`, `bearer`, and `mTLS` via `HttpEmitterAuth` ([ADR-0020](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md)), so the authentication vocabulary exists. Server-side enforcement is tracked as future work.
 
 **The v0 stopgap is network-level controls:**
 
@@ -125,7 +125,7 @@ For SQLite, horizontal write scaling is limited by the file lock — multiple wr
 "Append-only" means receipts are never modified or deleted after insertion. Operationally this means:
 
 - **Backups are straightforward.** The store only grows. A backup taken at any point in time is a valid and complete snapshot of everything received up to that moment. You do not need to coordinate backups with the collector process (SQLite's WAL mode allows hot backups without locking out writers).
-- **Immutability flags.** For regulated workloads, pair append-only semantics with storage-level immutability — object lock on S3, WORM volumes, or a Postgres row-level security policy that prevents `DELETE`. The protocol's tamper-evidence (hash chains) detects post-hoc alteration, but storage-level immutability prevents deletion of entire sessions from going undetected. See ADR-0019 §O2 / [issue #484](https://github.com/agent-receipts/ar/issues/484) for the store-completeness rationale.
+- **Immutability flags.** For regulated workloads, pair append-only semantics with storage-level immutability — object lock on S3, WORM volumes, or a Postgres row-level security policy that prevents `DELETE`. The protocol's tamper-evidence (hash chains) detects post-hoc alteration, but storage-level immutability prevents deletion of entire sessions from going undetected. See ADR-0019 §O2 / [issue #484](https://github.com/agent-receipts/obsigna/issues/484) for the store-completeness rationale.
 - **Retention.** The collector has no built-in retention policy. Implement retention at the storage layer: S3 lifecycle rules, filesystem rotation with archival, or — with care and documentation — a Postgres cleanup job as a deliberate exception to the append-only rule.
 
 ### Idempotency and safe retry
@@ -193,14 +193,14 @@ This has two important operational consequences:
 
 1. **Chain verification is the auditor's job, not the collector's.** Auditors verify chains using only the agent's public key. They never need to trust the collector operator. This is what makes multi-tenant collector infrastructure safe — tenants can share a collector without trusting each other or the operator. Use the verifier tooling (`obsigna receipt verify`, documented in [CLI Commands](/reference/cli-commands/)) to verify chains independently of the collector.
 
-2. **A compromised collector cannot forge or alter receipts, but it can drop them.** If a collector is compromised or selectively drops receipts, the resulting chain will have gaps. The SDK's `WALEmitter` surfaces undelivered receipts; the verifier will flag a chain with missing sequence numbers. Receipts where a tool call occurred but no `tool_result` was delivered are classified as `incomplete_tool_roundtrip` by the verifier (see [ADR-0019 §O3](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)), distinguishing deliberate omission from a normal chain gap.
+2. **A compromised collector cannot forge or alter receipts, but it can drop them.** If a collector is compromised or selectively drops receipts, the resulting chain will have gaps. The SDK's `WALEmitter` surfaces undelivered receipts; the verifier will flag a chain with missing sequence numbers. Receipts where a tool call occurred but no `tool_result` was delivered are classified as `incomplete_tool_roundtrip` by the verifier (see [ADR-0019 §O3](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)), distinguishing deliberate omission from a normal chain gap.
 
 In short: the collector's role is delivery and storage. Correctness — whether a chain is complete, unforged, and attributable to the right agent — is enforced cryptographically by the agent's signing key and verified by auditors offline.
 
 ## References
 
-- [ADR-0020 — Emitter abstraction and remote receipt delivery](https://github.com/agent-receipts/ar/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md)
-- [ADR-0019 — Protocol integrity gaps and mitigations](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)
-- [Collector README](https://github.com/agent-receipts/ar/blob/main/collector/README.md) — wire contract, validation scope, configuration flags
+- [ADR-0020 — Emitter abstraction and remote receipt delivery](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md)
+- [ADR-0019 — Protocol integrity gaps and mitigations](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)
+- [Collector README](https://github.com/agent-receipts/obsigna/blob/main/collector/README.md) — wire contract, validation scope, configuration flags
 - [Ephemeral Compute Deployment](/deployment/ephemeral-compute/) — adopter-side guide for SDK emitter configuration
 - [CLI Commands](/reference/cli-commands/) — verifier tooling (`obsigna receipt verify`)
