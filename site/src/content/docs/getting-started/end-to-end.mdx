@@ -13,7 +13,7 @@ verified later.
 [Daemon Setup](/getting-started/daemon-setup/) first.
 
 **Fresh chain assumed:** sequence numbers below (`1`, `2`) are correct when the
-default chain has no prior receipts. If you have already emitted receipts, run
+current day's chain has no prior receipts. If you have already emitted receipts, run
 `agent-receipts list` to find the current tail and substitute the actual
 sequence numbers.
 
@@ -88,20 +88,22 @@ and releases the socket.
 agent-receipts list
 ```
 
-You should see one row: sequence `1`, tool `fs.write_file`, chain `default`.
+You should see one row: sequence `1`, tool `fs.write_file`, chain `2026-06-13`
+(the daemon names each day's chain by the current UTC date).
 
 To inspect the full receipt:
 
 ```sh
-agent-receipts show 1 --chain-id default
+agent-receipts show 1
 ```
 
-This prints a human-readable table of the receipt's fields. To see the full
+With a single chain in the store, `show` auto-detects it; pass `--chain-id` only
+when the store holds more than one chain. This prints a human-readable table of the receipt's fields. To see the full
 W3C Verifiable Credential JSON — including the `proof` block with the Ed25519
 signature — pass `--json`:
 
 ```sh
-agent-receipts show 1 --chain-id default --json
+agent-receipts show 1 --json
 ```
 
 In the JSON output, `credentialSubject.chain.previous_receipt_hash` is `null`
@@ -119,7 +121,7 @@ agent-receipts verify
 Example output (on a fresh chain):
 
 ```
-Chain default: VALID (1 receipt)
+Chain 2026-06-13: VALID (1 receipt)
 ```
 
 The verifier re-derives the hash of each receipt, checks the signature against
@@ -152,10 +154,10 @@ agent-receipts verify
 Example output (count is one higher than after the first emit):
 
 ```
-Chain default: VALID (2 receipts)
+Chain 2026-06-13: VALID (2 receipts)
 ```
 
-Run `agent-receipts show 2 --chain-id default` (or substitute the sequence of
+Run `agent-receipts show 2` (or substitute the sequence of
 your second receipt from `agent-receipts list`) — unlike receipt 1 (the chain
 head), this receipt has a
 `Previous hash:` field containing the hash of receipt 1. That linkage is what

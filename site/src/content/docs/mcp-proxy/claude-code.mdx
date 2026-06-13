@@ -266,6 +266,6 @@ SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
-**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `obsigna-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
+**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `obsigna-daemon`. By default the daemon writes receipts to a chain named for the current UTC date (e.g. `2026-06-13`), advancing to a new chain each day. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
 
 **No receipts appearing?** The daemon must be running *before* Claude Code launches the proxied server, or emits fail. Confirm with `pgrep obsigna-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.

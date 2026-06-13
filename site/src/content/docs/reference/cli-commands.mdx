@@ -150,7 +150,7 @@ agent-receipts verify \
 |------|-------------|
 | `-db` | Receipt-store path (default: per-user path; env: `AGENTRECEIPTS_DB`) |
 | `-public-key` | PEM-encoded SPKI public key path (env: `AGENTRECEIPTS_PUBLIC_KEY`; defaults to `<key>.pub` derived from `AGENTRECEIPTS_KEY`) |
-| `-chain-id` | Chain id to verify (default: `default`; env: `AGENTRECEIPTS_CHAIN_ID`) |
+| `-chain-id` | Chain id to verify (default: the current UTC date, e.g. `2026-06-13`, matching the daemon's per-day chain id; env: `AGENTRECEIPTS_CHAIN_ID`) |
 
 A successful run prints `Chain <id>: VALID (<n> receipts)` (or `receipt` when n=1). A tampered chain prints `Chain <id>: BROKEN at receipt <n>` with the failing cause and per-receipt status (`BAD SIGNATURE`, `BAD HASH LINK`, `BAD SEQUENCE`).
 
@@ -192,7 +192,7 @@ agent-receipts doctor --json
 | `-socket` | Daemon socket path (env: `AGENTRECEIPTS_SOCKET`) |
 | `-db` | Receipt-store path (env: `AGENTRECEIPTS_DB`) |
 | `-public-key` | Public key path (env: `AGENTRECEIPTS_PUBLIC_KEY`) |
-| `-chain-id` | Chain id to inspect (default: `default`; env: `AGENTRECEIPTS_CHAIN_ID`) |
+| `-chain-id` | Chain id to inspect (default: auto-detect the daemon's active chain, falling back to the current UTC date for an empty store; env: `AGENTRECEIPTS_CHAIN_ID`) |
 | `-no-roundtrip` | Skip the synthetic round-trip check (no event is written to the chain) |
 | `-roundtrip-timeout` | How long to wait for the synthetic event to land in the DB (default: `3s`) |
 | `-warn-as-error` | Exit non-zero when any check warns, not only on failures |

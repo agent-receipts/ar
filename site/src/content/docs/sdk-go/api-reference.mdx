@@ -378,7 +378,7 @@ if err != nil {
     log.Fatal(err)
 }
 
-// from: agent-receipts show <seq> --chain-id default --json > receipt.json
+// from: agent-receipts show <seq> --json > receipt.json
 data, err := os.ReadFile("receipt.json")
 if err != nil {
     log.Fatal(err)
