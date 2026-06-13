@@ -29,6 +29,8 @@ make build
 
 ## Usage
 
+The dashboard is read-only — it visualises an existing receipt database, it does not create one. If you were handed a colleague's `receipts.db`, point at it with `-db`. To produce one yourself, run the [daemon](/getting-started/daemon-setup/) and emit a receipt from any SDK (see the [Quick Start](/getting-started/quick-start/)) or wrap an MCP server with the [MCP proxy](/mcp-proxy/overview/); the daemon writes the store at the per-user path below.
+
 If you use the standard per-user path (`~/.local/share/agent-receipts/receipts.db`), no flags are needed:
 
 ```sh

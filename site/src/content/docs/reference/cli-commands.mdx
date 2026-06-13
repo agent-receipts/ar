@@ -6,10 +6,10 @@ description: Command reference for the Agent Receipts CLI tools — the mcp-prox
 This page covers three binaries:
 
 - **`mcp-proxy`** — wraps an MCP server, enforces policy, and forwards completed tool-call events to `obsigna-daemon`. Since v0.9.0 the proxy holds **no store of its own** — signing, chaining, and persistence are the daemon's job ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). It has no signing key and no `list`/`verify` subcommands.
-- **`agent-receipts`** — the daemon's read-side companion CLI. Lists, shows, and verifies receipts from the daemon-written store. Installed alongside `obsigna-daemon` (Homebrew installs both).
+- **`obsigna`** — the daemon's read-side companion CLI. Lists, shows, and verifies receipts from the daemon-written store. Installed alongside `obsigna-daemon` (Homebrew installs both). The legacy `agent-receipts` command still works as a thin deprecation shim (ADR-0030).
 - **`obsigna-hook`** — the PostToolUse hook binary that captures native host tool calls (formerly `agent-receipts-hook`, which still works as a deprecation shim).
 
-> The `agent-receipts` `--db` and `--public-key` defaults resolve via the same per-user paths the daemon uses (`$XDG_DATA_HOME/agent-receipts/`, falling back to `~/.local/share/agent-receipts/`). See [Daemon Setup](/getting-started/daemon-setup/) for how those paths are chosen and how to override them.
+> The `obsigna` `--db` and `--public-key` defaults resolve via the same per-user paths the daemon uses (`$XDG_DATA_HOME/agent-receipts/`, falling back to `~/.local/share/agent-receipts/`). See [Daemon Setup](/getting-started/daemon-setup/) for how those paths are chosen and how to override them.
 
 ## `mcp-proxy`
 
