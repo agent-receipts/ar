@@ -20,7 +20,7 @@ VS Code's `mcp.json` is plaintext on disk (and `.vscode/mcp.json` is usually com
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
-- [`agent-receipts-daemon` installed, initialised, and running](/getting-started/daemon-setup/) — it holds the signing key and writes every receipt
+- [`obsigna-daemon` installed, initialised, and running](/getting-started/daemon-setup/) — it holds the signing key and writes every receipt
 - VS Code with GitHub Copilot (a recent version with MCP support)
 - The MCP server you want to audit. The examples below wrap GitHub's official MCP server:
 
@@ -32,11 +32,11 @@ VS Code's `mcp.json` is plaintext on disk (and `.vscode/mcp.json` is usually com
 
 ## Start the daemon
 
-The proxy holds no signing key of its own — `agent-receipts-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching VS Code:
+The proxy holds no signing key of its own — `obsigna-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching VS Code:
 
 ```bash
-agent-receipts-daemon --init   # one-time: generates the Ed25519 signing key pair
-agent-receipts-daemon          # start the daemon (listens on a Unix socket)
+obsigna-daemon --init   # one-time: generates the Ed25519 signing key pair
+obsigna-daemon          # start the daemon (listens on a Unix socket)
 ```
 
 The proxy reaches the daemon over its default platform socket automatically. See [Daemon Setup](/getting-started/daemon-setup/) for install options and socket paths.
@@ -119,6 +119,6 @@ SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
 
 **Tools only appear in Agent mode.** If Copilot isn't calling the tools, confirm the Chat view is in **Agent** mode and that the server shows as started under **MCP: List Servers**.
 
-**No receipts appearing?** The daemon must be running *before* VS Code starts the proxied server, or emits fail. Confirm with `pgrep agent-receipts-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.
+**No receipts appearing?** The daemon must be running *before* VS Code starts the proxied server, or emits fail. Confirm with `pgrep obsigna-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.
 
 **Want human-in-the-loop approvals? Opt in with `-http`.** The approval listener is off by default. Add `-http 127.0.0.1:<port>` to `args` and run an approver — see [Approval Server](/mcp-proxy/approval-ui/). Without it, a paused call fails immediately with `-32003`.

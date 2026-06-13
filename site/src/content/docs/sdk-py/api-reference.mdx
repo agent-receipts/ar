@@ -6,7 +6,7 @@ description: Python SDK API reference.
 ## Daemon emitter
 
 The canonical way to record receipts: send tool-call events to a running
-`agent-receipts-daemon`, which holds the signing key, builds the receipt, signs
+`obsigna-daemon`, which holds the signing key, builds the receipt, signs
 it, and chains it. Your process never touches the key. See
 [Daemon Setup](/getting-started/daemon-setup/) to start the daemon and
 [Quick Start](/getting-started/quick-start/) for the full emit → list → verify loop.
@@ -472,7 +472,7 @@ params = decrypt_disclosure(env, kp.private_key)
 ### Recovering a stored disclosure
 
 In practice the envelope comes from a **stored receipt** and the private key from the
-file `agent-receipts-daemon --init-forensic-key` wrote — a raw 32-byte X25519 key,
+file `obsigna-daemon --init-forensic-key` wrote — a raw 32-byte X25519 key,
 not PEM, so read it as bytes and pass it straight in. Pull the envelope out of the
 receipt JSON at `credentialSubject.action.parameters_disclosure`:
 

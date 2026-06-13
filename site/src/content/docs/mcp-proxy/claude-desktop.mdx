@@ -16,7 +16,7 @@ The default policy includes a `pause_high_risk` rule. When you generate a config
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
-- [`agent-receipts-daemon` installed, initialised, and running](/getting-started/daemon-setup/) — it holds the signing key and writes every receipt
+- [`obsigna-daemon` installed, initialised, and running](/getting-started/daemon-setup/) — it holds the signing key and writes every receipt
 - The MCP server you want to audit. The example below wraps GitHub's official MCP server:
 
   ```bash
@@ -27,11 +27,11 @@ The default policy includes a `pause_high_risk` rule. When you generate a config
 
 ## Start the daemon
 
-The proxy holds no signing key of its own — `agent-receipts-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching Claude Desktop:
+The proxy holds no signing key of its own — `obsigna-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching Claude Desktop:
 
 ```bash
-agent-receipts-daemon --init   # one-time: generates the Ed25519 signing key pair
-agent-receipts-daemon          # start the daemon (listens on a Unix socket)
+obsigna-daemon --init   # one-time: generates the Ed25519 signing key pair
+obsigna-daemon          # start the daemon (listens on a Unix socket)
 ```
 
 The proxy reaches the daemon over its default platform socket automatically. To run the daemon as a background service on macOS, see [Daemon Setup](/getting-started/daemon-setup/). Use absolute paths everywhere — Claude Desktop launches MCP servers with a clean environment where `~` expansion and `$PATH` are not available.
@@ -189,6 +189,6 @@ SEQ  TIMESTAMP             CHAIN    TOOL / ACTION TYPE
 
 **Classic PATs for org-owned repos.** GitHub's fine-grained PATs can fail for org-level write operations even when permissions appear correct. Use a classic PAT with `repo` scope for org-owned repositories.
 
-**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `agent-receipts-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
+**Chain IDs are daemon-managed.** The proxy no longer has a `-chain` flag — chain IDs are assigned by `obsigna-daemon`. By default the daemon writes all receipts to the `default` chain. Use `--chain-id` (or `AGENTRECEIPTS_CHAIN_ID`) on `agent-receipts` read and verify commands when working with a multi-chain store.
 
-**No receipts appearing?** The daemon must be running *before* Claude Desktop launches the proxied server, or emits fail. Confirm with `pgrep -f agent-receipts-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.
+**No receipts appearing?** The daemon must be running *before* Claude Desktop launches the proxied server, or emits fail. Confirm with `pgrep obsigna-daemon`, and see the [daemon troubleshooting guide](/getting-started/daemon-setup/#troubleshooting). If you run the daemon on a non-default socket, set `AGENTRECEIPTS_SOCKET` for both the daemon and the proxy.

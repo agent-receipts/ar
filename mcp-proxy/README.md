@@ -33,12 +33,12 @@ Single binary. No external dependencies. Drop-in for any MCP server.
 ### Homebrew (macOS, Linux)
 
 ```sh
-brew install agent-receipts/tap/mcp-proxy
+brew install agent-receipts/tap/obsigna
 ```
 
 ### Prebuilt binaries
 
-Download from the [releases page](https://github.com/agent-receipts/ar/releases?q=mcp-proxy) (darwin and linux, amd64 and arm64).
+Download the `obsigna_<version>_<os>_<arch>` tarball from the [releases page](https://github.com/agent-receipts/ar/releases?q=obsigna) (darwin and linux, amd64 and arm64).
 
 ### From source
 

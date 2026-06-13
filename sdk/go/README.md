@@ -25,7 +25,7 @@ go get github.com/agent-receipts/ar/sdk/go
 
 | Package | Description |
 |---------|-------------|
-| `emitter` | Daemon-socket client: forwards tool-call events to a local `agent-receipts-daemon`, which holds the signing key and constructs, signs, and chains the receipt |
+| `emitter` | Daemon-socket client: forwards tool-call events to a local `obsigna-daemon`, which holds the signing key and constructs, signs, and chains the receipt |
 | `receipt` | Create, sign (Ed25519), verify, and hash-chain Agent Receipts (W3C Verifiable Credentials) |
 | `taxonomy` | Built-in action type registry (15 types), tool call classification, custom mappings |
 | `store` | SQLite-backed receipt persistence, query, stats, and chain verification |
@@ -34,7 +34,7 @@ go get github.com/agent-receipts/ar/sdk/go
 ## Quick start
 
 The canonical deployment shape is **daemon-mediated signing**: your app sends
-tool-call events to a local `agent-receipts-daemon` over a Unix socket, and the
+tool-call events to a local `obsigna-daemon` over a Unix socket, and the
 daemon holds the Ed25519 signing key and constructs, signs, and chains the
 receipt. Keeping the key out of the agent process is what makes a receipt
 evidence rather than a self-reported claim — anything with code execution in

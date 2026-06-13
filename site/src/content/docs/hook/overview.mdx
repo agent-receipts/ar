@@ -11,7 +11,7 @@ graph LR
     T1[Native tools — Bash, Write, Edit…] -- "PostToolUse\nhook stdin" --> H[obsigna-hook]
     T2[MCP tools — GitHub, Atlassian…] -- "stdio / JSON-RPC" --> P[mcp-proxy]
   end
-  H -- "Unix socket" --> D[agent-receipts-daemon]
+  H -- "Unix socket" --> D[obsigna-daemon]
   P -- "Unix socket" --> D
   D --> DB[(receipts.db)]
 ```
@@ -44,7 +44,7 @@ The hook does not pause or modify the tool call. If the stdin frame is unreadabl
 | **Local receipt signing** | Yes — in-proxy Ed25519 | No — daemon signs |
 | **Taxonomy** | MCP server tool names | Native tool names (`Bash`, `Write`, …) |
 
-Both channels write to the same `agent-receipts-daemon` receipt chain, identified by a shared session ID.
+Both channels write to the same `obsigna-daemon` receipt chain, identified by a shared session ID.
 
 ## MCP tool overlap
 

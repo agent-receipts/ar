@@ -1,14 +1,14 @@
 ---
 title: Daemon Setup
-description: Set up the agent-receipts-daemon and connect your emitters.
+description: Set up the obsigna-daemon and connect your emitters.
 ---
 
-Agent Receipts signs receipts in a separate `agent-receipts-daemon` process rather than in-process — no SDK or plugin holds an Ed25519 key or SQLite database of its own. A single daemon process holds the signing key and manages the receipt chain for all emitters on the machine. This centralisation is what makes the tamper-evidence guarantee meaningful: a compromised SDK process cannot silently rewrite the chain, because it never holds the key.
+Agent Receipts signs receipts in a separate `obsigna-daemon` process rather than in-process — no SDK or plugin holds an Ed25519 key or SQLite database of its own. A single daemon process holds the signing key and manages the receipt chain for all emitters on the machine. This centralisation is what makes the tamper-evidence guarantee meaningful: a compromised SDK process cannot silently rewrite the chain, because it never holds the key.
 
 ## Prerequisites
 
-- `agent-receipts-daemon` installed (see below)
-- Key initialised with `agent-receipts-daemon --init` (one-time, see below)
+- `obsigna-daemon` installed (see below)
+- Key initialised with `obsigna-daemon --init` (one-time, see below)
 - An emitter SDK or plugin installed (see [Connect your emitters](#connect-your-emitters))
 
 ## Install and start
@@ -18,15 +18,15 @@ Agent Receipts signs receipts in a separate `agent-receipts-daemon` process rath
 **macOS (Homebrew):**
 
 ```bash
-brew install agent-receipts/tap/obsigna-daemon
+brew install agent-receipts/tap/obsigna
 ```
 
-Homebrew installs both the `agent-receipts-daemon` and `agent-receipts` (verify) binaries.
+Homebrew installs both the `obsigna-daemon` and `agent-receipts` (verify) binaries.
 
 **From source (macOS/Linux, requires Go 1.26.1+):**
 
 ```bash
-go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts-daemon@latest
+go install github.com/agent-receipts/ar/daemon/cmd/obsigna-daemon@latest
 go install github.com/agent-receipts/ar/daemon/cmd/agent-receipts@latest
 ```
 
@@ -44,7 +44,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Generate the signing key pair before starting the daemon for the first time:
 
 ```bash
-agent-receipts-daemon --init
+obsigna-daemon --init
 ```
 
 Files created by `--init`:
@@ -67,7 +67,7 @@ The receipt database (`$XDG_DATA_HOME/agent-receipts/receipts.db`, falling back 
 To rotate the daemon's signing key, stop the daemon and run `--rotate` ([ADR-0015](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md)):
 
 ```bash
-agent-receipts-daemon --rotate
+obsigna-daemon --rotate
 ```
 
 This appends a `key_rotated` receipt — signed with the **outgoing** key — to the head of the current chain, archives the outgoing public key next to `signing.key.pub` (as `signing.key.pub.rotated-<fingerprint>`), and swaps the new key pair into place. The `key_rotated` receipt carries the incoming public key inline, so a verifier chains through the rotation: receipts before it verify under the old key, receipts after it under the new key. Restart the daemon afterwards to sign with the new key.
@@ -83,7 +83,7 @@ Do **not** "rotate" by deleting `signing.key` and re-running `--init`. That new 
 For the rotation history to survive a future daemon-key compromise, the rotation event must be recorded somewhere the daemon cannot later rewrite. Pass `--anchor-log <path>` (env `AGENTRECEIPTS_ANCHOR_LOG`) and `--rotate` writes the rotation event to that append-only log **before** committing locally — an anchor-write failure aborts the rotation cleanly, leaving nothing changed:
 
 ```bash
-agent-receipts-daemon --rotate --anchor-log /var/log/agent-receipts/anchor.log
+obsigna-daemon --rotate --anchor-log /var/log/agent-receipts/anchor.log
 ```
 
 The built-in log is a **reference** sink: it appends newline-delimited JSON records, but a plain file is only as tamper-evident as the storage under it. To get the real post-compromise guarantee, point `--anchor-log` at a path backed by append-only/immutable storage (object-lock volume, a write-only log host, a transparency log). Adapters that speak directly to such systems (S3 object-lock, SIEM ingest) are follow-up work. Without `--anchor-log`, rotation still works and verifies — you simply opt out of the post-compromise guarantee.
@@ -93,7 +93,7 @@ The built-in log is a **reference** sink: it appends newline-delimited JSON reco
 ### Start
 
 ```bash
-agent-receipts-daemon
+obsigna-daemon
 ```
 
 The daemon listens on a Unix domain socket. The socket path depends on platform:
@@ -139,7 +139,7 @@ shutdown_deadline = "200ms"           # --shutdown-deadline (Go duration string)
 Print the fully resolved config (after merging file, env, and flags) for debugging:
 
 ```bash
-agent-receipts-daemon --print-config
+obsigna-daemon --print-config
 ```
 
 The output is in the same `key = value` shape, so it doubles as a starting `daemon.toml`. Only filesystem paths are printed — the daemon never logs key material.
@@ -260,11 +260,11 @@ Generate a forensic key pair (once), then enable disclosure with a policy:
 
 ```bash
 # Generate the key pair (private key stays offline; daemon only reads the public key)
-agent-receipts-daemon --init-forensic-key \
+obsigna-daemon --init-forensic-key \
   --forensic-key ~/.local/share/agent-receipts/forensic.key
 
 # Run with disclosure enabled: false | true | high | <comma-separated action types>
-agent-receipts-daemon \
+obsigna-daemon \
   --forensic-public-key ~/.local/share/agent-receipts/forensic.key.pub \
   --parameter-disclosure high
 ```
@@ -320,10 +320,10 @@ Exit codes are stable for scripting: `0` when the receipt is found and printed, 
 ## Troubleshooting
 
 **Receipts are not appearing in the database.**
-The most common cause is that the daemon is not running when the emitter starts. By default, emitters surface an error when the socket is unreachable, so check your application logs for emit failures — then confirm `agent-receipts-daemon` is running and that the socket path matches. Confirm the daemon is alive and the socket exists:
+The most common cause is that the daemon is not running when the emitter starts. By default, emitters surface an error when the socket is unreachable, so check your application logs for emit failures — then confirm `obsigna-daemon` is running and that the socket path matches. Confirm the daemon is alive and the socket exists:
 
 ```bash
-pgrep -f agent-receipts-daemon   # -f matches the full command line; the name exceeds pgrep's 15-char limit
+pgrep obsigna-daemon
 ls -la ~/.local/share/agent-receipts/events.sock             # macOS (default fallback)
 ls -la "${XDG_RUNTIME_DIR:-/run}/agentreceipts/events.sock"  # Linux
 ```
@@ -334,7 +334,7 @@ If you've set `AGENTRECEIPTS_SOCKET` or an absolute `XDG_DATA_HOME`, check that 
 If you start the daemon and an emitter on different socket paths, the emitter cannot reach the daemon and (by default) surfaces a transport error on each emit. Set `AGENTRECEIPTS_SOCKET` to the same value in the daemon's environment and each emitter's environment, or rely on the platform default by not setting it in either.
 
 **Key not initialised error.**
-If the daemon exits immediately with an error about a missing key or database, run `agent-receipts-daemon --init` first. The daemon will not auto-create the key on first start — initialisation is intentionally explicit so key generation is a deliberate action, not a side effect.
+If the daemon exits immediately with an error about a missing key or database, run `obsigna-daemon --init` first. The daemon will not auto-create the key on first start — initialisation is intentionally explicit so key generation is a deliberate action, not a side effect.
 
 **`chain "…" tail (seq N) is already terminal` on startup.**
 When a running daemon is stopped by a signal (SIGTERM/SIGINT) with an open chain, it emits an interrupted-chain terminator (`chain.status="interrupted"`) to close that chain cleanly. A later daemon refuses to append after a terminal receipt, since that would produce a chain that fails verification. Continue on a fresh chain with `--chain-id <new-id>` (or point at a fresh `--db`); the original chain stays intact and verifiable.
