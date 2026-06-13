@@ -23,6 +23,24 @@
 
 ---
 
+## What is this?
+
+**Agent Receipts** is an open protocol for producing cryptographically signed, tamper-evident records of AI agent actions. It defines the receipt format, signing scheme, chain structure, and taxonomy of action types. Anyone can implement it — in any language, in any runtime.
+
+**Obsigna** is the reference toolset that implements the protocol:
+
+| Tool | What it does |
+|------|-------------|
+| `obsigna-mcp` | MCP stdio proxy — signs every tool call, adds policy hooks |
+| `obsigna-daemon` | Out-of-process signing daemon — holds the key, owns the audit chain |
+| `obsigna-hook` | PostToolUse hook for Claude Code and other runtimes |
+| `obsigna` | CLI for browsing and verifying receipt databases |
+| `sdk/go`, `@obsigna/sdk-ts`, `obsigna` (Python) | SDKs for embedding receipt creation in your own code |
+
+<picture>
+  <img alt="How it works: Authorize → Act → Sign → Link → Audit" src=".github/how-it-works.svg">
+</picture>
+
 ## Start here
 
 The fastest way to try Agent Receipts is to put [`mcp-proxy/`](mcp-proxy/) in front of an MCP server you already use.
@@ -39,26 +57,19 @@ If you want to audit GitHub MCP in a real agent workflow, start with:
 - [Claude Code integration](https://agentreceipts.ai/mcp-proxy/claude-code/)
 - [Codex integration](https://agentreceipts.ai/mcp-proxy/codex/)
 
-## What is this?
-
-Agent Receipts is an open protocol and set of SDKs for producing cryptographically signed, tamper-evident records of AI agent actions. Every action an agent takes -- API calls, tool use, data access -- gets a verifiable receipt that can be audited later.
-
-<picture>
-  <img alt="How it works: Authorize → Act → Sign → Link → Audit" src=".github/how-it-works.svg">
-</picture>
-
 ## Project layout
 
 | Project | Description |
 |---------|-------------|
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records |
 | [`spec/`](spec/) | Protocol specification, JSON schemas, governance |
 | [`sdk/go/`](sdk/go/) | Go SDK |
 | [`sdk/ts/`](sdk/ts/) | TypeScript SDK |
 | [`sdk/py/`](sdk/py/) | Python SDK |
 | [`daemon/`](daemon/) | Signing daemon — out-of-process key custody, shared audit chain |
 | [`mcp-proxy/`](mcp-proxy/) | MCP proxy with receipt signing, policy engine, intent tracking |
+| [`hook/`](hook/) | PostToolUse hook binary for Claude Code and other runtimes |
 | [`cross-sdk-tests/`](cross-sdk-tests/) | Cross-language verification tests |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records |
 | [dashboard](https://github.com/agent-receipts/dashboard) | Local web UI for browsing and verifying receipt databases |
 | [openclaw](https://github.com/agent-receipts/openclaw) | Agent Receipts plugin for OpenClaw |
 
