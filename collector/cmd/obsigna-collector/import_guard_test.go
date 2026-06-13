@@ -45,8 +45,10 @@ var forbiddenImports = []forbiddenRule{
 	{
 		// Operator read-side CLI packages (internal/*cli — verifycli, showcli,
 		// listcli, doctorcli, keyscli, …). These belong to operator tooling, not a
-		// receipt hub.
-		pattern: regexp.MustCompile(`^github\.com/agent-receipts/ar/.*[a-z0-9]+cli$`),
+		// receipt hub. Anchored on an `internal/` segment so the rule matches the
+		// stated target exactly and cannot surprise-deny an unrelated package whose
+		// import path merely ends in "cli".
+		pattern: regexp.MustCompile(`^github\.com/agent-receipts/ar/.*internal/[a-z0-9]+cli$`),
 		reason:  "an operator read-side CLI package (internal/*cli); operator tooling has no place in a hub process",
 	},
 }
