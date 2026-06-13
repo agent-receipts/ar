@@ -3,7 +3,7 @@ title: Ephemeral Compute Deployment
 description: Deploy Agent Receipts on AWS Lambda, GCP Cloud Run, AWS Fargate, and Azure Functions using the HttpEmitter → collector pattern.
 ---
 
-Ephemeral compute — AWS Lambda, GCP Cloud Run, AWS Fargate, Azure Functions — has no long-lived process to host the `agent-receipts-daemon`. The daemon model ([Daemon Setup](/getting-started/daemon-setup/)) assumes a persistent sidecar holding the signing key and a local socket; neither survives between invocations on serverless platforms.
+Ephemeral compute — AWS Lambda, GCP Cloud Run, AWS Fargate, Azure Functions — has no long-lived process to host the `obsigna-daemon`. The daemon model ([Daemon Setup](/getting-started/daemon-setup/)) assumes a persistent sidecar holding the signing key and a local socket; neither survives between invocations on serverless platforms.
 
 [ADR-0020](https://github.com/agent-receipts/ar/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md) makes ephemeral compute a first-class target by inverting the daemon model: **signing and chaining move client-side, into the SDK process**, and receipts are POSTed to an untrusted [collector](https://github.com/agent-receipts/ar/tree/main/collector) over HTTP. This guide shows how the pieces fit, how to manage keys without an extractable PEM in production, the gotchas per runtime, and what auditors see when an invocation is killed mid-chain.
 

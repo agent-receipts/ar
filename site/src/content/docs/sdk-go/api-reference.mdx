@@ -358,7 +358,7 @@ fp2, err := receipt.ForensicKeyFingerprint(pub)
 #### Recovering a stored disclosure
 
 In practice the envelope comes from a **stored receipt** and the private key from
-the file `agent-receipts-daemon --init-forensic-key` wrote — a raw 32-byte X25519
+the file `obsigna-daemon --init-forensic-key` wrote — a raw 32-byte X25519
 key, not PEM, so read it as bytes and pass it straight in. Pull the envelope out
 of the receipt JSON at `credentialSubject.action.parameters_disclosure`:
 

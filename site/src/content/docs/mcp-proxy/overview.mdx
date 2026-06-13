@@ -1,9 +1,9 @@
 ---
 title: MCP Proxy
-description: Transparent audit proxy for MCP servers — classifies and scores tool calls, applies proxy-layer policy rules, and forwards events to agent-receipts-daemon, which signs and stores the receipts.
+description: Transparent audit proxy for MCP servers — classifies and scores tool calls, applies proxy-layer policy rules, and forwards events to obsigna-daemon, which signs and stores the receipts.
 ---
 
-The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, Claude Code, etc.) and any MCP server. It intercepts every tool call, classifies and scores it, and applies proxy-layer policy rules — then forwards the completed event to `agent-receipts-daemon` over a Unix socket. The daemon redacts sensitive data, signs an Ed25519 receipt, hash-chains it, and persists it. The proxy holds no key and no store of its own ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)) — so a compromised proxy cannot rewrite the chain. It does this without modifying the server or client.
+The MCP Proxy is a transparent stdin/stdout proxy that sits between an MCP client (Claude Desktop, Claude Code, etc.) and any MCP server. It intercepts every tool call, classifies and scores it, and applies proxy-layer policy rules — then forwards the completed event to `obsigna-daemon` over a Unix socket. The daemon redacts sensitive data, signs an Ed25519 receipt, hash-chains it, and persists it. The proxy holds no key and no store of its own ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)) — so a compromised proxy cannot rewrite the chain. It does this without modifying the server or client.
 
 **Repository:** [`mcp-proxy/`](https://github.com/agent-receipts/ar/tree/main/mcp-proxy)
 
@@ -52,19 +52,19 @@ MCP Client (Claude Desktop / Claude Code)
     |  - classify operation
     |  - score risk
     |  - evaluate policy rules
-    |  - forward event (--socket) ─────────────> agent-receipts-daemon
+    |  - forward event (--socket) ─────────────> obsigna-daemon
     v                                                 - redact sensitive data
  MCP Server (any)                                     - sign receipt (Ed25519)
                                                       - hash-chain + persist
 ```
 
-The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, forwards them to the wrapped server, and returns the response. Each completed tool call is emitted to `agent-receipts-daemon` over `--socket`, which signs it into the receipt chain. Start the daemon before the proxy — see [Daemon Setup](/getting-started/daemon-setup/).
+The proxy reads JSON-RPC messages on stdin, processes `tools/call` requests, forwards them to the wrapped server, and returns the response. Each completed tool call is emitted to `obsigna-daemon` over `--socket`, which signs it into the receipt chain. Start the daemon before the proxy — see [Daemon Setup](/getting-started/daemon-setup/).
 
 ```mermaid
 graph LR
   C[MCP Client] ---|"stdio / JSON-RPC"| P[mcp-proxy]
   P ---|"stdio / JSON-RPC"| S[MCP Server]
-  P -- "Unix socket" --> D[agent-receipts-daemon]
+  P -- "Unix socket" --> D[obsigna-daemon]
   D --> DB[(receipts.db)]
 ```
 
@@ -72,14 +72,14 @@ graph LR
 
 ```bash
 # Install (Homebrew, macOS/Linux)
-brew install agent-receipts/tap/mcp-proxy
+brew install agent-receipts/tap/obsigna
 # …or from source: go install github.com/agent-receipts/ar/mcp-proxy/cmd/mcp-proxy@latest
 
 # Wrap any MCP server (example: the filesystem server via npx)
 mcp-proxy npx -y @modelcontextprotocol/server-filesystem ~/Documents
 
 # With configuration (example: GitHub's official MCP server — brew install github-mcp-server)
-# Receipts are signed and stored by agent-receipts-daemon — start it first (see Daemon Setup).
+# Receipts are signed and stored by obsigna-daemon — start it first (see Daemon Setup).
 mcp-proxy \
   -name github \
   -rules rules.yaml \

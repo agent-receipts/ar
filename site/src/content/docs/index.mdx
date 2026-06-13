@@ -127,7 +127,7 @@ graph LR
     A["Agent / plugin / proxy"]
   end
   A -- "Unix socket" --> D
-  subgraph dp["agent-receipts-daemon"]
+  subgraph dp["obsigna-daemon"]
     D[daemon]
     D --> K[(Ed25519 key)]
     D --> DB[(receipts.db)]

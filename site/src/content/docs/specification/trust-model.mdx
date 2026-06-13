@@ -58,7 +58,7 @@ infrastructure picks HSM/KMS plus an external anchor.
 
 The production integration surfaces — the MCP proxy and the PostToolUse hook —
 ship as **thin emitters with no key material of their own**. They send an event
-frame over a local Unix socket; a separate `agent-receipts-daemon` process
+frame over a local Unix socket; a separate `obsigna-daemon` process
 builds, canonicalizes, signs, and stores the
 receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)).
 Delivery semantics differ by emitter: the MCP proxy logs emit failures and lets
@@ -67,7 +67,7 @@ action is surfaced.
 
 ```mermaid
 flowchart LR
-  A["Agent process (emitter, holds no key)"] -->|event frame over Unix socket| D["agent-receipts-daemon (sole signer, sole key)"]
+  A["Agent process (emitter, holds no key)"] -->|event frame over Unix socket| D["obsigna-daemon (sole signer, sole key)"]
   P["peer credential: SO_PEERCRED captured at accept()"] -->|attested into receipt| D
   D -->|signed receipt| S["receipts.db"]
   D -->|rotation records| K["external anchor (not daemon-controlled)"]

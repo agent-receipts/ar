@@ -34,7 +34,7 @@ MCP Client → stdin/stdout → mcp-proxy → stdin/stdout → MCP Server
                                ├── Policy engine (YAML rules)
                                ├── Approval workflow (HTTP, in-memory)
                                └── Daemon emitter (forwards completed events
-                                   to agent-receipts-daemon over AF_UNIX;
+                                   to obsigna-daemon over AF_UNIX;
                                    daemon owns redaction, hashing, signing,
                                    chaining, and persistence)
 ```

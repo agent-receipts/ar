@@ -3,27 +3,27 @@ title: Hook Installation
 description: Install the obsigna-hook binary and verify it is on your PATH.
 ---
 
-`obsigna-hook` is released independently of the daemon — it has its own Homebrew formula and Go module path.
+`obsigna-hook` ships in the umbrella `obsigna` Homebrew formula and release train (ADR-0034), and has its own Go module path.
 
 :::note[Renamed from `agent-receipts-hook`]
-The hook binary is now `obsigna-hook` (ADR-0036). The old `agent-receipts-hook` binary still ships alongside it as a thin deprecation shim that forwards to `obsigna-hook`, so existing hook configs keep working — point new configs at `obsigna-hook`. The Homebrew formula name is unchanged for now and installs both binaries.
+The hook binary is now `obsigna-hook` (ADR-0036). The old `agent-receipts-hook` binary still ships alongside it as a thin deprecation shim that forwards to `obsigna-hook`, so existing hook configs keep working — point new configs at `obsigna-hook`. The umbrella `obsigna` Homebrew formula installs both `obsigna-hook` and the `agent-receipts-hook` shim.
 :::
 
 ## Prerequisites
 
-- `agent-receipts-daemon` running (see [Daemon Setup](/getting-started/daemon-setup/))
+- `obsigna-daemon` running (see [Daemon Setup](/getting-started/daemon-setup/))
 
 ## Install
 
 ### Homebrew (macOS, Linux)
 
 ```bash
-brew install agent-receipts/tap/agent-receipts-hook
+brew install agent-receipts/tap/obsigna
 ```
 
 ### Prebuilt binaries
 
-Download a tarball for your platform (darwin/linux, amd64/arm64) from the [releases page](https://github.com/agent-receipts/ar/releases?q=hook) and move `obsigna-hook` (and the `agent-receipts-hook` shim, if you still rely on the old name) onto your `$PATH`.
+Download the `obsigna_<version>_<os>_<arch>` tarball for your platform (darwin/linux, amd64/arm64) from the [releases page](https://github.com/agent-receipts/ar/releases?q=obsigna) and move `obsigna-hook` (and the `agent-receipts-hook` shim, if you still rely on the old name) onto your `$PATH`.
 
 ### From source
 

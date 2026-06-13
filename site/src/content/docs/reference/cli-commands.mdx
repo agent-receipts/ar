@@ -5,8 +5,8 @@ description: Command reference for the Agent Receipts CLI tools — the mcp-prox
 
 This page covers three binaries:
 
-- **`mcp-proxy`** — wraps an MCP server, enforces policy, and forwards completed tool-call events to `agent-receipts-daemon`. Since v0.9.0 the proxy holds **no store of its own** — signing, chaining, and persistence are the daemon's job ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). It has no signing key and no `list`/`verify` subcommands.
-- **`agent-receipts`** — the daemon's read-side companion CLI. Lists, shows, and verifies receipts from the daemon-written store. Installed alongside `agent-receipts-daemon` (Homebrew installs both).
+- **`mcp-proxy`** — wraps an MCP server, enforces policy, and forwards completed tool-call events to `obsigna-daemon`. Since v0.9.0 the proxy holds **no store of its own** — signing, chaining, and persistence are the daemon's job ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). It has no signing key and no `list`/`verify` subcommands.
+- **`agent-receipts`** — the daemon's read-side companion CLI. Lists, shows, and verifies receipts from the daemon-written store. Installed alongside `obsigna-daemon` (Homebrew installs both).
 - **`obsigna-hook`** — the PostToolUse hook binary that captures native host tool calls (formerly `agent-receipts-hook`, which still works as a deprecation shim).
 
 > The `agent-receipts` `--db` and `--public-key` defaults resolve via the same per-user paths the daemon uses (`$XDG_DATA_HOME/agent-receipts/`, falling back to `~/.local/share/agent-receipts/`). See [Daemon Setup](/getting-started/daemon-setup/) for how those paths are chosen and how to override them.
@@ -38,7 +38,7 @@ mcp-proxy -name github -issuer-name "Claude Code" github-mcp-server stdio
 | `-name` | (inferred from command) | Server name for the audit trail |
 | `-http` | `none` | HTTP address for the approval listener. Off by default. Pass `127.0.0.1:0` for a random free port or `127.0.0.1:<port>` to pin one. See [Approval Server](/mcp-proxy/approval-ui/). |
 | `-approval-timeout` | `1m0s` | Maximum time to wait for HTTP approval before a paused call is auto-denied |
-| `-socket` | platform default | Unix-domain socket for `agent-receipts-daemon` (env: `AGENTRECEIPTS_SOCKET`). Pass `--socket=""` to disable emission entirely. Emit errors are logged but do not block tool calls. |
+| `-socket` | platform default | Unix-domain socket for `obsigna-daemon` (env: `AGENTRECEIPTS_SOCKET`). Pass `--socket=""` to disable emission entirely. Emit errors are logged but do not block tool calls. |
 | `-issuer-name` | (auto-detected) | Issuer name, e.g. `Claude Code` (env: `AGENTRECEIPTS_ISSUER_NAME`) |
 | `-issuer-model` | (none) | AI model identifier, e.g. `claude-sonnet-4-6` (env: `AGENTRECEIPTS_ISSUER_MODEL`) |
 | `-operator-id` | (none) | Operator DID (organisation running the agent), e.g. `did:web:anthropic.com` (env: `AGENTRECEIPTS_OPERATOR_ID`) |
@@ -67,7 +67,7 @@ mcp-proxy doctor -json                              # JSON output
 
 ### `mcp-proxy init`
 
-One-command bootstrap: creates the data directory (`~/.local/share/agent-receipts/`, respecting `$XDG_DATA_HOME`) and prints a `claude_desktop_config.json` snippet to stdout with placeholders for your MCP server command. It does **not** generate a signing key — keys belong to the daemon (`agent-receipts-daemon --init`, see [Daemon Setup](/getting-started/daemon-setup/)). Safe to re-run.
+One-command bootstrap: creates the data directory (`~/.local/share/agent-receipts/`, respecting `$XDG_DATA_HOME`) and prints a `claude_desktop_config.json` snippet to stdout with placeholders for your MCP server command. It does **not** generate a signing key — keys belong to the daemon (`obsigna-daemon --init`, see [Daemon Setup](/getting-started/daemon-setup/)). Safe to re-run.
 
 ```bash
 mcp-proxy init                              # default instance name
@@ -200,7 +200,7 @@ agent-receipts doctor --json
 
 ## `obsigna-hook`
 
-Short-lived PostToolUse hook binary that captures native host tool calls and forwards them to `agent-receipts-daemon`. Invoked automatically by agent runtimes that support PostToolUse hooks — not meant to be run interactively. Renamed from `agent-receipts-hook` (ADR-0036); the old name still works as a thin deprecation shim that forwards to `obsigna-hook`.
+Short-lived PostToolUse hook binary that captures native host tool calls and forwards them to `obsigna-daemon`. Invoked automatically by agent runtimes that support PostToolUse hooks — not meant to be run interactively. Renamed from `agent-receipts-hook` (ADR-0036); the old name still works as a thin deprecation shim that forwards to `obsigna-hook`.
 
 ```bash
 obsigna-hook [--format=<name>]

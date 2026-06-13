@@ -29,17 +29,17 @@ Remote MCP Server (e.g. mcp.atlassian.com/v1/mcp)
 ## Prerequisites
 
 - [mcp-proxy installed](/mcp-proxy/installation/)
-- [`agent-receipts-daemon` installed, initialised, and running](/getting-started/daemon-setup/) — it holds the signing key and writes every receipt
+- [`obsigna-daemon` installed, initialised, and running](/getting-started/daemon-setup/) — it holds the signing key and writes every receipt
 - Node.js (for `npx mcp-remote`)
 - A remote MCP endpoint and an account that can authorise it. The example below uses Atlassian's Remote MCP Server at `https://mcp.atlassian.com/v1/mcp`.
 
 ## Start the daemon
 
-The proxy holds no signing key of its own — `agent-receipts-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before connecting your MCP client:
+The proxy holds no signing key of its own — `obsigna-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before connecting your MCP client:
 
 ```bash
-agent-receipts-daemon --init   # one-time: generates the Ed25519 signing key pair
-agent-receipts-daemon          # start the daemon (listens on a Unix socket)
+obsigna-daemon --init   # one-time: generates the Ed25519 signing key pair
+obsigna-daemon          # start the daemon (listens on a Unix socket)
 ```
 
 One daemon signs receipts for every proxied server — local and remote alike. See [Daemon Setup](/getting-started/daemon-setup/) for install options and socket paths.
