@@ -1,5 +1,6 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import sitemap from "@astrojs/sitemap";
 import starlightThemeFlexoki from "starlight-theme-flexoki";
 import rehypeMermaid from "rehype-mermaid";
 
@@ -47,6 +48,38 @@ export default defineConfig({
               sameAs: ["https://github.com/agent-receipts"],
             },
           }),
+        },
+        // Default social-share image (per-page frontmatter can override).
+        {
+          tag: "meta",
+          attrs: {
+            property: "og:image",
+            content: "https://agentreceipts.ai/og.png",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            property: "twitter:image",
+            content: "https://agentreceipts.ai/og.png",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: { name: "twitter:card", content: "summary_large_image" },
+        },
+        // Privacy-friendly, cookieless analytics (Plausible per-site script).
+        {
+          tag: "script",
+          attrs: {
+            async: true,
+            src: "https://plausible.io/js/pa-wNWKLsZ7QhfgLp3YwwaYB.js",
+          },
+        },
+        {
+          tag: "script",
+          content:
+            "window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()",
         },
       ],
       social: [
@@ -139,5 +172,6 @@ export default defineConfig({
         },
       ],
     }),
+    sitemap(),
   ],
 });

@@ -1,5 +1,6 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import sitemap from "@astrojs/sitemap";
 import starlightThemeFlexoki from "starlight-theme-flexoki";
 import rehypeMermaid from "rehype-mermaid";
 
@@ -42,6 +43,25 @@ export default defineConfig({
               sameAs: ["https://github.com/agent-receipts"],
             },
           }),
+        },
+        // Default social-share image (per-page frontmatter can override).
+        {
+          tag: "meta",
+          attrs: {
+            property: "og:image",
+            content: "https://obsigna.dev/og.png",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            property: "twitter:image",
+            content: "https://obsigna.dev/og.png",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: { name: "twitter:card", content: "summary_large_image" },
         },
       ],
       social: [
@@ -183,5 +203,6 @@ export default defineConfig({
         },
       ],
     }),
+    sitemap(),
   ],
 });
