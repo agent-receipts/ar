@@ -48,7 +48,11 @@ If port 8080 is already in use, `dashboard` exits immediately with `bind: addres
 | `-db` | `~/.local/share/agent-receipts/receipts.db` | Path to a receipt SQLite database |
 | `-host` | `127.0.0.1` | Address to bind the web server to |
 | `-port` | `8080` | Port to serve on |
-| `-poll-interval` | `5s` | How often to poll the database for new receipts |
+| `-poll-interval` | `5s` | How often to poll the database for new receipts (also set via `AR_DASHBOARD_POLL_INTERVAL`) |
+
+### Forensic decryption
+
+If the dashboard runs on a loopback address (the default) and a forensic key exists at `~/.local/share/agent-receipts/forensic.key`, it is loaded automatically and encrypted parameter disclosures are decrypted inline. You can also load a key from the UI. See the [overview](/dashboard/overview/#forensic-decryption) and the dashboard [README](https://github.com/agent-receipts/dashboard#forensic-decryption) for the security model and accepted key formats.
 
 ### Example
 
