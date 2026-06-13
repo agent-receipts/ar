@@ -28,7 +28,7 @@ The default policy includes a `pause_high_risk` rule. If the proxy runs without 
 
 ## Start the daemon
 
-The proxy holds no signing key of its own — `obsigna-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching Cursor:
+The proxy holds no signing key of its own — `obsigna-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching Cursor:
 
 ```bash
 obsigna-daemon --init   # one-time: generates the Ed25519 signing key pair

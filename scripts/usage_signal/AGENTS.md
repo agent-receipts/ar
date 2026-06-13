@@ -8,7 +8,7 @@ Tracked by default (edit the `*_PACKAGES` / `GITHUB_REPOS` constants in
 
 | Project | Channel(s) |
 |---------|-----------|
-| `agent-receipts` monorepo (`agent-receipts/ar`) | npm `@obsigna/sdk-ts`, `@obsigna/sdk-ts-aws`; PyPI `obsigna`; Go `sdk/go`; Homebrew/release binaries (daemon, hook, mcp-proxy, collector) |
+| `agent-receipts` monorepo (`agent-receipts/obsigna`) | npm `@obsigna/sdk-ts`, `@obsigna/sdk-ts-aws`; PyPI `obsigna`; Go `sdk/go`; Homebrew/release binaries (daemon, hook, mcp-proxy, collector) |
 | `openclaw` | npm `@agnt-rcpt/openclaw` |
 | `dashboard` (`agent-receipts/dashboard`) | Homebrew tap / release binaries |
 

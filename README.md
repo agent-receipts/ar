@@ -4,9 +4,9 @@
 
 **Cryptographically signed audit trails for AI agent actions**
 
-[![Go Tests](https://github.com/agent-receipts/ar/actions/workflows/sdk-go.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/sdk-go.yml)
-[![TS Tests](https://github.com/agent-receipts/ar/actions/workflows/sdk-ts.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/sdk-ts.yml)
-[![Python Tests](https://github.com/agent-receipts/ar/actions/workflows/sdk-py.yml/badge.svg)](https://github.com/agent-receipts/ar/actions/workflows/sdk-py.yml)
+[![Go Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-go.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-go.yml)
+[![TS Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-ts.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-ts.yml)
+[![Python Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-py.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-py.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>

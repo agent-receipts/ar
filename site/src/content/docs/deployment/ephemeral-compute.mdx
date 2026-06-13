@@ -5,7 +5,7 @@ description: Deploy Agent Receipts on AWS Lambda, GCP Cloud Run, AWS Fargate, an
 
 Ephemeral compute — AWS Lambda, GCP Cloud Run, AWS Fargate, Azure Functions — has no long-lived process to host the `obsigna-daemon`. The daemon model ([Daemon Setup](/getting-started/daemon-setup/)) assumes a persistent sidecar holding the signing key and a local socket; neither survives between invocations on serverless platforms.
 
-[ADR-0020](https://github.com/agent-receipts/ar/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md) makes ephemeral compute a first-class target by inverting the daemon model: **signing and chaining move client-side, into the SDK process**, and receipts are POSTed to an untrusted [collector](https://github.com/agent-receipts/ar/tree/main/collector) over HTTP. This guide shows how the pieces fit, how to manage keys without an extractable PEM in production, the gotchas per runtime, and what auditors see when an invocation is killed mid-chain.
+[ADR-0020](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md) makes ephemeral compute a first-class target by inverting the daemon model: **signing and chaining move client-side, into the SDK process**, and receipts are POSTed to an untrusted [collector](https://github.com/agent-receipts/obsigna/tree/main/collector) over HTTP. This guide shows how the pieces fit, how to manage keys without an extractable PEM in production, the gotchas per runtime, and what auditors see when an invocation is killed mid-chain.
 
 :::note
 The `HttpEmitter` (all three SDKs) and the reference collector have shipped. The production **KMS signing path** is partially shipped — see [Key management](#key-management) — so the worked examples use a raw-PEM key as the development story and call out the KMS production story where it is still being wired up.
@@ -22,7 +22,7 @@ The `HttpEmitter` (all three SDKs) and the reference collector have shipped. The
 | **`HttpEmitter`** | Inside your function | POSTs the signed receipt to the collector |
 | **Collector** | A long-lived service you operate | Stores received receipts append-only; never signs, reorders, or verifies |
 
-Receipt construction, signing, and chaining are **upstream of the emitter**. The `Emitter` interface is delivery-only — `emit(receipt)` takes an already-signed `AgentReceipt`. ([ADR-0020 § "Emitter interface"](https://github.com/agent-receipts/ar/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md).)
+Receipt construction, signing, and chaining are **upstream of the emitter**. The `Emitter` interface is delivery-only — `emit(receipt)` takes an already-signed `AgentReceipt`. ([ADR-0020 § "Emitter interface"](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md).)
 
 ### Data flow
 
@@ -46,15 +46,15 @@ sequenceDiagram
 
 ### Trust model
 
-The collector is **not trusted for chain construction**. Every receipt is signed and chained client-side before it leaves the function, so a compromised or malicious collector can drop or refuse receipts but cannot forge, alter, or reorder them. Auditors verify the chain using **only the agent's public key** — never the collector. This is what makes shared, multi-tenant collector infrastructure safe. ([Collector trust model](https://github.com/agent-receipts/ar/blob/main/collector/README.md).)
+The collector is **not trusted for chain construction**. Every receipt is signed and chained client-side before it leaves the function, so a compromised or malicious collector can drop or refuse receipts but cannot forge, alter, or reorder them. Auditors verify the chain using **only the agent's public key** — never the collector. This is what makes shared, multi-tenant collector infrastructure safe. ([Collector trust model](https://github.com/agent-receipts/obsigna/blob/main/collector/README.md).)
 
 The collector performs **no signature verification** — that is the auditor's job. It validates structure only (valid JSON, under the body cap, and the presence of `id`, `credentialSubject.chain.chain_id`, `credentialSubject.action.type`, and `proof.proofValue`).
 
 ### Where chaining happens — and the concurrency constraint
 
-Client-side chaining requires that receipt *N* is fully signed and its hash computed **before** receipt *N+1* is constructed ([ADR-0020 § "Concurrency constraint"](https://github.com/agent-receipts/ar/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md)). For a sequential single-process agent this is automatic. Two consequences for ephemeral compute:
+Client-side chaining requires that receipt *N* is fully signed and its hash computed **before** receipt *N+1* is constructed ([ADR-0020 § "Concurrency constraint"](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md)). For a sequential single-process agent this is automatic. Two consequences for ephemeral compute:
 
-- **Parallel tool calls must be serialised at the receipt layer.** Even when tool calls execute concurrently, receipt construction must pass through a single queue. Concurrent signing of independent receipts is not supported in v1. Each SDK ships a `ReceiptChain` (Go: `chain.ReceiptChain`) that owns the chain head and serialises build → sign → hash → link → deliver through an internal queue, so concurrent `emit()` calls are sequenced even when the tool calls ran in parallel; the first overlapping call logs a one-shot warning. Use it instead of threading `previous_receipt_hash` by hand. See the per-SDK READMEs ([Go](https://github.com/agent-receipts/ar/tree/main/sdk/go#sequential-receipt-construction-parallel-tool-calls) · [TypeScript](https://github.com/agent-receipts/ar/tree/main/sdk/ts#emit-a-chain-sequential-construction-under-parallel-tool-calls) · [Python](https://github.com/agent-receipts/ar/tree/main/sdk/py#sequential-receipt-construction-parallel-tool-calls)).
+- **Parallel tool calls must be serialised at the receipt layer.** Even when tool calls execute concurrently, receipt construction must pass through a single queue. Concurrent signing of independent receipts is not supported in v1. Each SDK ships a `ReceiptChain` (Go: `chain.ReceiptChain`) that owns the chain head and serialises build → sign → hash → link → deliver through an internal queue, so concurrent `emit()` calls are sequenced even when the tool calls ran in parallel; the first overlapping call logs a one-shot warning. Use it instead of threading `previous_receipt_hash` by hand. See the per-SDK READMEs ([Go](https://github.com/agent-receipts/obsigna/tree/main/sdk/go#sequential-receipt-construction-parallel-tool-calls) · [TypeScript](https://github.com/agent-receipts/obsigna/tree/main/sdk/ts#emit-a-chain-sequential-construction-under-parallel-tool-calls) · [Python](https://github.com/agent-receipts/obsigna/tree/main/sdk/py#sequential-receipt-construction-parallel-tool-calls)).
 - **Each execution environment owns its own chain.** Serverless platforms scale horizontally — many isolated instances run at once, and a cold start gives you a fresh process. A single linear chain cannot span concurrent invocations. Give each invocation (or each warm instance's lifetime) its own `chain_id`; reconcile across invocations downstream by `chain_id`, not by trying to thread one chain through the fleet.
 
 ## Key management
@@ -69,7 +69,7 @@ Client-side chaining requires that receipt *N* is fully signed and its hash comp
 
 ### Never auto-generate keys in production
 
-[ADR-0018](https://github.com/agent-receipts/ar/blob/main/docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md)'s `GeneratingKeyProvider` mints a fresh Ed25519 keypair on construction. It exists for **development and bootstrap only**. On ephemeral compute a cold start gives you a fresh process, so a production deployment that reached for it would silently generate a **new DID on every cold start** — producing an unverifiable, unattributable audit trail with no error surfaced ([ADR-0019 § S2](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)).
+[ADR-0018](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md)'s `GeneratingKeyProvider` mints a fresh Ed25519 keypair on construction. It exists for **development and bootstrap only**. On ephemeral compute a cold start gives you a fresh process, so a production deployment that reached for it would silently generate a **new DID on every cold start** — producing an unverifiable, unattributable audit trail with no error surfaced ([ADR-0019 § S2](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)).
 
 To make that failure mode unreachable, set **`AGENTRECEIPTS_PRODUCTION=true`** in every production environment. With it set, constructing a `GeneratingKeyProvider` fails immediately, before any key is generated:
 
@@ -83,7 +83,7 @@ Only the exact value `"true"` is treated as production. In every other case the 
 
 ### Cloud KMS / HSM signers
 
-[ADR-0018](https://github.com/agent-receipts/ar/blob/main/docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md) defines a `Signer` abstraction so the private key never leaves a KMS or HSM. The signer signs canonical bytes remotely and exposes the public key for verifiers:
+[ADR-0018](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md) defines a `Signer` abstraction so the private key never leaves a KMS or HSM. The signer signs canonical bytes remotely and exposes the public key for verifiers:
 
 ```
 Signer:
@@ -94,7 +94,7 @@ Signer:
 The AWS **`KMSSigner`** has shipped in the Go SDK's `aws` module (`github.com/agent-receipts/ar/sdk/go/aws`). It uses an `ECC_NIST_EDWARDS25519` KMS key with `SIGN_VERIFY` usage, signs via `kms:Sign` with `ED25519_SHA_512` / `MessageType=RAW` (standard pure Ed25519), and resolves credentials from the ambient AWS chain (instance role, IRSA, environment, shared profile).
 
 :::caution
-Two parts of the KMS production story are still landing (tracked in [#534](https://github.com/agent-receipts/ar/issues/534)):
+Two parts of the KMS production story are still landing (tracked in [#534](https://github.com/agent-receipts/obsigna/issues/534)):
 
 - **GCP Cloud KMS and Azure Key Vault adapters**, and the TypeScript/Python `KMSSigner` equivalents, are not yet shipped. Only the AWS Go `KMSSigner` exists today.
 - **Wiring a `Signer` into receipt signing.** The core `Sign`/`signReceipt`/`sign_receipt` functions currently take a PEM private key, not a `Signer`. Until the `Signer`-based signing path lands, the runnable story is raw-PEM; treat KMS as the production target you migrate to when that path ships.
@@ -111,7 +111,7 @@ A KMS-backed signer's **first** `getPublicKey()` makes a network round-trip to K
 
 ### Rotation
 
-Key rotation is governed by [ADR-0015](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md). Rotation events are recorded in `credentialSubject.keyRotation` so a verifier can follow a chain across a key change. With a KMS signer, rotation happens in the key backend and the new public key flows to verifiers through the rotation event — functions do not need redeploying to pick up a rotated key, which is a further argument against static PEM configuration.
+Key rotation is governed by [ADR-0015](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md). Rotation events are recorded in `credentialSubject.keyRotation` so a verifier can follow a chain across a key change. With a KMS signer, rotation happens in the key backend and the new public key flows to verifiers through the rotation event — functions do not need redeploying to pick up a rotated key, which is a further argument against static PEM configuration.
 
 ## Durability: the WAL
 
@@ -157,9 +157,9 @@ The SDK installs no signal handlers — wiring shutdown to a flush is the caller
 
 | Failure | Mechanism | What the SDK does | What auditors see |
 |---------|-----------|-------------------|-------------------|
-| Hard timeout / kill mid-run | In-memory WAL lost before flush | Best-effort `Flush` on `SIGTERM`; emit terminal `agent_end { status: interrupted }` if entries remain | A chain ending in `agent_end` with `status: interrupted` ([ADR-0019 § P1](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)) |
+| Hard timeout / kill mid-run | In-memory WAL lost before flush | Best-effort `Flush` on `SIGTERM`; emit terminal `agent_end { status: interrupted }` if entries remain | A chain ending in `agent_end` with `status: interrupted` ([ADR-0019 § P1](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)) |
 | Collector unreachable | Retry budget exhausted | `sync` `emit()` returns/throws `EmitError`; receipt stays in the WAL for replay | A gap in the chain if the receipt is never delivered |
-| Killed before `tool_result` emitted | Process dies after a tool runs but before its result receipt is signed | Nothing recoverable in-process | `tool_call` with no matching `tool_result`, classified as `incomplete_tool_roundtrip` — **not** a generic chain break ([ADR-0019 § O3](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)) |
+| Killed before `tool_result` emitted | Process dies after a tool runs but before its result receipt is signed | Nothing recoverable in-process | `tool_call` with no matching `tool_result`, classified as `incomplete_tool_roundtrip` — **not** a generic chain break ([ADR-0019 § O3](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)) |
 | Cold start before public-key cache populated | First `getPublicKey()` round-trips to KMS | Added latency on the first signed receipt | No correctness impact; surfaces as cold-start latency only |
 
 On the wire, `chain.status` is only ever `complete` or `interrupted`, and it must accompany `chain.terminal: true`. The `unknown` classification (a chain with no terminal receipt at all) is **verifier-derived** and never written by an emitter. Absence of `status` on a terminal receipt is equivalent to `complete`.
@@ -345,13 +345,13 @@ go run github.com/agent-receipts/ar/collector/cmd/obsigna-collector --addr 0.0.0
 curl -s http://localhost:8787/healthz          # 200 when the store is reachable
 ```
 
-The collector ships **no authentication** in v0 — protect it with network-level controls (private VPC/VNet, reverse proxy, or service mesh) and TLS termination. The client side already supports `api-key`, `bearer`, and `mTLS` via `HttpEmitterAuth`; pair that with a proxy that enforces them. The SQLite store is single-node and fine for low-volume or single-agent deployments. See the [collector README](https://github.com/agent-receipts/ar/blob/main/collector/README.md) for configuration and operational detail.
+The collector ships **no authentication** in v0 — protect it with network-level controls (private VPC/VNet, reverse proxy, or service mesh) and TLS termination. The client side already supports `api-key`, `bearer`, and `mTLS` via `HttpEmitterAuth`; pair that with a proxy that enforces them. The SQLite store is single-node and fine for low-volume or single-agent deployments. See the [collector README](https://github.com/agent-receipts/obsigna/blob/main/collector/README.md) for configuration and operational detail.
 
 ## References
 
-- [ADR-0018 — Signer abstraction and cloud-agnostic key providers](https://github.com/agent-receipts/ar/blob/main/docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md)
-- [ADR-0019 — Protocol integrity gaps and mitigations](https://github.com/agent-receipts/ar/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)
-- [ADR-0020 — Emitter abstraction and remote receipt delivery](https://github.com/agent-receipts/ar/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md)
-- [ADR-0015 — Key rotation, BYOK, and external anchoring](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md)
-- [Reference collector](https://github.com/agent-receipts/ar/tree/main/collector)
+- [ADR-0018 — Signer abstraction and cloud-agnostic key providers](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md)
+- [ADR-0019 — Protocol integrity gaps and mitigations](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0019-protocol-integrity-gaps-and-mitigations.md)
+- [ADR-0020 — Emitter abstraction and remote receipt delivery](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0020-emitter-abstraction-and-remote-receipt-delivery.md)
+- [ADR-0015 — Key rotation, BYOK, and external anchoring](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md)
+- [Reference collector](https://github.com/agent-receipts/obsigna/tree/main/collector)
 - SDK API references: [Go](/sdk-go/api-reference/) · [TypeScript](/sdk-ts/api-reference/) · [Python](/sdk-py/api-reference/)

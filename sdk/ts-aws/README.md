@@ -1,6 +1,6 @@
 # @obsigna/sdk-ts-aws
 
-AWS KMS `Signer` for the [Agent Receipts](https://github.com/agent-receipts/ar)
+AWS KMS `Signer` for the [Agent Receipts](https://github.com/agent-receipts/obsigna)
 TypeScript SDK.
 
 `KMSSigner` is an Ed25519 [`Signer`](./src/signer.ts) (ADR-0018) whose private

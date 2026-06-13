@@ -28,7 +28,7 @@ Both `claude mcp add-json` and `.mcp.json` persist their content as plaintext on
 
 ## Start the daemon
 
-The proxy holds no signing key of its own — `obsigna-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/ar/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching Claude Code:
+The proxy holds no signing key of its own — `obsigna-daemon` owns the key and writes every receipt ([ADR-0010](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0010-daemon-process-separation.md)). Initialise the key once and start the daemon before launching Claude Code:
 
 ```bash
 obsigna-daemon --init   # one-time: generates the Ed25519 signing key pair

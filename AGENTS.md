@@ -73,7 +73,7 @@ After cloning, no extra setup is required: `go build`, `go test`, and `go vet` f
 - Never store plaintext secrets in receipts — parameters must be hashed before inclusion.
 - Ed25519 is the only supported signing algorithm. Do not introduce alternative or weaker schemes.
 - Validate all inputs at trust boundaries (function parameters, environment variables, stored data). Crypto code must reject invalid inputs explicitly, not silently degrade.
-- Report vulnerabilities via [GitHub Security Advisories](https://github.com/agent-receipts/ar/security/advisories/new), not public issues. See [SECURITY.md](SECURITY.md).
+- Report vulnerabilities via [GitHub Security Advisories](https://github.com/agent-receipts/obsigna/security/advisories/new), not public issues. See [SECURITY.md](SECURITY.md).
 
 ## Mindset
 

@@ -163,6 +163,6 @@ database (under `t.TempDir()`) for the SQLite-adapter tests.
   — collector binary topology (`obsigna-collector`, `obsigna collector run`)
 - [ADR-0018](../docs/adr/0018-signer-abstraction-and-cloud-agnostic-keyprovider-design.md)
   — `Signer` interface (production key story for HTTP emitters)
-- Issue [#533](https://github.com/agent-receipts/ar/issues/533) — this work
-- Issue [#486](https://github.com/agent-receipts/ar/issues/486) — `HttpEmitter` (paired client work)
-- Issue [#536](https://github.com/agent-receipts/ar/issues/536) — operator guide
+- Issue [#533](https://github.com/agent-receipts/obsigna/issues/533) — this work
+- Issue [#486](https://github.com/agent-receipts/obsigna/issues/486) — `HttpEmitter` (paired client work)
+- Issue [#536](https://github.com/agent-receipts/obsigna/issues/536) — operator guide

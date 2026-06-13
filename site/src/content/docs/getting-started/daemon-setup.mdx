@@ -64,7 +64,7 @@ The receipt database (`$XDG_DATA_HOME/agent-receipts/receipts.db`, falling back 
 
 #### Rotate the signing key
 
-To rotate the daemon's signing key, stop the daemon and run `--rotate` ([ADR-0015](https://github.com/agent-receipts/ar/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md)):
+To rotate the daemon's signing key, stop the daemon and run `--rotate` ([ADR-0015](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0015-key-rotation-byok-anchoring.md)):
 
 ```bash
 obsigna-daemon --rotate
@@ -104,12 +104,12 @@ The daemon listens on a Unix domain socket. The socket path depends on platform:
 | Linux | `$XDG_RUNTIME_DIR/agentreceipts/events.sock`, falling back to `/run/agentreceipts/events.sock` |
 
 :::caution
-On Linux, if `$XDG_RUNTIME_DIR` is not set, the daemon falls back to `/run/agentreceipts/events.sock`, which requires elevated permissions to create. If you are running as a non-root user without `$XDG_RUNTIME_DIR`, and `/run/user/$(id -u)` exists and is owned by you (standard on systemd-based Linux), set it with `export XDG_RUNTIME_DIR=/run/user/$(id -u)` — that path is user-writable and inside the daemon's per-platform safe set. On other init systems that directory may not exist; in that case set `AGENTRECEIPTS_SOCKET` to a path you create manually and pass `--unsafe-socket-path` (a boolean flag that allows the path outside the safe set). Note the daemon **rejects** an `AGENTRECEIPTS_SOCKET` value outside the safe set (`$XDG_RUNTIME_DIR`, `/run`, `/var/run`) unless you also pass `--unsafe-socket-path`, so a path like `~/.local/run/...` will not work on its own (see [issue #538](https://github.com/agent-receipts/ar/issues/538)).
+On Linux, if `$XDG_RUNTIME_DIR` is not set, the daemon falls back to `/run/agentreceipts/events.sock`, which requires elevated permissions to create. If you are running as a non-root user without `$XDG_RUNTIME_DIR`, and `/run/user/$(id -u)` exists and is owned by you (standard on systemd-based Linux), set it with `export XDG_RUNTIME_DIR=/run/user/$(id -u)` — that path is user-writable and inside the daemon's per-platform safe set. On other init systems that directory may not exist; in that case set `AGENTRECEIPTS_SOCKET` to a path you create manually and pass `--unsafe-socket-path` (a boolean flag that allows the path outside the safe set). Note the daemon **rejects** an `AGENTRECEIPTS_SOCKET` value outside the safe set (`$XDG_RUNTIME_DIR`, `/run`, `/var/run`) unless you also pass `--unsafe-socket-path`, so a path like `~/.local/run/...` will not work on its own (see [issue #538](https://github.com/agent-receipts/obsigna/issues/538)).
 :::
 
-Start the daemon before launching any agent session. By default, emitters that cannot reach the socket **surface the failure to the caller** (bounded by the configured dial and write deadlines; the TypeScript SDK may re-dial once on a stale connection, so the bound can span two dial+write cycles) rather than dropping the event silently, so an unreachable daemon is detectable per the [emit failure contract](https://github.com/agent-receipts/ar/blob/main/docs/adr/0025-emit-failure-contract.md). The exact shape is language-specific — Go returns a non-nil `error`, Python raises `EmitTransportError`, TypeScript resolves with an `EmitTransportError`. SDKs offer an opt-in best-effort mode for callers that knowingly tolerate dropped events.
+Start the daemon before launching any agent session. By default, emitters that cannot reach the socket **surface the failure to the caller** (bounded by the configured dial and write deadlines; the TypeScript SDK may re-dial once on a stale connection, so the bound can span two dial+write cycles) rather than dropping the event silently, so an unreachable daemon is detectable per the [emit failure contract](https://github.com/agent-receipts/obsigna/blob/main/docs/adr/0025-emit-failure-contract.md). The exact shape is language-specific — Go returns a non-nil `error`, Python raises `EmitTransportError`, TypeScript resolves with an `EmitTransportError`. SDKs offer an opt-in best-effort mode for callers that knowingly tolerate dropped events.
 
-To run as a persistent service on macOS, use the launchd plist available at [`daemon/packaging/macos/`](https://github.com/agent-receipts/ar/tree/main/daemon/packaging/macos) on GitHub and included in the release tarball. A Linux systemd unit is included in the release tarball but is not yet committed to the repository.
+To run as a persistent service on macOS, use the launchd plist available at [`daemon/packaging/macos/`](https://github.com/agent-receipts/obsigna/tree/main/daemon/packaging/macos) on GitHub and included in the release tarball. A Linux systemd unit is included in the release tarball but is not yet committed to the repository.
 
 ### Configuration file
 

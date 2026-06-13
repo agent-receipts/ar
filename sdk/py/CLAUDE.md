@@ -2,7 +2,7 @@
 
 ## Project
 
-Python SDK for [Agent Receipts](https://github.com/agent-receipts/ar) — cryptographically signed, hash-chained audit trails for AI agents.
+Python SDK for [Agent Receipts](https://github.com/agent-receipts/obsigna) — cryptographically signed, hash-chained audit trails for AI agents.
 
 ## Commands
 
