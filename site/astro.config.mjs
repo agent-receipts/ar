@@ -24,8 +24,13 @@ export default defineConfig({
     starlight({
       title: "Agent Receipts",
       tagline: "Cryptographically signed audit trails for AI agent actions",
+      favicon: "/favicon.svg",
       plugins: [starlightThemeFlexoki({ accentColor: "green" })],
       head: [
+        {
+          tag: "link",
+          attrs: { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+        },
         {
           tag: "link",
           attrs: {
