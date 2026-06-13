@@ -7,6 +7,9 @@
 [![Go Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-go.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-go.yml)
 [![TS Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-ts.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-ts.yml)
 [![Python Tests](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-py.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/sdk-py.yml)
+[![Daemon](https://github.com/agent-receipts/obsigna/actions/workflows/daemon.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/daemon.yml)
+[![MCP Proxy](https://github.com/agent-receipts/obsigna/actions/workflows/mcp-proxy.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/mcp-proxy.yml)
+[![Hook](https://github.com/agent-receipts/obsigna/actions/workflows/hook.yml/badge.svg)](https://github.com/agent-receipts/obsigna/actions/workflows/hook.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
