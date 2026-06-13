@@ -77,8 +77,22 @@ to the closest documented path (e.g. "from source") to keep the journey going.
 - **Who:** Priya, a security reviewer handed a `receipts.db` from a colleague.
 - **Platform:** macOS.
 - **Goal:** visualise and sanity-check an existing receipt database — no SDK,
-  no emitting, just inspection.
+  no emitting, just inspection. She also expects to read encrypted parameter
+  previews and review multi-agent attribution when the data supports it.
 - **Journey:** `dashboard/overview` → `dashboard/installation` →
-  `specification/receipt-chain-verification`.
-- **Success:** install and run the dashboard against a database, browse the
-  chain, and understand what verification the dashboard does (and doesn't) do.
+  `specification/receipt-chain-verification`. The site pages link out to the
+  dashboard README for the full feature set, the forensic-decryption details,
+  and the HTTP API — follow those links and hold the README to the same bar.
+- **Success:** install and run the dashboard against a database; browse the
+  chain; verify both modes (structural, and with a public key for signatures);
+  exercise **forensic decryption** — confirm the documented auto-load from the
+  default key path (`~/.local/share/agent-receipts/forensic.key`) on a loopback
+  bind, and that encrypted parameter previews decrypt on the fly; and open the
+  **session attribution** view for a multi-agent store. Understand what
+  verification the dashboard does (and doesn't) do, and the loopback-only
+  security model around forensic keys.
+- **Note:** forensic decryption needs receipts with encrypted disclosures plus a
+  matching forensic key, and attribution needs a multi-agent session. If the
+  handed-over database (or any the docs tell her how to obtain) lacks these,
+  record it as `environment-limited` for that step rather than a doc defect —
+  but a doc that never explains how to get such data *is* a finding.
