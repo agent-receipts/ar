@@ -98,7 +98,7 @@ MCP tool names are automatically stripped of their `mcp__<server>__` prefix befo
 
 The daemon stores action types in `<channel>.<server>.<tool>` form — for example, `mcp.github-audited.create_branch`. Full taxonomy mapping that would reclassify tools to canonical types like `data.api.write` is not yet applied by the daemon; that work is tracked for a future release. Receipts for action types that do not match a built-in taxonomy entry carry `RiskMedium` as their risk level.
 
-Available action types include `filesystem.file.*`, `system.*`, and `data.api.*` (read, write, delete). See the [Action Taxonomy](/specification/action-taxonomy/) reference and the [taxonomy definitions](https://github.com/agent-receipts/ar/tree/main/spec/spec/taxonomy) for the full list, and open a PR to add or correct mappings.
+Available action types include `filesystem.file.*`, `system.*`, and `data.api.*` (read, write, delete). See the [Action Taxonomy](https://agentreceipts.ai/specification/action-taxonomy/) reference and the [taxonomy definitions](https://github.com/agent-receipts/ar/tree/main/spec/spec/taxonomy) for the full list, and open a PR to add or correct mappings.
 
 The proxy's prefix-based [operation classification](#operation-classification) drives policy risk scoring today and is independent of the daemon's action type labelling.
 
@@ -131,7 +131,7 @@ Tool-call inputs and outputs are **not stored as plaintext** — the daemon stor
 
 ## Payload disclosure
 
-By default the daemon stores only a cryptographic hash of each tool call's input and output — the receipt proves what happened without retaining the raw payload. The daemon can optionally encrypt parameters to a forensic public key (HPKE, [ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md)) so they are recoverable only by the holder of the matching private key, never stored as plaintext. This is a daemon-side, operator-controlled concern — see [Parameter Disclosure](/specification/parameter-disclosure/) for the model and [Daemon Setup → Payload disclosure](/getting-started/daemon-setup/#payload-disclosure) for configuration.
+By default the daemon stores only a cryptographic hash of each tool call's input and output — the receipt proves what happened without retaining the raw payload. The daemon can optionally encrypt parameters to a forensic public key (HPKE, [ADR-0012](https://github.com/agent-receipts/ar/blob/main/docs/adr/0012-payload-disclosure-policy.md)) so they are recoverable only by the holder of the matching private key, never stored as plaintext. This is a daemon-side, operator-controlled concern — see [Parameter Disclosure](https://agentreceipts.ai/specification/parameter-disclosure/) for the model and [Daemon Setup → Payload disclosure](/getting-started/daemon-setup/#payload-disclosure) for configuration.
 
 ## Troubleshooting
 
