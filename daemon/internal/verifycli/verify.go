@@ -1,4 +1,4 @@
-// Package verifycli implements the `agent-receipts verify` subcommand:
+// Package verifycli implements the `obsigna receipt verify` subcommand:
 // validate a stored chain's signatures and hash links using a daemon-written
 // SQLite store and the daemon-published public key. For a chain that has
 // survived an offline key rotation the published key is the post-rotation key,
@@ -70,7 +70,7 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	keyPath := envOr("AGENTRECEIPTS_KEY", daemon.DefaultKeyPath())
 	defaultPubKey := envOr("AGENTRECEIPTS_PUBLIC_KEY", daemon.DefaultPublicKeyPath(keyPath))
 
-	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	fs := flag.NewFlagSet("receipt verify", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dbPath := fs.String("db", envOr("AGENTRECEIPTS_DB", daemon.DefaultDBPath()), "SQLite receipt-store path (env: AGENTRECEIPTS_DB)")
 	pubKeyPath := fs.String("public-key", defaultPubKey, "PEM-encoded SPKI public key path (env: AGENTRECEIPTS_PUBLIC_KEY)")
@@ -78,7 +78,7 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	if err := fs.Parse(args); err != nil {
 		// `-h` / `--help` is intentional, not an error — flag.ContinueOnError
 		// surfaces it as flag.ErrHelp after writing the usage message. Exit 0
-		// so scripts that probe `agent-receipts verify -h` don't see a failure.
+		// so scripts that probe `obsigna receipt verify -h` don't see a failure.
 		if errors.Is(err, flag.ErrHelp) {
 			return ExitOK
 		}
@@ -86,24 +86,24 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	}
 	// `verify` takes no positional arguments — chain selection is via
 	// --chain-id. Surface stray args as a usage error so a typo like
-	// `agent-receipts verify --db /path/to.db extra` doesn't silently succeed
+	// `obsigna receipt verify --db /path/to.db extra` doesn't silently succeed
 	// and hide a scripting mistake.
 	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "agent-receipts verify: unexpected positional argument(s): %v (use --chain-id for chain selection)\n", fs.Args())
+		fmt.Fprintf(stderr, "obsigna receipt verify: unexpected positional argument(s): %v (use --chain-id for chain selection)\n", fs.Args())
 		return ExitUsageError
 	}
 	if *dbPath == "" {
-		fmt.Fprintln(stderr, "agent-receipts verify: --db is required (no AGENTRECEIPTS_DB and no home directory)")
+		fmt.Fprintln(stderr, "obsigna receipt verify: --db is required (no AGENTRECEIPTS_DB and no home directory)")
 		return ExitUsageError
 	}
 	if *pubKeyPath == "" {
-		fmt.Fprintln(stderr, "agent-receipts verify: --public-key is required (set AGENTRECEIPTS_PUBLIC_KEY directly, or AGENTRECEIPTS_KEY so its <KeyPath>.pub default can be derived; both are unset and no home directory is available)")
+		fmt.Fprintln(stderr, "obsigna receipt verify: --public-key is required (set AGENTRECEIPTS_PUBLIC_KEY directly, or AGENTRECEIPTS_KEY so its <KeyPath>.pub default can be derived; both are unset and no home directory is available)")
 		return ExitUsageError
 	}
 
 	pubPEM, err := os.ReadFile(*pubKeyPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts verify: read public key: %v\n", err)
+		fmt.Fprintf(stderr, "obsigna receipt verify: read public key: %v\n", err)
 		return ExitUsageError
 	}
 	// Validate the public key's PEM/SPKI shape upfront so a malformed key
@@ -111,20 +111,20 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	// VerifyStoredChain → ExitChainBad, which would falsely suggest the chain
 	// itself was tampered with.
 	if err := validatePublicKeyPEM(pubPEM); err != nil {
-		fmt.Fprintf(stderr, "agent-receipts verify: invalid public key at %s: %v\n", *pubKeyPath, err)
+		fmt.Fprintf(stderr, "obsigna receipt verify: invalid public key at %s: %v\n", *pubKeyPath, err)
 		return ExitUsageError
 	}
 
 	s, err := store.OpenReadOnly(*dbPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts verify: open store: %v\n", err)
+		fmt.Fprintf(stderr, "obsigna receipt verify: open store: %v\n", err)
 		return ExitUsageError
 	}
 	defer s.Close()
 
 	receipts, err := s.GetChain(*chainID)
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts verify: load chain: %v\n", err)
+		fmt.Fprintf(stderr, "obsigna receipt verify: load chain: %v\n", err)
 		return ExitUsageError
 	}
 
@@ -160,7 +160,7 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	if result.Valid && resolvedFromArchive {
 		publishedFp, err := publicKeyFingerprint(pubPEM)
 		if err != nil {
-			fmt.Fprintf(stderr, "agent-receipts verify: fingerprint published key: %v\n", err)
+			fmt.Fprintf(stderr, "obsigna receipt verify: fingerprint published key: %v\n", err)
 			return ExitUsageError
 		}
 		currentFp, rotated := currentChainKeyFingerprint(receipts)
