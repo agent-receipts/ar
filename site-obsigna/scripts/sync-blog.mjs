@@ -10,6 +10,8 @@ import {
   readdirSync,
   readFileSync,
   writeFileSync,
+  copyFileSync,
+  statSync,
   mkdirSync,
   existsSync,
   rmSync,
@@ -21,6 +23,11 @@ import { resolve } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "site", "src", "content", "docs", "blog");
 const outDir = join(here, "..", "src", "content", "docs", "blog");
+// Blog post images live in site/public/blog/ and are referenced as
+// /blog/<file>. Mirror them into this site's public/blog/ so the mirrored
+// posts resolve the same paths. Generated + gitignored, like the content above.
+const imgSrcDir = join(here, "..", "..", "site", "public", "blog");
+const imgOutDir = join(here, "..", "public", "blog");
 
 // agentreceipts.ai is the canonical home for the blog. obsigna.dev mirrors it,
 // so each mirrored page points its canonical URL back at the original to avoid
@@ -49,6 +56,20 @@ export function withCanonical(content, file) {
   return content.replace(fm[0], () => `---\n${fm[1]}\n${inject}\n---`);
 }
 
+// Mirror flat image files from the source blog's public/blog into this site's
+// public/blog, replacing whatever was there. Returns the number of files copied.
+// The mirror is cleared first (force: no error when absent), so deleting an
+// image at the source removes it here too; a missing source dir just leaves an
+// empty mirror rather than stale files.
+export function syncImages(src, out) {
+  rmSync(out, { recursive: true, force: true });
+  if (!existsSync(src)) return 0;
+  mkdirSync(out, { recursive: true });
+  const files = readdirSync(src).filter((f) => statSync(join(src, f)).isFile());
+  for (const file of files) copyFileSync(join(src, file), join(out, file));
+  return files.length;
+}
+
 function main() {
   if (!existsSync(srcDir)) {
     console.warn(`sync-blog: source directory not found: ${srcDir}`);
@@ -64,7 +85,9 @@ function main() {
     writeFileSync(join(outDir, file), withCanonical(content, file));
   }
 
-  console.log(`sync-blog: synced ${files.length} file(s) from site/blog`);
+  const imgCount = syncImages(imgSrcDir, imgOutDir);
+
+  console.log(`sync-blog: synced ${files.length} file(s) and ${imgCount} image(s) from site/blog`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

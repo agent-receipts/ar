@@ -197,6 +197,10 @@ export default defineConfig({
           items: [
             { label: "All Posts", slug: "blog" },
             {
+              label: "Your agents are isolated. Your shared state isn't.",
+              slug: "blog/attribution-over-undo",
+            },
+            {
               label: "Agent Security Tooling Landscape — May 2026",
               slug: "blog/agent-security-tooling-landscape-may-2026",
             },
