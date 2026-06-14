@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/agent-receipts/ar/daemon/internal/disclosecli"
 	"github.com/agent-receipts/ar/daemon/internal/doctorcli"
 	"github.com/agent-receipts/ar/daemon/internal/keyscli"
 	"github.com/agent-receipts/ar/daemon/internal/listcli"
@@ -28,7 +29,7 @@ func TestGoldenSurface(t *testing.T) {
 	tr := commandTree()
 
 	wantGroups := map[string][]string{
-		"receipt": {"verify", "show", "list", "verify-event"},
+		"receipt": {"verify", "show", "list", "verify-event", "disclose"},
 		"keys":    {"generate", "pubkey", "rotate"},
 	}
 	wantTopLeaves := []string{"doctor"}
@@ -106,6 +107,7 @@ func TestLeafWiring(t *testing.T) {
 			"show":         showcli.Run,
 			"list":         listcli.Run,
 			"verify-event": verifyeventcli.Run,
+			"disclose":     disclosecli.Run,
 		},
 		"keys": {
 			"generate": keyscli.RunGenerate,

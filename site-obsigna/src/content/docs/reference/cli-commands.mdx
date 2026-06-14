@@ -86,7 +86,7 @@ mcp-proxy init -http-port 9000              # custom approval listener port in s
 
 ## `obsigna`
 
-The daemon's read-side CLI. `obsigna receipt list`, `show`, `verify`, and `verify-event` open the store **read-only** — safe to run while the daemon is the active writer, and verification does not require the daemon socket to be reachable. `obsigna doctor` is the exception: by default it writes a synthetic round-trip event to confirm the full pipeline is live; pass `--no-roundtrip` to skip the write. Subcommands: `receipt list`, `receipt show`, `receipt verify`, `receipt verify-event`, `doctor`.
+The daemon's read-side CLI. `obsigna receipt list`, `show`, `verify`, and `verify-event` open the store **read-only** — safe to run while the daemon is the active writer, and verification does not require the daemon socket to be reachable. `obsigna doctor` is the exception: by default it writes a synthetic round-trip event to confirm the full pipeline is live; pass `--no-roundtrip` to skip the write. Subcommands: `receipt list`, `receipt show`, `receipt verify`, `receipt verify-event`, `receipt disclose`, `doctor`.
 
 > The legacy `agent-receipts` command still works as a thin deprecation shim (ADR-0030): it forwards each subcommand to `obsigna` and prints a one-line notice to stderr. Use `obsigna` for new work.
 
@@ -178,6 +178,27 @@ obsigna receipt verify-event --since 24h                      # every receipt in
 | `-chain-id` | Chain id; selects/filters the chain (env: `AGENTRECEIPTS_CHAIN_ID`) |
 | `-emitter-allowlist` | Comma-separated `exe_path` allowlist of expected emitters (env: `AGENTRECEIPTS_EMITTER_ALLOWLIST`); mismatches warn, never fail |
 | `-json` | Machine-readable JSON output |
+
+### `obsigna receipt disclose`
+
+Decrypt the `parameters_disclosure` envelope of a single stored receipt using the operator's X25519 forensic private key, and print the recovered plaintext parameters. This is the headless counterpart to the dashboard's inline forensic decryption — the privacy model hashes parameters by default; `disclose` is the controlled "break the glass" path for an operator who holds the forensic key.
+
+```bash
+obsigna receipt disclose 42                          # human-readable key/value table
+obsigna receipt disclose 42 --json                   # decrypted parameters as JSON
+obsigna receipt disclose 42 --key ~/forensic.key     # explicit forensic key path
+```
+
+| Flag | Description |
+|------|-------------|
+| `-db` | Receipt-store path (default: per-user path; env: `AGENTRECEIPTS_DB`) |
+| `-chain-id` | Chain to read from (env: `AGENTRECEIPTS_CHAIN_ID`); required only when the store holds more than one chain |
+| `-key` | Forensic private-key path — raw 32-byte X25519, hex, standard/URL-safe base64, or PKCS#8 PEM (default: per-user path; env: `AGENTRECEIPTS_FORENSIC_KEY`) |
+| `-json` | Output the decrypted parameters as JSON |
+
+The key never leaves the machine, and its in-memory buffers are zeroed after use on a best-effort basis (Go's runtime may still retain copies). A receipt with no `parameters_disclosure` is reported and exits successfully.
+
+**Exit codes:** `0` parameters decrypted and printed (or the receipt carries no disclosure); `1` no receipt at the requested sequence; `2` usage error (bad flags, ambiguous chain, unreadable database); `3` decryption error — the key is missing, does not match any recipient in the envelope, or the envelope is corrupt.
 
 ### `obsigna doctor`
 
