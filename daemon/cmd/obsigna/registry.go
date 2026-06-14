@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 
+	"github.com/agent-receipts/ar/daemon/internal/disclosecli"
 	"github.com/agent-receipts/ar/daemon/internal/doctorcli"
 	"github.com/agent-receipts/ar/daemon/internal/keyscli"
 	"github.com/agent-receipts/ar/daemon/internal/listcli"
@@ -63,12 +64,13 @@ func commandTree() tree {
 		groups: map[string]group{
 			"receipt": {
 				heading: "Receipt commands",
-				order:   []string{"verify", "show", "list", "verify-event"},
+				order:   []string{"verify", "show", "list", "verify-event", "disclose"},
 				leaves: map[string]leaf{
 					"verify":       {"Verify a stored chain's signatures and hash links.", verifycli.Run},
 					"show":         {"Print the full fields of a single receipt by sequence number.", showcli.Run},
 					"list":         {"List recent receipts from the store.", listcli.Run},
 					"verify-event": {"Verify one historical receipt's end-to-end pipeline provenance.", verifyeventcli.Run},
+					"disclose":     {"Decrypt a receipt's parameters_disclosure with the forensic key.", disclosecli.Run},
 				},
 			},
 			"keys": {

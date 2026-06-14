@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted (2026-06-12).
+Accepted (2026-06-12). Amended (2026-06-14): added the grouped verb
+`obsigna receipt disclose` — an additive change permitted by the "new
+functionality only ever receives a grouped command" rule below (no rename, no
+removal, no new flat alias).
 
 ## Context
 
@@ -28,6 +31,7 @@ obsigna receipt verify <file|->     # alias: obsigna verify
 obsigna receipt show <id>           # alias: obsigna show
 obsigna receipt list
 obsigna receipt verify-event        # carried over from agent-receipts (PR #788)
+obsigna receipt disclose <seq>      # decrypt a receipt's parameters_disclosure (forensic key); added 2026-06-14
 
 obsigna daemon run                  # foreground primitive
 obsigna daemon status
