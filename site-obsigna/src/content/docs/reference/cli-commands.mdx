@@ -196,7 +196,7 @@ obsigna receipt disclose 42 --key ~/forensic.key     # explicit forensic key pat
 | `-key` | Forensic private-key path — raw 32-byte X25519, hex, standard/URL-safe base64, or PKCS#8 PEM (default: per-user path; env: `AGENTRECEIPTS_FORENSIC_KEY`) |
 | `-json` | Output the decrypted parameters as JSON |
 
-The key never leaves the machine and is zeroed from memory after use. A receipt with no `parameters_disclosure` is reported and exits successfully.
+The key never leaves the machine, and its in-memory buffers are zeroed after use on a best-effort basis (Go's runtime may still retain copies). A receipt with no `parameters_disclosure` is reported and exits successfully.
 
 **Exit codes:** `0` parameters decrypted and printed (or the receipt carries no disclosure); `1` no receipt at the requested sequence; `2` usage error (bad flags, ambiguous chain, unreadable database); `3` decryption error — the key is missing, does not match any recipient in the envelope, or the envelope is corrupt.
 

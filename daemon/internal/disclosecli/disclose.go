@@ -118,6 +118,10 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		fmt.Fprintf(stderr, "obsigna receipt disclose: read key %q: %v\n", *keyPath, err)
 		return ExitDecryptError
 	}
+	// The on-disk bytes hold key material too; wipe them alongside the parsed
+	// key. Best-effort — the Go runtime may still retain copies — but it keeps
+	// the raw buffer from sitting around for the rest of Run.
+	defer zeroSlice(raw)
 	privKey, err := parseForensicPrivateKey(raw)
 	if err != nil {
 		fmt.Fprintf(stderr, "obsigna receipt disclose: invalid forensic key: %v\n", err)
