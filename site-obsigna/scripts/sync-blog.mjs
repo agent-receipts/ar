@@ -57,11 +57,13 @@ export function withCanonical(content, file) {
 }
 
 // Mirror flat image files from the source blog's public/blog into this site's
-// public/blog. Returns the number of files copied. A missing source dir is fine
-// (a blog with no images), in which case it copies nothing.
+// public/blog, replacing whatever was there. Returns the number of files copied.
+// The mirror is cleared first (force: no error when absent), so deleting an
+// image at the source removes it here too; a missing source dir just leaves an
+// empty mirror rather than stale files.
 export function syncImages(src, out) {
+  rmSync(out, { recursive: true, force: true });
   if (!existsSync(src)) return 0;
-  if (existsSync(out)) rmSync(out, { recursive: true });
   mkdirSync(out, { recursive: true });
   const files = readdirSync(src).filter((f) => statSync(join(src, f)).isFile());
   for (const file of files) copyFileSync(join(src, file), join(out, file));

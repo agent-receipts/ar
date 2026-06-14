@@ -65,7 +65,26 @@ test("syncImages mirrors flat image files into the output dir", () => {
   }
 });
 
-test("syncImages returns 0 when the source dir is absent", () => {
-  const out = join(tmpdir(), "syncblog-noimg-out");
-  assert.equal(syncImages(join(tmpdir(), "syncblog-does-not-exist-xyz"), out), 0);
+test("syncImages returns 0 and creates no output when the source dir is absent", () => {
+  const base = mkdtempSync(join(tmpdir(), "syncblog-noimg-"));
+  try {
+    const out = join(base, "out");
+    assert.equal(syncImages(join(base, "missing-src"), out), 0);
+    assert.ok(!existsSync(out), "no output dir created for an absent source");
+  } finally {
+    rmSync(base, { recursive: true });
+  }
+});
+
+test("syncImages clears stale images when the source dir is absent", () => {
+  const base = mkdtempSync(join(tmpdir(), "syncblog-stale-"));
+  try {
+    const out = join(base, "out");
+    mkdirSync(out, { recursive: true });
+    writeFileSync(join(out, "old.png"), "STALE");
+    assert.equal(syncImages(join(base, "missing-src"), out), 0);
+    assert.ok(!existsSync(join(out, "old.png")), "stale image removed from the mirror");
+  } finally {
+    rmSync(base, { recursive: true });
+  }
 });
