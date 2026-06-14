@@ -10,6 +10,8 @@ on:
   pull_request:
     branches: [main]
     paths: [site-obsigna/**, site/src/content/docs/blog/**, site/public/blog/**]
+  # Manual rebuild — e.g. to resync the blog mirror after a missed trigger.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -43,7 +45,7 @@ jobs:
         run: pnpm build
 
       - name: Deploy to obsigna-site gh-pages
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           personal_token: ${{ secrets.OBSIGNA_SITE_DEPLOY_PAT }}
