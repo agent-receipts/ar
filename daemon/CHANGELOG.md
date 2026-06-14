@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Receipt principal is derived from the kernel-attested peer uid** instead of always being the `did:user:unknown` sentinel. When an emitter supplies no principal (the common case today), live and `events_dropped` receipts now record `principal.id` as `did:user:<login>`, resolved from the connecting process's uid — the same `LOCAL_PEERCRED`/`SO_PEERCRED` identity the daemon already vouches for in `action.peer_credential`, so the principal inherits that field's tamper-evidence rather than trusting an emitter self-report. The uid is the attested fact; the login name is the daemon's lookup of it on its own host. It falls back to the numeric `did:user:<platform>:<uid>` when the host user database has no entry (containers, directory-only users, deleted accounts), and to `did:user:unknown` on platforms with no POSIX uid and on synthetic chain-interrupted terminator receipts (which have no connecting peer). The derived DID names the OS user, not a configured human or authorization grant; mapping a uid to a named principal or mandate is a higher layer on top of this attested floor. No schema change — `principal.id` was already a free-form DID string.
+
 ## [0.25.0] - 2026-06-13
 
 ### Changed

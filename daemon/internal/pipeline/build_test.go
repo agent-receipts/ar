@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -140,6 +141,50 @@ func TestBuildPeerCred(t *testing.T) {
 	}
 }
 
+// TestPrincipalFromPeer covers derivation of the receipt principal from
+// kernel-attested peer credentials: a resolvable uid yields the host login name
+// (did:user:<login>); an unresolvable uid falls back to the numeric
+// did:user:<platform>:<uid> (the attested uid is never lost, including root);
+// and platforms with no POSIX uid — or an absent peer — fall back to the
+// did:user:unknown sentinel. lookupUID is stubbed so the test is deterministic
+// regardless of the host user database.
+func TestPrincipalFromPeer(t *testing.T) {
+	orig := lookupUID
+	t.Cleanup(func() { lookupUID = orig })
+
+	resolves := func(uid string) (*user.User, error) {
+		return &user.User{Uid: uid, Username: "ottojongerius", Name: "Otto Jongerius"}, nil
+	}
+	emptyName := func(uid string) (*user.User, error) {
+		return &user.User{Uid: uid, Username: ""}, nil
+	}
+	notFound := func(uid string) (*user.User, error) {
+		return nil, user.UnknownUserIdError(0)
+	}
+
+	cases := []struct {
+		name   string
+		lookup func(string) (*user.User, error)
+		peer   socket.PeerCred
+		want   string
+	}{
+		{"resolvable uid yields login name", resolves, socket.PeerCred{Platform: "darwin", PID: 99, UID: 501, GID: 20}, "did:user:ottojongerius"},
+		{"unresolvable uid falls back to numeric", notFound, socket.PeerCred{Platform: "linux", PID: 42, UID: 1000, GID: 1000}, "did:user:linux:1000"},
+		{"empty resolved name falls back to numeric", emptyName, socket.PeerCred{Platform: "darwin", PID: 7, UID: 501, GID: 20}, "did:user:darwin:501"},
+		{"unresolvable root (uid=0 attested, not unknown)", notFound, socket.PeerCred{Platform: "linux", PID: 1, UID: 0, GID: 0}, "did:user:linux:0"},
+		{"non-POSIX platform falls back to unknown", notFound, socket.PeerCred{Platform: "windows", PID: 7}, "did:user:unknown"},
+		{"absent peer falls back to unknown", notFound, socket.PeerCred{}, "did:user:unknown"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lookupUID = tc.lookup
+			if got := principalFromPeer(tc.peer).ID; got != tc.want {
+				t.Errorf("principalFromPeer(%+v).ID = %q, want %q", tc.peer, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestProcess_BuildsSignedReceipt(t *testing.T) {
 	ks := newTestKeySource(t)
 	st := newTestStore(t)
@@ -180,6 +225,13 @@ func TestProcess_BuildsSignedReceipt(t *testing.T) {
 	}
 	if pc.ExePath != "/usr/bin/mcp-proxy" {
 		t.Errorf("peer_credential.exe_path = %q", pc.ExePath)
+	}
+	// Principal must be derived from the kernel-attested peer uid (sampleFrame's
+	// peer is uid 1000), not the did:user:unknown sentinel. Exact formatting —
+	// resolved login name vs numeric fallback — is covered by TestPrincipalFromPeer;
+	// here we only assert the wiring derives something from the peer.
+	if got := r.CredentialSubject.Principal.ID; got == "did:user:unknown" || !strings.HasPrefix(got, "did:user:") {
+		t.Errorf("principal.id = %q, want a peer-derived did:user:* (not the unknown sentinel)", got)
 	}
 	// Live receipts MUST NOT carry the synthetic emitter_metadata block —
 	// drop_count belongs to events_dropped synthetic receipts only.
