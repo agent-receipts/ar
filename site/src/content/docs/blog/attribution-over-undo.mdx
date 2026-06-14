@@ -11,10 +11,9 @@ head:
 _Published 2026-06-14_
 
 {/* TODO before publish:
-  - Hero screenshot pending: capture the dashboard agent graph for the vault swarm (the three isolated agents ada19a73 / af1d44a1 / a8b68a43 tied through /tmp/shared-vault…/credentials.yaml). Filter by the vault resource or recent time to cut session clutter. Save to /blog/vault-swarm-graph.png. Optional: a receipt-detail card showing principal did:user:ottojongerius + the vault path.
-  - Old /blog/blast-radius-node-detail.png is the previous (credentials.yaml scratch) demo — retire it once the vault graph is captured.
+  - Hero: /blog/vault-swarm-graph.png = clean fresh-session capture (session f89f8994, orchestrator + the 3 vault agents a048ee95 / aa82f880 / a4984f21, blue contention edges). JSON synced to that run (auth agent a048ee9547c58c4ae).
   - Canonical home: currently agentreceipts.ai; per plan this is a tooling post for the obsigna.dev blog (would flip canonical + index). Slug stays attribution-over-undo unless we rename.
-  - Follow-up issues (out of scope): (1) shell commands get default `medium` risk + no target.resource — classify rm/mv/cp; (2) draw resource edges for non-file resources (API endpoints, DB tables) so shared-API contention shows like shared-file contention.
+  - Follow-up issues (out of scope): (1) shell commands get default `medium` risk + no target.resource — classify rm/mv/cp; (2) draw resource edges for non-file resources (API endpoints, DB tables) so shared-API contention shows like shared-file contention; (3) failed tool calls (e.g. a losing concurrent Edit) aren't receipted — a lost write currently leaves no failure row, only the retry reads.
   Remove this comment before publish. */}
 
 ---
@@ -75,17 +74,17 @@ Each agent ran on its own hash-chained sequence, keyed `<session>/agent/<agent-i
 {
   "issuer": {
     "id": "did:agent-receipts-daemon:local",
-    "session_id": "1c665a44-2706-4f71-a478-c32654526eb5",
-    "runtime": { "agent_id": "ada19a73600938720", "agent_type": "general-purpose" }
+    "session_id": "f89f8994-d8dc-4ba8-85d1-71b4a8442751",
+    "runtime": { "agent_id": "a048ee9547c58c4ae", "agent_type": "general-purpose" }
   },
   "credentialSubject": {
     "principal": { "id": "did:user:ottojongerius" },
     "action": {
       "type": "claude-code.Edit",
-      "target": { "system": "filesystem", "resource": ".../shared-vault/credentials.yaml" },
+      "target": { "system": "filesystem", "resource": ".../vault-demo/credentials.yaml" },
       "peer_credential": { "platform": "darwin", "uid": 501, "gid": 20 }
     },
-    "chain": { "sequence": 2, "chain_id": "2026-06-03-12/agent/ada19a73600938720" }
+    "chain": { "sequence": 2, "chain_id": "2026-06-03-12/agent/a048ee9547c58c4ae" }
   }
 }
 ```
@@ -96,7 +95,7 @@ That one record answers all three questions, each anchored to something the agen
 - **Under whose authority** — `principal.id` is `did:user:ottojongerius`, resolved from `peer_credential.uid: 501`, the OS user the kernel reported at the socket (`LOCAL_PEERCRED`). The agent has no hand in setting it; the raw uid stays in the record as the verifiable backing.
 - **What signed it** — `issuer.id` is the daemon, running as its own OS user the agents can't reach (the [out-of-agent boundary](/blog/daemon-process-separation/)).
 
-Group every receipt by `action.target.resource` and the contention falls out: three agents, three isolated worktrees, one shared file. The dashboard draws an edge between agents that touched the same resource, so the three show up tied together through the vault — even though nothing in their working trees ever overlapped. That edge is the thing a sandbox can't see and a snapshot can't represent.
+Group every receipt by `action.target.resource` and the contention falls out: three agents, three isolated worktrees, one shared file. It wasn't hypothetical — two of them wrote cleanly, but the third's chain runs longer, re-reading the vault several times before its write landed, because the file kept shifting under it as the others wrote. The dashboard draws an edge between agents that touched the same resource, so the three show up tied together through the vault — even though nothing in their working trees ever overlapped. That edge is the thing a sandbox can't see and a snapshot can't represent.
 
 ---
 
