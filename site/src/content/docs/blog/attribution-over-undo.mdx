@@ -1,6 +1,6 @@
 ---
-title: "You can't undo your way to agent safety"
-description: "Undo degrades to checkpoint-restore — a commodity. When a swarm of agents touches your files, the question that actually matters is attribution and blast radius: which agent did what, under whose authority, and what breaks if you pull a thread."
+title: "Your agents are isolated. Your shared state isn't."
+description: "Worktrees fence the repo; snapshots restore it. Neither touches the database, the API, or the secret store two agents both reach for. When a swarm converges on shared state, the only record of which agent did what — under whose authority — is the receipt."
 head:
   - tag: link
     attrs:
@@ -11,142 +11,115 @@ head:
 _Published 2026-06-14_
 
 {/* TODO before publish:
-  - Canonical home: currently set to agentreceipts.ai; per plan this is a tooling post for the obsigna.dev blog, which would flip the canonical URL + index entry.
-  - Post is wired into the blog index (site/src/content/docs/blog/index.mdx).
-  - Screenshots: hero = /blog/blast-radius-node-detail.png (contention graph; shows no principal, so no conflict with the now-known username). mermaid/table are role-only so no agent-id cross-reference to the hero. §4 receipt JSON uses a real released receipt (agent a8fb7a…, did:user:ottojongerius). OPTIONAL polish: capture a fresh receipt-detail card on the live v0.26.0 daemon showing did:user:ottojongerius (a "known principal" visual), and/or a fresh graph from a clean session.
-  - Follow-up issue (out of scope for this post): shell commands get a default `medium` risk (rm == echo) and no target.resource — teach the hook/daemon to classify rm/mv/cp.
+  - Hero screenshot pending: capture the dashboard agent graph for the vault swarm (the three isolated agents ada19a73 / af1d44a1 / a8b68a43 tied through /tmp/shared-vault…/credentials.yaml). Filter by the vault resource or recent time to cut session clutter. Save to /blog/vault-swarm-graph.png. Optional: a receipt-detail card showing principal did:user:ottojongerius + the vault path.
+  - Old /blog/blast-radius-node-detail.png is the previous (credentials.yaml scratch) demo — retire it once the vault graph is captured.
+  - Canonical home: currently agentreceipts.ai; per plan this is a tooling post for the obsigna.dev blog (would flip canonical + index). Slug stays attribution-over-undo unless we rename.
+  - Follow-up issues (out of scope): (1) shell commands get default `medium` risk + no target.resource — classify rm/mv/cp; (2) draw resource edges for non-file resources (API endpoints, DB tables) so shared-API contention shows like shared-file contention.
   Remove this comment before publish. */}
 
 ---
 
-Five agents ran in the session below, and three of them reached for the same file — the last of them deleted it. The receipt chain pins down which three, and who did what: every edge in the graph is drawn from a signature a separate process wrote as the call happened.
+Three agents ran the deploy below, each in its own isolated worktree. None could see the others' files; none knew the others existed. All three wrote to the same secret store — because the secret store wasn't in any of their worktrees. The receipt chain ties them together through it.
 
-![Agent Receipts dashboard: an orchestrator delegating to five subagents, three of them joined by a blue edge because they all touched the same file. The auditor node is selected, showing its blast radius and a decrypted shell command that deleted the shared file.](/blog/blast-radius-node-detail.png)
+![Agent Receipts dashboard: an orchestrator delegating to three subagents, each in its own worktree, joined by edges because all three wrote to the same shared credentials vault.](/blog/vault-swarm-graph.png)
 
-That blue edge is the main point of this post. Two of those agents — the unconnected ones on the right — were off reading unrelated files. The three on the left all reached for `config/credentials.yaml`. One created it, one rotated a key in it, one deleted it. The graph draws the contention because the receipts carry it.
-
-The intuitive thing to want here is **undo**. "Show me what the swarm did, then let me roll it back." We chased that for a while. It's the wrong primary.
+That's the gap this post is about. Sandboxing an agent fences its working tree; it does nothing for the database row, the API, the secret it rotates, the thing it deploys. The moment two agents reach past the sandbox to the same shared resource, isolation goes quiet — and the only record that both touched it, and who they were, is the receipt.
 
 ---
 
-## Undo is a trap
+## Isolation and reversal both stop at the repo
 
-The instinct is per-action undo: reverse the auditor's delete, keep everyone else's work. In a real session that rarely stays clean — renames, restructures, a file rewritten three times in a turn — so fine-grained undo degrades into compensation with merge conflicts, and you fall back to **checkpoint restore**: snapshot the filesystem before the turn, atomically restore it after.
+The two standard answers to "what if an agent does something bad" are **isolation** and **reversal**, and both are good — inside their boundary.
 
-For the filesystem, that works, and it's already well-handled. [nono](https://github.com/nono-sh/nono) does it properly — a host-level sandbox plus content-addressed snapshots, Merkle-root integrity, atomic restore — and it's real protection against an agent trashing your working tree. Reversal-of-files is a solved capability; that's a compliment, and it's why it isn't where the hard problem lives.
+Isolation gives each agent its own git worktree or sandbox, so they can't step on each other's files. Reversal snapshots the filesystem before a turn and restores it after, so a botched edit is gone. [nono](https://github.com/nono-sh/nono) does the reversal case properly — a host-level sandbox plus content-addressed snapshots and atomic restore — and worktrees handle isolation well enough that file collisions inside a repo are mostly a solved problem. Credit where it's due: for the local filesystem, this is covered.
 
-The harder problem is that a large class of agent actions can't be snapshotted at all. The agent sends an email, charges a card, triggers a deploy, calls another service's API. Restoring your local files doesn't un-send the request — and those calls are usually *supposed* to happen, so sandboxing them away breaks the agent instead of protecting you. Once a side effect has left the machine, neither rollback nor prevention helps. The only handle left is the attributed record: what went out, which agent sent it, under whose authority.
+But both draw the same boundary, and it's the repo. A worktree fences the working tree. A snapshot restores the working tree. Neither has anything to say about the rest of the world — the secret store every service reads from, the config two agents both edit, the database row they both update, the API they both call, the deploy one of them triggers. None of that lives in a worktree, and no snapshot un-sends it.
 
-So reversal is the right tool for one slice of the problem, and a good one. What spans the rest is attribution.
+And reaching past the sandbox is the normal case, not the exception — agents are *supposed* to call APIs and write to shared stores. So the question was never how to prevent or undo those actions. It's how to know, afterward, which agent did what to the shared thing — and under whose authority.
 
 ---
 
-## The question that actually matters
+## The part that's actually new
 
-When a swarm touches your filesystem, what you need to answer is:
+When a swarm converges on shared state, you need three answers:
 
-- **Which** agent did this, out of the N that were running?
-- **Under whose authority** — which human principal, which delegated mandate?
-- **What else breaks** if I touch this one thing — what did the same agents do to related files in the same turn?
+- **Which** agent did this, out of the swarm?
+- **Under whose authority** — which principal, which mandate?
+- **What else touched the same thing** — which other agents, in what order, with what dependency between them?
 
-That's **attribution and blast radius**, and it is structurally not something a snapshot tool can answer. A host-level snapshot sees one process making changes. The receipt chain sees N agents under M principals, each action signed, ordered, and attributed. A snapshot can roll your files back; it can't tell you who did what or why, and it can't tell you what else moves if you pull a thread.
-
-That information only exists if something recorded it — signed, outside the agents, at the moment each action happened.
+The first two are table stakes. Any signed receipt attributes an action to an actor; that stopped being a differentiator a while ago. The third is the hard one, and it's the new capability: reconstructing, from separately-signed per-agent records, the graph of **which agents touched which shared resources and how their actions relate**. A single-actor sandbox can't produce it — it sees one process. A flat audit log can't either — no cross-agent linking. You need per-agent chains plus a resource index, and something outside the agents signing each record as it happens.
 
 ---
 
 ## The receipts are real
 
-The session above isn't a mockup. It's an orchestrator (`claude-opus-4-8`) that delegated to five subagents. Three of them were told to contend on one scratch file:
+The deploy up top isn't a mockup. An orchestrator delegated to three agents, each in its own worktree, each provisioning one service's credential into the shared vault:
 
 ```mermaid
 graph TD
-    O["Orchestrator<br/>claude-opus-4-8"]
-    P["provisioner"]
-    R["rotator"]
-    A["auditor"]
-    E1["Explore"]
-    E2["Explore"]
-    O -. delegates .-> P
-    O -. delegates .-> R
+    O["Orchestrator"]
+    A["auth<br/>worktree 1"]
+    B["billing<br/>worktree 2"]
+    N["notifications<br/>worktree 3"]
     O -. delegates .-> A
-    O -. delegates .-> E1
-    O -. delegates .-> E2
-    P === R
-    R === A
-    linkStyle 5,6 stroke:#3b82f6,stroke-width:2px;
+    O -. delegates .-> B
+    O -. delegates .-> N
+    A === B
+    B === N
+    linkStyle 3,4 stroke:#3b82f6,stroke-width:2px;
 ```
 
-Each subagent ran on its own hash-chained sequence, keyed `<session-chain>/agent/<agent-id>`, with the first receipt on each chain carrying a `delegation` link back to the orchestrator's chain. Here's a real one — the auditor editing the shared file, abbreviated:
+Each agent ran on its own hash-chained sequence, keyed `<session>/agent/<agent-id>`, linked back to the orchestrator by a `delegation` edge. Here's a real receipt — the auth agent writing to the vault, abbreviated:
 
 ```json
 {
   "issuer": {
     "id": "did:agent-receipts-daemon:local",
     "session_id": "1c665a44-2706-4f71-a478-c32654526eb5",
-    "runtime": { "agent_id": "a8fb7a111017ff997", "agent_type": "general-purpose" }
+    "runtime": { "agent_id": "ada19a73600938720", "agent_type": "general-purpose" }
   },
   "credentialSubject": {
     "principal": { "id": "did:user:ottojongerius" },
     "action": {
       "type": "claude-code.Edit",
-      "target": { "system": "filesystem", "resource": ".../config/credentials.yaml" },
+      "target": { "system": "filesystem", "resource": ".../shared-vault/credentials.yaml" },
       "peer_credential": { "platform": "darwin", "uid": 501, "gid": 20 }
     },
-    "chain": { "sequence": 2, "chain_id": "2026-06-03-10/agent/a8fb7a111017ff997" }
+    "chain": { "sequence": 2, "chain_id": "2026-06-03-12/agent/ada19a73600938720" }
   }
 }
 ```
 
 That one record answers all three questions, each anchored to something the agent couldn't forge:
 
-- **Which agent** — `issuer.runtime.agent_id`: which of the five subagents acted.
-- **Under whose authority** — `principal.id` is `did:user:ottojongerius`, resolved from `peer_credential.uid: 501` — the OS user the kernel reported at the socket (`LOCAL_PEERCRED`). The name is the daemon's lookup of a kernel-attested uid — the agent has no hand in setting it — and the raw uid stays in the record as the verifiable backing.
+- **Which agent** — `issuer.runtime.agent_id`: which of the three did it.
+- **Under whose authority** — `principal.id` is `did:user:ottojongerius`, resolved from `peer_credential.uid: 501`, the OS user the kernel reported at the socket (`LOCAL_PEERCRED`). The agent has no hand in setting it; the raw uid stays in the record as the verifiable backing.
 - **What signed it** — `issuer.id` is the daemon, running as its own OS user the agents can't reach (the [out-of-agent boundary](/blog/daemon-process-separation/)).
 
-Signer, actor, and principal are three distinct identities in one signed object, and the two that carry attribution are both attested by the kernel. No agent vouches for itself.
-
-Group those receipts by `action.target.resource` and the contention falls out:
-
-| Resource | provisioner | rotator | auditor |
-|---|---|---|---|
-| `config/credentials.yaml` | `Write` (create) | `Read`, `Edit ×2` | `Read`, `Edit`, `Bash` (rm) |
-
-Three distinct agents, one file identity. Click the auditor node and the dashboard shows its blast radius directly — a state-dependency edge back to the rotator's chain via `…/config/credentials.yaml`: the rotator handed it the file. The edges are computed by walking the file-identity index: for each resource, each consecutive cross-agent touch becomes a directed state-dependency edge.
+Group every receipt by `action.target.resource` and the contention falls out: three agents, three isolated worktrees, one shared file. The dashboard draws an edge between agents that touched the same resource, so the three show up tied together through the vault — even though nothing in their working trees ever overlapped. That edge is the thing a sandbox can't see and a snapshot can't represent.
 
 ---
 
 ## Honest by construction
 
-Now the part that makes this trustworthy rather than just slick.
+What makes this trustworthy rather than just slick is that the view declares where it can't see.
 
-Look back at the table. The auditor's last action on that file was a `Bash` call — `rm …/config/credentials.yaml`. The most consequential thing any agent did to that file, and **it isn't drawn as an edge.** Here's why: the hook records a shell command as `claude-code.Bash` with no structured `action.target`. A `Write` or `Edit` carries `target.resource`; a deletion through the shell doesn't. So the file-identity index never sees it, and the graph can't connect it.
+The edges are drawn from `action.target.resource`, and that field is populated where the runtime hands us structure — native `Read`/`Write`/`Edit` carry a file path, so a shared **file** like the vault draws edges today. A purely external resource — a database table, an API endpoint — is captured in the receipt but doesn't yet carry a structured resource, so two agents hitting the same API won't draw an edge *yet*. The dashboard says so: it surfaces a coverage fraction, the share of receipts that actually carry a resource, precisely so the graph never implies a completeness it doesn't have.
 
-The same opacity sets the risk level. With no taxonomy entry for what the shell actually did, that `rm` is rated a default `medium` — the same as a harmless `echo`. To the pipeline it's just a shell call; the destructive delete is hidden inside it. Both gaps have the same root and the same honest answer: structured fields are populated where the runtime hands us structure (native `Write`/`Edit`/`Read`), and shell commands fall through to the sealed disclosure, where a human (or a later classifier) can recover what they did.
+The same gap shows up in shell commands. An `rm` is recorded as `claude-code.Bash` with no `action.target` and a default `medium` risk — the same as a harmless `echo`. To the pipeline it's just a shell call; what it did is hidden inside it. But it isn't lost: the command and its intent live in the receipt's HPKE-encrypted disclosure, recoverable with the forensic key. Structured where the runtime gives structure, sealed-but-recoverable where it doesn't — and the view tells you which is which.
 
-A dishonest tool would hide that. This one surfaces it. The graph annotates how many receipts actually carry a resource path — a **coverage fraction** — precisely so the view never implies a completeness it doesn't have. The missing delete edge isn't a silent gap; it's a visible one.
-
-And the delete isn't lost, either. It sits at a different **fidelity**:
-
-1. **Structured and automatic** — `Read`/`Edit` carry a resource, so they're indexed, queryable, and drawn as edges with no human in the loop.
-2. **Sealed and forensic** — the `rm` command and its intent live in the receipt's HPKE-encrypted disclosure. Hold the forensic key and it decrypts to exactly `rm …/config/credentials.yaml`, described as _"Delete the credentials.yaml file."_ Provable, attributable, and tamper-evident — just not free.
-
-That's the real shape of agent attribution: some of it is automatic and provable, some of it needs a key and a forensic step, and an honest system tells you which is which. The agent deleted the secret. The graph alone wouldn't draw it. The signed, sealed record caught it anyway, and a key-holder can prove it in court.
-
-(The blind spot is also a clean fix: the daemon sees the plaintext `rm` before it seals it, so a conservative parse of `rm`/`mv`/`cp` could promote a `filesystem` target and draw the edge. Best-effort — shell parsing is fiddly — which is exactly why the coverage fraction stays.)
-
-There's a second honest edge, on the authority axis. The principal above is the **OS user** — kernel-attested, a real answer to *who* ran this. What it is **not** yet is the **mandate**: which delegated grant let this agent touch this file, and whether undoing it would exceed that grant. The schema reserves the slots — `authorization.scopes`, `authorization.grant_ref` — but nothing populates them today. So the receipts give you an attested principal and, for now, an empty mandate, surfaced plainly. Mandate is the next layer up, building on the attested principal floor.
+There's one more honest edge, on authority. The principal is the **OS user**, kernel-attested — a real answer to *who*. What it isn't yet is the **mandate**: which delegated grant let this agent reach the vault, and whether reverting its write would exceed that grant. The schema reserves the slots (`authorization.scopes`, `authorization.grant_ref`); nothing populates them today, so the receipts give you an attested principal and, for now, an empty mandate, surfaced plainly. Mandate is the next layer up, building on the attested principal floor.
 
 ---
 
 ## Where reversal fits
 
-Reversal doesn't disappear; it changes altitude. Because attribution is primary, undo becomes an **attributed action you offer where the graph permits** — the engine computes the blast radius, a policy gate approves or flags it, and the reversal is itself a signed receipt linked by `reversal_of` into the same chain. The undo is auditable, attributable, and mandate-scoped. A standalone checkpoint-restore tool has none of that. Reversal becomes the thin tier beneath attribution.
+Reversal doesn't disappear; it changes altitude. Because attribution is primary, undo becomes an **attributed action you offer where the graph permits** — the engine computes the blast radius, a policy gate approves or flags it, and the reversal is itself a signed receipt linked by `reversal_of` into the same chain. The undo is auditable, attributable, and mandate-scoped. A standalone snapshot tool has none of that. Reversal becomes the thin tier beneath attribution.
 
 ---
 
 ## The split this makes concrete
 
-This is also why the project now has two names. The **signed, chained, attributed record** is the protocol — Agent Receipts. Everything that produces and reads that record is the toolset, Obsigna: the PostToolUse **hook** that emitted every action in this session, the **daemon** that signs and hash-chains them out of the agents' reach, and the **CLI** and **dashboard** that read them back. The graph above is the dashboard rendering an Agent Receipts chain — and you could write a different reader against the same receipts and get the same answers, because the answers live in the record itself.
+This is also why the project now has two names. The **signed, chained, attributed record** is the protocol — Agent Receipts. Everything that produces and reads that record is the toolset, Obsigna: the PostToolUse **hook** that emitted every action in this session, the **daemon** that signs and hash-chains them out of the agents' reach, and the **CLI** and **dashboard** that read them back. The graph up top is the dashboard rendering an Agent Receipts chain — and you could write a different reader against the same receipts and get the same answers, because the answers live in the record itself.
 
-You can't undo your way to agent safety. You can attribute your way there — if something outside the agents is signing the record as they go.
+Your agents can be perfectly isolated and still converge on the same secret, the same row, the same deploy. Isolation won't tell you they did. The record will — which agents, under whose authority, against what they shared.
