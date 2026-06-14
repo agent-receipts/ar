@@ -10,12 +10,6 @@ head:
 
 _Published 2026-06-14_
 
-{/* TODO before publish:
-  - Hero: /blog/vault-swarm-graph.png = clean fresh-session capture (session f89f8994, orchestrator + the 3 vault agents a048ee95 / aa82f880 / a4984f21, blue contention edges). JSON synced to that run (auth agent a048ee9547c58c4ae).
-  - Canonical home: currently agentreceipts.ai; per plan this is a tooling post for the obsigna.dev blog (would flip canonical + index). Slug stays attribution-over-undo unless we rename.
-  - Follow-up issues (out of scope): (1) shell commands get default `medium` risk + no target.resource — classify rm/mv/cp; (2) draw resource edges for non-file resources (API endpoints, DB tables) so shared-API contention shows like shared-file contention; (3) failed tool calls (e.g. a losing concurrent Edit) aren't receipted — a lost write currently leaves no failure row, only the retry reads.
-  Remove this comment before publish. */}
-
 ---
 
 Three agents ran the deploy below, each in its own isolated worktree. None could see the others' files; none knew the others existed. All three wrote to the same secret store — because the secret store wasn't in any of their worktrees. The receipt chain ties them together through it.

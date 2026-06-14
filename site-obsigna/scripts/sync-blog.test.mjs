@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canonicalUrl, withCanonical } from "./sync-blog.mjs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { canonicalUrl, withCanonical, syncImages } from "./sync-blog.mjs";
 
 test("canonicalUrl maps a post slug to its agentreceipts.ai URL", () => {
   assert.equal(
@@ -33,4 +43,29 @@ test("withCanonical leaves a self-canonicalizing post untouched", () => {
 test("withCanonical leaves content without frontmatter untouched", () => {
   const input = "no frontmatter here\n";
   assert.equal(withCanonical(input, "x.mdx"), input);
+});
+
+test("syncImages mirrors flat image files into the output dir", () => {
+  const base = mkdtempSync(join(tmpdir(), "syncblog-img-"));
+  try {
+    const src = join(base, "src");
+    const out = join(base, "out");
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "hero.png"), "PNGDATA");
+    mkdirSync(join(src, "nested")); // directories are skipped
+
+    const n = syncImages(src, out);
+
+    assert.equal(n, 1);
+    assert.ok(existsSync(join(out, "hero.png")), "image copied");
+    assert.equal(readFileSync(join(out, "hero.png"), "utf8"), "PNGDATA");
+    assert.ok(!existsSync(join(out, "nested")), "subdirs not copied");
+  } finally {
+    rmSync(base, { recursive: true });
+  }
+});
+
+test("syncImages returns 0 when the source dir is absent", () => {
+  const out = join(tmpdir(), "syncblog-noimg-out");
+  assert.equal(syncImages(join(tmpdir(), "syncblog-does-not-exist-xyz"), out), 0);
 });
