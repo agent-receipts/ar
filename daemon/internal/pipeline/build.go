@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os/user"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -776,7 +778,7 @@ func (p *Pipeline) buildAndSign(
 
 	return p.signAndHash(receipt.CreateInput{
 		Issuer:        issuerFromFrame(f, p.IssuerID),
-		Principal:     receipt.Principal{ID: "did:user:unknown"},
+		Principal:     principalFromPeer(peer),
 		Action:        action,
 		Outcome:       outcome,
 		CorrelationID: f.CorrelationID,
@@ -859,7 +861,7 @@ func (p *Pipeline) buildAndSignDropReceipt(
 			Type:      "AgentReceiptsDaemon",
 			SessionID: sessionID,
 		},
-		Principal:  receipt.Principal{ID: "did:user:unknown"},
+		Principal:  principalFromPeer(peer),
 		Delegation: delegation,
 		Action: receipt.Action{
 			Type:           actionTypeEventsDropped,
@@ -900,6 +902,40 @@ func buildPeerCred(peer socket.PeerCred) *receipt.PeerCredential {
 }
 
 func ptrUint32(v uint32) *uint32 { return &v }
+
+// lookupUID resolves a POSIX uid to an OS user. It is a package var so tests can
+// stub the host user database and stay deterministic across machines.
+var lookupUID = user.LookupId
+
+// principalFromPeer derives the receipt Principal from kernel-attested peer
+// credentials. Absent an emitter-supplied principal, the OS user that ran the
+// emitting process is the best attested stand-in for "on whose authority": it is
+// the same LOCAL_PEERCRED/SO_PEERCRED identity the daemon already vouches for in
+// action.peer_credential, so the principal inherits that field's tamper-evidence
+// instead of trusting an emitter self-report.
+//
+// The kernel-attested uid is the stable fact and is preserved verbatim in
+// action.peer_credential. This resolves it to the host's login name for a
+// human-readable principal (did:user:<login>) — the name is the daemon's lookup
+// of an attested uid on its own host, not an emitter self-report. It falls back
+// to the numeric did:user:<platform>:<uid> when the host user database has no
+// entry (containers, directory-only users, deleted accounts), so the principal
+// is always at least the attested uid. The platform gate mirrors buildPeerCred:
+// platforms without a POSIX uid — and synthetic receipts with no connecting peer
+// — fall back to the did:user:unknown sentinel.
+//
+// The derived DID names the OS user, not a configured human or mandate. Mapping
+// a uid to a named principal or an authorization grant is a higher layer that
+// builds on this attested floor.
+func principalFromPeer(peer socket.PeerCred) receipt.Principal {
+	if peer.Platform != "linux" && peer.Platform != "darwin" {
+		return receipt.Principal{ID: "did:user:unknown"}
+	}
+	if u, err := lookupUID(strconv.FormatUint(uint64(peer.UID), 10)); err == nil && u.Username != "" {
+		return receipt.Principal{ID: "did:user:" + u.Username}
+	}
+	return receipt.Principal{ID: fmt.Sprintf("did:user:%s:%d", peer.Platform, peer.UID)}
+}
 
 // EmitTerminator emits interrupted-chain terminal receipts for all open chains
 // (root chain and any per-agent chains). It is called once, synchronously,
