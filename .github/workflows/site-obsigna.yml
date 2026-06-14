@@ -16,6 +16,12 @@ on:
 permissions:
   contents: read
 
+# Serialize deploys per ref so a slower older run can't finish last and
+# overwrite obsigna.dev with stale output.
+concurrency:
+  group: site-obsigna-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     working-directory: site-obsigna
