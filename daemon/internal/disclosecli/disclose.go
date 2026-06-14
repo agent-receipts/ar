@@ -1,4 +1,4 @@
-// Package disclosecli implements the `agent-receipts disclose <seq>` subcommand:
+// Package disclosecli implements the `obsigna receipt disclose <seq>` subcommand:
 // decrypt the parameters_disclosure envelope of a single stored receipt using
 // the operator's X25519 forensic private key and print the recovered plaintext.
 //
@@ -54,10 +54,10 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 		return fallback
 	}
 
-	fs := flag.NewFlagSet("disclose", flag.ContinueOnError)
+	fs := flag.NewFlagSet("receipt disclose", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: agent-receipts disclose <seq> [flags]")
+		fmt.Fprintln(stderr, "Usage: obsigna receipt disclose <seq> [flags]")
 		fmt.Fprintln(stderr, "\nDecrypt the parameters_disclosure envelope of a single stored receipt")
 		fmt.Fprintln(stderr, "using the operator's X25519 forensic private key.")
 		fmt.Fprintln(stderr, "\nThe key may be supplied as a raw 32-byte file, hex (64 chars),")
@@ -91,43 +91,43 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 	}
 
 	if len(rest) == 0 {
-		fmt.Fprintln(stderr, "agent-receipts disclose: missing <seq> argument (the chain sequence number, 1-indexed)")
+		fmt.Fprintln(stderr, "obsigna receipt disclose: missing <seq> argument (the chain sequence number, 1-indexed)")
 		return ExitUsageError
 	}
 	if len(rest) > 1 {
-		fmt.Fprintf(stderr, "agent-receipts disclose: unexpected positional argument(s): %v (only one <seq> is accepted)\n", rest[1:])
+		fmt.Fprintf(stderr, "obsigna receipt disclose: unexpected positional argument(s): %v (only one <seq> is accepted)\n", rest[1:])
 		return ExitUsageError
 	}
 	seq, err := strconv.Atoi(rest[0])
 	if err != nil || seq < 1 {
-		fmt.Fprintf(stderr, "agent-receipts disclose: <seq> must be a positive integer, got %q\n", rest[0])
+		fmt.Fprintf(stderr, "obsigna receipt disclose: <seq> must be a positive integer, got %q\n", rest[0])
 		return ExitUsageError
 	}
 
 	if *dbPath == "" {
-		fmt.Fprintln(stderr, "agent-receipts disclose: --db is required (no AGENTRECEIPTS_DB and no home directory)")
+		fmt.Fprintln(stderr, "obsigna receipt disclose: --db is required (no AGENTRECEIPTS_DB and no home directory)")
 		return ExitUsageError
 	}
 	if *keyPath == "" {
-		fmt.Fprintln(stderr, "agent-receipts disclose: --key is required (no AGENTRECEIPTS_FORENSIC_KEY and no home directory)")
+		fmt.Fprintln(stderr, "obsigna receipt disclose: --key is required (no AGENTRECEIPTS_FORENSIC_KEY and no home directory)")
 		return ExitDecryptError
 	}
 
 	raw, err := os.ReadFile(*keyPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts disclose: read key %q: %v\n", *keyPath, err)
+		fmt.Fprintf(stderr, "obsigna receipt disclose: read key %q: %v\n", *keyPath, err)
 		return ExitDecryptError
 	}
 	privKey, err := parseForensicPrivateKey(raw)
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts disclose: invalid forensic key: %v\n", err)
+		fmt.Fprintf(stderr, "obsigna receipt disclose: invalid forensic key: %v\n", err)
 		return ExitDecryptError
 	}
 	defer zeroSlice(privKey)
 
 	s, err := store.OpenReadOnly(*dbPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts disclose: open store: %v\n", err)
+		fmt.Fprintf(stderr, "obsigna receipt disclose: open store: %v\n", err)
 		return ExitUsageError
 	}
 	defer s.Close()
@@ -139,17 +139,17 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 
 	r, err := s.GetByChainSequence(resolved, seq)
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts disclose: read chain %q: %v\n", resolved, err)
+		fmt.Fprintf(stderr, "obsigna receipt disclose: read chain %q: %v\n", resolved, err)
 		return ExitUsageError
 	}
 	if r == nil {
-		fmt.Fprintf(stderr, "agent-receipts disclose: no receipt at sequence %d in chain %q\n", seq, resolved)
+		fmt.Fprintf(stderr, "obsigna receipt disclose: no receipt at sequence %d in chain %q\n", seq, resolved)
 		return ExitNotFound
 	}
 
 	env := r.CredentialSubject.Action.ParametersDisclosure
 	if env == nil {
-		fmt.Fprintf(stderr, "agent-receipts disclose: receipt at sequence %d has no parameters_disclosure\n", seq)
+		fmt.Fprintf(stderr, "obsigna receipt disclose: receipt at sequence %d has no parameters_disclosure\n", seq)
 		return ExitOK
 	}
 
@@ -163,13 +163,13 @@ func Run(args []string, stdout, stderr io.Writer, envLookup func(string) string)
 			if fpErr == nil {
 				for _, rcpt := range env.Recipients {
 					if rcpt.KID == fp {
-						fmt.Fprintf(stderr, "agent-receipts disclose: decryption failed (envelope may be corrupt): %v\n", err)
+						fmt.Fprintf(stderr, "obsigna receipt disclose: decryption failed (envelope may be corrupt): %v\n", err)
 						return ExitDecryptError
 					}
 				}
 			}
 		}
-		fmt.Fprintf(stderr, "agent-receipts disclose: key does not match any recipient in the envelope\n")
+		fmt.Fprintf(stderr, "obsigna receipt disclose: key does not match any recipient in the envelope\n")
 		return ExitDecryptError
 	}
 
@@ -186,7 +186,7 @@ func writeJSON(stdout, stderr io.Writer, params map[string]any) int {
 		if errors.Is(err, syscall.EPIPE) || errors.Is(err, io.ErrClosedPipe) {
 			return ExitOK
 		}
-		fmt.Fprintf(stderr, "agent-receipts disclose: encode JSON: %v\n", err)
+		fmt.Fprintf(stderr, "obsigna receipt disclose: encode JSON: %v\n", err)
 		return ExitUsageError
 	}
 	return ExitOK
@@ -229,17 +229,17 @@ func resolveChainID(s *store.Store, requested string, stderr io.Writer) (string,
 	}
 	chains, err := s.DistinctChainIDs()
 	if err != nil {
-		fmt.Fprintf(stderr, "agent-receipts disclose: enumerate chains: %v\n", err)
+		fmt.Fprintf(stderr, "obsigna receipt disclose: enumerate chains: %v\n", err)
 		return "", ExitUsageError
 	}
 	switch len(chains) {
 	case 0:
-		fmt.Fprintln(stderr, "agent-receipts disclose: store holds no receipts")
+		fmt.Fprintln(stderr, "obsigna receipt disclose: store holds no receipts")
 		return "", ExitNotFound
 	case 1:
 		return chains[0], ExitOK
 	default:
-		fmt.Fprintf(stderr, "agent-receipts disclose: store holds %d chains; pass --chain-id to select one. Available chains:\n", len(chains))
+		fmt.Fprintf(stderr, "obsigna receipt disclose: store holds %d chains; pass --chain-id to select one. Available chains:\n", len(chains))
 		for _, c := range chains {
 			fmt.Fprintf(stderr, "  %s\n", c)
 		}
