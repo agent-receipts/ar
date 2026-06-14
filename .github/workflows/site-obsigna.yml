@@ -3,10 +3,13 @@ name: Site (obsigna.dev)
 on:
   push:
     branches: [main]
-    paths: [site-obsigna/**, sdk/go/**, sdk/ts/**, sdk/py/**, mcp-proxy/**, hook/**]
+    # The blog source of truth lives in site/; sync-blog.mjs mirrors it into
+    # this site at build time. Without site/blog paths here, a blog-only edit
+    # never retriggers an obsigna.dev rebuild, leaving the mirror stale.
+    paths: [site-obsigna/**, site/src/content/docs/blog/**, site/public/blog/**, sdk/go/**, sdk/ts/**, sdk/py/**, mcp-proxy/**, hook/**]
   pull_request:
     branches: [main]
-    paths: [site-obsigna/**]
+    paths: [site-obsigna/**, site/src/content/docs/blog/**, site/public/blog/**]
 
 permissions:
   contents: read
